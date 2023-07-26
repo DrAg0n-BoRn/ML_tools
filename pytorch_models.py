@@ -176,7 +176,7 @@ class MyTrainer():
         self.kind = kind
 
 
-    def auto_train(self, epochs: int=200, patience: int=3, **model_params):
+    def auto_train(self, epochs: int=200, patience: int=4, **model_params):
         """
         Start training-validation process of the model. 
         
