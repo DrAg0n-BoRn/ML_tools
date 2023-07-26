@@ -147,7 +147,7 @@ class MyConvolutionalNetwork(nn.Module):
         self._ann_layers = ann._layers
         
         # Join CNN and ANN
-        self._structure = nn.Sequential(self._cnn_layers, self._ann_layers)
+        self._structure = nn.Sequential(self._cnn_layers, nn.Flatten(), self._ann_layers)
         
          # inherit kind
         self.kind = "CNN " + ann.kind
