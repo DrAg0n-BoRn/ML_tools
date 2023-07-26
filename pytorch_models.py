@@ -185,21 +185,21 @@ class MyTrainer():
         `model_params` Keywords parameters specific for the model, if any.
         """
         previous_val_loss = None
-        previous_train_loss = None
         epoch_tracker = 0
         warnings = 0
         feedback = None
         losses = list()
         # Time training
         start_time = time.time()
-        # Keep track of predictions and true labels to use later on scikit-learn
-        predictions_list = list()
-        true_labels_list = list()
         
         for epoch in range(1, epochs+1):
             # Train model
             self.model.train()
             current_train_loss = 0
+            # Keep track of predictions and true labels on the last epoch to use later on scikit-learn
+            predictions_list = list()  
+            true_labels_list = list()
+            
             for batch_index, (features, target) in enumerate(self.train_loader):
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
@@ -271,31 +271,22 @@ class MyTrainer():
             # If validation loss decreased
             else:
                 warnings = 0
+                # Stop if the current validation loss is less than 0.05% of the previous loss
+                # if previous_val_loss - current_val_loss < (previous_val_loss * 0.0005):
+                #     feedback = f"Current Validation Loss ({current_val_loss:.5f}) is less than 0.05% of the previous Loss ({previous_val_loss:.5f}), training complete."
+                #     break
                 
             # If patience is exhausted
             if warnings == patience:
                 feedback = f"Validation Loss has increased {patience} consecutive times. Check for possible overfitting or modify the patience value."
                 break
             
-            # Compare training loss per epoch
-            # First run
-            if previous_train_loss is None:
-                previous_train_loss = current_train_loss
-            # If training loss has not improved
-            elif current_train_loss > previous_train_loss:
-                pass
-            # Stop if the current training loss is less than 0.1% of the previous training loss
-            elif previous_train_loss - current_train_loss < (previous_train_loss * 0.001):
-                feedback = f"Current Train Loss ({current_train_loss:.5f}) is less than 0.1% of the previous Train Loss ({previous_train_loss:.5f}), training complete."
-                break
-            
             # Training must continue for another epoch
             previous_val_loss = current_val_loss
-            previous_train_loss = current_train_loss
 
         # if all epochs have been completed
         else:
-            feedback = "Training has been completed without reaching any early-stopping criteria. Consider modifying the learning rate or using more epochs."
+            feedback = "Training has been completed without reaching any early-stopping criteria."
         
         # Print feedback message
         print('\n', details_format)
