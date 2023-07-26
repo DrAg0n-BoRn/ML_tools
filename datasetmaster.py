@@ -145,7 +145,7 @@ class DatasetMaker():
             self.features_test = categorical_test
             
         # Balance train dataset
-        if balance and self.features_train and self.labels_train:
+        if balance and self.features_train is not None and self.labels_train is not None:
             self.features_train, self.labels_train = self.balance_classes(train_features=self.features_train, train_labels=self.labels_train)
             
     @staticmethod
