@@ -9,12 +9,11 @@ import numpy
 
 
 class MyNeuralNetwork(nn.Module):
-    def __init__(self, num_features: int, hidden_layers: list[int]=[40,80,40], kind: Union[Literal["regression", "binary_classification"], int]="regression", drop_out: float=0.2) -> None:
+    def __init__(self, in_features: int, out_targets: int, hidden_layers: list[int]=[40,80,40], drop_out: float=0.2) -> None:
         """
         Creates a Neural Network used for Regression or Classification tasks.
         
-        `kind` can be set to "regression" (default) or "binary_classification".
-        If multi-class is required, pass the number of output classes to `kind`.
+        `out_targets` Is the number of expected output classes for classification; or `1` for regression.
         
         `hidden_layers` takes a list of integers. Each position represents a hidden layer and its number of neurons. 
         
@@ -26,22 +25,12 @@ class MyNeuralNetwork(nn.Module):
         """
         super().__init__()
         
-        # Validate kind
-        if kind == "regression":
-            code = "r"
-            self.kind = "regression"
-        elif kind == "binary_classification":
-            code = "c"
-            self.kind = "classification"
-        elif isinstance(kind, int) and kind > 1:
-            code = kind
-            self.kind = "classification"
+        # Validate inputs and outputs
+        if isinstance(in_features, int) and isinstance(out_targets, int):
+            if in_features < 1 or out_targets < 1:
+                raise ValueError("Inputs or Outputs must be an integer value.")
         else:
-            raise TypeError("kind must be 'regression', 'binary_classification' or an integer for multiclass classification.")
-        
-        # Validate inputs
-        if not isinstance(num_features, int):
-            raise TypeError("The number of input features (num_features) must be defined as an integer value.")
+            raise TypeError("Inputs or Outputs must be an integer value.")
         
         # Validate layers
         if isinstance(hidden_layers, list):
@@ -62,21 +51,21 @@ class MyNeuralNetwork(nn.Module):
         else:
             raise TypeError("drop_out must be a float value greater than or equal to 0 and less than 1.")
         
+        
         # Create layers        
         layers = list()
         for neurons in hidden_layers:
-            layers.append(nn.Linear(in_features=num_features, out_features=neurons))
+            layers.append(nn.Linear(in_features=in_features, out_features=neurons))
             layers.append(nn.BatchNorm1d(num_features=neurons))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=drop_out))
-            num_features = neurons
+            in_features = neurons    
         # Append output layer
-        layers.append(nn.Linear(in_features=num_features, out_features=1 if code in ["r", "c"] else code))
+        layers.append(nn.Linear(in_features=in_features, out_features=out_targets))
         
-        # Check for classification output
-        if code == "c":
-            layers.append(nn.Sigmoid())
-        elif isinstance(code, int):
+        # Check for classification or regression output
+        if out_targets > 1:
+            # layers.append(nn.Sigmoid())
             layers.append(nn.Softmax(dim=1))
         
         # Create a container for layers
@@ -89,12 +78,12 @@ class MyNeuralNetwork(nn.Module):
 
 
 class MyConvolutionalNetwork(nn.Module):
-    def __init__(self, outputs: int, color_channels: int=3, img_size: int=300, drop_out: float=0.2):
+    def __init__(self, outputs: int, color_channels: int=3, img_size: int=250, drop_out: float=0.2):
         """
         Create a basic Convolutional Neural Network with two convolution layers. A (2x2) pooling layer is used after each convolution.
 
         Args:
-            outputs (int): Number of output classes (1 means regression).
+            outputs (int): Number of output classes (1 for regression).
             color_channels (int, optional): Color channels. Default is '3' for RGB images.
             img_size (int, optional): Width and Height of image samples, must be square images. Default is '300'.
             drop_out (float, optional): Neuron drop out probability. Default is '0.2'.
@@ -142,16 +131,13 @@ class MyConvolutionalNetwork(nn.Module):
         flat_features = int(int((int((img_size + 2 - (5-1))/2) - (3-1))/2)**2) * (color_channels * 5)
         
         # Make a standard ANN
-        ann = MyNeuralNetwork(num_features=flat_features, hidden_layers=[int(flat_features*0.7), int(flat_features*0.3), int(flat_features*0.05), int(flat_features*0.001)], 
-                              kind=outputs if outputs > 1 else "regression", drop_out=drop_out)
+        ann = MyNeuralNetwork(in_features=flat_features, hidden_layers=[int(flat_features*0.7), int(flat_features*0.3), int(flat_features*0.05), int(flat_features*0.001)], 
+                              out_targets=outputs, drop_out=drop_out)
         self._ann_layers = ann._layers
         
         # Join CNN and ANN
         self._structure = nn.Sequential(self._cnn_layers, nn.Flatten(), self._ann_layers)
         
-         # inherit kind
-        self.kind = "CNN " + ann.kind
-
     # Override forward()
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         X = self._structure(X)
@@ -217,9 +203,16 @@ class MyTrainer():
             for batch_index, (features, target) in enumerate(self.train_loader):
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
+                # print("output type:", output.dtype, " requires grad? ", output.requires_grad)
+                # print("target type:", target.dtype, " requires grad? ", target.requires_grad)
+                # Get the predicted output for classification
+                if self.kind == "classification":
+                    output = output.argmax(dim=1)
+                    output = output.to(torch.float32)
+                    output.requires_grad = True
                 # For Binary Cross Entropy
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
-                    target = target.view(-1, 1).type(torch.float32)
+                    target = target.to(torch.float32)
                 train_loss = self.criterion(output, target)
                 # Cumulative loss for current epoch on all batches
                 current_train_loss += train_loss.item()
@@ -239,16 +232,19 @@ class MyTrainer():
                     output = self.model(features, **model_params)
                     # Save true labels for current batch (in case random shuffle was used)
                     true_labels_list.append(target.squeeze().numpy())
+                    # Get the predicted output for classification
+                    if self.kind == "classification":
+                        output = output.argmax(dim=1)
+                        output = output.to(torch.float32)
                     # For Binary Cross Entropy
                     if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
-                        target = target.view(-1, 1).type(torch.float32)
+                        target = target.to(torch.float32)
                     current_val_loss += self.criterion(output, target).item()
-                    pred = output.argmax(dim=1, keepdim=True)
                     # Save predictions of current batch
-                    predictions_list.append(pred.squeeze().numpy())
-                    # Compare (equality) the target and the predicted target, use dimensional compatibility. 
+                    predictions_list.append(output.squeeze().numpy())
+                    # Compare (equality) the target and the predicted target, use dimensional compatibility if needed. 
                     # this results in a tensor of booleans, sum up all Trues and return the value as a scalar.
-                    correct += pred.eq(target.view_as(pred)).sum().item()
+                    correct += output.eq(target.view_as(output)).sum().item()
                     
                 # Average Validation Loss per sample
                 current_val_loss /= len(self.test_loader.dataset)
