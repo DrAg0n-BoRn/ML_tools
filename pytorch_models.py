@@ -90,15 +90,46 @@ class MyNeuralNetwork(nn.Module):
 
 class MyConvolutionalNetwork(nn.Module):
     def __init__(self, outputs: int, color_channels: int=3, img_size: int=300, drop_out: float=0.2):
-        # TODO: docstring 
-        
-        
-        
-        # TODO: Validation of user inputs
-        
-        
-        
+        """
+        Create a basic Convolutional Neural Network with two convolution layers. A (2x2) pooling layer is used after each convolution.
+
+        Args:
+            outputs (int): Number of outputs.
+            color_channels (int, optional): Color channels. Default is '3' for RGB images.
+            img_size (int, optional): Width and Height of image samples, must be square images. Default is '300'.
+            drop_out (float, optional): Neuron drop out probability. Default is '0.2'.
+        """
         super().__init__()
+        
+        # Validate outputs number
+        integer_error = " must be an integer greater than 0."
+        if isinstance(outputs, int):
+            if outputs < 1:
+                raise ValueError("Outputs" + integer_error)
+        else:
+            raise TypeError("Outputs" + integer_error)
+        # Validate color channels
+        if isinstance(color_channels, int):
+            if color_channels < 1:
+                raise ValueError("Color Channels" + integer_error)
+        else:
+            raise TypeError("Color Channels" + integer_error)
+        # Validate image size
+        if isinstance(img_size, int):
+            if img_size < 1:
+                raise ValueError("Image size" + integer_error)
+        else:
+            raise TypeError("Image size" + integer_error)        
+        # Validate drop out
+        if isinstance(drop_out, float):
+            if 1.0 > drop_out >= 0.0:
+                pass
+            else:
+                raise TypeError("Drop out must be a float value greater than or equal to 0 and less than 1.")
+        elif drop_out == 0:
+            pass
+        else:
+            raise TypeError("Drop out must be a float value greater than or equal to 0 and less than 1.")
         
         # 2 convolutions, 2 pooling layers
         self._cnn_layers = nn.Sequential(
