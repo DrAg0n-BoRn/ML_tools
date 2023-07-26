@@ -182,6 +182,7 @@ class MyTrainer():
         for epoch in range(1, epochs+1):
             # Train model
             self.model.train()
+            current_train_loss = 0
             for batch_index, (features, target) in enumerate(self.train_loader):
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
@@ -189,10 +190,15 @@ class MyTrainer():
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                     target = target.view(-1, 1).type(torch.float32)
                 train_loss = self.criterion(output, target)
-                current_train_loss = train_loss.item()
+                # Cummulative loss for current epoch on all batches
+                current_train_loss += train_loss.item()
+                # Backpropagation
                 train_loss.backward()
                 self.optimizer.step()
                 
+            # Average Train Loss per sample
+            current_train_loss /= len(self.train_loader.dataset)
+            
             # Evaluate
             self.model.eval()
             current_val_loss = 0
@@ -210,14 +216,14 @@ class MyTrainer():
                     # Save predictions of current batch
                     predictions_list.append(pred.squeeze().numpy())
                     # Compare (equality) the target and the predicted target, use dimensional compatibility. 
-                    # this results in a tensor of booleans, sum up all Trues (1) and return the value as a scalar.
+                    # this results in a tensor of booleans, sum up all Trues and return the value as a scalar.
                     correct += pred.eq(target.view_as(pred)).sum().item()
                     
-            # Average loss per sample
-            current_val_loss /= len(self.test_loader.dataset)
-            losses.append(current_val_loss)
-            # Accuracy
-            accuracy = correct / len(self.test_loader.dataset)
+                # Average Validation Loss per sample
+                current_val_loss /= len(self.test_loader.dataset)
+                losses.append(current_val_loss)
+                # Accuracy
+                accuracy = correct / len(self.test_loader.dataset)
             
             # Print details
             details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    accuracy: {100*accuracy:5.2f}%'
@@ -228,14 +234,14 @@ class MyTrainer():
             # First run
             if previous_val_loss is None:
                 previous_val_loss = current_val_loss
-            # If validation loss is increasing use patience
+            # If validation loss is increasing or the same (not improving) use patience
             elif current_val_loss >= previous_val_loss:
                 if epoch == epoch_tracker + 1:
                     warnings += 1
                 else: 
                     warnings = 1
                 epoch_tracker = epoch
-            # Validation loss decreased
+            # If validation loss decreased
             else:
                 warnings = 0
                 
@@ -248,8 +254,11 @@ class MyTrainer():
             # First run
             if previous_train_loss is None:
                 previous_train_loss = current_train_loss
-            # Stop if the current training loss is less than 0.1% than the previous training loss
-            elif abs(previous_train_loss - current_train_loss) < (previous_train_loss * 0.1/100):
+            # If training loss has not improved
+            elif current_train_loss > previous_train_loss:
+                pass
+            # Stop if the current training loss is less than 0.1% of the previous training loss
+            elif previous_train_loss - current_train_loss < (previous_train_loss * 0.001):
                 feedback = f"Current Train Loss ({current_train_loss:.5f}) is less than 0.1% of the previous Train Loss ({previous_train_loss:.5f}), training complete."
                 break
             
@@ -259,7 +268,7 @@ class MyTrainer():
 
         # if all epochs have been completed
         else:
-            feedback = "Training has been completed without reaching any early-stopping criteria, consider modifying the learning rate or using more epochs."
+            feedback = "Training has been completed without reaching any early-stopping criteria. Consider modifying the learning rate or using more epochs."
         
         # Print feedback message
         print('\n', details_format)
@@ -282,7 +291,7 @@ class MyTrainer():
         # Concatenate all predictions and true labels
         predictions = numpy.concatenate(predictions_list, axis=0)
         true_labels = numpy.concatenate(true_labels_list, axis=0)
-        
+        # Display metrics
         if self.kind == "regression":            
             rmse = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
             print(f"Root Mean Squared Error: {rmse:.2f}")
