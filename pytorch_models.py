@@ -94,7 +94,7 @@ class MyConvolutionalNetwork(nn.Module):
         Create a basic Convolutional Neural Network with two convolution layers. A (2x2) pooling layer is used after each convolution.
 
         Args:
-            outputs (int): Number of outputs.
+            outputs (int): Number of output classes (1 means regression).
             color_channels (int, optional): Color channels. Default is '3' for RGB images.
             img_size (int, optional): Width and Height of image samples, must be square images. Default is '300'.
             drop_out (float, optional): Neuron drop out probability. Default is '0.2'.
@@ -139,7 +139,7 @@ class MyConvolutionalNetwork(nn.Module):
             nn.AvgPool2d(kernel_size=2, stride=(2,2))
         )
         # Calculate output features
-        flat_features = (((((img_size + 2 - (5-1))/2) - (3-1))/2)**2) * (color_channels * 5)
+        flat_features = int(int((int((img_size + 2 - (5-1))/2) - (3-1))/2)**2) * (color_channels * 5)
         
         # Make a standard ANN
         ann = MyNeuralNetwork(num_features=flat_features, hidden_layers=[int(flat_features*0.7), int(flat_features*0.3), int(flat_features*0.05), int(flat_features*0.001)], 
