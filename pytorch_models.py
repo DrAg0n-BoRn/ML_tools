@@ -221,7 +221,7 @@ class MyTrainer():
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                     target = target.view(-1, 1).type(torch.float32)
                 train_loss = self.criterion(output, target)
-                # Cummulative loss for current epoch on all batches
+                # Cumulative loss for current epoch on all batches
                 current_train_loss += train_loss.item()
                 # Backpropagation
                 train_loss.backward()
