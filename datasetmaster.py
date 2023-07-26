@@ -278,7 +278,7 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
     """
     Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 
     
-    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, `Resize(300,300)`, `CenterCrop`, `ToTensor`, `Normalize`.
+    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, `Resize(300,300)`, `ToTensor`, `Normalize`.
 
     Args:
         `inputs`: List of PIL Image objects | Numpy array of image arrays | Path to root directory containing subdirectories that classify image files.
@@ -309,7 +309,7 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=30),
             transforms.Resize(size=(resize,resize)),
-            transforms.CenterCrop(size=int(resize * 0.8)),
+            # transforms.CenterCrop(size=int(resize * 0.8)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
