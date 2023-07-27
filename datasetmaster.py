@@ -81,38 +81,39 @@ class DatasetMaker():
         self.features_test = None
         self.features_train = None
         
-        # find categorical columns from Object, String or Category dtypes
+        # Find categorical
         cat_columns = list()
         if cat_method is not None:
-            for column_ in pandas_df.columns:
-                if pandas_df[column_].dtype == object or pandas_df[column_].dtype == 'string' or pandas_df[column_].dtype.name == 'category':
-                    cat_columns.append(column_)
+            if cat_features is None:
+                # find categorical columns from Object, String or Category dtypes automatically
+                for column_ in pandas_df.columns:
+                    if pandas_df[column_].dtype == object or pandas_df[column_].dtype == 'string' or pandas_df[column_].dtype.name == 'category':
+                        cat_columns.append(column_)
+            else:
+                cat_columns = cat_features
                 
-        # Set continuous data
-        if not pandas_df.empty:
-            self._continuous = pandas_df
-        
         # Handle categorical data if required
         if len(cat_columns) > 0:
-            # Modify continuous data if categorical detected
-            self._continuous = self._continuous.drop(columns=cat_columns)
-            # Use columns inferred to be categorical
-            if cat_features is None:
-                to_cast = cat_columns
-            # Or get categorical columns passed as argument
-            else:
-                to_cast = cat_features
-        
+            # Set continuous/categorical data if categorical detected
+            self._continuous = pandas_df.drop(columns=cat_columns)
+            self._categorical = pandas_df[cat_columns].copy()
+            
             # Perform one-hot-encoding
             if cat_method == "one-hot":
-                self._categorical = pandas.get_dummies(data=pandas_df[to_cast], dtype=numpy.int32, **kwargs)
+                for col_ in cat_columns:
+                    self._categorical[col_] = self._categorical[col_].astype("category")
+                self._categorical = pandas.get_dummies(data=self._categorical, dtype=numpy.int32, **kwargs)
             # Perform embedding
             else:
-                self._categorical = self.embed_categorical(cat_df=pandas_df[to_cast], random_state=random_state, **kwargs)
+                self._categorical = self.embed_categorical(cat_df=self._categorical, random_state=random_state, **kwargs)
                 
             # Something went wrong?
             if self._categorical.empty:
                 raise AttributeError("Categorical data couldn't be processed")
+        else:
+            # Assume all data is continuous
+            if not pandas_df.empty:
+                self._continuous = pandas_df
         
         # Map labels
         if cast_labels:
