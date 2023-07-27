@@ -145,7 +145,7 @@ class MyConvolutionalNetwork(nn.Module):
     
     
 class MyTrainer():
-    def __init__(self, model, criterion, optimizer, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], shuffle: bool=True, batch_percentage: Union[float, None]=0.1):
+    def __init__(self, model, criterion, optimizer, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], shuffle: bool=True, batch_percentage: float=0.1):
         """
         Automates the training process of a PyTorch Model.
         
@@ -159,14 +159,14 @@ class MyTrainer():
         if kind not in ["regression", "classification"]:
             raise TypeError("Kind must be 'regression' or 'classification'.")
         # Validate batch size
-        if batch_percentage is None or batch_percentage == 1:
-            train_batch = batch_percentage
-            test_batch = batch_percentage
-        elif isinstance(batch_percentage, float) and (1.00 >= batch_percentage >= 0.01):
-            train_batch = int(len(train_dataset) * batch_percentage)
-            test_batch = int(len(test_dataset) * batch_percentage)
+        if isinstance(batch_percentage, float):
+            if (1.00 > batch_percentage >= 0.01):
+                train_batch = int(len(train_dataset) * batch_percentage)
+                test_batch = int(len(test_dataset) * batch_percentage)
+            else:
+                raise ValueError("batch_size must a float value in range (1.00, 0.01]")
         else:
-            raise TypeError("batch_size must be None or a float value between 1.00 and 0.01")
+            raise TypeError("batch_size must a float value in range (1.00, 0.01]")
             
         self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle)
         self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle)
@@ -231,7 +231,7 @@ class MyTrainer():
                 for features, target in self.test_loader:
                     output = self.model(features, **model_params)
                     # Save true labels for current batch (in case random shuffle was used)
-                    true_labels_list.append(target.squeeze().numpy())
+                    true_labels_list.append(target.view(-1,1).numpy())
                     # Get the predicted output for classification
                     if self.kind == "classification":
                         output = output.argmax(dim=1)
@@ -241,7 +241,7 @@ class MyTrainer():
                         target = target.to(torch.float32)
                     current_val_loss += self.criterion(output, target).item()
                     # Save predictions of current batch
-                    predictions_list.append(output.squeeze().numpy())
+                    predictions_list.append(output.view(-1,1).numpy())
                     # Compare (equality) the target and the predicted target, use dimensional compatibility if needed. 
                     # this results in a tensor of booleans, sum up all Trues and return the value as a scalar.
                     correct += output.eq(target.view_as(output)).sum().item()
