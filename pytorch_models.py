@@ -51,7 +51,6 @@ class MyNeuralNetwork(nn.Module):
         else:
             raise TypeError("drop_out must be a float value greater than or equal to 0 and less than 1.")
         
-        
         # Create layers        
         layers = list()
         for neurons in hidden_layers:
@@ -66,7 +65,7 @@ class MyNeuralNetwork(nn.Module):
         # Check for classification or regression output
         if out_targets > 1:
             # layers.append(nn.Sigmoid())
-            layers.append(nn.Softmax(dim=1))
+            layers.append(nn.LogSoftmax(dim=1))
         
         # Create a container for layers
         self._layers = nn.Sequential(*layers)
@@ -145,7 +144,8 @@ class MyConvolutionalNetwork(nn.Module):
     
     
 class MyTrainer():
-    def __init__(self, model, criterion, optimizer, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], shuffle: bool=True, batch_percentage: float=0.1):
+    def __init__(self, model, criterion, optimizer, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
+                 shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "gpu"]='cpu'):
         """
         Automates the training process of a PyTorch Model.
         
@@ -167,13 +167,19 @@ class MyTrainer():
                 raise ValueError("batch_size must a float value in range (1.00, 0.01]")
         else:
             raise TypeError("batch_size must a float value in range (1.00, 0.01]")
+        # Validate device
+        if device == "gpu":
+            if not torch.cuda.is_available():
+                print("CUDA not available, switching to CPU.")
+                device = "cpu"
             
         self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle)
         self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle)
-        self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.kind = kind
+        self.device = torch.device(device)
+        self.model = model.to(self.device)
 
 
     def auto_train(self, epochs: int=200, patience: int=4, **model_params):
@@ -201,17 +207,18 @@ class MyTrainer():
             true_labels_list = list()
             
             for batch_index, (features, target) in enumerate(self.train_loader):
+                # features, targets to device
+                features = features.to(self.device)
+                target = target.to(self.device)
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
-                # print("output type:", output.dtype, " requires grad? ", output.requires_grad)
-                # print("target type:", target.dtype, " requires grad? ", target.requires_grad)
                 # Get the predicted output for classification
                 if self.kind == "classification":
                     output = output.argmax(dim=1)
                     output = output.to(torch.float32)
                     output.requires_grad = True
                 # For Binary Cross Entropy
-                if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
+                if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                     target = target.to(torch.float32)
                 train_loss = self.criterion(output, target)
                 # Cumulative loss for current epoch on all batches
@@ -229,6 +236,9 @@ class MyTrainer():
             correct = 0
             with torch.no_grad():
                 for features, target in self.test_loader:
+                # features, targets to device
+                    features = features.to(self.device)
+                    target = target.to(self.device)
                     output = self.model(features, **model_params)
                     # Save true labels for current batch (in case random shuffle was used)
                     true_labels_list.append(target.view(-1,1).numpy())
@@ -237,7 +247,7 @@ class MyTrainer():
                         output = output.argmax(dim=1)
                         output = output.to(torch.float32)
                     # For Binary Cross Entropy
-                    if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
+                    if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                         target = target.to(torch.float32)
                     current_val_loss += self.criterion(output, target).item()
                     # Save predictions of current batch
@@ -271,10 +281,6 @@ class MyTrainer():
             # If validation loss decreased
             else:
                 warnings = 0
-                # Stop if the current validation loss is less than 0.05% of the previous loss
-                # if previous_val_loss - current_val_loss < (previous_val_loss * 0.0005):
-                #     feedback = f"Current Validation Loss ({current_val_loss:.5f}) is less than 0.05% of the previous Loss ({previous_val_loss:.5f}), training complete."
-                #     break
                 
             # If patience is exhausted
             if warnings == patience:
