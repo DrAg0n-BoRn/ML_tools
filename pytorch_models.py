@@ -11,7 +11,10 @@ import numpy
 class MyNeuralNetwork(nn.Module):
     def __init__(self, in_features: int, out_targets: int, hidden_layers: list[int]=[40,80,40], drop_out: float=0.2) -> None:
         """
-        Creates a Neural Network used for Regression or Classification tasks.
+        Creates a basic Neural Network.
+        
+        * For Regression the last layer is Linear. 
+        * For Classification the last layer is Logarithmic Softmax.
         
         `out_targets` Is the number of expected output classes for classification; or `1` for regression.
         
@@ -144,16 +147,20 @@ class MyConvolutionalNetwork(nn.Module):
     
     
 class MyTrainer():
-    def __init__(self, model, criterion, optimizer, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "gpu"]='cpu'):
+    def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
+                 criterion=None , shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "gpu"]='cpu', learn_rate: float=0.001):
         """
-        Automates the training process of a PyTorch Model.
+        Automates the training process of a PyTorch Model, using Adam optimization.
         
         `kind`: Will be used to compute and display metrics after training is complete.
         
         `shuffle`: Whether to shuffle dataset batches at every epoch. Default is True.
         
+        `criterion`: Loss function. If 'None', defaults to `nn.NLLLoss` for classification or `nn.MSELoss` for regression.
+        
         `batch_percentage` Represents the fraction of the original dataset size to be used per batch. Default is 10%. 
+        
+        `learn_rate` Model learning rate. Default is 0.001
         """
         # Validate kind
         if kind not in ["regression", "classification"]:
@@ -172,17 +179,29 @@ class MyTrainer():
             if not torch.cuda.is_available():
                 print("CUDA not available, switching to CPU.")
                 device = "cpu"
-            
+        # Validate criterion
+        if criterion is None:
+            if kind == "regression":
+                self.criterion = nn.MSELoss()
+            else:
+                self.criterion = nn.NLLLoss()
+        else:
+            self.criterion = criterion
+        
+        # Check last layer in the model, implementation pending
+        # last_layer_name, last_layer = next(reversed(model._modules.items()))
+        # if isinstance(last_layer, nn.Linear):
+        #     pass
+        
         self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle)
         self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle)
-        self.criterion = criterion
-        self.optimizer = optimizer
         self.kind = kind
         self.device = torch.device(device)
         self.model = model.to(self.device)
+        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learn_rate)
 
 
-    def auto_train(self, epochs: int=200, patience: int=4, **model_params):
+    def auto_train(self, epochs: int=200, patience: int=3, **model_params):
         """
         Start training-validation process of the model. 
         
@@ -212,11 +231,6 @@ class MyTrainer():
                 target = target.to(self.device)
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
-                # Get the predicted output for classification
-                if self.kind == "classification":
-                    output = output.argmax(dim=1)
-                    output = output.to(torch.float32)
-                    output.requires_grad = True
                 # For Binary Cross Entropy
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                     target = target.to(torch.float32)
@@ -242,19 +256,17 @@ class MyTrainer():
                     output = self.model(features, **model_params)
                     # Save true labels for current batch (in case random shuffle was used)
                     true_labels_list.append(target.view(-1,1).numpy())
-                    # Get the predicted output for classification
-                    if self.kind == "classification":
-                        output = output.argmax(dim=1)
-                        output = output.to(torch.float32)
                     # For Binary Cross Entropy
                     if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                         target = target.to(torch.float32)
                     current_val_loss += self.criterion(output, target).item()
-                    # Save predictions of current batch
-                    predictions_list.append(output.view(-1,1).numpy())
-                    # Compare (equality) the target and the predicted target, use dimensional compatibility if needed. 
-                    # this results in a tensor of booleans, sum up all Trues and return the value as a scalar.
-                    correct += output.eq(target.view_as(output)).sum().item()
+                    # Save predictions of current batch, get accuracy
+                    if self.kind == "classification":
+                        predictions_list.append(output.argmax(dim=1).view(-1,1).numpy())
+                        correct += output.argmax(dim=1).eq(target).sum().item()
+                    else:
+                        predictions_list.append(output.view(-1,1).numpy())
+                        correct += output.eq(target.view_as(output)).sum().item()
                     
                 # Average Validation Loss per sample
                 current_val_loss /= len(self.test_loader.dataset)
@@ -284,7 +296,7 @@ class MyTrainer():
                 
             # If patience is exhausted
             if warnings == patience:
-                feedback = f"Validation Loss has increased {patience} consecutive times. Check for possible overfitting or modify the patience value."
+                feedback = f"⚠ Validation Loss has increased {patience} consecutive times."
                 break
             
             # Training must continue for another epoch
@@ -292,7 +304,7 @@ class MyTrainer():
 
         # if all epochs have been completed
         else:
-            feedback = "Training has been completed without reaching any early-stopping criteria."
+            feedback = "Training has been completed without any early-stopping criteria."
         
         # Print feedback message
         print('\n', details_format)
