@@ -133,7 +133,7 @@ class MyConvolutionalNetwork(nn.Module):
         flat_features = int(int((int((img_size + 2 - (5-1))/2) - (3-1))/2)**2) * (color_channels * 5)
         
         # Make a standard ANN
-        ann = MyNeuralNetwork(in_features=flat_features, hidden_layers=[int(flat_features*0.7), int(flat_features*0.3), int(flat_features*0.05), int(flat_features*0.001)], 
+        ann = MyNeuralNetwork(in_features=flat_features, hidden_layers=[int(flat_features*0.5), int(flat_features*0.2), int(flat_features*0.005)], 
                               out_targets=outputs, drop_out=drop_out)
         self._ann_layers = ann._layers
         
