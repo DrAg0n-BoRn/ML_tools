@@ -148,7 +148,7 @@ class MyConvolutionalNetwork(nn.Module):
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "gpu"]='cpu', learn_rate: float=0.001):
+                 criterion=None , shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "cuda"]='cpu', learn_rate: float=0.001):
         """
         Automates the training process of a PyTorch Model, using Adam optimization.
         
@@ -167,15 +167,15 @@ class MyTrainer():
             raise TypeError("Kind must be 'regression' or 'classification'.")
         # Validate batch size
         if isinstance(batch_percentage, float):
-            if (1.00 > batch_percentage >= 0.01):
+            if (1.00 > batch_percentage >= 0.001):
                 train_batch = int(len(train_dataset) * batch_percentage)
                 test_batch = int(len(test_dataset) * batch_percentage)
             else:
-                raise ValueError("batch_size must a float value in range (1.00, 0.01]")
+                raise ValueError("batch_size must a float value in range (1, 0.001]")
         else:
-            raise TypeError("batch_size must a float value in range (1.00, 0.01]")
+            raise TypeError("batch_size must a float value in range (1, 0.001]")
         # Validate device
-        if device == "gpu":
+        if device == "cuda":
             if not torch.cuda.is_available():
                 print("CUDA not available, switching to CPU.")
                 device = "cpu"
