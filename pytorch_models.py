@@ -148,7 +148,7 @@ class MyConvolutionalNetwork(nn.Module):
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_percentage: float=0.1, device: Literal["cpu", "cuda"]='cpu', learn_rate: float=0.001):
+                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda"]='cpu', learn_rate: float=0.001):
         """
         Automates the training process of a PyTorch Model, using Adam optimization.
         
@@ -158,7 +158,7 @@ class MyTrainer():
         
         `criterion`: Loss function. If 'None', defaults to `nn.NLLLoss` for classification or `nn.MSELoss` for regression.
         
-        `batch_percentage` Represents the fraction of the original dataset size to be used per batch. Default is 10%. 
+        `batch_size` Represents the fraction of the original dataset size to be used per batch. If an integer is passed, use that many samples, instead. Default is 10%. 
         
         `learn_rate` Model learning rate. Default is 0.001
         """
@@ -166,14 +166,20 @@ class MyTrainer():
         if kind not in ["regression", "classification"]:
             raise TypeError("Kind must be 'regression' or 'classification'.")
         # Validate batch size
-        if isinstance(batch_percentage, float):
-            if (1.00 > batch_percentage >= 0.001):
-                train_batch = int(len(train_dataset) * batch_percentage)
-                test_batch = int(len(test_dataset) * batch_percentage)
+        batch_error = "Batch must a float in range (1, 0.01] or an integer."
+        if isinstance(batch_size, (float, int)):
+            if (1.00 > batch_size >= 0.01):
+                train_batch = int(len(train_dataset) * batch_size)
+                test_batch = int(len(test_dataset) * batch_size)
+            elif batch_size > len(train_dataset) or batch_size > len(test_dataset):
+                raise ValueError(batch_error + " Size is greater than dataset size.")
+            elif batch_size >= 1:
+                train_batch = int(batch_size)
+                test_batch = int(batch_size)
             else:
-                raise ValueError("batch_size must a float value in range (1, 0.001]")
+                raise ValueError(batch_error)
         else:
-            raise TypeError("batch_size must a float value in range (1, 0.001]")
+            raise TypeError(batch_error)
         # Validate device
         if device == "cuda":
             if not torch.cuda.is_available():
