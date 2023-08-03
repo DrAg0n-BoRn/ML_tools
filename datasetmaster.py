@@ -4,7 +4,7 @@ from torch import nn
 import pandas
 import numpy
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from typing import Literal, Union
 from imblearn.combine import SMOTETomek
 from PIL import Image
@@ -13,8 +13,9 @@ from torchvision import transforms
 
 
 class DatasetMaker():
-    def __init__(self, *, pandas_df: pandas.DataFrame, label_col: str, cat_features: Union[list[str], None]=None, cat_method: Union[Literal["one-hot", "embed"], None]="one-hot", 
-                 test_size: float=0.2, random_state: Union[int, None]=None, normalize: bool=True, cast_labels: bool=True, balance: bool=False, **kwargs):
+    def __init__(self, *, pandas_df: pandas.DataFrame, label_col: str, cat_features: Union[list[str], None]=None, 
+                 cat_method: Union[Literal["one-hot", "embed"], None]="one-hot", test_size: float=0.2, random_state: Union[int, None]=None, 
+                 normalize: Union[Literal["standard", "minmax"], None]="standard", cast_labels: bool=True, balance: bool=False, **kwargs):
         """
         Create Train-Test datasets from a Pandas DataFrame. Four datasets will be created: 
         
@@ -26,7 +27,8 @@ class DatasetMaker():
         `label_col` Specify the name of the label column. If label encoding is required (str -> int) set `cast_labels=True` (default). 
         A dictionary will also be created with the label mapping; original category names will be the dictionary keys.
         
-        `cat_features` List of column names to perform embedding or one-hot-encoding of categorical features. Any categorical column not in the list will not be returned. 
+        `cat_features` List of column names to perform embedding or one-hot-encoding of categorical features. 
+        Any categorical column not in the list will not be returned. 
         If `None` (default), columns containing categorical data will be inferred from dtypes: object, string and category, if any. 
         
         `cat_method` can be set to: 
@@ -35,7 +37,7 @@ class DatasetMaker():
             * `'embed'` to perform Embedding using PyTorch "nn.Embedding".
             * `None` all data will be considered to be continuous.
         
-        If `normalize=True` (default) continuous features will be standardized using Scikit-Learn's StandardScaler.
+        `normalize` if not None, continuous features will be normalized using Scikit-Learn's StandardScaler or MinMaxScaler.
         
         If `balance=True` attempts to balance the minority class(es) in the training data using Imbalanced-Learn's `SMOTETomek` algorithm.
         
@@ -63,8 +65,8 @@ class DatasetMaker():
         if not (isinstance(random_state, int) or random_state is None):
             raise TypeError("random_state must be an integer or None.")
         # validate normalize
-        if not isinstance(normalize, bool):
-            raise TypeError("normalize must be either True or False.")
+        if not (normalize in ["standard", "minmax"] or normalize is None):
+            raise TypeError("normalize must be 'standard', 'minmax' or None.")
         # Validate cast labels
         if not isinstance(cast_labels, bool):
             raise TypeError("cast_labels must be either True or False.")
@@ -127,15 +129,18 @@ class DatasetMaker():
             continuous_train, continuous_test, categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._continuous, 
                                                                                                                                            self._categorical, 
                                                                                                                                            self._labels, 
-                                                                                                                                           test_size=test_size, random_state=random_state)
+                                                                                                                                           test_size=test_size, 
+                                                                                                                                           random_state=random_state)
         elif self._categorical is None:
-            continuous_train, continuous_test, self.labels_train, self.labels_test = train_test_split(self._continuous, self._labels, test_size=test_size, random_state=random_state)
+            continuous_train, continuous_test, self.labels_train, self.labels_test = train_test_split(self._continuous, self._labels, 
+                                                                                                      test_size=test_size, random_state=random_state)
         elif self._continuous is None:
-            categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._categorical, self._labels, test_size=test_size, random_state=random_state)
+            categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._categorical, self._labels, 
+                                                                                                        test_size=test_size, random_state=random_state)
 
         # Normalize continuous features
-        if normalize and self._continuous is not None:
-            continuous_train, continuous_test = self.normalize_continuous(train_set=continuous_train, test_set=continuous_test)
+        if normalize is not None and self._continuous is not None:
+            continuous_train, continuous_test = self.normalize_continuous(train_set=continuous_train, test_set=continuous_test, method=normalize)
         
         # Merge continuous and categorical
         if self._categorical is not None and self._continuous is not None:
@@ -188,15 +193,24 @@ class DatasetMaker():
         return pandas.DataFrame(data=tensor.numpy(), columns=columns)
 
     @staticmethod
-    def normalize_continuous(train_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series], test_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series]):
+    def normalize_continuous(train_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series], test_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series],
+                             method: Literal["standard", "minmax"]="standard"):
         """
         Takes a train and a test dataset, then returns the standardized datasets as a tuple (train, test).
+        
+        `method`: Standardization by the mean and variance or MinMax Normalization.
         
         The transformer is fitted on the training set, so there is no data-leak of the test set.
         
         Output type is the same as Input type: nD-array, DataFrame or Series.
         """
-        scaler = StandardScaler()
+        if method == "standard":
+            scaler = StandardScaler()
+        elif method == "minmax":
+            scaler = MinMaxScaler()
+        else:
+            raise ValueError("Normalization method must be 'standard' or 'minmax'.")
+        
         X_train = scaler.fit_transform(train_set)
         X_test = scaler.transform(test_set)
         
@@ -278,16 +292,19 @@ class PytorchDataset(Dataset):
         return X, y
 
 
-def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=250, transform: Union[transforms.Compose, None]=None, test_set: bool=False):
+def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=250, 
+                        transform: Union[transforms.Compose, None]=None, test_set: bool=False):
     """
     Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 
     
-    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, `Resize`, `CenterCrop`, `ToTensor`, `Normalize`.
+    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, 
+    `Resize`, `CenterCrop`, `ToTensor`, `Normalize`.
 
     Args:
         `inputs`: List of PIL Image objects | Numpy array of image arrays | Path to root directory containing subdirectories that classify image files.
         
-        `labels`: List of integer values | Numpy array of labels. Labels size must match `inputs` size. If a path to a directory is given, then `labels` must be None.
+        `labels`: List of integer values | Numpy array of labels. Labels size must match `inputs` size. 
+        If a path to a directory is given, then `labels` must be None.
         
         `transform`: Custom transformations to use. If None, use default transformations. 
         
@@ -299,10 +316,12 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
     """
     # Validate inputs
     if not isinstance(inputs, (list, numpy.ndarray, str)):
-        raise TypeError("Inputs must be one of the following:\n\ta) List of PIL Image objects.\n\tb) Numpy array of 2D or 3D arrays.\n\tc) Directory path to image files.")
+        raise TypeError("Inputs must be one of the following:\n\ta) List of PIL Image objects.\n\tb) Numpy array of 2D or 3D arrays.\
+                        \n\tc) Directory path to image files.")
     # Validate labels
     if not (isinstance(labels, (list, numpy.ndarray)) or labels is None):
-        raise TypeError("Inputs must be one of the following:\n\ta) List of labels (integers).\n\tb) Numpy array of 2D or 3D arrays.\n\tc) None if inputs path is given.\nLabels size must match Inputs size.")
+        raise TypeError("Inputs must be one of the following:\n\ta) List of labels (integers).\n\tb) Numpy array of 2D or 3D arrays.\
+                        \n\tc) None if inputs path is given.\nLabels size must match Inputs size.")
     # Validate resize shape
     if not isinstance(resize, int):
         raise TypeError("Resize must be an integer value for a square image of shape (W, H).")
@@ -357,5 +376,79 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
     return dataset
 
 
-def make_sequence_dataset(df: Union[pandas.DataFrame, pandas.Series], window_size: int, test_size: int):
-    pass
+class SequenceDataset():
+    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True):
+        # Validate data
+        if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
+            raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
+        # Validate window size
+        if not isinstance(sequence_size, int):
+            raise TypeError("Sequence size must be an integer.")
+        elif len(data) % sequence_size != 0:
+            raise ValueError(f"data with length {len(data)} is not divisible in sequences of {sequence_size} values.")
+        # Validate test sequence
+        if not isinstance(last_seq_test, bool):
+            raise TypeError("Last sequence treated as Test-set must be True or False.")
+        
+        # Handle data -> array
+        if isinstance(data, pandas.DataFrame):
+            if len(data.columns) == 2:
+                sequence = data[data.columns[1]].values.astype("float")
+            elif len(data.columns) == 1:
+                sequence = data[data.columns[0]].values.astype("float")
+            else:
+                raise ValueError("Dataframe contains more than 1 sequence.")
+        elif isinstance(data, pandas.Series):
+            sequence = data.values.astype("float")
+        else:
+            sequence = data.astype("float")
+        
+        # Last sequence as test
+        self.test_set = None
+        size = len(sequence)
+        if last_seq_test:
+            size -= sequence_size
+            self.test_set = sequence[-sequence_size:]
+        
+        # Divide sequence
+        train_features = list()
+        train_labels = list()
+        for i in range(size - sequence_size):
+            subsequence = sequence[i:sequence_size + i]
+            train_features.append(subsequence)
+            label = sequence[sequence_size + i + 1]
+            train_labels.append(label)
+            
+        
+        
+
+def make_sequence_dataset(data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True):
+    # Validate data
+    if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
+        raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
+    # Validate window size
+    if not isinstance(sequence_size, int):
+        raise TypeError("Sequence size must be an integer.")
+    elif len(data) % sequence_size != 0:
+        raise ValueError(f"data with length {len(data)} is not divisible in sequences of {sequence_size} values.")
+    # Validate test sequence
+    if not isinstance(last_seq_test, bool):
+        raise TypeError("Last sequence treated as Test-set must be True or False.")
+    
+    # Handle data -> array
+    if isinstance(data, pandas.DataFrame):
+        if len(data.columns) == 2:
+            sequence = data[data.columns[1]].values.astype("float")
+        elif len(data.columns) == 1:
+            sequence = data[data.columns[0]].values.astype("float")
+        else:
+            raise ValueError("Dataframe contains more than 1 sequence.")
+    elif isinstance(data, pandas.Series):
+        sequence = data.values.astype("float")
+    else:
+        sequence = data.astype("float")
+    
+    # Last sequence
+    size = len(sequence)
+    if last_seq_test:
+        size -= sequence_size
