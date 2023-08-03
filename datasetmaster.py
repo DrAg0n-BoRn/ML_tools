@@ -124,7 +124,10 @@ class DatasetMaker():
         
         # Train-Test splits
         if self._continuous is not None and self._categorical is not None:
-            continuous_train, continuous_test, categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._continuous, self._categorical, self._labels, test_size=test_size, random_state=random_state)
+            continuous_train, continuous_test, categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._continuous, 
+                                                                                                                                           self._categorical, 
+                                                                                                                                           self._labels, 
+                                                                                                                                           test_size=test_size, random_state=random_state)
         elif self._categorical is None:
             continuous_train, continuous_test, self.labels_train, self.labels_test = train_test_split(self._continuous, self._labels, test_size=test_size, random_state=random_state)
         elif self._continuous is None:
@@ -275,24 +278,25 @@ class PytorchDataset(Dataset):
         return X, y
 
 
-def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=250, transform: Union[transforms.Compose, None]=None):
+def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=250, transform: Union[transforms.Compose, None]=None, test_set: bool=False):
     """
     Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 
     
-    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, `Resize(300,300)`, `ToTensor`, `Normalize`.
+    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, `Resize`, `CenterCrop`, `ToTensor`, `Normalize`.
 
     Args:
         `inputs`: List of PIL Image objects | Numpy array of image arrays | Path to root directory containing subdirectories that classify image files.
         
         `labels`: List of integer values | Numpy array of labels. Labels size must match `inputs` size. If a path to a directory is given, then `labels` must be None.
         
-        `transform`: Custom transformations to use. If None, use default transformations.
+        `transform`: Custom transformations to use. If None, use default transformations. 
+        
+        `test_set`: If True, flip, rotation and center-crop transformations will not be applied.
 
     Returns:
         `Dataset`: Either a `TensorDataset` or `ImageFolder` instance, depending on the method used. 
-        Data dimensions: (samples, [color channels], height, width).
+        Data dimensions: (samples, color channels, height, width).
     """
-    
     # Validate inputs
     if not isinstance(inputs, (list, numpy.ndarray, str)):
         raise TypeError("Inputs must be one of the following:\n\ta) List of PIL Image objects.\n\tb) Numpy array of 2D or 3D arrays.\n\tc) Directory path to image files.")
@@ -306,14 +310,21 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
     if isinstance(transform, transforms.Compose):
         pass
     elif transform is None:
-        transform = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=30),
-            transforms.Resize(size=(resize,resize)),
-            # transforms.CenterCrop(size=int(resize * 0.8)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        if test_set:
+            transform = transforms.Compose([
+                transforms.Resize(size=(resize,resize)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomRotation(degrees=30),
+                transforms.Resize(size=(int(resize*1.2),int(resize*1.2))),
+                transforms.CenterCrop(size=resize),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
     else:
         raise TypeError("Transform must be a `torchvision.transforms.Compose` object or None to use a default transform.")
     
@@ -344,3 +355,7 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
         raise TypeError("Labels must be None if 'path' to inputs is provided. Labels will be inferred from subdirectory names in 'path'.")
     
     return dataset
+
+
+def make_sequence_dataset(df: Union[pandas.DataFrame, pandas.Series], window_size: int, test_size: int):
+    pass
