@@ -10,6 +10,7 @@ from imblearn.combine import SMOTETomek
 from PIL import Image
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 
 class DatasetMaker():
@@ -377,7 +378,8 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
 
 
 class SequenceDataset():
-    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True):
+    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
+                 normalize: Union[Literal["standard", "minmax"], None]="minmax"):
         # Validate data
         if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
             raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
@@ -389,66 +391,113 @@ class SequenceDataset():
         # Validate test sequence
         if not isinstance(last_seq_test, bool):
             raise TypeError("Last sequence treated as Test-set must be True or False.")
+        # validate normalize
+        if not (normalize in ["standard", "minmax"] or normalize is None):
+            raise TypeError("normalize must be 'standard', 'minmax' or None.")
         
         # Handle data -> array
+        self.time_axis = None
         if isinstance(data, pandas.DataFrame):
             if len(data.columns) == 2:
-                sequence = data[data.columns[1]].values.astype("float")
+                self.sequence = data[data.columns[1]].values.astype("float")
+                self.time_axis = data[data.columns[0]].values
             elif len(data.columns) == 1:
-                sequence = data[data.columns[0]].values.astype("float")
+                self.sequence = data[data.columns[0]].values.astype("float")
+                self.time_axis = data.index.values
             else:
-                raise ValueError("Dataframe contains more than 1 sequence.")
+                raise ValueError("Dataframe contains more than 2 columns.")
         elif isinstance(data, pandas.Series):
-            sequence = data.values.astype("float")
+            self.sequence = data.values.astype("float")
+            self.time_axis = data.index.values
         else:
-            sequence = data.astype("float")
+            self.sequence = data.astype("float")
         
         # Last sequence as test
-        self.test_set = None
-        size = len(sequence)
+        train_sequence = self.sequence
+        test_sequence = None
         if last_seq_test:
-            size -= sequence_size
-            self.test_set = sequence[-sequence_size:]
+            test_sequence = self.sequence[-(sequence_size*2):]
+            train_sequence = self.sequence[:-sequence_size]
         
-        # Divide sequence
-        train_features = list()
-        train_labels = list()
-        for i in range(size - sequence_size):
-            subsequence = sequence[i:sequence_size + i]
-            train_features.append(subsequence)
-            label = sequence[sequence_size + i + 1]
-            train_labels.append(label)
+        # Normalize values
+        norm_train_sequence = train_sequence
+        norm_test_sequence = test_sequence
+        if normalize is not None:
+            # Define scaler
+            if normalize == "standard":
+                self.scaler = StandardScaler()
+            elif normalize == "minmax":
+                self.scaler = MinMaxScaler(feature_range=(-1,1))
+            # Scale and transform training set + reshape
+            norm_train_sequence = self.scaler.fit_transform(train_sequence.reshape(-1,1))
+            norm_train_sequence = norm_train_sequence.reshape(-1)
+            # Scale test if it exists + reshape
+            if test_sequence is not None:
+                norm_test_sequence = self.scaler.transform(test_sequence.reshape(-1,1))
+                norm_test_sequence = norm_test_sequence.reshape(-1)
+        
+        # Divide train sequence into subsequences
+        train_features_list = list()
+        train_labels_list = list()
+        train_size = len(norm_train_sequence)
+        for i in range(train_size - sequence_size):
+            subsequence = norm_train_sequence[i:sequence_size + i]
+            train_features_list.append(subsequence.reshape(1,-1))
+            label = norm_train_sequence[sequence_size + i + 1]
+            train_labels_list.append(label)
             
+        # Divide test sequence into subsequences
+        if test_sequence is not None:
+            test_features_list = list()
+            test_labels_list = list()
+            test_size = len(norm_test_sequence)
+            for i in range(test_size - sequence_size):
+                subsequence = norm_test_sequence[i:sequence_size + i]
+                test_features_list.append(subsequence.reshape(1,-1))
+                label = norm_test_sequence[i + sequence_size + 1]
+                test_labels_list.append(label)
+            
+        # Create training arrays then cast to pytorch dataset
+        train_features = numpy.concatenate(train_features_list, axis=0)
+        train_labels = numpy.array(train_labels_list).reshape(-1,1)
+        self.train_dataset = PytorchDataset(features=train_features, labels=train_labels, labels_dtype=torch.float32)
         
+        # Create test arrays then cast to pytorch dataset
+        self.test_dataset = None
+        if test_sequence is not None:
+            test_features = numpy.concatenate(test_features_list, axis=0)
+            test_labels = numpy.array(test_labels_list).reshape(-1,1)
+            self.test_dataset = PytorchDataset(features=test_features, labels=test_labels, labels_dtype=torch.float32)
         
+        # Attempt to plot the sequence
+        if self.time_axis is not None:
+            try:
+                self.plot(self.sequence, self.time_axis)
+            except:
+                print("Plot failed, do it manually to find the error.")
 
-def make_sequence_dataset(data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True):
-    # Validate data
-    if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
-        raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
-    # Validate window size
-    if not isinstance(sequence_size, int):
-        raise TypeError("Sequence size must be an integer.")
-    elif len(data) % sequence_size != 0:
-        raise ValueError(f"data with length {len(data)} is not divisible in sequences of {sequence_size} values.")
-    # Validate test sequence
-    if not isinstance(last_seq_test, bool):
-        raise TypeError("Last sequence treated as Test-set must be True or False.")
-    
-    # Handle data -> array
-    if isinstance(data, pandas.DataFrame):
-        if len(data.columns) == 2:
-            sequence = data[data.columns[1]].values.astype("float")
-        elif len(data.columns) == 1:
-            sequence = data[data.columns[0]].values.astype("float")
-        else:
-            raise ValueError("Dataframe contains more than 1 sequence.")
-    elif isinstance(data, pandas.Series):
-        sequence = data.values.astype("float")
-    else:
-        sequence = data.astype("float")
-    
-    # Last sequence
-    size = len(sequence)
-    if last_seq_test:
-        size -= sequence_size
+    @staticmethod   
+    def plot(x_axis, y_axis, x_pred=None, y_pred=None):
+        plt.figure(figsize=(12,5))
+        plt.title('Sequence')
+        plt.grid(True)
+        plt.autoscale(axis='x', tight=True)
+        plt.plot(x_axis, y_axis)
+        if x_pred is not None and y_pred is not None:
+            plt.plot(x_pred, y_pred)
+        plt.show()
+        
+    def denormalize(self, tensor: torch.Tensor) -> numpy.ndarray:
+        """
+        Applies the inverse transformation of the object's stored scaler to a tensor.
+
+        Args:
+            tensor (torch.Tensor): Tensor predicted using the current sequence.
+
+        Returns:
+            numpy.ndarray: Array with a default index.
+        """
+        with torch.no_grad():
+            array = tensor.numpy()
+        return self.scaler.inverse_transform(array)
+        
