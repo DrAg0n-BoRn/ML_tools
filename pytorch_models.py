@@ -146,9 +146,34 @@ class MyConvolutionalNetwork(nn.Module):
         return X
 
 
-class MyRecurrentNetwork(nn.Module):
-    pass
-
+class MyLSTMNetwork(nn.Module):
+    def __init__(self, input_size: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0.2, reset_memory: bool=False):
+        super().__init__()
+        # Initialize memory
+        self._reset = reset_memory
+        self._default_memory = (torch.zeros(recurrent_layers*1, 1, hidden_size), torch.zeros(recurrent_layers*1, 1, hidden_size))
+        self._memory = (torch.zeros(recurrent_layers*1, 1, hidden_size), torch.zeros(recurrent_layers*1, 1, hidden_size))
+        
+        # RNN
+        self._lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=recurrent_layers, dropout=dropout)
+        
+        # Fully connected layer
+        self_ann = nn.Linear(in_features=hidden_size, out_features=1)
+        
+    def forward(self, seq: torch.Tensor):
+        # reset memory
+        if self._reset:
+            self._memory = self._default_memory
+        # reshape sequence to feed RNN
+        seq = seq.view(len(seq), 1, -1)
+        # Pass sequence through RNN
+        seq, self._memory = self._lstm(seq, self._memory)
+        # Flatten outputs
+        seq = seq.view(len(seq), -1)
+        # Pass sequence through fully connected layer
+        output = self._ann(seq)
+        # Return prediction of 1 time step in the future
+        return output[-1] #last item as a tensor, not scalar.
 
     
 class MyTrainer():
@@ -351,3 +376,26 @@ class MyTrainer():
         # print("Predictions", predictions.shape, predictions[:15])
         # print("True labels", true_labels.shape, true_labels[:15])
 
+
+    def forecast(self, data_points: list):
+        """
+        Returns a forecast for each of the 'N' data points. 
+        
+        Each data point must have the same shape and normalization expected by the model.
+
+        Args:
+            `data_points`: list of data points.
+
+        Returns: List of predicted values.
+        """
+        self.model.eval()
+        results = list()
+        with torch.no_grad():
+            for data_point in data_points:
+                output = self.model(data_point)
+                if self.kind == "classification":
+                    results.append(output.argmax(dim=1).squeeze().item())
+                else:
+                    results.append(output.squeeze().item())
+        
+        return results
