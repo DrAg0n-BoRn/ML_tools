@@ -165,7 +165,7 @@ class MyLSTMNetwork(nn.Module):
         if self._reset:
             self._memory = self._default_memory
         # reshape sequence to feed RNN
-        seq = seq.view(len(seq), 1, -1)
+        seq = seq.view(seq.numel(), 1, -1)
         # Pass sequence through RNN
         seq, self._memory = self._lstm(seq, self._memory)
         # Flatten outputs
@@ -291,17 +291,17 @@ class MyTrainer():
                     target = target.to(self.device)
                     output = self.model(features, **model_params)
                     # Save true labels for current batch (in case random shuffle was used)
-                    true_labels_list.append(target.view(-1,1).numpy())
+                    true_labels_list.append(target.view(-1,1).cpu().numpy())
                     # For Binary Cross Entropy
                     if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                         target = target.to(torch.float32)
                     current_val_loss += self.criterion(output, target).item()
                     # Save predictions of current batch, get accuracy
                     if self.kind == "classification":
-                        predictions_list.append(output.argmax(dim=1).view(-1,1).numpy())
+                        predictions_list.append(output.argmax(dim=1).view(-1,1).cpu().numpy())
                         correct += output.argmax(dim=1).eq(target).sum().item()
                     else:
-                        predictions_list.append(output.view(-1,1).numpy())
+                        predictions_list.append(output.view(-1,1).cpu().numpy())
                         correct += output.eq(target.view_as(output)).sum().item()
                     
                 # Average Validation Loss per sample
@@ -372,19 +372,16 @@ class MyTrainer():
             ConfusionMatrixDisplay.from_predictions(y_true=true_labels, y_pred=predictions)
         else:
             print("Error encountered while retrieving 'model.kind' attribute, no metrics processed.")
-            
-        # print("Predictions", predictions.shape, predictions[:15])
-        # print("True labels", true_labels.shape, true_labels[:15])
 
 
     def forecast(self, data_points: list):
         """
-        Returns a forecast for each of the 'N' data points. 
+        Returns a forecast for n data points. 
         
-        Each data point must have the same shape and normalization expected by the model.
+        Each data point must be a tensor and have the same shape and normalization expected by the model.
 
         Args:
-            `data_points`: list of data points.
+            `data_points`: list of data points as tensors.
 
         Returns: List of predicted values.
         """
@@ -392,6 +389,7 @@ class MyTrainer():
         results = list()
         with torch.no_grad():
             for data_point in data_points:
+                data_point.to(self.device)
                 output = self.model(data_point)
                 if self.kind == "classification":
                     results.append(output.argmax(dim=1).squeeze().item())
@@ -399,3 +397,31 @@ class MyTrainer():
                     results.append(output.squeeze().item())
         
         return results
+    
+    
+    def rnn_forecast(self, sequence: torch.Tensor, steps: int):
+        self.model.eval()
+        with torch.no_grad():
+            # Squeeze sequence (flatten) and send to device
+            sequence = sequence.squeeze().to(self.device)
+            # Make a dummy list in memory
+            sequences = [torch.zeros_like(sequence, device=self.device, requires_grad=False) for _ in range(steps)]
+            sequences[0] = sequence
+            # Store predictions
+            predictions = list()
+            # Get predictions
+            for i in range(steps):
+                output = self.model(sequences[i]).item()
+                # Save prediction
+                predictions.append(output)
+                # Create next sequence
+                if i < steps-1:
+                    current_seq = sequences[i].cpu().tolist()
+                    current_seq.append(output)
+                    new_seq = torch.Tensor(current_seq[1:], device=self.device)
+                    sequences[i+1] = new_seq
+        
+        # Cast to array and return
+        predictions = numpy.array(predictions)
+        return predictions
+                
