@@ -144,13 +144,18 @@ class MyConvolutionalNetwork(nn.Module):
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         X = self._structure(X)
         return X
-    
+
+
+class MyRecurrentNetwork(nn.Module):
+    pass
+
+
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
                  criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda"]='cpu', learn_rate: float=0.001):
         """
-        Automates the training process of a PyTorch Model, using Adam optimization.
+        Automates the training process of a PyTorch Model using Adam optimization by default (`self.optimizer`).
         
         `kind`: Will be used to compute and display metrics after training is complete.
         
@@ -160,7 +165,7 @@ class MyTrainer():
         
         `batch_size` Represents the fraction of the original dataset size to be used per batch. If an integer is passed, use that many samples, instead. Default is 10%. 
         
-        `learn_rate` Model learning rate. Default is 0.001
+        `learn_rate` Model learning rate. Default is 0.001.
         """
         # Validate kind
         if kind not in ["regression", "classification"]:
