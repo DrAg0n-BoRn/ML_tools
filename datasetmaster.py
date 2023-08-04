@@ -24,6 +24,8 @@ class DatasetMaker():
             2. Features Test
             3. Labels Train
             4. Labels Test
+            
+        Use the method `to_pytorch()` to quickly get Train and Test PytorchDataset objects.
         
         `label_col` Specify the name of the label column. If label encoding is required (str -> int) set `cast_labels=True` (default). 
         A dictionary will also be created with the label mapping; original category names will be the dictionary keys.
@@ -157,6 +159,23 @@ class DatasetMaker():
         # Balance train dataset
         if balance and self.features_train is not None and self.labels_train is not None:
             self.features_train, self.labels_train = self.balance_classes(train_features=self.features_train, train_labels=self.labels_train)
+            
+    def to_pytorch(self):
+        """
+        Convert the train and test features and labels to Pytorch Datasets with default dtypes.
+        
+        Returns: Tuple(Train Dataset, Test Dataset)
+        """
+        train = None
+        test = None
+        # Train set
+        if self.labels_train is not None and self.features_train is not None:
+            train = PytorchDataset(features=self.features_train, labels=self.labels_train)
+        # Test set
+        if self.labels_test is not None and self.features_test is not None:
+            test = PytorchDataset(features=self.features_test, labels=self.labels_test)
+        
+        return train, test
             
     @staticmethod
     def embed_categorical(cat_df: pandas.DataFrame, random_state: Union[int, None]=None, **kwargs) -> pandas.DataFrame:
@@ -381,9 +400,10 @@ class SequenceDataset():
     def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
                  normalize: Union[Literal["standard", "minmax"], None]="minmax"):
         """
-        Create an object containing 2 PyTorch Dataset objects: 
-        * Train Dataset
-        * Test Dataset
+        Create an object containing 2 PyTorchDataset objects to be used in a Recurrent Neural Network: 
+        
+            1. Train Dataset
+            2. Test Dataset
         
         To plot call the static method `plot()`.
         
