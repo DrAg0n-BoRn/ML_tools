@@ -28,7 +28,7 @@ class DatasetMaker():
         Use the method `to_pytorch()` to quickly get Train and Test PytorchDataset objects.
         
         `label_col` Specify the name of the label column. If label encoding is required (str -> int) set `cast_labels=True` (default). 
-        A dictionary will also be created with the label mapping; original category names will be the dictionary keys.
+        A dictionary will be created with the label mapping {code: original_name}.
         
         `cat_features` List of column names to perform embedding or one-hot-encoding of categorical features. 
         Any categorical column not in the list will not be returned. 
@@ -124,7 +124,7 @@ class DatasetMaker():
         if cast_labels:
             labels_ = self._labels.astype("category")
             # Get mapping
-            self.labels_map = {key: value for value, key in enumerate(labels_.cat.categories)}
+            self.labels_map = {key: value for key, value in enumerate(labels_.cat.categories)}
             self._labels = labels_.cat.codes
         
         # Train-Test splits
