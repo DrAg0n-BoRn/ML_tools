@@ -507,21 +507,24 @@ class SequenceDataset():
             plt.plot(x_pred, y_pred)
         plt.show()
         
-    def denormalize(self, tensor: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
+    def denormalize(self, input: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
         """
         Applies the inverse transformation of the object's stored scaler to a tensor or array.
 
         Args:
-            tensor: Tensor/Array predicted using the current sequence.
+            `input`: Tensor/Array predicted using the current sequence.
 
         Returns:
             numpy.ndarray: Array with a default index.
         """
-        if isinstance(tensor, torch.Tensor):
+        if isinstance(input, torch.Tensor):
             with torch.no_grad():
-                array = tensor.numpy()
-        elif isinstance(tensor, numpy.ndarray):
-            array = tensor
+                array = input.numpy()
+        elif isinstance(input, numpy.ndarray):
+            array = input
+        else:
+            raise TypeError("Input must be a Pytorch tensor or Numpy array.")
+        
         return self.scaler.inverse_transform(array)
     
     def __len__(self):
