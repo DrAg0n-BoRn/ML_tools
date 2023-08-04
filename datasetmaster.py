@@ -388,7 +388,7 @@ class SequenceDataset():
         To plot call the static method `plot()`.
         
         If normalization is used, an scaler object will be stored. 
-        The scaler object can be used to invert normalization on a Tensor using the method `self.denormalize()`.
+        The scaler object can be used to invert normalization on a Tensor/Array using the method `self.denormalize()`.
 
         Args:
             `data`: Pandas Dataframe with 2 columns [datetime, sequence] | 1-column Dataframe or Series sequence, where index is the datetime.
@@ -507,18 +507,21 @@ class SequenceDataset():
             plt.plot(x_pred, y_pred)
         plt.show()
         
-    def denormalize(self, tensor: torch.Tensor) -> numpy.ndarray:
+    def denormalize(self, tensor: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
         """
-        Applies the inverse transformation of the object's stored scaler to a tensor.
+        Applies the inverse transformation of the object's stored scaler to a tensor or array.
 
         Args:
-            tensor (torch.Tensor): Tensor predicted using the current sequence.
+            tensor: Tensor/Array predicted using the current sequence.
 
         Returns:
             numpy.ndarray: Array with a default index.
         """
-        with torch.no_grad():
-            array = tensor.numpy()
+        if isinstance(tensor, torch.Tensor):
+            with torch.no_grad():
+                array = tensor.numpy()
+        elif isinstance(tensor, numpy.ndarray):
+            array = tensor
         return self.scaler.inverse_transform(array)
     
     def __len__(self):
