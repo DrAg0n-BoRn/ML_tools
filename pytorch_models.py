@@ -158,7 +158,7 @@ class MyLSTMNetwork(nn.Module):
         self._lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=recurrent_layers, dropout=dropout)
         
         # Fully connected layer
-        self_ann = nn.Linear(in_features=hidden_size, out_features=1)
+        self._ann = nn.Linear(in_features=hidden_size, out_features=1)
         
     def forward(self, seq: torch.Tensor):
         # reset memory
