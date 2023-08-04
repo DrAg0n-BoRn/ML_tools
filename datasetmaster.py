@@ -380,6 +380,25 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
 class SequenceDataset():
     def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
                  normalize: Union[Literal["standard", "minmax"], None]="minmax"):
+        """
+        Create an object containing 2 PyTorch Dataset objects: 
+        * Train Dataset
+        * Test Dataset
+        
+        To plot call the static method `plot()`.
+        
+        If normalization is used, an scaler object will be stored. 
+        The scaler object can be used to invert normalization on a Tensor using the method `self.denormalize()`.
+
+        Args:
+            `data`: Pandas Dataframe with 2 columns [datetime, sequence] | 1-column Dataframe or Series sequence, where index is the datetime.
+            
+            `sequence_size (int)`: Length of each subsequence that will be used for training.
+            
+            `last_seq_test (bool)`: Last sequence will be used as test_set, if false a dummy test set will be returned. Default is True.
+            
+            `normalize`: Whether to normalize ('minmax'), standardize ('standard') or ignore (None). Default is 'minmax'.
+        """
         # Validate data
         if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
             raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
@@ -501,4 +520,7 @@ class SequenceDataset():
         with torch.no_grad():
             array = tensor.numpy()
         return self.scaler.inverse_transform(array)
+    
+    def __len__(self):
+        return f"Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}"
         
