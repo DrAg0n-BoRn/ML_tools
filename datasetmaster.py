@@ -432,7 +432,7 @@ class SequenceDataset():
             norm_train_sequence = self.scaler.fit_transform(train_sequence.reshape(-1,1))
             norm_train_sequence = norm_train_sequence.reshape(-1)
             # Scale test if it exists + reshape
-            if test_sequence is not None:
+            if last_seq_test:
                 norm_test_sequence = self.scaler.transform(test_sequence.reshape(-1,1))
                 norm_test_sequence = norm_test_sequence.reshape(-1)
         
@@ -447,7 +447,7 @@ class SequenceDataset():
             train_labels_list.append(label)
             
         # Divide test sequence into subsequences
-        if test_sequence is not None:
+        if last_seq_test:
             test_features_list = list()
             test_labels_list = list()
             test_size = len(norm_test_sequence)
@@ -463,11 +463,12 @@ class SequenceDataset():
         self.train_dataset = PytorchDataset(features=train_features, labels=train_labels, labels_dtype=torch.float32)
         
         # Create test arrays then cast to pytorch dataset
-        self.test_dataset = None
-        if test_sequence is not None:
+        if last_seq_test:
             test_features = numpy.concatenate(test_features_list, axis=0)
             test_labels = numpy.array(test_labels_list).reshape(-1,1)
             self.test_dataset = PytorchDataset(features=test_features, labels=test_labels, labels_dtype=torch.float32)
+        else:
+            self.test_dataset = PytorchDataset(features=numpy.ones(shape=(1, sequence_size)), labels=numpy.ones(shape=(1,1)), labels_dtype=torch.float32)
         
         # Attempt to plot the sequence
         if self.time_axis is not None:
