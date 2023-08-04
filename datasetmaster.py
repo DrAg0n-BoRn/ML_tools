@@ -450,6 +450,9 @@ class SequenceDataset():
             self.time_axis = data.index.values
         else:
             self.sequence = data.astype("float")
+            
+        # Save last sequence
+        self._last_sequence = self.sequence[-sequence_size:]
         
         # Last sequence as test
         train_sequence = self.sequence
@@ -468,7 +471,8 @@ class SequenceDataset():
             elif normalize == "minmax":
                 self.scaler = MinMaxScaler(feature_range=(-1,1))
             # Scale and transform training set + reshape
-            norm_train_sequence = self.scaler.fit_transform(train_sequence.reshape(-1,1))
+            self.scaler.fit(train_sequence.reshape(-1,1))
+            norm_train_sequence = self.scaler.transform(train_sequence.reshape(-1,1))
             norm_train_sequence = norm_train_sequence.reshape(-1)
             # Scale test if it exists + reshape
             if last_seq_test:
@@ -534,8 +538,7 @@ class SequenceDataset():
         Args:
             `input`: Tensor/Array predicted using the current sequence.
 
-        Returns:
-            numpy.ndarray: Array with a default index.
+        Returns: numpy.ndarray with default index.
         """
         if isinstance(input, torch.Tensor):
             with torch.no_grad():
@@ -544,9 +547,26 @@ class SequenceDataset():
             array = input
         else:
             raise TypeError("Input must be a Pytorch tensor or Numpy array.")
-        
         return self.scaler.inverse_transform(array)
     
+    def get_last_sequence(self, normalize: bool=True, to_tensor: bool=True):
+        """
+        Returns the last subsequence of the sequence.
+
+        Args:
+            `normalize`: Normalize using the object's stored scaler. Defaults to True.
+            
+            `to_tensor`: Cast to Pytorch tensor. Defaults to True.
+
+        Returns: numpy.ndarray or torch.Tensor
+        """
+        last_seq = self._last_sequence
+        if normalize:
+            last_seq = self.scaler.transform(last_seq)
+        if to_tensor:
+            last_seq = torch.Tensor(last_seq)
+        return last_seq
+        
     def __len__(self):
         return f"Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}"
         
