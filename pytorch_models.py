@@ -85,10 +85,13 @@ class MyConvolutionalNetwork(nn.Module):
         Create a basic Convolutional Neural Network with two convolution layers with a pooling layer after each convolution.
 
         Args:
-            outputs (int): Number of output classes (1 for regression).
-            color_channels (int, optional): Color channels. Default is '3' for RGB images.
-            img_size (int, optional): Width and Height of image samples, must be square images. Default is '300'.
-            drop_out (float, optional): Neuron drop out probability. Default is '0.2'.
+            `outputs`: Number of output classes (1 for regression).
+            
+            `color_channels`: Color channels. Default is 3 (RGB).
+            
+            `img_size`: Width and Height of image samples, must be square images. Default is 200.
+            
+            `drop_out`: Neuron drop out probability. Default is 20%.
         """
         super().__init__()
         
@@ -124,13 +127,13 @@ class MyConvolutionalNetwork(nn.Module):
         
         # 2 convolutions, 2 pooling layers
         self._cnn_layers = nn.Sequential(
-            nn.Conv2d(in_channels=color_channels, out_channels=(color_channels * 3), kernel_size=5, stride=1, padding=1),
+            nn.Conv2d(in_channels=color_channels, out_channels=(color_channels * 2), kernel_size=5, stride=1, padding=1),
             nn.MaxPool2d(kernel_size=4, stride=(4,4)),
-            nn.Conv2d(in_channels=(color_channels * 3), out_channels=(color_channels * 5), kernel_size=3, stride=1, padding=0),
+            nn.Conv2d(in_channels=(color_channels * 2), out_channels=(color_channels * 3), kernel_size=3, stride=1, padding=0),
             nn.AvgPool2d(kernel_size=2, stride=(2,2))
         )
         # Calculate output features
-        flat_features = int(int((int((img_size + 2 - (5-1))/4) - (3-1))/2)**2) * (color_channels * 5)
+        flat_features = int(int((int((img_size + 2 - (5-1))//4) - (3-1))//2)**2) * (color_channels * 3)
         
         # Make a standard ANN
         ann = MyNeuralNetwork(in_features=flat_features, hidden_layers=[int(flat_features*0.5), int(flat_features*0.2), int(flat_features*0.005)], 
