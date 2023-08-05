@@ -328,7 +328,7 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
         
         `transform`: Custom transformations to use. If None, use default transformations. 
         
-        `test_set`: If True, flip, rotation and center-crop transformations will not be applied.
+        `test_set`: Flip, rotation and center-crop transformations will not be applied.
 
     Returns:
         `Dataset`: Either a `TensorDataset` or `ImageFolder` instance, depending on the method used. 
