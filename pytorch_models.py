@@ -436,13 +436,14 @@ class MyTrainer():
         """
         Runs a sequential forecast for a RNN, where each new prediction is obtained by feeding the previous prediction.
         
-        The input sequence must meet the trained model requirements for dimensions and normalization.
+        The input sequence tensor must meet the requirements for dimensions and normalization of the trained model.
 
         Args:
             `sequence`: Last subsequence of the sequence.
+            
             `steps`: Number of future time steps to predict.
 
-        Returns: numpy.ndarray of predictions.
+        Returns: Numpy array of predictions.
         """
         self.model.eval()
         with torch.no_grad():
