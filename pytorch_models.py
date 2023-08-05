@@ -148,7 +148,40 @@ class MyConvolutionalNetwork(nn.Module):
 
 class MyLSTMNetwork(nn.Module):
     def __init__(self, input_size: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0.2, reset_memory: bool=False):
+        """
+        Create a simple Recurrent Neural Network to predict 1 time step into the future of sequential data.
+
+        Args:
+            `input_size`: Number of subsequences representing the sequence as features. Defaults to 1.
+            
+            `hidden_size`: Hidden size of the LSTM model. Defaults to 100.
+            
+            `recurrent_layers`: Number of recurrent layers to use. Defaults to 1.
+            
+            `dropout`: Probability of dropping out neurons in each recurrent layer, except the last layer. Defaults to 0.2.
+            
+            `reset_memory`: Reset the initial hidden state and cell state for the recurrent layers at every epoch. Defaults to False.
+        """
+        # validate input size
+        if not isinstance(input_size, int):
+            raise TypeError("Input size must be an integer value.")
+        # validate hidden size
+        if not isinstance(hidden_size, int):
+            raise TypeError("Hidden size must be an integer value.")
+        # validate layers
+        if not isinstance(recurrent_layers, int):
+            raise TypeError("Number of recurrent layers must be an integer value.")
+        # validate dropout
+        if isinstance(dropout, float):
+            if 0 <= dropout < 1:
+                pass
+            else:
+                raise ValueError("Dropout must be a float in range [0.0, 1.0)")
+        else:
+            raise TypeError("Dropout must be a float in range [0.0, 1.0)")
+        
         super().__init__()
+        
         # Initialize memory
         self._reset = reset_memory
         self._default_memory = (torch.zeros(recurrent_layers*1, 1, hidden_size), torch.zeros(recurrent_layers*1, 1, hidden_size))
@@ -400,6 +433,17 @@ class MyTrainer():
     
     
     def rnn_forecast(self, sequence: torch.Tensor, steps: int):
+        """
+        Runs a sequential forecast for a RNN, where each new prediction is obtained by feeding the previous prediction.
+        
+        The input sequence must meet the trained model requirements for dimensions and normalization.
+
+        Args:
+            `sequence`: Last subsequence of the sequence.
+            `steps`: Number of future time steps to predict.
+
+        Returns: numpy.ndarray of predictions.
+        """
         self.model.eval()
         with torch.no_grad():
             # Squeeze sequence (flatten) and send to device
