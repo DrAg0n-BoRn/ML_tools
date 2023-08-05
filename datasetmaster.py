@@ -312,7 +312,7 @@ class PytorchDataset(Dataset):
         return X, y
 
 
-def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=250, 
+def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=200, 
                         transform: Union[transforms.Compose, None]=None, test_set: bool=False):
     """
     Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 

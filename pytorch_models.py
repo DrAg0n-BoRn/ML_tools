@@ -80,9 +80,9 @@ class MyNeuralNetwork(nn.Module):
 
 
 class MyConvolutionalNetwork(nn.Module):
-    def __init__(self, outputs: int, color_channels: int=3, img_size: int=250, drop_out: float=0.2):
+    def __init__(self, outputs: int, color_channels: int=3, img_size: int=200, drop_out: float=0.2):
         """
-        Create a basic Convolutional Neural Network with two convolution layers. A (2x2) pooling layer is used after each convolution.
+        Create a basic Convolutional Neural Network with two convolution layers with a pooling layer after each convolution.
 
         Args:
             outputs (int): Number of output classes (1 for regression).
@@ -125,12 +125,12 @@ class MyConvolutionalNetwork(nn.Module):
         # 2 convolutions, 2 pooling layers
         self._cnn_layers = nn.Sequential(
             nn.Conv2d(in_channels=color_channels, out_channels=(color_channels * 3), kernel_size=5, stride=1, padding=1),
-            nn.MaxPool2d(kernel_size=2, stride=(2,2)),
+            nn.MaxPool2d(kernel_size=4, stride=(4,4)),
             nn.Conv2d(in_channels=(color_channels * 3), out_channels=(color_channels * 5), kernel_size=3, stride=1, padding=0),
             nn.AvgPool2d(kernel_size=2, stride=(2,2))
         )
         # Calculate output features
-        flat_features = int(int((int((img_size + 2 - (5-1))/2) - (3-1))/2)**2) * (color_channels * 5)
+        flat_features = int(int((int((img_size + 2 - (5-1))/4) - (3-1))/2)**2) * (color_channels * 5)
         
         # Make a standard ANN
         ann = MyNeuralNetwork(in_features=flat_features, hidden_layers=[int(flat_features*0.5), int(flat_features*0.2), int(flat_features*0.005)], 
