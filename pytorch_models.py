@@ -150,7 +150,7 @@ class MyConvolutionalNetwork(nn.Module):
 
 
 class MyLSTMNetwork(nn.Module):
-    def __init__(self, input_size: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0.2, reset_memory: bool=False):
+    def __init__(self, input_size: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0, reset_memory: bool=False):
         """
         Create a simple Recurrent Neural Network to predict 1 time step into the future of sequential data.
 
@@ -161,7 +161,7 @@ class MyLSTMNetwork(nn.Module):
             
             `recurrent_layers`: Number of recurrent layers to use. Defaults to 1.
             
-            `dropout`: Probability of dropping out neurons in each recurrent layer, except the last layer. Defaults to 0.2.
+            `dropout`: Probability of dropping out neurons in each recurrent layer, except the last layer. Defaults to 0.
             
             `reset_memory`: Reset the initial hidden state and cell state for the recurrent layers at every epoch. Defaults to False.
         """
@@ -175,7 +175,7 @@ class MyLSTMNetwork(nn.Module):
         if not isinstance(recurrent_layers, int):
             raise TypeError("Number of recurrent layers must be an integer value.")
         # validate dropout
-        if isinstance(dropout, float):
+        if isinstance(dropout, (float, int)):
             if 0 <= dropout < 1:
                 pass
             else:
@@ -200,6 +200,8 @@ class MyLSTMNetwork(nn.Module):
         # reset memory
         if self._reset:
             self._memory = self._default_memory
+        # Detach hidden state and cell state to prevent backpropagation error
+        self._memory = tuple(m.detach() for m in self._memory)
         # reshape sequence to feed RNN
         seq = seq.view(seq.numel(), 1, -1)
         # Pass sequence through RNN
@@ -306,6 +308,8 @@ class MyTrainer():
                 # For Binary Cross Entropy
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                     target = target.to(torch.float32)
+                elif isinstance(self.criterion, (nn.MSELoss)):
+                    target = target.view_as(output)
                 train_loss = self.criterion(output, target)
                 # Cumulative loss for current epoch on all batches
                 current_train_loss += train_loss.item()
@@ -331,6 +335,8 @@ class MyTrainer():
                     # For Binary Cross Entropy
                     if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                         target = target.to(torch.float32)
+                    elif isinstance(self.criterion, (nn.MSELoss)):
+                        target = target.view_as(output)
                     current_val_loss += self.criterion(output, target).item()
                     # Save predictions of current batch, get accuracy
                     if self.kind == "classification":
