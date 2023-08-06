@@ -283,6 +283,7 @@ class MyTrainer():
         
         `model_params` Keywords parameters specific for the model, if any.
         """
+        metric_name = "accuracy" if self.kind == "classification" else "RMSE"
         previous_val_loss = None
         epoch_tracker = 0
         warnings = 0
@@ -342,18 +343,27 @@ class MyTrainer():
                     if self.kind == "classification":
                         predictions_list.append(output.argmax(dim=1).view(-1,1).cpu().numpy())
                         correct += output.argmax(dim=1).eq(target).sum().item()
-                    else:
-                        predictions_list.append(output.view(-1,1).cpu().numpy())
-                        correct += output.eq(target.view_as(output)).sum().item()
-                    
-                # Average Validation Loss per sample
-                current_val_loss /= len(self.test_loader.dataset)
-                losses.append(current_val_loss)
-                # Accuracy
+                    else:   # Regression
+                        predictions_list.append(output.view(-1,1).cpu().numpy())                        
+                        
+            # Average Validation Loss per sample
+            current_val_loss /= len(self.test_loader.dataset)
+            losses.append(current_val_loss)
+            
+            # Concatenate all predictions and true labels
+            predictions = numpy.concatenate(predictions_list, axis=0)
+            true_labels = numpy.concatenate(true_labels_list, axis=0)
+            
+            # Accuracy / RMSE
+            if self.kind == "classification":
                 accuracy = correct / len(self.test_loader.dataset)
+                accuracy = str(round(100*accuracy, ndigits=1)) + "%"
+            else: # Regression
+                accuracy = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
+                accuracy = round(accuracy, ndigits=3)
             
             # Print details
-            details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    accuracy: {100*accuracy:5.2f}%'
+            details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
             if (epoch % int(0.05*epochs) == 0) or epoch in [1, 3, 5]:
                 print(details_format)
             
@@ -374,7 +384,7 @@ class MyTrainer():
                 
             # If patience is exhausted
             if warnings == patience:
-                feedback = f"⚠ Validation Loss has increased {patience} consecutive times."
+                feedback = f"👁️ Validation Loss has increased {patience} consecutive times."
                 break
             
             # Training must continue for another epoch
@@ -402,18 +412,15 @@ class MyTrainer():
         plt.show()
         
         # Metrics
-        # Concatenate all predictions and true labels
-        predictions = numpy.concatenate(predictions_list, axis=0)
-        true_labels = numpy.concatenate(true_labels_list, axis=0)
         # Display metrics
         if self.kind == "regression":            
             rmse = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
-            print(f"Root Mean Squared Error: {rmse:.2f}")
+            print(f"Root Mean Squared Error: {rmse:.2f}\n")
         elif self.kind == "classification":
             print(classification_report(y_true=true_labels, y_pred=predictions))
             ConfusionMatrixDisplay.from_predictions(y_true=true_labels, y_pred=predictions)
         else:
-            print("Error encountered while retrieving 'model.kind' attribute, no metrics processed.")
+            print("Error encountered while retrieving 'model.kind' attribute.")
 
 
     def forecast(self, data_points: list):
