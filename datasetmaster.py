@@ -483,7 +483,7 @@ class SequenceDataset():
         train_features_list = list()
         train_labels_list = list()
         train_size = len(norm_train_sequence)
-        for i in range(train_size - sequence_size):
+        for i in range(train_size - sequence_size - 1):
             subsequence = norm_train_sequence[i:sequence_size + i]
             train_features_list.append(subsequence.reshape(1,-1))
             label = norm_train_sequence[sequence_size + i + 1]
@@ -494,7 +494,7 @@ class SequenceDataset():
             test_features_list = list()
             test_labels_list = list()
             test_size = len(norm_test_sequence)
-            for i in range(test_size - sequence_size):
+            for i in range(test_size - sequence_size - 1):
                 subsequence = norm_test_sequence[i:sequence_size + i]
                 test_features_list.append(subsequence.reshape(1,-1))
                 label = norm_test_sequence[i + sequence_size + 1]
@@ -516,12 +516,15 @@ class SequenceDataset():
         # Attempt to plot the sequence
         if self.time_axis is not None:
             try:
-                self.plot(self.sequence, self.time_axis)
+                self.plot(self.time_axis, self.sequence)
             except:
                 print("Plot failed, do it manually to find the error.")
 
     @staticmethod   
     def plot(x_axis, y_axis, x_pred=None, y_pred=None):
+        """
+        Plot Time-values (X) Vs Data-values (Y).
+        """
         plt.figure(figsize=(12,5))
         plt.title('Sequence')
         plt.grid(True)
@@ -542,9 +545,9 @@ class SequenceDataset():
         """
         if isinstance(input, torch.Tensor):
             with torch.no_grad():
-                array = input.numpy()
+                array = input.numpy().reshape(-1,1)
         elif isinstance(input, numpy.ndarray):
-            array = input
+            array = input.reshape(-1,1)
         else:
             raise TypeError("Input must be a Pytorch tensor or Numpy array.")
         return self.scaler.inverse_transform(array)
@@ -560,7 +563,7 @@ class SequenceDataset():
 
         Returns: numpy.ndarray or torch.Tensor
         """
-        last_seq = self._last_sequence
+        last_seq = self._last_sequence.reshape(-1,1)
         if normalize:
             last_seq = self.scaler.transform(last_seq)
         if to_tensor:
