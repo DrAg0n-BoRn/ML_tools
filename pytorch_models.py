@@ -216,7 +216,7 @@ class MyLSTMNetwork(nn.Module):
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda"]='cpu', learn_rate: float=0.001):
+                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='mps', learn_rate: float=0.001):
         """
         Automates the training process of a PyTorch Model using Adam optimization by default (`self.optimizer`).
         
@@ -252,6 +252,10 @@ class MyTrainer():
         if device == "cuda":
             if not torch.cuda.is_available():
                 print("CUDA not available, switching to CPU.")
+                device = "cpu"
+        elif device == "mps":
+            if not torch.backends.mps.is_available():
+                print("MPS not available, switching to CPU.")
                 device = "cpu"
         # Validate criterion
         if criterion is None:
@@ -360,7 +364,7 @@ class MyTrainer():
                 accuracy = str(round(100*accuracy, ndigits=1)) + "%"
             else: # Regression
                 accuracy = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
-                accuracy = round(accuracy, ndigits=3)
+                accuracy = str(round(accuracy, ndigits=4))
             
             # Print details
             details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
