@@ -271,8 +271,8 @@ class MyTrainer():
         # if isinstance(last_layer, nn.Linear):
         #     pass
         
-        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle)
-        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle)
+        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle, pin_memory=True)
+        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle, pin_memory=True)
         self.kind = kind
         self.device = torch.device(device)
         self.model = model.to(self.device)
