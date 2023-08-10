@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from typing import Literal, Union
+from typing import Literal
 from torch.utils.data import DataLoader, Dataset
 import time
 import matplotlib.pyplot as plt
