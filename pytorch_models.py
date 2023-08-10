@@ -143,6 +143,10 @@ class MyConvolutionalNetwork(nn.Module):
         # Join CNN and ANN
         self._structure = nn.Sequential(self._cnn_layers, nn.Flatten(), self._ann_layers)
         
+        # Send to CUDA if available
+        if torch.cuda.is_available():
+            self.to('cuda')
+        
     # Override forward()
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         X = self._structure(X)
@@ -150,23 +154,26 @@ class MyConvolutionalNetwork(nn.Module):
 
 
 class MyLSTMNetwork(nn.Module):
-    def __init__(self, input_size: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0, reset_memory: bool=False):
+    def __init__(self, features: int=1, hidden_size: int=100, recurrent_layers: int=1, dropout: float=0, reset_memory: bool=False, **kwargs):
         """
         Create a simple Recurrent Neural Network to predict 1 time step into the future of sequential data.
+        
+        The sequence should be a 2D tensor with shape (sequence_length, number_of_features).
 
         Args:
-            `input_size`: Number of subsequences representing the sequence as features. Defaults to 1.
+            * `features`: Number of features representing the sequence. Defaults to 1.
+            * `hidden_size`: Hidden size of the LSTM model. Defaults to 100.
+            * `recurrent_layers`: Number of recurrent layers to use. Defaults to 1.
+            * `dropout`: Probability of dropping out neurons in each recurrent layer, except the last layer. Defaults to 0.
+            * `reset_memory`: Reset the initial hidden state and cell state for the recurrent layers at every epoch. Defaults to False.
+            * `kwargs`: Create custom attributes for the model.
             
-            `hidden_size`: Hidden size of the LSTM model. Defaults to 100.
-            
-            `recurrent_layers`: Number of recurrent layers to use. Defaults to 1.
-            
-            `dropout`: Probability of dropping out neurons in each recurrent layer, except the last layer. Defaults to 0.
-            
-            `reset_memory`: Reset the initial hidden state and cell state for the recurrent layers at every epoch. Defaults to False.
+        Custom forward() parameters:
+            * `batch_size=1` (int): batch size for the LSTM net.
+            * `return_last_timestamp=False` (bool): Return only the value at `output[-1]`
         """
         # validate input size
-        if not isinstance(input_size, int):
+        if not isinstance(features, int):
             raise TypeError("Input size must be an integer value.")
         # validate hidden size
         if not isinstance(hidden_size, int):
@@ -187,36 +194,47 @@ class MyLSTMNetwork(nn.Module):
         
         # Initialize memory
         self._reset = reset_memory
-        self._default_memory = (torch.zeros(recurrent_layers*1, 1, hidden_size), torch.zeros(recurrent_layers*1, 1, hidden_size))
-        self._memory = (torch.zeros(recurrent_layers*1, 1, hidden_size), torch.zeros(recurrent_layers*1, 1, hidden_size))
+        self._memory = None
+        
+        # hidden size and features shape
+        self._hidden = hidden_size
+        self._features = features
         
         # RNN
-        self._lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=recurrent_layers, dropout=dropout)
+        self._lstm = nn.LSTM(input_size=features, hidden_size=self._hidden, num_layers=recurrent_layers, dropout=dropout)
         
         # Fully connected layer
-        self._ann = nn.Linear(in_features=hidden_size, out_features=1)
+        self._ann = nn.Linear(in_features=self._hidden, out_features=features)
         
-    def forward(self, seq: torch.Tensor):
+        # Parse extra parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            
+        
+    def forward(self, seq: torch.Tensor, batch_size: int=1, return_last_timestamp: bool=False) -> torch.Tensor:
         # reset memory
         if self._reset:
-            self._memory = self._default_memory
-        # Detach hidden state and cell state to prevent backpropagation error
-        self._memory = tuple(m.detach() for m in self._memory)
+            self._memory = None
         # reshape sequence to feed RNN
-        seq = seq.view(seq.numel(), 1, -1)
+        seq = seq.view(-1, batch_size, self._features)
         # Pass sequence through RNN
         seq, self._memory = self._lstm(seq, self._memory)
-        # Flatten outputs
-        seq = seq.view(len(seq), -1)
+        # Detach hidden state and cell state to prevent backpropagation error
+        self._memory = tuple(m.detach() for m in self._memory)
+        # Reshape outputs
+        seq = seq.view(-1, self._hidden)
         # Pass sequence through fully connected layer
         output = self._ann(seq)
         # Return prediction of 1 time step in the future
-        return output[-1] #last item as a tensor, not scalar.
+        if return_last_timestamp:
+            return output[-1].view(1,-1) #last item as a tensor.
+        else:
+            return output
 
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='mps', learn_rate: float=0.001):
+                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='cpu', learn_rate: float=0.001):
         """
         Automates the training process of a PyTorch Model using Adam optimization by default (`self.optimizer`).
         
@@ -427,7 +445,7 @@ class MyTrainer():
             print("Error encountered while retrieving 'model.kind' attribute.")
 
 
-    def forecast(self, data_points: list):
+    def forecast(self, data_points: list[torch.Tensor]):
         """
         Returns a forecast for n data points. 
         
@@ -456,7 +474,7 @@ class MyTrainer():
         """
         Runs a sequential forecast for a RNN, where each new prediction is obtained by feeding the previous prediction.
         
-        The input sequence tensor must meet the requirements for dimensions and normalization of the trained model.
+        The input tensor representing a sequence must be of shape `(sequence length, number of features)` with normalized values (if needed).
 
         Args:
             `sequence`: Last subsequence of the sequence.
@@ -467,8 +485,8 @@ class MyTrainer():
         """
         self.model.eval()
         with torch.no_grad():
-            # Squeeze sequence (flatten) and send to device
-            sequence = sequence.squeeze().to(self.device)
+            # send sequence to device
+            sequence = sequence.to(self.device)
             # Make a dummy list in memory
             sequences = [torch.zeros_like(sequence, device=self.device, requires_grad=False) for _ in range(steps)]
             sequences[0] = sequence
@@ -476,14 +494,19 @@ class MyTrainer():
             predictions = list()
             # Get predictions
             for i in range(steps):
-                output = self.model(sequences[i]).item()
+                in_seq = sequences[i]
+                output = self.model(in_seq, return_last_timestamp=True)
                 # Save prediction
-                predictions.append(output)
+                # Check if it is a single feature, get value
+                if output.shape[1] == 1:
+                    predictions.append(output.item())
+                # Else, return a list of lists
+                else:
+                    predictions.append(output.squeeze().cpu().tolist())
                 # Create next sequence
                 if i < steps-1:
-                    current_seq = sequences[i].cpu().tolist()
-                    current_seq.append(output)
-                    new_seq = torch.Tensor(current_seq[1:], device=self.device)
+                    current_seq = sequences[i]
+                    new_seq = torch.concatenate([current_seq[1:], output], dim=0).to(self.device)
                     sequences[i+1] = new_seq
         
         # Cast to array and return
