@@ -400,6 +400,8 @@ class SequenceDataset():
     def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
                  seq_labels: bool=True, normalize: Union[Literal["standard", "minmax"], None]="minmax"):
         """
+        Make train/test datasets from a single timestamp sequence.
+        
         Create an object containing 2 PyTorchDataset objects to be used in a Recurrent Neural Network: 
         
             1. Train Dataset
@@ -411,13 +413,11 @@ class SequenceDataset():
         The scaler object can be used to invert normalization on a Tensor/Array using the method `self.denormalize()`.
 
         Args:
-            `data`: Pandas Dataframe with 2 columns [datetime, sequence] | 1-column Dataframe or Series sequence, where index is the datetime.
-            
-            `sequence_size (int)`: Length of each subsequence that will be used for training.
-            
-            `last_seq_test (bool)`: Last sequence will be used as test_set, if false a dummy test set will be returned. Default is True.
-            
-            `normalize`: Whether to normalize ('minmax'), standardize ('standard') or ignore (None). Default is 'minmax'.
+            * `data`: Pandas Dataframe with 2 columns [datetime, sequence] | 1-column Dataframe or Series sequence, where index is the datetime.
+            * `sequence_size (int)`: Length of each subsequence that will be used for training.
+            * `last_seq_test (bool)`: Last sequence will be used as test_set, if false a dummy test set will be returned. Default is True.
+            * `seq_labels (bool)`: Labels will be returned as sequences, if false return single values for 1 future timestamp.
+            * `normalize`: Whether to normalize ('minmax'), standardize ('standard') or ignore (None). Default is 'minmax'.
         """
         # Validate data
         if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
@@ -489,10 +489,11 @@ class SequenceDataset():
             # Labels as sequence
             if seq_labels:
                 label = norm_train_sequence[i + 1:sequence_size + i + 1]
+                train_labels_list.append(label.reshape(1,-1))
             # Single value label
             else:
                 label = norm_train_sequence[sequence_size + i + 1]
-            train_labels_list.append(label)
+                train_labels_list.append(label)
             
         # Divide test sequence into subsequences
         if last_seq_test:
@@ -505,10 +506,11 @@ class SequenceDataset():
                 # Labels as sequence
                 if seq_labels:
                     label = norm_test_sequence[i + 1:sequence_size + i + 1]
+                    test_labels_list.append(label.reshape(1,-1))
                 # Single value label
                 else:
                     label = norm_test_sequence[sequence_size + i + 1]
-                test_labels_list.append(label)
+                    test_labels_list.append(label)
             
         # Create training arrays then cast to pytorch dataset
         train_features = numpy.concatenate(train_features_list, axis=0)
