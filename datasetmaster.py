@@ -398,7 +398,7 @@ def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], la
 
 class SequenceDataset():
     def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
-                 normalize: Union[Literal["standard", "minmax"], None]="minmax"):
+                 seq_labels: bool=True, normalize: Union[Literal["standard", "minmax"], None]="minmax"):
         """
         Create an object containing 2 PyTorchDataset objects to be used in a Recurrent Neural Network: 
         
@@ -486,7 +486,12 @@ class SequenceDataset():
         for i in range(train_size - sequence_size - 1):
             subsequence = norm_train_sequence[i:sequence_size + i]
             train_features_list.append(subsequence.reshape(1,-1))
-            label = norm_train_sequence[sequence_size + i + 1]
+            # Labels as sequence
+            if seq_labels:
+                label = norm_train_sequence[i + 1:sequence_size + i + 1]
+            # Single value label
+            else:
+                label = norm_train_sequence[sequence_size + i + 1]
             train_labels_list.append(label)
             
         # Divide test sequence into subsequences
@@ -497,28 +502,41 @@ class SequenceDataset():
             for i in range(test_size - sequence_size - 1):
                 subsequence = norm_test_sequence[i:sequence_size + i]
                 test_features_list.append(subsequence.reshape(1,-1))
-                label = norm_test_sequence[i + sequence_size + 1]
+                # Labels as sequence
+                if seq_labels:
+                    label = norm_test_sequence[i + 1:sequence_size + i + 1]
+                # Single value label
+                else:
+                    label = norm_test_sequence[sequence_size + i + 1]
                 test_labels_list.append(label)
             
         # Create training arrays then cast to pytorch dataset
         train_features = numpy.concatenate(train_features_list, axis=0)
-        train_labels = numpy.array(train_labels_list).reshape(-1,1)
+        # Check if labels are a sequence
+        if seq_labels:
+            train_labels = numpy.concatenate(train_labels_list, axis=0)
+        else:
+            train_labels = numpy.array(train_labels_list).reshape(-1,1)
         self.train_dataset = PytorchDataset(features=train_features, labels=train_labels, labels_dtype=torch.float32)
         
         # Create test arrays then cast to pytorch dataset
         if last_seq_test:
             test_features = numpy.concatenate(test_features_list, axis=0)
-            test_labels = numpy.array(test_labels_list).reshape(-1,1)
+            # Check if labels are a sequence
+            if seq_labels:
+                test_labels = numpy.concatenate(test_labels_list, axis=0)
+            else:
+                test_labels = numpy.array(test_labels_list).reshape(-1,1)
             self.test_dataset = PytorchDataset(features=test_features, labels=test_labels, labels_dtype=torch.float32)
         else:
-            self.test_dataset = PytorchDataset(features=numpy.ones(shape=(1, sequence_size)), labels=numpy.ones(shape=(1,1)), labels_dtype=torch.float32)
+            self.test_dataset = PytorchDataset(features=numpy.ones(shape=(10, sequence_size)), labels=numpy.ones(shape=(10,1)), labels_dtype=torch.float32)
         
         # Attempt to plot the sequence
         if self.time_axis is not None:
             try:
                 self.plot(self.time_axis, self.sequence)
             except:
-                print("Plot failed, do it manually to find the error.")
+                print("Plot failed, try it manually to find the problem.")
 
     @staticmethod   
     def plot(x_axis, y_axis, x_pred=None, y_pred=None):
