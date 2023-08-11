@@ -328,6 +328,8 @@ class MyTrainer():
                 target = target.to(self.device)
                 self.optimizer.zero_grad()
                 output = self.model(features, **model_params)
+                # check shapes
+                # print(features.shape, target.shape, output.shape)
                 # For Binary Cross Entropy
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
                     target = target.to(torch.float32)
@@ -495,7 +497,9 @@ class MyTrainer():
             # Get predictions
             for i in range(steps):
                 in_seq = sequences[i]
-                output = self.model(in_seq, return_last_timestamp=True)
+                output = self.model(in_seq)
+                # Last timestamp
+                output = output[-1].view(1,-1)
                 # Save prediction
                 # Check if it is a single feature, get value
                 if output.shape[1] == 1:
