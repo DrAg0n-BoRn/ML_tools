@@ -331,7 +331,7 @@ class MyTrainer():
                 # check shapes
                 # print(features.shape, target.shape, output.shape)
                 # For Binary Cross Entropy
-                if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
+                if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                     target = target.to(torch.float32)
                 elif isinstance(self.criterion, (nn.MSELoss)):
                     target = target.view_as(output)
@@ -358,7 +358,7 @@ class MyTrainer():
                     # Save true labels for current batch (in case random shuffle was used)
                     true_labels_list.append(target.view(-1,1).cpu().numpy())
                     # For Binary Cross Entropy
-                    if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss, nn.CrossEntropyLoss)):
+                    if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                         target = target.to(torch.float32)
                     elif isinstance(self.criterion, (nn.MSELoss)):
                         target = target.view_as(output)
