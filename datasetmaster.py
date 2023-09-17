@@ -11,6 +11,8 @@ from PIL import Image
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import os
+import imghdr
 
 
 class DatasetMaker():
@@ -312,7 +314,7 @@ class PytorchDataset(Dataset):
         return X, y
 
 
-def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=200, 
+def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=256, 
                         transform: Union[transforms.Compose, None]=None, test_set: bool=False):
     """
     Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 
@@ -593,3 +595,79 @@ class SequenceDataset():
     def __len__(self):
         return f"Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}"
         
+
+# --- Helper Functions ---
+
+def inspect_images(path: str):
+    """
+    Prints out the types, sizes and channels of image files found in the directory.
+
+    Args:
+        path (string): path to image directory.
+    """
+    # Non-image files present?
+    red_flag = False
+    # Image types found
+    img_types = set()
+    # Image sizes found
+    img_sizes = set()
+    # Color channels found
+    img_channels = set()
+    # Loop through files in the directory
+    for filename in os.listdir(path):
+        filepath = os.path.join(path, filename)
+        img_type = imghdr.what(filepath)
+        # Not an image file
+        if img_type is None:
+            red_flag = True
+            continue
+        # Image type
+        img_types.add(img_type)
+        # Image size
+        img = Image.open(filepath)
+        img_sizes.add(img.size)
+        # Image color channels 
+        channels = img.getbands()
+        img_channels.add(*channels)
+    
+    if red_flag:
+        print("⚠️ Non-image files found.")
+    # Print results
+    print(f"Image types found: {img_types}\nImage sizes found: {img_sizes}\nImage channels found: {img_channels}")
+
+
+def image_augmentation(path: str, samples: int=100, size: int=256, jitter_factor=0.2, rotation_deg=270):
+    """
+    Perform image augmentation on a directory containing image files. 
+    A new directory "temp_augmented_images" will be created; an error will be raised if it already exists.
+
+    Args:
+        path (str): Path to target directory.
+        samples (int, optional): Number of images to create per image in the directory. Defaults to 100.
+        size (int, optional): Image size to resize to. Defaults to 256.
+        jitter_factor (float, optional): Brightness and Contrast factor to use in the ColorJitter transform. Defaults to 0.2.
+        rotation_deg (int, optional): Range for the rotation transformation. Defaults to 270.
+    """
+    # Define the transformations
+    transform = transforms.Compose([
+        transforms.Resize(size=(int(size*1.2),int(size*1.2))),
+        transforms.CenterCrop(size=size),
+        transforms.ColorJitter(brightness=jitter_factor, contrast=jitter_factor), 
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomRotation(degrees=rotation_deg),
+    ])
+
+    # Create container folder
+    dir_name = "temp_augmented_images"
+    os.makedirs(dir_name, exist_ok=False)
+    
+    # Apply transformation to each image in path
+    for filename in os.listdir(path):
+        filepath = os.path.join(path, filename)
+        # current image
+        img = Image.open(filepath)
+        # Create and save images
+        for i in range(1, samples+1):
+            new_img = transform(img)
+            new_img.save(f"{dir_name}/image_{i}")
+
