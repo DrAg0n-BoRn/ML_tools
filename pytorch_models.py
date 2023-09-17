@@ -80,7 +80,7 @@ class MyNeuralNetwork(nn.Module):
 
 
 class MyConvolutionalNetwork(nn.Module):
-    def __init__(self, outputs: int, color_channels: int=3, img_size: int=200, drop_out: float=0.2):
+    def __init__(self, outputs: int, color_channels: int=3, img_size: int=256, drop_out: float=0.2):
         """
         Create a basic Convolutional Neural Network with two convolution layers with a pooling layer after each convolution.
 
