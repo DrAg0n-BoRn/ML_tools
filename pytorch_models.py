@@ -388,7 +388,7 @@ class MyTrainer():
             
             # Print details
             details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
-            if (epoch % int(0.05*epochs) == 0) or epoch in [1, 3, 5]:
+            if (epoch % max(1, int(0.05*epochs)) == 0) or epoch in [1, 3, 5]:
                 print(details_format)
             
             # Compare validation loss per epoch
