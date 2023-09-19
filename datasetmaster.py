@@ -624,6 +624,8 @@ def inspect_images(path: str):
     img_sizes = set()
     # Color channels found
     img_channels = set()
+    # Number of images
+    img_counter = 0
     # Loop through files in the directory and subdirectories
     for root, directories, files in os.walk(path):
         for filename in files:
@@ -636,6 +638,8 @@ def inspect_images(path: str):
                 continue
             # Image type
             img_types.add(img_type)
+            # Image counter
+            img_counter += 1
             # Image size
             img = Image.open(filepath)
             img_sizes.add(img.size)
@@ -647,7 +651,7 @@ def inspect_images(path: str):
     if red_flag:
         print(f"⚠️ Non-image files found: {non_image}")
     # Print results
-    print(f"Image types found: {img_types}\nImage sizes found: {img_sizes}\nImage channels found: {img_channels}")
+    print(f"Image types found: {img_types}\nImage sizes found: {img_sizes}\nImage channels found: {img_channels}\nImages found: {img_counter}")
 
 
 def image_augmentation(path: str, samples: int=100, size: int=256, mode: Literal["RGB", "L"]="RGB", jitter_ratio: float=0.0, 
