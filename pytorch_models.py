@@ -144,8 +144,8 @@ class MyConvolutionalNetwork(nn.Module):
         self._structure = nn.Sequential(self._cnn_layers, nn.Flatten(), self._ann_layers)
         
         # Send to CUDA if available
-        if torch.cuda.is_available():
-            self.to('cuda')
+        # if torch.cuda.is_available():
+        #     self.to('cuda')
         
     # Override forward()
     def forward(self, X: torch.Tensor) -> torch.Tensor:
@@ -289,8 +289,8 @@ class MyTrainer():
         # if isinstance(last_layer, nn.Linear):
         #     pass
         
-        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle, pin_memory=False if device=="cpu" else True)
-        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle, pin_memory=False if device=="cpu" else True)
+        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle, num_workers=4, pin_memory=True if device=="cuda" else False)
+        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle, num_workers=4, pin_memory=True if device=="cuda" else False)
         self.kind = kind
         self.device = torch.device(device)
         self.model = model.to(self.device)
