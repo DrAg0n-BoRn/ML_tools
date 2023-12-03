@@ -234,7 +234,7 @@ class MyLSTMNetwork(nn.Module):
     
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='cpu', learn_rate: float=0.001):
+                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='cpu', learn_rate: float=0.001, dataloader_workers: int=2):
         """
         Automates the training process of a PyTorch Model using Adam optimization by default (`self.optimizer`).
         
@@ -247,12 +247,14 @@ class MyTrainer():
         `batch_size` Represents the fraction of the original dataset size to be used per batch. If an integer is passed, use that many samples, instead. Default is 10%. 
         
         `learn_rate` Model learning rate. Default is 0.001.
+        
+        `dataloader_workers` Subprocesses to use for data loading. Default is 2.
         """
         # Validate kind
         if kind not in ["regression", "classification"]:
             raise TypeError("Kind must be 'regression' or 'classification'.")
         # Validate batch size
-        batch_error = "Batch must a float in range (1, 0.01] or an integer."
+        batch_error = "Batch must a float in range [0.01, 1) or an integer."
         if isinstance(batch_size, (float, int)):
             if (1.00 > batch_size >= 0.01):
                 train_batch = int(len(train_dataset) * batch_size)
@@ -283,14 +285,17 @@ class MyTrainer():
                 self.criterion = nn.NLLLoss()
         else:
             self.criterion = criterion
+        # Validate dataloader workers
+        if not isinstance(dataloader_workers, int):
+            raise TypeError("Dataloader workers must be an integer value.")
         
         # Check last layer in the model, implementation pending
         # last_layer_name, last_layer = next(reversed(model._modules.items()))
         # if isinstance(last_layer, nn.Linear):
         #     pass
         
-        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle, num_workers=4, pin_memory=True if device=="cuda" else False)
-        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle, num_workers=4, pin_memory=True if device=="cuda" else False)
+        self.train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch, shuffle=shuffle, num_workers=dataloader_workers, pin_memory=True if device=="cuda" else False)
+        self.test_loader = DataLoader(dataset=test_dataset, batch_size=test_batch, shuffle=shuffle, num_workers=dataloader_workers, pin_memory=True if device=="cuda" else False)
         self.kind = kind
         self.device = torch.device(device)
         self.model = model.to(self.device)
