@@ -1,7 +1,7 @@
 import os
 import imghdr
 from PIL import Image
-from typing import Literal, Union
+from typing import Literal
 from torchvision import transforms
 
 

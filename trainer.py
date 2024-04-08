@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
-from sklearn.metrics import mean_squared_error, classification_report, ConfusionMatrixDisplay
+from sklearn.metrics import mean_squared_error, classification_report, ConfusionMatrixDisplay, roc_curve, roc_auc_score
 
 
 class MyTrainer():
@@ -78,13 +78,18 @@ class MyTrainer():
         self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learn_rate)
 
 
-    def auto_train(self, epochs: int=200, patience: int=3, cmap: Literal["viridis", "Blues", "Greens", "Reds", "plasma", "coolwarm"]="coolwarm", **model_params):
+    def auto_train(self, epochs: int=200, patience: int=3, cmap: Literal["viridis", "Blues", "Greens", "Reds", "plasma", "coolwarm"]="Blues", 
+                   roc: bool=False, **model_params):
         """
         Start training-validation process of the model. 
         
         `patience` is the number of consecutive times the Validation Loss is allowed to increase before early-stopping the training process.
         
-        `model_params` Keywords parameters specific for the model, if any.
+        `cmap` Color map to use for the confusion matrix.
+        
+        `model_params` Keywords parameters specific to the model, if any.
+        
+        `roc` Whether to display the Receiver Operating Characteristic (ROC) Curve, for binary classification only.
         """
         metric_name = "accuracy" if self.kind == "classification" else "RMSE"
         previous_val_loss = None
@@ -124,6 +129,7 @@ class MyTrainer():
             # Keep track of predictions and true labels on the last epoch to use later on scikit-learn
             predictions_list = list()  
             true_labels_list = list()
+            probabilities_list = list()
             
             for batch_index, (features, target) in enumerate(self.train_loader):
                 # features, targets to device
@@ -170,6 +176,9 @@ class MyTrainer():
                     if self.kind == "classification":
                         predictions_list.append(output.argmax(dim=1).view(-1,1).cpu().numpy())
                         correct += output.argmax(dim=1).eq(target).sum().item()
+                        if roc:
+                            probabilities_local = nn.functional.softmax(output, dim=1)
+                            probabilities_list.append(probabilities_local.cpu().numpy())
                     else:   # Regression
                         predictions_list.append(output.view(-1,1).cpu().numpy())                        
                         
@@ -180,6 +189,8 @@ class MyTrainer():
             # Concatenate all predictions and true labels
             predictions = numpy.concatenate(predictions_list, axis=0)
             true_labels = numpy.concatenate(true_labels_list, axis=0)
+            if roc:
+                probabilities = numpy.concatenate(probabilities_list, axis=0)
             
             # Accuracy / RMSE
             if self.kind == "classification":
@@ -190,7 +201,7 @@ class MyTrainer():
                 accuracy = str(round(accuracy, ndigits=4))
             
             # Print details
-            details_format = f'epoch: {epoch:4}    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
+            details_format = f'epoch {epoch}:    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
             if (epoch % max(1, int(0.05*epochs)) == 0) or epoch in [1, 3, 5]:
                 print(details_format)
             
@@ -246,9 +257,23 @@ class MyTrainer():
         elif self.kind == "classification":
             print(classification_report(y_true=true_labels, y_pred=predictions))
             ConfusionMatrixDisplay.from_predictions(y_true=true_labels, y_pred=predictions, cmap=cmap)
+            
+            # ROC curve & Area under the curve
+            if roc:
+                false_positives, true_positives, thresholds = roc_curve(y_true=true_labels, y_score=probabilities[:,1])
+                area_under_curve = roc_auc_score(y_true=true_labels, y_score=probabilities[:,1])
+                
+                plt.figure(figsize=(4,4))
+                plt.plot(false_positives, true_positives)
+                plt.title("Receiver Operating Characteristic (ROC) Curve")
+                plt.xlabel("False Positive Rate")
+                plt.ylabel("True Positive Rate")
+                plt.show()
+                
+                print(f"Area under the curve score: {area_under_curve:4.2f}")
         else:
             print("Error encountered while retrieving 'model.kind' attribute.")
-
+            
 
     def forecast(self, data_points: list[torch.Tensor]):
         """
@@ -319,4 +344,3 @@ class MyTrainer():
         # Cast to array and return
         predictions = numpy.array(predictions)
         return predictions
-                
