@@ -1,6 +1,6 @@
 import os
 import imghdr
-from PIL import Image
+from PIL import Image, ImageOps
 from typing import Literal
 from torchvision import transforms
 
@@ -120,3 +120,28 @@ def image_augmentation(path: str, samples: int=100, size: int=256, mode: Literal
     if len(non_image) != 0:
         print(f"Files not processed: {non_image}")
 
+
+class ResizeAspectFill:
+    """
+    Custom transformation to make a square image (width/height = 1). 
+    
+    Implemented by padding with a `pad_color` border an image of size (w, h) when w > h or w < h to match the longest side.
+    """
+    def __init__(self, pad_color: Literal["black", "white"]="black") -> None:
+        self.pad_color = pad_color
+        
+    def __call__(self, image: Image.Image):
+        w = image.width
+        h = image.height
+        delta = abs(w - h)
+        
+        if w > h:
+            # padding: left, top, right, bottom
+            padding = (0, 0, 0, delta)
+        elif h > w: 
+            padding = (0, 0, delta, 0)
+        else:
+            padding = (0, 0)
+        
+        return ImageOps.expand(image=image, border=padding, fill=self.pad_color)
+    
