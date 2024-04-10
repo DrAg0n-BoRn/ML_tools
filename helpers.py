@@ -114,7 +114,8 @@ def image_augmentation(path: str, samples: int=100, size: int=256, mode: Literal
         # Create and save images
         for i in range(1, samples+1):
             new_img = transform(img)
-            new_img.save(f"{dir_name}/{filename}_{i}.{output}")
+            filename_no_ext = os.path.splitext(filename)[0]
+            new_img.save(f"{dir_name}/{filename_no_ext}_{i}.{output}")
     
     # Print non-image files
     if len(non_image) != 0:
