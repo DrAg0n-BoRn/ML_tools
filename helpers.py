@@ -98,9 +98,12 @@ def image_augmentation(path: str, samples: int=100, size: int=256, mode: Literal
         filepath = os.path.join(path, filename)
         
         # Is image file?
-        if imghdr.what(filepath) is None:
+        if not is_image(filename):
             non_image.add(filename)
             continue
+        # if imghdr.what(filepath) is None:
+        #     non_image.add(filename)
+        #     continue
 
         # current image
         img = Image.open(filepath)
@@ -145,4 +148,18 @@ class ResizeAspectFill:
             padding = (0, 0)
         
         return ImageOps.expand(image=image, border=padding, fill=self.pad_color)
+
+
+def is_image(file: str):
+    """
+    Returns `True` if the file is an image, `False` otherwise.
     
+    Args:
+       `file`, filename with extension.
+    """
+    try:
+        img = Image.open(file)
+    except IOError:
+        return False
+    else:
+        return True
