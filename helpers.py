@@ -135,6 +135,10 @@ class ResizeAspectFill:
         self.pad_color = pad_color
         
     def __call__(self, image: Image.Image):
+        # Check correct PIL.Image file
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"Expected PIL.Image.Image, got {type(image).__name__}")
+        
         w = image.width
         h = image.height
         delta = abs(w - h)
