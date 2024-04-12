@@ -203,7 +203,7 @@ class MyTrainer():
                 accuracy = str(round(accuracy, ndigits=4))
             
             # Print details
-            details_format = f'epoch {epoch}:    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
+            details_format = f'epoch {epoch:2}:    training loss: {current_train_loss:6.4f}    validation loss: {current_val_loss:6.4f}    {metric_name}: {accuracy}'
             if (epoch % max(1, int(0.05*epochs)) == 0) or epoch in [1, 3, 5]:
                 print(details_format)
             
