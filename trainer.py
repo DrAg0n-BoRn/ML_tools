@@ -96,7 +96,8 @@ class MyTrainer():
         epoch_tracker = 0
         warnings = 0
         feedback = None
-        losses = list()
+        val_losses = list()
+        train_losses = list()
         
         # Validate inputs
         if isinstance(epochs, int):
@@ -131,7 +132,7 @@ class MyTrainer():
             true_labels_list = list()
             probabilities_list = list()
             
-            for batch_index, (features, target) in enumerate(self.train_loader):
+            for features, target in self.train_loader:
                 # features, targets to device
                 features = features.to(self.device)
                 target = target.to(self.device)
@@ -153,6 +154,7 @@ class MyTrainer():
                 
             # Average Train Loss per sample
             current_train_loss /= len(self.train_loader.dataset)
+            train_losses.append(current_train_loss)
             
             # Evaluate
             self.model.eval()
@@ -184,7 +186,7 @@ class MyTrainer():
                         
             # Average Validation Loss per sample
             current_val_loss /= len(self.test_loader.dataset)
-            losses.append(current_val_loss)
+            val_losses.append(current_val_loss)
             
             # Concatenate all predictions and true labels
             predictions = numpy.concatenate(predictions_list, axis=0)
@@ -241,12 +243,20 @@ class MyTrainer():
         minutes, seconds = divmod(elapsed_time, 60)
         print(f"Elapsed time:  {minutes:.0f} minutes  {seconds:2.0f} seconds  {epoch} epochs")
         
-        # Plot
-        plt.figure(figsize=(4,4))
-        plt.plot(range(1, epoch+1), losses)
-        plt.title("Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Average Loss per sample")
+        # Plot losses
+        fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10,4), dpi=200, sharey=True)
+        
+        ax1.plot(range(1, epoch+1), train_losses)
+        ax1.set_title("Training Loss")
+        ax1.set_xlabel("Epochs")
+        ax1.set_ylabel("Average loss per sample")
+
+        ax2.plot(range(1, epoch+1), val_losses)
+        ax2.set_title("Validation Loss")
+        ax2.set_xlabel("Epochs")
+        # ax2.set_ylabel("Average loss per sample")
+        
+        plt.subplots_adjust(wspace=0.3)
         plt.show()
         
         # Metrics
