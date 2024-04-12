@@ -275,27 +275,30 @@ class MyTrainer():
             print("Error encountered while retrieving 'model.kind' attribute.")
             
 
-    def forecast(self, data_points: list[torch.Tensor]):
+    def forecast(self, samples_list: list[torch.Tensor], view_as: tuple[int,int]=(1,-1)):
         """
-        Returns a forecast for n data points. 
+        Returns a list containing lists of predicted values, one for each sample. 
         
-        Each data point must be a tensor and have the same shape and normalization expected by the model.
+        Each sample must be a tensor and have the same shape and normalization expected by the model 
+        (this method will add the batch dimension automatically).
 
         Args:
-            `data_points`: list of data points as tensors.
+            `samples_list`: list of tensors.
+            
+            `view_as`: reshape each output, default is (1,-1).
 
-        Returns: List of predicted values.
+        Returns: List of lists.
         """
         self.model.eval()
         results = list()
         with torch.no_grad():
-            for data_point in data_points:
-                data_point.to(self.device)
+            for data_point in samples_list:
+                data_point = data_point.unsqueeze(0).to(self.device)
                 output = self.model(data_point)
                 if self.kind == "classification":
-                    results.append(output.argmax(dim=1).squeeze().item())
-                else:
-                    results.append(output.squeeze().item())
+                    results.append(output.argmax(dim=1).view(view_as).cpu().tolist())
+                else:  #regression
+                    results.append(output.view(view_as).cpu().tolist())
         
         return results
     
