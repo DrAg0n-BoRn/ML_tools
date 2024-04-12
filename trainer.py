@@ -143,7 +143,7 @@ class MyTrainer():
                 if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                     target = target.to(torch.float32)
                 elif isinstance(self.criterion, (nn.MSELoss)):
-                    target = target.view_as(output)
+                    output = output.view_as(target)
                 train_loss = self.criterion(output, target)
                 # Cumulative loss for current epoch on all batches
                 current_train_loss += train_loss.item()
@@ -170,7 +170,7 @@ class MyTrainer():
                     if isinstance(self.criterion, (nn.BCELoss, nn.BCEWithLogitsLoss)):
                         target = target.to(torch.float32)
                     elif isinstance(self.criterion, (nn.MSELoss)):
-                        target = target.view_as(output)
+                        output = output.view_as(target)
                     current_val_loss += self.criterion(output, target).item()
                     # Save predictions of current batch, get accuracy
                     if self.kind == "classification":
