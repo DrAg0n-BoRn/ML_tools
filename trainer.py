@@ -256,7 +256,7 @@ class MyTrainer():
         ax2.set_xlabel("Epochs")
         ax2.set_ylabel("Average loss per sample")
         
-        plt.subplots_adjust(wspace=0.2)
+        plt.subplots_adjust(wspace=0.3)
         plt.show()
         
         # Metrics
