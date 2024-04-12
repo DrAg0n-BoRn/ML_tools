@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
-from sklearn.metrics import mean_squared_error, classification_report, ConfusionMatrixDisplay, roc_curve, roc_auc_score
+from sklearn.metrics import mean_squared_error, classification_report, ConfusionMatrixDisplay, roc_curve, roc_auc_score, r2_score, median_absolute_error
 
 
 class MyTrainer():
@@ -264,7 +264,12 @@ class MyTrainer():
         # Display metrics
         if self.kind == "regression":            
             rmse = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
-            print(f"Root Mean Squared Error: {rmse:.2f}\n")
+            r2 = r2_score(y_true=true_labels, y_pred=predictions)
+            medae = median_absolute_error(y_true=true_labels, y_pred=predictions)
+            print(f"Root Mean Squared Error (RMSE): {rmse:4.2f}")
+            print(f"Median Absolute Error (MedAE): {medae:4.2f}")
+            print(f"Coefficient of Determination (R2 Score): {r2:4.2f}\n")
+            
         elif self.kind == "classification":
             print(classification_report(y_true=true_labels, y_pred=predictions))
             ConfusionMatrixDisplay.from_predictions(y_true=true_labels, y_pred=predictions, cmap=cmap)
