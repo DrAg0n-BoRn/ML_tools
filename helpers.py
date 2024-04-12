@@ -3,6 +3,7 @@ import imghdr
 from PIL import Image, ImageOps
 from typing import Literal
 from torchvision import transforms
+import torch
 
 
 # --- Helper Functions ---
@@ -162,8 +163,56 @@ def is_image(file: str):
        `file`, filename with extension.
     """
     try:
-        img = Image.open(file)
+        Image.open(file)
     except IOError:
         return False
     else:
         return True
+    
+    
+def model_predict(model: torch.nn.Module, kind: Literal["regression", "classification"], samples_list: list[torch.Tensor],
+                  device: Literal["cpu", "cuda", "mps"]='cpu', view_as: tuple[int,int]=(1,-1), add_batch_dimension: bool=True):
+    """
+    Returns a list containing lists of predicted values, one for each input sample. 
+    
+    Each sample must be a tensor and have the same shape and normalization expected by the model. 
+
+    Args:
+        `model`: A trained PyTorch model.
+        
+        `kind`: Regression or Classification task.
+    
+        `samples_list`: A list of input tensors.
+        
+        `device`: Device to use, default is CPU.
+        
+        `view_as`: Reshape each model output, default is (1,-1).
+        
+        `add_batch_dimension`: Automatically adds the batch dimension to each sample shape.
+    """
+    # Validate device
+    if device == "cuda":
+        if not torch.cuda.is_available():
+            print("CUDA not available, switching to CPU.")
+            device = "cpu"
+    elif device == "mps":
+        if not torch.backends.mps.is_available():
+            print("MPS not available, switching to CPU.")
+            device = "cpu"
+    
+    model.eval()
+    results = list()
+    with torch.no_grad():
+        for data_point in samples_list:
+            if add_batch_dimension:
+                data_point = data_point.unsqueeze(0).to(device)
+            else:
+                data_point = data_point.to(device)
+                
+            output = model(data_point)
+            if kind == "classification":
+                results.append(output.argmax(dim=1).view(view_as).cpu().tolist())
+            else:  #regression
+                results.append(output.view(view_as).cpu().tolist())
+    
+    return results

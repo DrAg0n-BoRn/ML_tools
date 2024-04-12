@@ -277,6 +277,8 @@ class MyTrainer():
 
     def forecast(self, samples_list: list[torch.Tensor], view_as: tuple[int,int]=(1,-1)):
         """
+            DEPRECATED - Use `helpers.model_predict()` instead
+        
         Returns a list containing lists of predicted values, one for each sample. 
         
         Each sample must be a tensor and have the same shape and normalization expected by the model 
