@@ -10,7 +10,7 @@ from sklearn.metrics import mean_squared_error, classification_report, Confusion
 
 class MyTrainer():
     def __init__(self, model, train_dataset: Dataset, test_dataset: Dataset, kind: Literal["regression", "classification"], 
-                 criterion=None , shuffle: bool=True, batch_size: float=0.1, device: Literal["cpu", "cuda", "mps"]='cpu', learn_rate: float=0.001, dataloader_workers: int=2):
+                 criterion=None , shuffle: bool=True, batch_size: float=3, device: Literal["cpu", "cuda", "mps"]='cpu', learn_rate: float=0.001, dataloader_workers: int=2):
         """
         Automates the training process of a PyTorch Model using Adam optimization by default (`self.optimizer`).
         
@@ -20,7 +20,7 @@ class MyTrainer():
         
         `criterion`: Loss function. If 'None', defaults to `nn.NLLLoss` for classification or `nn.MSELoss` for regression.
         
-        `batch_size` Represents the fraction of the original dataset size to be used per batch. If an integer is passed, use that many samples, instead. Default is 10%. 
+        `batch_size` Represents the fraction of the original dataset size to be used per batch. If an integer is passed, use that many samples, instead. Default is 3 samples at a time. 
         
         `learn_rate` Model learning rate. Default is 0.001.
         
@@ -256,7 +256,6 @@ class MyTrainer():
         ax2.set_xlabel("Epochs")
         ax2.set_ylabel("Average loss per sample")
         
-        # plt.subplots_adjust(wspace=0.3)
         plt.tight_layout()
         plt.show()
         
@@ -266,9 +265,9 @@ class MyTrainer():
             rmse = numpy.sqrt(mean_squared_error(y_true=true_labels, y_pred=predictions))
             r2 = r2_score(y_true=true_labels, y_pred=predictions)
             medae = median_absolute_error(y_true=true_labels, y_pred=predictions)
-            print(f"Root Mean Squared Error (RMSE): {rmse:4.2f}")
-            print(f"Median Absolute Error (MedAE): {medae:4.2f}")
-            print(f"Coefficient of Determination (R2 Score): {r2:4.2f}\n")
+            print(f"Root Mean Squared Error (RMSE): {rmse:6.4f}    (range 0 to \u221E)")
+            print(f"Median Absolute Error (MedAE): {medae:6.4f}    (range: 0 to \u221E)")
+            print(f"Coefficient of Determination (R2 Score): {r2:4.2f}    (range: -\u221E to 1)\n")
             
         elif self.kind == "classification":
             print(classification_report(y_true=true_labels, y_pred=predictions))
