@@ -246,12 +246,12 @@ class MyTrainer():
         # Plot losses
         fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10,4), dpi=150, sharey=False)
         
-        ax1.plot(range(1, epoch+1), train_losses)
+        ax1.plot(range(2, epoch+1), train_losses[1:])
         ax1.set_title("Training Loss")
         ax1.set_xlabel("Epochs")
         ax1.set_ylabel("Average loss per sample")
 
-        ax2.plot(range(1, epoch+1), val_losses)
+        ax2.plot(range(2, epoch+1), val_losses[1:])
         ax2.set_title("Validation Loss")
         ax2.set_xlabel("Epochs")
         ax2.set_ylabel("Average loss per sample")
