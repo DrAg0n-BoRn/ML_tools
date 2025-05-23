@@ -15,11 +15,13 @@ import polars as pl
 class ObjectiveFunction():
     """
     Callable objective function designed for optimizing continuous outputs from regression models.
+    
+    The trained model must include a 'model' and a 'scaler'. Additionally 'feature_names' and 'target_name' will be parsed if present.
 
     Parameters
     ----------
     trained_model_path : str
-        Path to a serialized model (joblib) compatible with scikit-learn-like `.predict`. Must include a 'model' and a 'scaler'.
+        Path to a serialized model (joblib) compatible with scikit-learn-like `.predict`. 
     add_noise : bool
         Whether to apply multiplicative noise to the input features during evaluation.
     binary_features : int, default=0
@@ -32,10 +34,12 @@ class ObjectiveFunction():
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
         self._artifact = joblib.load(trained_model_path)
-        self.model = self._artifact['model']
-        self.scaler = self._artifact['scaler']
+        self.model = self._get_from_artifact('model')
+        self.scaler = self._get_from_artifact('scaler')
+        self.feature_names: list[str] = self._get_from_artifact('feature_names') # type: ignore
+        self.target_name: str = self._get_from_artifact('target_name') # type: ignore
         self.task = task
-        self.check_model() # check for classification models
+        self.check_model() # check for classification models and None values
     
     def __call__(self, features_array: np.ndarray) -> float:
         if self.use_noise:
@@ -47,9 +51,9 @@ class ObjectiveFunction():
             features_array = features_array.reshape(1, -1)
         
         # scale features as the model expects
-        features_array = self.scaler.transform(features_array)
+        features_array = self.scaler.transform(features_array) # type: ignore
         
-        result = self.model.predict(features_array)
+        result = self.model.predict(features_array) # type: ignore
         scalar = result.item()
         # pso minimizes by default, so we return the negative value to maximize
         if self.task == "maximization":
@@ -71,6 +75,18 @@ class ObjectiveFunction():
     def check_model(self):
         if isinstance(self.model, ClassifierMixin) or isinstance(self.model, xgb.XGBClassifier) or isinstance(self.model, lgb.LGBMClassifier):
             raise ValueError(f"[Model Check Failed] ❌\nThe loaded model ({type(self.model).__name__}) is a Classifier.\nOptimization is not suitable for standard classification tasks.")
+        if self.model is None:
+            raise ValueError("Loaded model is None")
+        if self.scaler is None:
+            raise ValueError("Loaded scaler is None")
+
+    def _get_from_artifact(self, key: str):
+        val = self._artifact.get(key)
+        if key == "feature_names":
+            result = val if isinstance(val, list) and val else None
+        else:
+            result = val if val else None
+        return result
     
     def __repr__(self):
         return (f"<ObjectiveFunction(model={type(self.model).__name__}, scaler={type(self.scaler).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
@@ -84,7 +100,7 @@ def _set_boundaries(lower_boundaries: Sequence[float], upper_boundaries: Sequenc
     return lower, upper
 
 
-def _get_feature_names(size: int, names: Union[list[str], None]):
+def _set_feature_names(size: int, names: Union[list[str], None]):
     if names is None:
         return [str(i) for i in range(1, size+1)]
     else:
@@ -102,13 +118,66 @@ def _save_results(*dicts, save_dir: str, target_name: str):
 
 
 def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float], objective_function: ObjectiveFunction,
-            save_results_dir: str, target_name: str, 
+            save_results_dir: str, 
+            target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=100, max_iterations: int=100,
             inequality_constrain_function=None, 
             post_hoc_analysis: Union[int, None]=None) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+    """
+    Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results.
+
+    Parameters
+    ----------
+    lower_boundaries : Sequence[float]
+        Lower bounds for each feature in the search space.
+    upper_boundaries : Sequence[float]
+        Upper bounds for each feature in the search space.
+    objective_function : ObjectiveFunction
+        A callable object encapsulating a regression model and its scaler.
+    save_results_dir : str
+        Directory path to save the results CSV file.
+    target_name : str or None, optional
+        Name of the target variable. If None, attempts to retrieve from the ObjectiveFunction object.
+    feature_names : list[str] or None, optional
+        List of feature names. If None, attempts to retrieve from the ObjectiveFunction or generate generic names.
+    swarm_size : int, default=100
+        Number of particles in the swarm.
+    max_iterations : int, default=100
+        Maximum number of iterations for the optimization algorithm.
+    inequality_constrain_function : callable or None, optional
+        Optional function defining inequality constraints to be respected by the optimization.
+    post_hoc_analysis : int or None, optional
+        If specified, runs the optimization multiple times to perform post hoc analysis. The value indicates the number of repetitions.
+
+    Returns
+    -------
+    Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]
+        If `post_hoc_analysis` is None, returns two dictionaries:
+            - best_features_named: Feature values (after inverse scaling) that yield the best result.
+            - best_target_named: Best result obtained for the target variable.
+
+        If `post_hoc_analysis` is an integer, returns two dictionaries:
+            - all_best_features_named: Lists of best feature values (after inverse scaling) for each repetition.
+            - all_best_targets_named: List of best target values across repetitions.
+
+    Notes
+    -----
+    - PSO minimizes the objective function by default; if maximization is desired, it should be handled inside the ObjectiveFunction.
+    - Feature values are scaled before being passed to the model and inverse-transformed before result saving.
+    """
     lower, upper = _set_boundaries(lower_boundaries, upper_boundaries)
-    names = _get_feature_names(size=len(lower_boundaries), names=feature_names)
+    
+    # feature names
+    if feature_names is None and objective_function.feature_names is not None:
+        feature_names = objective_function.feature_names
+    names = _set_feature_names(size=len(lower_boundaries), names=feature_names)
+        
+    # target name
+    if target_name is None and objective_function.target_name is not None:
+        target_name = objective_function.target_name
+    if target_name is None:
+        target_name = "Target"
         
     arguments = {
             "func":objective_function,
@@ -125,7 +194,7 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
         
         # inverse transformation
         best_features = np.array(best_features).reshape(1, -1)
-        best_features_real = objective_function.scaler.inverse_transform(best_features).flatten()
+        best_features_real = objective_function.scaler.inverse_transform(best_features).flatten() # type: ignore
         
         # name features
         best_features_named = {name: value for name, value in zip(names, best_features_real)}
@@ -143,7 +212,7 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
             
             # inverse transformation
             best_features = np.array(best_features).reshape(1, -1)
-            best_features_real = objective_function.scaler.inverse_transform(best_features).flatten()
+            best_features_real = objective_function.scaler.inverse_transform(best_features).flatten() # type: ignore
             
             for i, best_feature in enumerate(best_features_real):
                 all_best_features[i].append(best_feature)
