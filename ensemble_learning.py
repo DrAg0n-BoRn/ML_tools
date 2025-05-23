@@ -249,9 +249,9 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
     return model_dir
 
 # save model
-def _save_model(trained_model, model_name: str, target_name:str, save_directory: str):
+def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str):
     full_path = os.path.join(save_directory, f"{model_name}_{target_name}.joblib")
-    joblib.dump({'model': trained_model, 'scaler':DATASCALER}, full_path)
+    joblib.dump({'model': trained_model, 'scaler':DATASCALER, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
 
 # function to evaluate the model and save metrics (Classification)
@@ -476,7 +476,9 @@ def _train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal[
     local_save_directory = _local_directories(model_name=model_name, dataset_id=dataset_id, save_dir=save_dir)
     
     if save_model:
-        _save_model(trained_model=trained_model, model_name=model_name, target_name=target_id, save_directory=local_save_directory)
+        _save_model(trained_model=trained_model, model_name=model_name, 
+                    target_name=target_id, feature_names=feature_names, 
+                    save_directory=local_save_directory)
         
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
