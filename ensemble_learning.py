@@ -1,9 +1,10 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import Colormap
 
 import os
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 import joblib
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
@@ -15,7 +16,7 @@ import lightgbm as lgb
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
 import warnings # Ignore warnings 
@@ -253,41 +254,182 @@ def _save_model(trained_model, model_name: str, target_name:str, feature_names: 
     full_path = os.path.join(save_directory, f"{model_name}_{target_name}.joblib")
     joblib.dump({'model': trained_model, 'scaler':DATASCALER, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
-
 # function to evaluate the model and save metrics (Classification)
-def evaluate_model_classification(model, model_name: str, 
-                                   save_dir: str,
-                                   x_test_scaled: np.ndarray, single_y_test: np.ndarray, 
-                                   target_id: str):
+def evaluate_model_classification(
+    model,
+    model_name: str,
+    save_dir: str,
+    x_test_scaled: np.ndarray,
+    single_y_test: np.ndarray,
+    target_id: str,
+    figsize: tuple = (10, 8),
+    title_fontsize: int = 14,
+    label_fontsize: int = 12,
+    dpi: int = 300,
+    cmap: Colormap = plt.cm.Blues # type: ignore
+) -> np.ndarray:
+    """
+    Evaluates a classification model, saves the classification report and confusion matrix plot.
+
+    Parameters:
+        model: Trained classifier with .predict() method
+        model_name: Identifier for the model
+        save_dir: Directory where results are saved
+        x_test_scaled: Feature matrix for test set
+        single_y_test: True binary labels
+        target_id: Suffix for naming output files
+        figsize: Size of the confusion matrix figure (width, height)
+        fontsize: Font size used for title, axis labels and ticks
+        dpi: Resolution of saved plot
+        cmap: Color map for the confusion matrix. Examples include:
+            - plt.cm.Blues (default)
+            - plt.cm.Greens
+            - plt.cm.Oranges
+            - plt.cm.Purples
+            - plt.cm.Reds
+            - plt.cm.cividis
+            - plt.cm.inferno
+
+    Returns:
+        y_pred: Predicted class labels
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
     y_pred = model.predict(x_test_scaled)
     accuracy = accuracy_score(single_y_test, y_pred)
-    report: str = classification_report(single_y_test, y_pred, target_names=["Negative", "Positive"], output_dict=False) # type: ignore
-    
+
+    report = classification_report(
+        single_y_test,
+        y_pred,
+        target_names=["Negative", "Positive"],
+        output_dict=False
+    )
+
+    # Save text report
     report_path = os.path.join(save_dir, f"Classification_Report_{target_id}.txt")
-    # Write a new file
     with open(report_path, "w") as f:
         f.write(f"{model_name} - {target_id}\t\tAccuracy: {accuracy:.2f}\n")
-        f.write(f"Classification Report:\n")
-        f.write(report)
-        
-    #Generate confusion matrix
-    disp_ = ConfusionMatrixDisplay.from_predictions(
-        y_true=single_y_test, y_pred=y_pred,
+        f.write("Classification Report:\n")
+        f.write(report) # type: ignore
+
+    # Create confusion matrix
+    fig, ax = plt.subplots(figsize=figsize)
+    disp = ConfusionMatrixDisplay.from_predictions(
+        y_true=single_y_test,
+        y_pred=y_pred,
         display_labels=["Negative", "Positive"],
-        cmap=plt.cm.Blues,
-        normalize="true"
+        cmap=cmap,
+        normalize="true",
+        ax=ax
     )
-    plt.title(f"{model_name} - Confusion Matrix for {target_id}")
-    plt.savefig(os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png"))
-    plt.close()
+
+    ax.set_title(f"{model_name} - Confusion Matrix for {target_id}", fontsize=title_fontsize)
+    ax.tick_params(axis='both', labelsize=label_fontsize)
+    ax.set_xlabel("Predicted label", fontsize=label_fontsize)
+    ax.set_ylabel("True label", fontsize=label_fontsize)
+
+    fig.tight_layout()
+    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png")
+    fig.savefig(fig_path, dpi=dpi)
+    plt.close(fig)
 
     return y_pred
+
+
+#Function to save ROC and ROC AUC (Classification)
+def plot_roc_curve(
+    true_labels: np.ndarray,
+    probabilities_or_model: Union[np.ndarray, xgb.XGBClassifier, lgb.LGBMClassifier, object],
+    model_name: str,
+    target_name: str,
+    save_directory: str,
+    color: str = "darkorange",
+    figure_size: tuple = (10, 10),
+    linewidth: int = 2,
+    title_fontsize: int = 14,
+    label_fontsize: int = 12,
+    dpi_value: int = 300,
+    input_features: Optional[np.ndarray] = None,
+) -> plt.Figure: # type: ignore
+    """
+    Plots the ROC curve and computes AUC for binary classification. Positive class is assumed to be in the second column of the probabilities array.
+    
+    Parameters:
+        true_labels: np.ndarray of shape (n_samples,), ground truth binary labels (0 or 1).
+        probabilities_or_model: either predicted probabilities (ndarray), or a trained model with attribute `.predict_proba()`.
+        target_name: str, used for figure title and filename.
+        save_directory: str, path to directory where figure is saved.
+        color: color of the ROC curve. Accepts any valid Matplotlib color specification. Examples:
+            - Named colors: "darkorange", "blue", "red", "green", "black"
+            - Hex codes: "#1f77b4", "#ff7f0e"
+            - RGB tuples: (0.2, 0.4, 0.6)
+            - Colormap value: plt.cm.viridis(0.6)
+        figure_size: Tuple for figure size (width, height).
+        linewidth: int, width of the plotted ROC line.
+        title_fontsize: int, font size of the title.
+        label_fontsize: int, font size for axes labels.
+        dpi: int, resolution of saved plot.
+        input_features: np.ndarray of shape (n_samples, n_features), required if a model is passed.
+
+    Returns:
+        fig: matplotlib Figure object
+    """
+
+    # Determine predicted probabilities
+    if isinstance(probabilities_or_model, np.ndarray):
+        # Input is already probabilities
+        if probabilities_or_model.ndim == 2:
+            y_score = probabilities_or_model[:, 1]
+        else:
+            y_score = probabilities_or_model
+            
+    elif hasattr(probabilities_or_model, "predict_proba"):
+        if input_features is None:
+            raise ValueError("input_features must be provided when using a classifier.")
+
+        try:
+            classes = probabilities_or_model.classes_ # type: ignore
+            positive_class_index = list(classes).index(1)
+        except (AttributeError, ValueError):
+            positive_class_index = 1
+
+        y_score = probabilities_or_model.predict_proba(input_features)[:, positive_class_index] # type: ignore
+
+    else:
+        raise TypeError("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
+
+    # ROC and AUC
+    fpr, tpr, _ = roc_curve(true_labels, y_score)
+    auc_score = roc_auc_score(true_labels, y_score)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=figure_size)
+    ax.plot(fpr, tpr, color=color, lw=linewidth, label=f"AUC = {auc_score:.2f}")
+    ax.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=1)
+
+    ax.set_title(f"{model_name} - ROC Curve for {target_name}", fontsize=title_fontsize)
+    ax.set_xlabel("False Positive Rate", fontsize=label_fontsize)
+    ax.set_ylabel("True Positive Rate", fontsize=label_fontsize)
+    ax.legend(loc="lower right", fontsize=label_fontsize)
+    ax.grid(True)
+
+    # Save figure
+    os.makedirs(save_directory, exist_ok=True)
+    save_path = os.path.join(save_directory, f"ROC_AUC_{target_name}.png")
+    fig.savefig(save_path, bbox_inches="tight", dpi=dpi_value)
+
+    return fig
 
 # function to evaluate the model and save metrics (Regression)
 def evaluate_model_regression(model, model_name: str, 
                                save_dir: str,
                                x_test_scaled: np.ndarray, single_y_test: np.ndarray, 
-                               target_id: str):
+                               target_id: str,
+                               figure_size: tuple = (12, 8),
+                               alpha_transparency: float = 0.5,
+                               title_fontsize: int = 14,
+                               normal_fontsize: int = 12,
+                               dpi_value: int = 300):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
     
@@ -305,13 +447,6 @@ def evaluate_model_regression(model, model_name: str,
         f.write(f"Mean Squared Error (MSE): {mse:.4f}\n")
         f.write(f"Root Mean Squared Error (RMSE): {rmse:.4f}\n")
         f.write(f"R² Score: {r2:.4f}\n")
-        
-    # Plot config
-    figure_size = (12,8)
-    alpha_transparency = 0.5
-    title_fontsize = 14
-    normal_fontsize = 12
-    dpi_value = 300
 
     # Generate and save residual plot
     residuals = single_y_test - y_pred
@@ -348,7 +483,14 @@ def get_shap_values(model, model_name: str,
                    features_to_explain: np.ndarray, 
                    feature_names: list[str], 
                    target_id: str,
-                   task: Literal["classification", "regression"]):
+                   task: Literal["classification", "regression"],
+                   max_display_features: int=10,
+                   figsize: tuple=(12, 18),
+                   title_fontsize: int=14,
+                   label_fontsize: int=12,
+                   helper_fontsize: int=10,
+                   dpi_value: int=300
+                   ):
     """
     Universal SHAP explainer for regression and classification.
     - Use `X_train` (or a subsample of it) to see how the model explains the data it was trained on.
@@ -365,7 +507,7 @@ def get_shap_values(model, model_name: str,
                          title: str):
         """Helper function to create and save SHAP plots"""
         plt.style.use('seaborn')
-        plt.figure(figsize=(12, 18))
+        plt.figure(figsize=figsize)
         
         # Create the SHAP plot
         shap.summary_plot(
@@ -374,36 +516,36 @@ def get_shap_values(model, model_name: str,
             feature_names=feature_names,
             plot_type=plot_type,
             show=False,
-            plot_size=(12, 8),
-            max_display=20,
+            plot_size=figsize,
+            max_display=max_display_features,
             alpha=0.7,
             color=plt.get_cmap('viridis')
         )
         
         # Add professional styling
         ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", fontsize=12, weight='bold')
-        ax.set_ylabel("Features", fontsize=12, weight='bold')
-        plt.title(title, fontsize=14, pad=20, weight='bold')
+        ax.set_xlabel("SHAP Value Impact", fontsize=label_fontsize, weight='bold')
+        ax.set_ylabel("Features", fontsize=label_fontsize, weight='bold')
+        plt.title(title, fontsize=title_fontsize, pad=20, weight='bold')
         
         # Add explanatory text
         plt.text(0.5, -0.15, 
                 "Negative SHAP ← Feature Impact → Positive SHAP",
                 ha='center', va='center', 
                 transform=ax.transAxes,
-                fontsize=10,
+                fontsize=helper_fontsize,
                 color='#666666')
         
         # Handle colorbar for dot plots
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
-            cb.set_ylabel("Feature Value", size=10)
-            cb.tick_params(labelsize=8)
+            cb.set_ylabel("Feature Value", size=helper_fontsize)
+            cb.tick_params(labelsize=helper_fontsize-2)
         
         # Save and clean up
         plt.savefig(
             full_save_path,
-            dpi=300,
+            dpi=dpi_value,
             bbox_inches='tight',
             pad_inches=0.5,
             facecolor='white'
@@ -483,6 +625,10 @@ def _train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal[
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
                              x_test_scaled=test_features, single_y_test=test_target, target_id=target_id)
+        plot_roc_curve(true_labels=test_target,
+                       probabilities_or_model=trained_model, model_name=model_name, 
+                       target_name=target_id, save_directory=local_save_directory, 
+                       input_features=test_features)
     elif task == "regression":
         y_pred = evaluate_model_regression(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
                              x_test_scaled=test_features, single_y_test=test_target, target_id=target_id)
