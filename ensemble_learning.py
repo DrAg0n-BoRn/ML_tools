@@ -3,6 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap
+from matplotlib import rcdefaults
 
 import os
 from typing import Literal, Union, Optional
@@ -159,11 +160,10 @@ def _split_data(features, target, test_size, random_state):
 
 # function to standardize the data
 def _standardize_data(train_features, test_features):
-    global DATASCALER
-    DATASCALER = StandardScaler()
-    train_scaled = DATASCALER.fit_transform(train_features)
-    test_scaled = DATASCALER.transform(test_features)
-    return train_scaled, test_scaled
+    scaler = StandardScaler()
+    train_scaled = scaler.fit_transform(train_features)
+    test_scaled = scaler.transform(test_features)
+    return train_scaled, test_scaled, scaler
 
 # Over-sample minority class (Positive cases) and return several single target datasets (Classification)
 def _resample(X_train_scaled: np.ndarray, y_train: pd.Series, 
@@ -196,9 +196,9 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
     2. Standardize Train and Test Features
     3. Oversample imbalanced classes (classification)
     
-    Return a processed Tuple: (X_train, y_train, X_test, y_test)
+    Return a processed Tuple: (X_train, y_train, X_test, y_test, Scaler)
     
-    `(nD-array, 1D-array, nD-array, Series)`
+    `(nD-array, 1D-array, nD-array, Series, Scaler)`
     '''
     #DEBUG
     if debug:
@@ -214,7 +214,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
         print(f"Shapes after train test split - X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
     # Standardize    
-    X_train_scaled, X_test_scaled = _standardize_data(train_features=X_train, test_features=X_test)
+    X_train_scaled, X_test_scaled, scaler = _standardize_data(train_features=X_train, test_features=X_test)
     
     #DEBUG
     if debug:
@@ -230,7 +230,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
     if debug:
         print(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test_scaled.shape}, y_test: {y_test.shape}")
     
-    return X_train_oversampled, y_train_oversampled, X_test_scaled, y_test
+    return X_train_oversampled, y_train_oversampled, X_test_scaled, y_test, scaler
 
 ###### 4. Train and Evaluation ######
 # Trainer function
@@ -251,9 +251,9 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
     return model_dir
 
 # save model
-def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str):
+def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str, scaler: StandardScaler):
     full_path = os.path.join(save_directory, f"{model_name}_{target_name}.joblib")
-    joblib.dump({'model': trained_model, 'scaler':DATASCALER, 'feature_names': feature_names, 'target_name':target_name}, full_path)
+    joblib.dump({'model': trained_model, 'scaler':scaler, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
 # function to evaluate the model and save metrics (Classification)
 def evaluate_model_classification(
@@ -329,9 +329,12 @@ def evaluate_model_classification(
     ax.set_xlabel("Predicted label", fontsize=label_fontsize)
     ax.set_ylabel("True label", fontsize=label_fontsize)
     
+    # Turn off gridlines
+    ax.grid(False)
+    
     # Manually update font size of cell texts
     for text in ax.texts:
-        text.set_fontsize(label_fontsize)
+        text.set_fontsize(title_fontsize+2)
 
     fig.tight_layout()
     fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png")
@@ -491,10 +494,10 @@ def get_shap_values(model, model_name: str,
                    target_id: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
-                   figsize: tuple=(12, 18),
-                   title_fontsize: int=18,
-                   label_fontsize: int=16,
-                   helper_fontsize: int=14,
+                   figsize: tuple=(14, 20),
+                   title_fontsize: int=20,
+                   label_fontsize: int=18,
+                   helper_fontsize: int=16,
                    dpi_value: int=300
                    ):
     """
@@ -521,6 +524,15 @@ def get_shap_values(model, model_name: str,
         
         plt.figure(figsize=figsize)
         
+        #set rc parameters for better readability
+        plt.rc('font', size=label_fontsize)
+        plt.rc('axes', titlesize=title_fontsize)
+        plt.rc('axes', labelsize=label_fontsize)
+        plt.rc('xtick', labelsize=helper_fontsize)
+        plt.rc('ytick', labelsize=helper_fontsize)
+        plt.rc('legend', fontsize=helper_fontsize)
+        plt.rc('figure', titlesize=title_fontsize)
+        
         # Create the SHAP plot
         shap.summary_plot(
             shap_values=shap_values,
@@ -539,20 +551,13 @@ def get_shap_values(model, model_name: str,
         ax.set_xlabel("SHAP Value Impact", fontsize=label_fontsize, weight='bold')
         ax.set_ylabel("Features", fontsize=label_fontsize, weight='bold')
         plt.title(title, fontsize=title_fontsize, pad=20, weight='bold')
-        
-        # Add explanatory text
-        plt.text(0.5, -0.15, 
-                "Negative SHAP ← Feature Impact → Positive SHAP",
-                ha='center', va='center', 
-                transform=ax.transAxes,
-                fontsize=helper_fontsize,
-                color='#666666')
+
         
         # Handle colorbar for dot plots
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
             cb.set_ylabel("Feature Value", size=helper_fontsize)
-            cb.tick_params(labelsize=helper_fontsize-2)
+            cb.tick_params(labelsize=helper_fontsize)
         
         # Save and clean up
         plt.savefig(
@@ -563,6 +568,7 @@ def get_shap_values(model, model_name: str,
             facecolor='white'
         )
         plt.close()
+        rcdefaults()  # Reset rc parameters to default
     
     # Start
     explainer = shap.TreeExplainer(model)
@@ -611,10 +617,11 @@ def get_shap_values(model, model_name: str,
         )
         
 # TRAIN TEST PIPELINE
-def _train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
+def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
-             feature_names: list[str], target_id: str, save_dir: str,
+             feature_names: list[str], target_id: str, scaler: StandardScaler,
+             save_dir: str,
              debug: bool=False, save_model: bool=False):
     ''' 
     1. Train model.
@@ -632,7 +639,7 @@ def _train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal[
     if save_model:
         _save_model(trained_model=trained_model, model_name=model_name, 
                     target_name=target_id, feature_names=feature_names, 
-                    save_directory=local_save_directory)
+                    save_directory=local_save_directory, scaler=scaler)
         
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
@@ -665,17 +672,17 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
         #Yield features dataframe and target dataframe
         for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
-            X_train, y_train, X_test, y_test = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
+            X_train, y_train, X_test, y_test, scaler = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
                                                                 resample_strategy=resample_strategy, test_size=test_size, debug=debug, random_state=random_state)
             #Get models
             models_dict = get_models(task=task, is_balanced=False if resample_strategy is None else True, 
                                      L1_regularization=L1_regularization, L2_regularization=L2_regularization, learning_rate=learning_rate)
             #Train models
             for model_name, model in models_dict.items():
-                _train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,
+                train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,
                                     train_features=X_train, train_target=y_train,
                                     test_features=X_test, test_target=y_test,
-                                    feature_names=feature_names,target_id=target_name,
+                                    feature_names=feature_names,target_id=target_name, scaler=scaler,
                                     debug=debug, save_dir=save_dir, save_model=save_model)
     print("\nTraining and evaluation complete.")
     
