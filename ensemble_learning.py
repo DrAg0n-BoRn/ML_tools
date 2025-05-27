@@ -494,8 +494,8 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=28,
-                   label_fontsize: int=26,
+                   title_fontsize: int=30,
+                   label_fontsize: int=28,
                    dpi_value: int=300,
                    plot_type: Literal["default", "bar", "dot"] = "default"
                    ):
@@ -554,6 +554,7 @@ def get_shap_values(model, model_name: str,
         # Manually fix tick fonts
         for tick in ax.get_xticklabels():
             tick.set_fontsize(label_fontsize)
+            tick.set_rotation(45)
         for tick in ax.get_yticklabels():
             tick.set_fontsize(label_fontsize)
 
@@ -607,7 +608,7 @@ def get_shap_values(model, model_name: str,
                 feature_names=feature_names,
                 full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
                 plot_type="dot" if plot_type == "default" else plot_type,
-                title=f"{model_name} - {target_id}"
+                title=f"{model_name} - SHAP Summary for {target_id}"
             )
     
     else:  # Regression
@@ -617,7 +618,7 @@ def get_shap_values(model, model_name: str,
             feature_names=feature_names,
             full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
             plot_type="bar" if plot_type == "default" else plot_type,
-            title=f"{model_name} - {target_id}"
+            title=f"{model_name} - SHAP Summary for {target_id}"
         )
         
 # TRAIN TEST PIPELINE
