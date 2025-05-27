@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap
 
@@ -263,8 +264,8 @@ def evaluate_model_classification(
     single_y_test: np.ndarray,
     target_id: str,
     figsize: tuple = (10, 8),
-    title_fontsize: int = 14,
-    label_fontsize: int = 12,
+    title_fontsize: int = 18,
+    label_fontsize: int = 16,
     dpi: int = 300,
     cmap: Colormap = plt.cm.Blues # type: ignore
 ) -> np.ndarray:
@@ -346,8 +347,8 @@ def plot_roc_curve(
     color: str = "darkorange",
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
-    title_fontsize: int = 14,
-    label_fontsize: int = 12,
+    title_fontsize: int = 18,
+    label_fontsize: int = 16,
     dpi_value: int = 300,
     input_features: Optional[np.ndarray] = None,
 ) -> plt.Figure: # type: ignore
@@ -427,8 +428,8 @@ def evaluate_model_regression(model, model_name: str,
                                target_id: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
-                               title_fontsize: int = 14,
-                               normal_fontsize: int = 12,
+                               title_fontsize: int = 16,
+                               normal_fontsize: int = 14,
                                dpi_value: int = 300):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
@@ -484,11 +485,11 @@ def get_shap_values(model, model_name: str,
                    feature_names: list[str], 
                    target_id: str,
                    task: Literal["classification", "regression"],
-                   max_display_features: int=10,
+                   max_display_features: int=8,
                    figsize: tuple=(12, 18),
-                   title_fontsize: int=14,
-                   label_fontsize: int=12,
-                   helper_fontsize: int=10,
+                   title_fontsize: int=18,
+                   label_fontsize: int=16,
+                   helper_fontsize: int=14,
                    dpi_value: int=300
                    ):
     """
