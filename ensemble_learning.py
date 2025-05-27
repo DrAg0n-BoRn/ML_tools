@@ -328,6 +328,10 @@ def evaluate_model_classification(
     ax.tick_params(axis='both', labelsize=label_fontsize)
     ax.set_xlabel("Predicted label", fontsize=label_fontsize)
     ax.set_ylabel("True label", fontsize=label_fontsize)
+    
+    # Manually update font size of cell texts
+    for text in ax.texts:
+        text.set_fontsize(label_fontsize)
 
     fig.tight_layout()
     fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png")
@@ -411,6 +415,7 @@ def plot_roc_curve(
     ax.set_title(f"{model_name} - ROC Curve for {target_name}", fontsize=title_fontsize)
     ax.set_xlabel("False Positive Rate", fontsize=label_fontsize)
     ax.set_ylabel("True Positive Rate", fontsize=label_fontsize)
+    ax.tick_params(axis='both', labelsize=label_fontsize)
     ax.legend(loc="lower right", fontsize=label_fontsize)
     ax.grid(True)
 
