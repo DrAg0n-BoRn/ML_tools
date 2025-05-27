@@ -65,12 +65,12 @@ def get_models(task: Literal["classification", "regression"], random_state: int=
     Valid tasks: "classification" or "regression".
     
     Classification Models:
-        - "XGB" - XGBClassifier
-        - "LGBM" - LGBMClassifier
+        - "XGBoost" - XGBClassifier
+        - "LightGBM" - LGBMClassifier
         - "HistGB" - HistGradientBoostingClassifier
     Regression Models:
-        - "XGB" - XGBRegressor
-        - "LGBM" - LGBMRegressor
+        - "XGBoost" - XGBRegressor
+        - "LightGBM" - LGBMRegressor
         - "HistGB" - HistGradientBoostingRegressor
         
     For classification only: Set `is_balanced=False` for imbalanced datasets.
@@ -123,10 +123,10 @@ def get_models(task: Literal["classification", "regression"], random_state: int=
             'scale_pos_weight': 1 if is_balanced else 8,
             'eval_metric': 'aucpr'
         })
-        models["XGB"] = xgb.XGBClassifier(**xgb_params)
+        models["XGBoost"] = xgb.XGBClassifier(**xgb_params)
     else:
         xgb_params.update({'eval_metric': 'rmse'})
-        models["XGB"] = xgb.XGBRegressor(**xgb_params)
+        models["XGBoost"] = xgb.XGBRegressor(**xgb_params)
 
     # LGBM Model
     if task == "classification":
@@ -134,10 +134,10 @@ def get_models(task: Literal["classification", "regression"], random_state: int=
             'class_weight': None if is_balanced else 'balanced',
             'boosting_type': 'goss' if is_balanced else 'dart',
         })
-        models["LGBM"] = lgb.LGBMClassifier(**lgbm_params)
+        models["LightGBM"] = lgb.LGBMClassifier(**lgbm_params)
     else:
         lgbm_params['boosting_type'] = 'dart'
-        models["LGBM"] = lgb.LGBMRegressor(**lgbm_params)
+        models["LightGBM"] = lgb.LGBMRegressor(**lgbm_params)
 
     # HistGB Model
     if task == "classification":
@@ -334,7 +334,7 @@ def evaluate_model_classification(
     
     # Manually update font size of cell texts
     for text in ax.texts:
-        text.set_fontsize(title_fontsize+2)
+        text.set_fontsize(title_fontsize+4)
 
     fig.tight_layout()
     fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png")
@@ -423,7 +423,7 @@ def plot_roc_curve(
 
     # Save figure
     os.makedirs(save_directory, exist_ok=True)
-    save_path = os.path.join(save_directory, f"ROC_AUC_{target_name}.png")
+    save_path = os.path.join(save_directory, f"ROC_{target_name}.png")
     fig.savefig(save_path, bbox_inches="tight", dpi=dpi_value)
 
     return fig
@@ -494,10 +494,10 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=30,
-                   label_fontsize: int=28,
+                   title_fontsize: int=34,
+                   label_fontsize: int=32,
                    dpi_value: int=300,
-                   plot_type: Literal["default", "bar", "dot"] = "default"
+                   plot_type: Literal["bar", "dot"] = "dot"
                    ):
     """
     Universal SHAP explainer for regression and classification.
@@ -547,8 +547,8 @@ def get_shap_values(model, model_name: str,
         
         # Add professional styling
         ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", fontsize=label_fontsize, weight='bold')
-        ax.set_ylabel("Features", fontsize=label_fontsize, weight='bold')
+        ax.set_xlabel("SHAP Value Impact", fontsize=title_fontsize, weight='bold')
+        ax.set_ylabel("Features", fontsize=title_fontsize, weight='bold')
         plt.title(title, fontsize=title_fontsize, pad=20, weight='bold')
         
         # Manually fix tick fonts
@@ -569,13 +569,13 @@ def get_shap_values(model, model_name: str,
             full_save_path,
             dpi=dpi_value,
             bbox_inches='tight',
-            pad_inches=0.5,
+            pad_inches=0.3,
             facecolor='white'
         )
         plt.close()
         rcdefaults()  # Reset rc parameters to default
     
-    # Start
+    # START
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(features_to_explain)
     
@@ -596,7 +596,7 @@ def get_shap_values(model, model_name: str,
                     features=features_to_explain,
                     feature_names=feature_names,
                     full_save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}.png"),
-                    plot_type="dot" if plot_type == "default" else plot_type,
+                    plot_type=plot_type,
                     title=f"{model_name} - {target_id} (Class {class_name})"
                 )
         else:
@@ -607,7 +607,7 @@ def get_shap_values(model, model_name: str,
                 features=features_to_explain,
                 feature_names=feature_names,
                 full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
-                plot_type="dot" if plot_type == "default" else plot_type,
+                plot_type=plot_type,
                 title=f"{model_name} - SHAP Summary for {target_id}"
             )
     
@@ -617,7 +617,7 @@ def get_shap_values(model, model_name: str,
             features=features_to_explain,
             feature_names=feature_names,
             full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
-            plot_type="bar" if plot_type == "default" else plot_type,
+            plot_type=plot_type,
             title=f"{model_name} - SHAP Summary for {target_id}"
         )
         
