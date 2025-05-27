@@ -264,8 +264,8 @@ def evaluate_model_classification(
     single_y_test: np.ndarray,
     target_id: str,
     figsize: tuple = (10, 8),
-    title_fontsize: int = 18,
-    label_fontsize: int = 16,
+    title_fontsize: int = 20,
+    label_fontsize: int = 18,
     dpi: int = 300,
     cmap: Colormap = plt.cm.Blues # type: ignore
 ) -> np.ndarray:
@@ -353,8 +353,8 @@ def plot_roc_curve(
     color: str = "darkorange",
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
-    title_fontsize: int = 18,
-    label_fontsize: int = 16,
+    title_fontsize: int = 20,
+    label_fontsize: int = 18,
     dpi_value: int = 300,
     input_features: Optional[np.ndarray] = None,
 ) -> plt.Figure: # type: ignore
@@ -435,8 +435,8 @@ def evaluate_model_regression(model, model_name: str,
                                target_id: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
-                               title_fontsize: int = 16,
-                               normal_fontsize: int = 14,
+                               title_fontsize: int = 20,
+                               normal_fontsize: int = 18,
                                dpi_value: int = 300):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
@@ -494,8 +494,8 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=24,
-                   label_fontsize: int=22,
+                   title_fontsize: int=28,
+                   label_fontsize: int=26,
                    dpi_value: int=300,
                    plot_type: Literal["default", "bar", "dot"] = "default"
                    ):
@@ -550,8 +550,13 @@ def get_shap_values(model, model_name: str,
         ax.set_xlabel("SHAP Value Impact", fontsize=label_fontsize, weight='bold')
         ax.set_ylabel("Features", fontsize=label_fontsize, weight='bold')
         plt.title(title, fontsize=title_fontsize, pad=20, weight='bold')
-
         
+        # Manually fix tick fonts
+        for tick in ax.get_xticklabels():
+            tick.set_fontsize(label_fontsize)
+        for tick in ax.get_yticklabels():
+            tick.set_fontsize(label_fontsize)
+
         # Handle colorbar for dot plots
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
