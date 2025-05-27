@@ -507,7 +507,13 @@ def get_shap_values(model, model_name: str,
                          full_save_path: str, plot_type: str, 
                          title: str):
         """Helper function to create and save SHAP plots"""
-        plt.style.use('seaborn')
+        # Set style
+        preferred_styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
+        for style in preferred_styles:
+            if style in plt.style.available or style == 'default':
+                plt.style.use(style)
+                break
+        
         plt.figure(figsize=figsize)
         
         # Create the SHAP plot
