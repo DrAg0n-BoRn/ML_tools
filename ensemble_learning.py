@@ -343,7 +343,6 @@ def evaluate_model_classification(
 
     return y_pred
 
-
 #Function to save ROC and ROC AUC (Classification)
 def plot_roc_curve(
     true_labels: np.ndarray,
@@ -495,10 +494,10 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=20,
-                   label_fontsize: int=18,
-                   helper_fontsize: int=16,
-                   dpi_value: int=300
+                   title_fontsize: int=24,
+                   label_fontsize: int=22,
+                   dpi_value: int=300,
+                   plot_type: Literal["default", "bar", "dot"] = "default"
                    ):
     """
     Universal SHAP explainer for regression and classification.
@@ -528,9 +527,9 @@ def get_shap_values(model, model_name: str,
         plt.rc('font', size=label_fontsize)
         plt.rc('axes', titlesize=title_fontsize)
         plt.rc('axes', labelsize=label_fontsize)
-        plt.rc('xtick', labelsize=helper_fontsize)
-        plt.rc('ytick', labelsize=helper_fontsize)
-        plt.rc('legend', fontsize=helper_fontsize)
+        plt.rc('xtick', labelsize=label_fontsize)
+        plt.rc('ytick', labelsize=label_fontsize)
+        plt.rc('legend', fontsize=label_fontsize)
         plt.rc('figure', titlesize=title_fontsize)
         
         # Create the SHAP plot
@@ -556,8 +555,8 @@ def get_shap_values(model, model_name: str,
         # Handle colorbar for dot plots
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
-            cb.set_ylabel("Feature Value", size=helper_fontsize)
-            cb.tick_params(labelsize=helper_fontsize)
+            cb.set_ylabel("Feature Value", size=label_fontsize)
+            cb.tick_params(labelsize=label_fontsize)
         
         # Save and clean up
         plt.savefig(
@@ -591,7 +590,7 @@ def get_shap_values(model, model_name: str,
                     features=features_to_explain,
                     feature_names=feature_names,
                     full_save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}.png"),
-                    plot_type="dot",
+                    plot_type="dot" if plot_type == "default" else plot_type,
                     title=f"{model_name} - {target_id} (Class {class_name})"
                 )
         else:
@@ -602,7 +601,7 @@ def get_shap_values(model, model_name: str,
                 features=features_to_explain,
                 feature_names=feature_names,
                 full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
-                plot_type="dot",
+                plot_type="dot" if plot_type == "default" else plot_type,
                 title=f"{model_name} - {target_id}"
             )
     
@@ -612,7 +611,7 @@ def get_shap_values(model, model_name: str,
             features=features_to_explain,
             feature_names=feature_names,
             full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
-            plot_type="bar",
+            plot_type="bar" if plot_type == "default" else plot_type,
             title=f"{model_name} - {target_id}"
         )
         
