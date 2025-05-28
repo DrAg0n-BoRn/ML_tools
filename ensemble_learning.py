@@ -264,9 +264,8 @@ def evaluate_model_classification(
     single_y_test: np.ndarray,
     target_id: str,
     figsize: tuple = (10, 8),
-    title_fontsize: int = 20,
-    label_fontsize: int = 18,
-    dpi: int = 300,
+    title_fontsize: int = 24,
+    label_fontsize: int = 22,
     cmap: Colormap = plt.cm.Blues # type: ignore
 ) -> np.ndarray:
     """
@@ -281,7 +280,6 @@ def evaluate_model_classification(
         target_id: Suffix for naming output files
         figsize: Size of the confusion matrix figure (width, height)
         fontsize: Font size used for title, axis labels and ticks
-        dpi: Resolution of saved plot
         cmap: Color map for the confusion matrix. Examples include:
             - plt.cm.Blues (default)
             - plt.cm.Greens
@@ -337,8 +335,8 @@ def evaluate_model_classification(
         text.set_fontsize(title_fontsize+4)
 
     fig.tight_layout()
-    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.png")
-    fig.savefig(fig_path, dpi=dpi)
+    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.svg")
+    fig.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close(fig)
 
     return y_pred
@@ -353,9 +351,8 @@ def plot_roc_curve(
     color: str = "darkorange",
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
-    title_fontsize: int = 20,
-    label_fontsize: int = 18,
-    dpi_value: int = 300,
+    title_fontsize: int = 24,
+    label_fontsize: int = 22,
     input_features: Optional[np.ndarray] = None,
 ) -> plt.Figure: # type: ignore
     """
@@ -375,7 +372,6 @@ def plot_roc_curve(
         linewidth: int, width of the plotted ROC line.
         title_fontsize: int, font size of the title.
         label_fontsize: int, font size for axes labels.
-        dpi: int, resolution of saved plot.
         input_features: np.ndarray of shape (n_samples, n_features), required if a model is passed.
 
     Returns:
@@ -423,8 +419,8 @@ def plot_roc_curve(
 
     # Save figure
     os.makedirs(save_directory, exist_ok=True)
-    save_path = os.path.join(save_directory, f"ROC_{target_name}.png")
-    fig.savefig(save_path, bbox_inches="tight", dpi=dpi_value)
+    save_path = os.path.join(save_directory, f"ROC_{target_name}.svg")
+    fig.savefig(save_path, bbox_inches="tight", format="svg")
 
     return fig
 
@@ -435,9 +431,8 @@ def evaluate_model_regression(model, model_name: str,
                                target_id: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
-                               title_fontsize: int = 20,
-                               normal_fontsize: int = 18,
-                               dpi_value: int = 300):
+                               title_fontsize: int = 24,
+                               normal_fontsize: int = 22):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
     
@@ -466,7 +461,7 @@ def evaluate_model_regression(model, model_name: str,
     plt.title(f"{model_name} - Residual Plot for {target_id}", fontsize=title_fontsize)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{target_id}.png"), bbox_inches='tight', dpi=dpi_value)
+    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{target_id}.svg"), bbox_inches='tight', format="svg")
     plt.close()
     
     # Create true vs predicted values plot
@@ -479,8 +474,8 @@ def evaluate_model_regression(model, model_name: str,
     plt.ylabel('Predictions', fontsize=normal_fontsize)
     plt.title(f"{model_name} - True vs Predicted Values ({target_id})", fontsize=title_fontsize)
     plt.grid(True)
-    plot_path = os.path.join(save_dir, f"Regression_Plot_{target_id}.png")
-    plt.savefig(plot_path, bbox_inches='tight', dpi=dpi_value)
+    plot_path = os.path.join(save_dir, f"Regression_Plot_{target_id}.svg")
+    plt.savefig(plot_path, bbox_inches='tight', format="svg")
     plt.close()
 
     return y_pred
@@ -494,9 +489,8 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=34,
-                   label_fontsize: int=32,
-                   dpi_value: int=300,
+                   title_fontsize: int=40,
+                   label_fontsize: int=38,
                    plot_type: Literal["bar", "dot"] = "dot"
                    ):
     """
@@ -567,10 +561,9 @@ def get_shap_values(model, model_name: str,
         # Save and clean up
         plt.savefig(
             full_save_path,
-            dpi=dpi_value,
             bbox_inches='tight',
-            pad_inches=0.3,
-            facecolor='white'
+            facecolor='white', 
+            format="svg"
         )
         plt.close()
         rcdefaults()  # Reset rc parameters to default
@@ -595,7 +588,7 @@ def get_shap_values(model, model_name: str,
                     shap_values=class_shap,
                     features=features_to_explain,
                     feature_names=feature_names,
-                    full_save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}.png"),
+                    full_save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}.svg"),
                     plot_type=plot_type,
                     title=f"{model_name} - {target_id} (Class {class_name})"
                 )
@@ -606,7 +599,7 @@ def get_shap_values(model, model_name: str,
                 shap_values=plot_vals,
                 features=features_to_explain,
                 feature_names=feature_names,
-                full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
+                full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
                 plot_type=plot_type,
                 title=f"{model_name} - SHAP Summary for {target_id}"
             )
@@ -616,7 +609,7 @@ def get_shap_values(model, model_name: str,
             shap_values=shap_values,
             features=features_to_explain,
             feature_names=feature_names,
-            full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.png"),
+            full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
             plot_type=plot_type,
             title=f"{model_name} - SHAP Summary for {target_id}"
         )
