@@ -556,6 +556,7 @@ def get_shap_values(model, model_name: str,
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
             # cb.set_ylabel("Feature Value", size=label_fontsize)
+            cb.set_ylabel("", size=1)
             cb.tick_params(labelsize=label_fontsize - 2)
         
         # Save and clean up
