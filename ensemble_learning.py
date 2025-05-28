@@ -42,7 +42,7 @@ def yield_imputed_dataframe(datasets_dir: str):
         df = pd.read_csv(full_path)
         #remove extension
         filename = os.path.splitext(os.path.basename(dataset_filename))[0]
-        print(f"Working on file: {filename}")
+        print(f"Working on dataset: {filename}")
         yield (df, filename)
 
 #Split a dataset into features and targets datasets
@@ -265,7 +265,7 @@ def evaluate_model_classification(
     target_id: str,
     figsize: tuple = (10, 8),
     title_fontsize: int = 24,
-    label_fontsize: int = 22,
+    label_fontsize: int = 24,
     cmap: Colormap = plt.cm.Blues # type: ignore
 ) -> np.ndarray:
     """
@@ -322,7 +322,7 @@ def evaluate_model_classification(
         ax=ax
     )
 
-    ax.set_title(f"{model_name} - Confusion Matrix for {target_id}", fontsize=title_fontsize)
+    ax.set_title(f"{model_name} - {target_id}", fontsize=title_fontsize)
     ax.tick_params(axis='both', labelsize=label_fontsize)
     ax.set_xlabel("Predicted label", fontsize=label_fontsize)
     ax.set_ylabel("True label", fontsize=label_fontsize)
@@ -352,7 +352,7 @@ def plot_roc_curve(
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
     title_fontsize: int = 24,
-    label_fontsize: int = 22,
+    label_fontsize: int = 24,
     input_features: Optional[np.ndarray] = None,
 ) -> plt.Figure: # type: ignore
     """
@@ -410,7 +410,7 @@ def plot_roc_curve(
     ax.plot(fpr, tpr, color=color, lw=linewidth, label=f"AUC = {auc_score:.2f}")
     ax.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=1)
 
-    ax.set_title(f"{model_name} - ROC Curve for {target_name}", fontsize=title_fontsize)
+    ax.set_title(f"{model_name} - {target_name}", fontsize=title_fontsize)
     ax.set_xlabel("False Positive Rate", fontsize=label_fontsize)
     ax.set_ylabel("True Positive Rate", fontsize=label_fontsize)
     ax.tick_params(axis='both', labelsize=label_fontsize)
@@ -432,7 +432,7 @@ def evaluate_model_regression(model, model_name: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
                                title_fontsize: int = 24,
-                               normal_fontsize: int = 22):
+                               normal_fontsize: int = 24):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
     
@@ -472,7 +472,7 @@ def evaluate_model_regression(model, model_name: str,
              'k--', lw=2)
     plt.xlabel('True Values', fontsize=normal_fontsize)
     plt.ylabel('Predictions', fontsize=normal_fontsize)
-    plt.title(f"{model_name} - True vs Predicted Values ({target_id})", fontsize=title_fontsize)
+    plt.title(f"{model_name} - True vs Predicted for {target_id}", fontsize=title_fontsize)
     plt.grid(True)
     plot_path = os.path.join(save_dir, f"Regression_Plot_{target_id}.svg")
     plt.savefig(plot_path, bbox_inches='tight', format="svg")
@@ -489,7 +489,7 @@ def get_shap_values(model, model_name: str,
                    task: Literal["classification", "regression"],
                    max_display_features: int=8,
                    figsize: tuple=(14, 20),
-                   title_fontsize: int=40,
+                   title_fontsize: int=38,
                    label_fontsize: int=38,
                    plot_type: Literal["bar", "dot"] = "dot"
                    ):
@@ -555,8 +555,8 @@ def get_shap_values(model, model_name: str,
         # Handle colorbar for dot plots
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
-            cb.set_ylabel("Feature Value", size=label_fontsize)
-            cb.tick_params(labelsize=label_fontsize)
+            # cb.set_ylabel("Feature Value", size=label_fontsize)
+            cb.tick_params(labelsize=label_fontsize - 2)
         
         # Save and clean up
         plt.savefig(
@@ -601,7 +601,7 @@ def get_shap_values(model, model_name: str,
                 feature_names=feature_names,
                 full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
                 plot_type=plot_type,
-                title=f"{model_name} - SHAP Summary for {target_id}"
+                title=f"{model_name} - {target_id}"
             )
     
     else:  # Regression
@@ -611,7 +611,7 @@ def get_shap_values(model, model_name: str,
             feature_names=feature_names,
             full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
             plot_type=plot_type,
-            title=f"{model_name} - SHAP Summary for {target_id}"
+            title=f"{model_name} - {target_id}"
         )
         
 # TRAIN TEST PIPELINE
