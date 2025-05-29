@@ -16,7 +16,7 @@ def apply_mice(df: pd.DataFrame, resulting_datasets: int=1, iterations: int=20, 
     # Initialize kernel with number of imputed datasets to generate
     kernel = mf.ImputationKernel(
         data=df,
-        num_datasets=resulting_datasets,
+        datasets=resulting_datasets,
         random_state=random_state
     )
     
