@@ -17,7 +17,7 @@ import xgboost as xgb
 import lightgbm as lgb
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
@@ -159,8 +159,15 @@ def _split_data(features, target, test_size, random_state):
     return X_train, X_test, y_train, y_test
 
 # function to standardize the data
-def _standardize_data(train_features, test_features):
-    scaler = StandardScaler()
+def _standardize_data(train_features, test_features, scaler_code):
+    if scaler_code == "standard":
+        scaler = StandardScaler()
+    elif scaler_code == "minmax":
+        scaler = MinMaxScaler()
+    elif scaler_code == "maxabs":
+        scaler = MaxAbsScaler()
+    else:
+        raise ValueError(f"Unrecognized scaler {scaler_code}")
     train_scaled = scaler.fit_transform(train_features)
     test_scaled = scaler.transform(test_features)
     return train_scaled, test_scaled, scaler
@@ -189,7 +196,7 @@ def _resample(X_train_scaled: np.ndarray, y_train: pd.Series,
 
 # DATASET PIPELINE
 def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Literal["classification", "regression"],
-                     resample_strategy: Union[Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], None], 
+                     resample_strategy: Union[Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], None], scaler: Literal["standard", "minmax", "maxabs"],
                      test_size: float=0.2, debug: bool=False, random_state: int=101):
     ''' 
     1. Make Train/Test splits
@@ -214,7 +221,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
         print(f"Shapes after train test split - X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
     # Standardize    
-    X_train_scaled, X_test_scaled, scaler = _standardize_data(train_features=X_train, test_features=X_test)
+    X_train_scaled, X_test_scaled, scaler_object = _standardize_data(train_features=X_train, test_features=X_test, scaler_code=scaler)
     
     #DEBUG
     if debug:
@@ -230,7 +237,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
     if debug:
         print(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test_scaled.shape}, y_test: {y_test.shape}")
     
-    return X_train_oversampled, y_train_oversampled, X_test_scaled, y_test, scaler
+    return X_train_oversampled, y_train_oversampled, X_test_scaled, y_test, scaler_object
 
 ###### 4. Train and Evaluation ######
 # Trainer function
@@ -251,9 +258,9 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
     return model_dir
 
 # save model
-def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str, scaler: StandardScaler):
+def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str, scaler_object: Union[StandardScaler, MinMaxScaler, MaxAbsScaler]):
     full_path = os.path.join(save_directory, f"{model_name}_{target_name}.joblib")
-    joblib.dump({'model': trained_model, 'scaler':scaler, 'feature_names': feature_names, 'target_name':target_name}, full_path)
+    joblib.dump({'model': trained_model, 'scaler':scaler_object, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
 # function to evaluate the model and save metrics (Classification)
 def evaluate_model_classification(
@@ -619,7 +626,7 @@ def get_shap_values(model, model_name: str,
 def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
-             feature_names: list[str], target_id: str, scaler: StandardScaler,
+             feature_names: list[str], target_id: str, scaler_object: Union[StandardScaler, MinMaxScaler, MaxAbsScaler],
              save_dir: str,
              debug: bool=False, save_model: bool=False):
     ''' 
@@ -638,7 +645,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     if save_model:
         _save_model(trained_model=trained_model, model_name=model_name, 
                     target_name=target_id, feature_names=feature_names, 
-                    save_directory=local_save_directory, scaler=scaler)
+                    save_directory=local_save_directory, scaler_object=scaler_object)
         
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
@@ -662,7 +669,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
 
 ###### 5. Execution ######
 def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], task: Literal["classification", "regression"]="regression",
-         resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, save_model: bool=False,
+         resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, scaler: Literal["standard", "minmax", "maxabs"]="minmax", save_model: bool=False,
          test_size: float=0.2, debug:bool=False, L1_regularization: float=0.5, L2_regularization: float=0.5, learning_rate: float=0.005, random_state: int=101):
     #Check paths
     _check_paths(datasets_dir, save_dir)
@@ -671,8 +678,9 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
         #Yield features dataframe and target dataframe
         for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
-            X_train, y_train, X_test, y_test, scaler = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
-                                                                resample_strategy=resample_strategy, test_size=test_size, debug=debug, random_state=random_state)
+            X_train, y_train, X_test, y_test, scaler_object = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
+                                                                resample_strategy=resample_strategy, scaler=scaler,
+                                                                test_size=test_size, debug=debug, random_state=random_state)
             #Get models
             models_dict = get_models(task=task, is_balanced=False if resample_strategy is None else True, 
                                      L1_regularization=L1_regularization, L2_regularization=L2_regularization, learning_rate=learning_rate)
@@ -681,7 +689,7 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
                 train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,
                                     train_features=X_train, train_target=y_train,
                                     test_features=X_test, test_target=y_test,
-                                    feature_names=feature_names,target_id=target_name, scaler=scaler,
+                                    feature_names=feature_names,target_id=target_name, scaler_object=scaler_object,
                                     debug=debug, save_dir=save_dir, save_model=save_model)
     print("\nTraining and evaluation complete.")
     
