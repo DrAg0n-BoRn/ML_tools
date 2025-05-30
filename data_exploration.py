@@ -199,6 +199,140 @@ def clip_outliers_multi(
     return new_df
 
 
+def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
+    """
+    Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
+
+    Only numeric columns are considered.
+    
+    Args:
+        df (pd.DataFrame): The input dataset.
+        save_dir (str | None): If provided, the heatmap will be saved to this directory as a svg file.
+        plot_title: To make different plots, or overwrite existing ones.
+        method (str): Correlation method to use. Must be one of:
+            - 'pearson' (default): measures linear correlation (assumes normally distributed data),
+            - 'kendall': rank correlation (non-parametric),
+            - 'spearman': monotonic relationship (non-parametric).
+
+    Notes:
+        - If the number of numeric features exceeds 20, value annotations inside the heatmap will be disabled for readability.
+        - The size of the figure is scaled automatically based on the number of numeric features.
+        - Missing values are handled internally by `pandas.DataFrame.corr` using pairwise complete observations.
+        
+        Use feature-only dataset to check redundancy and feature collinearity.
+        Use the full dataset to check how features relate to targets.
+    """
+    numeric_df = df.select_dtypes(include='number')
+    if numeric_df.empty:
+        print("No numeric columns found. Heatmap not generated.")
+        return
+    
+    size = max(10, numeric_df.shape[1])
+    plt.figure(figsize=(size, size * 0.8))
+    
+    corr = numeric_df.corr(method=method)
+    annot_bool = numeric_df.shape[1] <= 20
+    sns.heatmap(corr, annot=annot_bool, cmap='coolwarm', fmt=".2f")
+
+    plt.title(plot_title)
+    
+    plt.show()
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        full_path = os.path.join(save_dir, plot_title + ".svg")
+        plt.savefig(full_path, bbox_inches="tight", format='svg')
+        print(f"Saved correlation heatmap to: {full_path}")
+    
+    plt.close()
+
+
+def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=50):
+    """
+    Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
+    and saves them as .png files in the specified directory.
+
+    Args:
+        df (pd.DataFrame): The dataset to analyze.
+        save_dir (str | None): The directory where plots will be saved.
+        view_frequencies (bool): Visualize relative frequencies instead of value counts.
+        plot_values_threshold (int): Threshold of unique values to skip plot.
+    """
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)    
+    
+    dict_to_plot = dict()
+    
+    for col in df.columns:
+        if view_frequencies:
+            view = df[col].value_counts(normalize=True)  # percentages
+        else:
+            view = df[col].value_counts(ascending=False)
+        print(view)
+        time.sleep(1)
+        
+        if save_dir:
+            if view.size > plot_values_threshold:
+                print(f"'{col}' has {view.size} unique values — skipping plot.")
+                continue
+            
+            user_input = input(f"Plot value distribution for '{col}'? (y/N): ")
+            if user_input.lower() in ["y", "yes"]:
+                dict_to_plot[col] = dict(view)
+        else:
+            user_input = input("Press enter")
+            
+        clear_output(wait=False)
+    
+    # plot and save
+    saved_plots = list()
+    if dict_to_plot and save_dir:
+        for col, data in dict_to_plot.items():
+            plt.bar(data.keys(), data.values(), color="skyblue", alpha=0.7)
+            ylabel = "Frequency" if view_frequencies else "Counts"
+            plt.xlabel("Values")
+            plt.ylabel(ylabel)
+            plt.title(f"Value Distribution for '{col}'")
+            plt.xticks(rotation=45)
+
+            # Save plot
+            plot_path = os.path.join(save_dir, f"Distribution_{col}.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.close()  # Close figure to free memory
+            
+            saved_plots.append(col)
+            
+    if saved_plots:
+        clear_output(wait=False)
+        print(f"Saved {len(saved_plots)} plot(s):")
+        print(f"{saved_plots}")
+
+
+def merge_features_targets(features: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merges processed feature DataFrame with target DataFrame, ensuring index alignment.
+
+    Parameters:
+        features (pd.DataFrame): Processed feature set.
+        targets (pd.DataFrame): Target set.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame with matching indexes.
+    """
+    # Ensure indexes match
+    if not features.index.equals(targets.index):
+        raise ValueError("Indexes of features and targets do not match!")
+
+    # Perform merging on index
+    merged_df = pd.concat([features, targets], axis=1)
+
+    # Print dataset shapes
+    print(f"Processed dataset shape: {merged_df.shape}")
+    print(f"Targets shape: {targets.shape}")
+    print(f"Features shape: {features.shape}")
+
+    return merged_df
+
+
 def compute_vif(
     df: pd.DataFrame,
     features: Optional[list[str]] = None,
@@ -301,129 +435,3 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
 
     return df.drop(columns=to_drop, errors="ignore")
 
-
-def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
-    """
-    Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
-
-    Only numeric columns are considered.
-    
-    Args:
-        df (pd.DataFrame): The input dataset.
-        save_dir (str | None): If provided, the heatmap will be saved to this directory as a svg file.
-        plot_title: To make different plots, or overwrite existing ones.
-        method (str): Correlation method to use. Must be one of:
-            - 'pearson' (default): measures linear correlation (assumes normally distributed data),
-            - 'kendall': rank correlation (non-parametric),
-            - 'spearman': monotonic relationship (non-parametric).
-
-    Notes:
-        - If the number of numeric features exceeds 20, value annotations inside the heatmap will be disabled for readability.
-        - The size of the figure is scaled automatically based on the number of numeric features.
-        - Missing values are handled internally by `pandas.DataFrame.corr` using pairwise complete observations.
-        
-        Use feature-only dataset to check redundancy and feature collinearity.
-        Use the full dataset to check how features relate to targets.
-    """
-    numeric_df = df.select_dtypes(include='number')
-    if numeric_df.empty:
-        print("No numeric columns found. Heatmap not generated.")
-        return
-    
-    size = max(10, numeric_df.shape[1])
-    plt.figure(figsize=(size, size * 0.8))
-    
-    corr = numeric_df.corr(method=method)
-    annot_bool = numeric_df.shape[1] <= 20
-    sns.heatmap(corr, annot=annot_bool, cmap='coolwarm', fmt=".2f")
-
-    plt.title(plot_title)
-    
-    plt.show()
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        full_path = os.path.join(save_dir, plot_title + ".svg")
-        plt.savefig(save_dir, bbox_inches="tight", format='svg')
-        print(f"Saved correlation heatmap to: {full_path}")
-    
-    plt.close()
-
-
-def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=50):
-    """
-    Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
-    and saves them as .png files in the specified directory.
-
-    Args:
-        df (pd.DataFrame): The dataset to analyze.
-        save_dir (str | None): The directory where plots will be saved.
-        view_frequencies (bool): Visualize relative frequencies instead of value counts.
-        plot_values_threshold (int): Threshold of unique values to skip plot.
-    """
-    if save_dir is not None:
-        os.makedirs(save_dir, exist_ok=True)    
-    
-    dict_to_plot = dict()
-    
-    for col in df.columns:
-        if view_frequencies:
-            view = df[col].value_counts(normalize=True)  # percentages
-        else:
-            view = df[col].value_counts(ascending=False)
-        print(view)
-        time.sleep(1)
-        
-        if save_dir:
-            if view.size > plot_values_threshold:
-                print(f"'{col}' has {view.size} unique values — skipping plot.")
-                continue
-            
-            user_input = input(f"Plot value distribution for '{col}'? (y/N): ")
-            if user_input.lower() in ["y", "yes"]:
-                dict_to_plot[col] = dict(view)
-        else:
-            user_input = input("Press enter")
-            
-        clear_output(wait=False)
-    
-    # plot and save
-    saved_plots = list()
-    if dict_to_plot and save_dir:
-        for col, data in dict_to_plot.items():
-            plt.bar(data.keys(), data.values(), color="skyblue", alpha=0.7)
-            ylabel = "Frequency" if view_frequencies else "Counts"
-            plt.xlabel("Values")
-            plt.ylabel(ylabel)
-            plt.title(f"Value Distribution for '{col}'")
-            plt.xticks(rotation=45)
-
-            # Save plot
-            plot_path = os.path.join(save_dir, f"Distribution_{col}.png")
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close()  # Close figure to free memory
-            
-            saved_plots.append(col)
-            
-    if saved_plots:
-        clear_output(wait=False)
-        print(f"Saved {len(saved_plots)} plot(s):")
-        print(f"{saved_plots}")
-
-
-def merge_features_targets(features: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merges processed feature DataFrame with target DataFrame, ensuring index alignment.
-
-    Parameters:
-        features (pd.DataFrame): Processed feature set.
-        targets (pd.DataFrame): Target set.
-
-    Returns:
-        pd.DataFrame: Merged DataFrame with matching indexes.
-    """
-    # Ensure indexes match
-    if not features.index.equals(targets.index):
-        raise ValueError("Indexes of features and targets do not match!")
-
-    # Perform merging on index
-    return pd.concat([features, targets], axis=1)
