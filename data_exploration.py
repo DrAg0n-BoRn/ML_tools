@@ -199,67 +199,6 @@ def clip_outliers_multi(
     return new_df
 
 
-def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=50):
-    """
-    Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
-    and saves them as .png files in the specified directory.
-
-    Args:
-        df (pd.DataFrame): The dataset to analyze.
-        save_dir (str | None): The directory where plots will be saved.
-        view_frequencies (bool): Visualize relative frequencies instead of value counts.
-        plot_values_threshold (int): Threshold of unique values to skip plot.
-    """
-    if save_dir is not None:
-        os.makedirs(save_dir, exist_ok=True)    
-    
-    dict_to_plot = dict()
-    
-    for col in df.columns:
-        if view_frequencies:
-            view = df[col].value_counts(normalize=True)  # percentages
-        else:
-            view = df[col].value_counts(ascending=False)
-        print(view)
-        time.sleep(1)
-        
-        if save_dir:
-            if view.size > plot_values_threshold:
-                print(f"'{col}' has {view.size} unique values — skipping plot.")
-                continue
-            
-            user_input = input(f"Plot value distribution for '{col}'? (y/N): ")
-            if user_input.lower() in ["y", "yes"]:
-                dict_to_plot[col] = dict(view)
-        else:
-            user_input = input("Press enter")
-            
-        clear_output(wait=False)
-    
-    # plot and save
-    saved_plots = list()
-    if dict_to_plot and save_dir:
-        for col, data in dict_to_plot.items():
-            plt.bar(data.keys(), data.values(), color="skyblue", alpha=0.7)
-            ylabel = "Frequency" if view_frequencies else "Counts"
-            plt.xlabel("Values")
-            plt.ylabel(ylabel)
-            plt.title(f"Value Distribution for '{col}'")
-            plt.xticks(rotation=45)
-
-            # Save plot
-            plot_path = os.path.join(save_dir, f"Distribution_{col}.png")
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close()  # Close figure to free memory
-            
-            saved_plots.append(col)
-            
-    if saved_plots:
-        clear_output(wait=False)
-        print(f"Saved {len(saved_plots)} plot(s):")
-        print(f"{saved_plots}")
-
-
 def compute_vif(
     df: pd.DataFrame,
     features: Optional[list[str]] = None,
@@ -408,4 +347,83 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
         print(f"Saved correlation heatmap to: {full_path}")
     
     plt.close()
+
+
+def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=50):
+    """
+    Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
+    and saves them as .png files in the specified directory.
+
+    Args:
+        df (pd.DataFrame): The dataset to analyze.
+        save_dir (str | None): The directory where plots will be saved.
+        view_frequencies (bool): Visualize relative frequencies instead of value counts.
+        plot_values_threshold (int): Threshold of unique values to skip plot.
+    """
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)    
     
+    dict_to_plot = dict()
+    
+    for col in df.columns:
+        if view_frequencies:
+            view = df[col].value_counts(normalize=True)  # percentages
+        else:
+            view = df[col].value_counts(ascending=False)
+        print(view)
+        time.sleep(1)
+        
+        if save_dir:
+            if view.size > plot_values_threshold:
+                print(f"'{col}' has {view.size} unique values — skipping plot.")
+                continue
+            
+            user_input = input(f"Plot value distribution for '{col}'? (y/N): ")
+            if user_input.lower() in ["y", "yes"]:
+                dict_to_plot[col] = dict(view)
+        else:
+            user_input = input("Press enter")
+            
+        clear_output(wait=False)
+    
+    # plot and save
+    saved_plots = list()
+    if dict_to_plot and save_dir:
+        for col, data in dict_to_plot.items():
+            plt.bar(data.keys(), data.values(), color="skyblue", alpha=0.7)
+            ylabel = "Frequency" if view_frequencies else "Counts"
+            plt.xlabel("Values")
+            plt.ylabel(ylabel)
+            plt.title(f"Value Distribution for '{col}'")
+            plt.xticks(rotation=45)
+
+            # Save plot
+            plot_path = os.path.join(save_dir, f"Distribution_{col}.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.close()  # Close figure to free memory
+            
+            saved_plots.append(col)
+            
+    if saved_plots:
+        clear_output(wait=False)
+        print(f"Saved {len(saved_plots)} plot(s):")
+        print(f"{saved_plots}")
+
+
+def merge_features_targets(features: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merges processed feature DataFrame with target DataFrame, ensuring index alignment.
+
+    Parameters:
+        features (pd.DataFrame): Processed feature set.
+        targets (pd.DataFrame): Target set.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame with matching indexes.
+    """
+    # Ensure indexes match
+    if not features.index.equals(targets.index):
+        raise ValueError("Indexes of features and targets do not match!")
+
+    # Perform merging on index
+    return pd.concat([features, targets], axis=1)
