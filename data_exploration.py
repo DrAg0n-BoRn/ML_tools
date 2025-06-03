@@ -279,26 +279,28 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.close()
 
 
-def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=10):
+def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=False, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
     """
     Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
     and saves them as .png files in the specified directory.
 
     Args:
         df (pd.DataFrame): The dataset to analyze.
-        save_dir (str | None): The directory where plots will be saved.
         view_frequencies (bool): Print relative frequencies instead of value counts.
-        plot_values_threshold (int): Threshold of unique values to start using bins.
+        bin_threshold (int): Threshold of unique values to start using bins.
+        skip_cols_with_key (str | None): Skip column names containing the key. If None, don't skip any column.
+    
+    Notes:
+        - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
     """
-    if save_dir is not None:
-        os.makedirs(save_dir, exist_ok=True)    
+    # cherrypick columns
+    if skip_cols_with_key is not None:
+        columns = [col for col in df.columns if skip_cols_with_key not in col]
+    else:
+        columns = df.columns.to_list()
     
-    dict_to_plot_std = dict()
-    dict_to_plot_freq = dict()
-    
-    saved_plots = 0
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > plot_values_threshold:
+    for col in columns:
+        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
             bins_number = 10
             binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
             while binned.nunique() <= 2:
@@ -326,20 +328,82 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
         view_freq.name = col
 
         # Print value counts
-        print(f"=== Distribution for column: {col} ===")
         print(view_freq if view_frequencies else view_std)
-        
-        if save_dir:
-            dict_to_plot_std[col] = dict(view_std)
-            dict_to_plot_freq[col] = dict(view_freq)
-            saved_plots += 1
         
         time.sleep(1)
         user_input_ = input("Press enter to continue")
         if _is_notebook():
             clear_output(wait=False)
+
+
+def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
+    """
+    Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
+    with adaptive binning for numerical columns when appropriate.
+
+    For each column both raw counts and relative frequencies are computed and plotted.
+
+    Plots are saved as PNG files under two subdirectories in `save_dir`:
+    - "Distribution_Counts" for absolute counts.
+    - "Distribution_Frequency" for relative frequencies.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
+        save_dir (str): Directory path where the plots will be saved. Will be created if it does not exist.
+        bin_threshold (int): Minimum number of unique values required to trigger binning
+            for numerical columns.
+        skip_cols_with_key (str | None): If provided, any column whose name contains this
+            substring will be excluded from analysis.
+
+    Notes:
+        - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
+        - All non-alphanumeric characters in column names are sanitized for safe file naming.
+        - Colormap is automatically adapted based on the number of categories or bins.
+    """
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)    
     
-    # plot and save
+    dict_to_plot_std = dict()
+    dict_to_plot_freq = dict()
+    
+    # cherrypick columns
+    if skip_cols_with_key is not None:
+        columns = [col for col in df.columns if skip_cols_with_key not in col]
+    else:
+        columns = df.columns.to_list()
+    
+    saved_plots = 0
+    for col in columns:
+        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
+            bins_number = 10
+            binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+            while binned.nunique() <= 2:
+                bins_number -= 1
+                binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+                if bins_number <= 2:
+                    break
+            
+            if binned.nunique() <= 2:
+                view_std = df[col].value_counts(sort=False).sort_index()
+            else:
+                view_std = binned.value_counts(sort=False)
+            
+        else:
+            view_std = df[col].value_counts(sort=False).sort_index()
+
+        # unlikely scenario where the series is empty
+        if view_std.sum() == 0:
+            view_freq = view_std
+        else:
+            view_freq = view_std / view_std.sum()
+        # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
+        
+        if save_dir:
+            dict_to_plot_std[col] = dict(view_std)
+            dict_to_plot_freq[col] = dict(view_freq)
+            saved_plots += 1
+    
+    # plot helper
     def _plot_helper(dict_: dict, target_dir: str, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
         for col, data in dict_.items():
             safe_col = re.sub(r"[^\w\-_. ]", "_", col)
@@ -362,22 +426,19 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
             plt.gca().set_facecolor('#f9f9f9')
             plt.tight_layout()
             
-            # Save plot
             plot_path = os.path.join(target_dir, f"{safe_col}.png")
             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
             plt.close()
     
-    if dict_to_plot_std and save_dir:
-        freq_dir = os.path.join(save_dir, "Distribution_Frequency")
-        std_dir = os.path.join(save_dir, "Distribution_Counts")
-        os.makedirs(freq_dir, exist_ok=True)
-        os.makedirs(std_dir, exist_ok=True)
-        _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
-        _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
-        
-        if _is_notebook():
-            clear_output(wait=False)
-        print(f"Saved {saved_plots} plot(s):")
+    # Save plots
+    freq_dir = os.path.join(save_dir, "Distribution_Frequency")
+    std_dir = os.path.join(save_dir, "Distribution_Counts")
+    os.makedirs(freq_dir, exist_ok=True)
+    os.makedirs(std_dir, exist_ok=True)
+    _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
+    _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
+
+    print(f"Saved {saved_plots} plot(s)")
 
 
 def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFrame:
