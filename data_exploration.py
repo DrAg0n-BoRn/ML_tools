@@ -4,12 +4,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
+from IPython import get_ipython
 from IPython.display import clear_output
 import time
 from typing import Union, Literal, Dict, Tuple, Optional
 import os
 import sys
 import textwrap
+import re
 
 # Keep track of all available functions, show using `info()`
 __all__ = ["get_features_targets", 
@@ -169,7 +171,8 @@ def clip_outliers_single(
 
 def clip_outliers_multi(
     df: pd.DataFrame,
-    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]]
+    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    verbose: bool=False
 ) -> pd.DataFrame:
     """
     Clips values in multiple specified numeric columns to given [min, max] ranges,
@@ -178,6 +181,7 @@ def clip_outliers_multi(
     Args:
         df (pd.DataFrame): The input DataFrame.
         clip_dict (dict): A dictionary where keys are column names and values are (min_val, max_val) tuples.
+        verbose (bool): prints clipped range for each column.
 
     Returns:
         pd.DataFrame: A new DataFrame with specified columns clipped.
@@ -202,7 +206,8 @@ def clip_outliers_multi(
 
             min_val, max_val = bounds
             new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
-            print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
+            if verbose:
+                print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
 
         except Exception as e:
             skipped_columns.append((col, str(e)))
@@ -219,8 +224,6 @@ def clip_outliers_multi(
 def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
     """
     Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
-
-    Only numeric columns are considered.
     
     Args:
         df (pd.DataFrame): The input dataset.
@@ -232,28 +235,41 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
             - 'spearman': monotonic relationship (non-parametric).
 
     Notes:
-        - If the number of numeric features exceeds 20, value annotations inside the heatmap will be disabled for readability.
-        - The size of the figure is scaled automatically based on the number of numeric features.
-        - Missing values are handled internally by `pandas.DataFrame.corr` using pairwise complete observations.
-        
-        Use feature-only dataset to check redundancy and feature collinearity.
-        Use the full dataset to check how features relate to targets.
+        - Only numeric columns are included.
+        - Annotations are disabled if there are more than 20 features.
+        - Missing values are handled via pairwise complete observations.
     """
     numeric_df = df.select_dtypes(include='number')
     if numeric_df.empty:
         print("No numeric columns found. Heatmap not generated.")
         return
     
+    corr = numeric_df.corr(method=method)
+
+    # Create a mask for the upper triangle
+    mask = np.triu(np.ones_like(corr, dtype=bool))
+
+    # Plot setup
     size = max(10, numeric_df.shape[1])
     plt.figure(figsize=(size, size * 0.8))
-    
-    corr = numeric_df.corr(method=method)
+
     annot_bool = numeric_df.shape[1] <= 20
-    sns.heatmap(corr, annot=annot_bool, cmap='coolwarm', fmt=".2f")
+    sns.heatmap(
+        corr,
+        mask=mask,
+        annot=annot_bool,
+        cmap='coolwarm',
+        fmt=".2f",
+        cbar_kws={"shrink": 0.8}
+    )
 
     plt.title(plot_title)
-    
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+
+    plt.tight_layout()
     plt.show()
+    
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         full_path = os.path.join(save_dir, plot_title + ".svg")
@@ -263,7 +279,7 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.close()
 
 
-def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=50):
+def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None, view_frequencies: bool=False, plot_values_threshold: int=10):
     """
     Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
     and saves them as .png files in the specified directory.
@@ -271,57 +287,85 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
     Args:
         df (pd.DataFrame): The dataset to analyze.
         save_dir (str | None): The directory where plots will be saved.
-        view_frequencies (bool): Visualize relative frequencies instead of value counts.
-        plot_values_threshold (int): Threshold of unique values to skip plot.
+        view_frequencies (bool): Print relative frequencies instead of value counts.
+        plot_values_threshold (int): Threshold of unique values to start using bins.
     """
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)    
     
-    dict_to_plot = dict()
+    dict_to_plot_std = dict()
+    dict_to_plot_freq = dict()
     
+    saved_plots = 0
     for col in df.columns:
-        if view_frequencies:
-            view = df[col].value_counts(normalize=True)  # percentages
+        if df[col].nunique() > plot_values_threshold:
+            binned_counts = df[col].value_counts(ascending=False, bins=10)
+            view_std = binned_counts
         else:
-            view = df[col].value_counts(ascending=False)
-        print(view)
-        time.sleep(1)
+            raw_counts = df[col].value_counts(ascending=False)
+            view_std = raw_counts
+        
+        # unlikely scenario where the series is empty
+        if view_std.sum() == 0:
+            view_freq = view_std
+        else:
+            view_freq = view_std / view_std.sum()
+        # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
+     
+        if view_frequencies:
+            print(view_freq)
+        else:
+            print(view_std)
         
         if save_dir:
-            if view.size > plot_values_threshold:
-                print(f"'{col}' has {view.size} unique values — skipping plot.")
-                continue
-            
-            user_input = input(f"Plot value distribution for '{col}'? (y/N): ")
-            if user_input.lower() in ["y", "yes"]:
-                dict_to_plot[col] = dict(view)
-        else:
-            user_input = input("Press enter")
-            
-        clear_output(wait=False)
+            dict_to_plot_std[col] = dict(view_std)
+            dict_to_plot_freq[col] = dict(view_freq)
+            saved_plots += 1
+        
+        time.sleep(1)
+        user_input_ = input("Press enter to continue")
+        if _is_notebook():
+            clear_output(wait=False)
     
     # plot and save
-    saved_plots = list()
-    if dict_to_plot and save_dir:
-        for col, data in dict_to_plot.items():
-            plt.bar(data.keys(), data.values(), color="skyblue", alpha=0.7)
-            ylabel = "Frequency" if view_frequencies else "Counts"
-            plt.xlabel("Values")
-            plt.ylabel(ylabel)
-            plt.title(f"Value Distribution for '{col}'")
-            plt.xticks(rotation=45)
-
+    def _plot_helper(dict_: dict, target_dir: str, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
+        for col, data in dict_.items():
+            safe_col = re.sub(r"[^\w\-_. ]", "_", col)
+            
+            if isinstance(list(data.keys())[0], pd.Interval):
+                labels = [str(interval) for interval in data.keys()]
+            else:
+                labels = data.keys()
+                
+            plt.figure(figsize=(10, 6))
+            colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data)))
+                
+            plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
+            plt.xlabel("Values", fontsize=base_fontsize)
+            plt.ylabel(ylabel, fontsize=base_fontsize)
+            plt.title(f"Value Distribution for '{safe_col}'", fontsize=base_fontsize+2)
+            plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
+            plt.yticks(fontsize=base_fontsize-2)
+            plt.grid(axis='y', linestyle='--', alpha=0.6)
+            plt.gca().set_facecolor('#f9f9f9')
+            plt.tight_layout()
+            
             # Save plot
-            plot_path = os.path.join(save_dir, f"Distribution_{col}.png")
+            plot_path = os.path.join(target_dir, f"{safe_col}.png")
             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close()  # Close figure to free memory
-            
-            saved_plots.append(col)
-            
-    if saved_plots:
-        clear_output(wait=False)
-        print(f"Saved {len(saved_plots)} plot(s):")
-        print(f"{saved_plots}")
+            plt.close()
+    
+    if dict_to_plot_std and save_dir:
+        freq_dir = os.path.join(save_dir, "Distribution_Frequency")
+        std_dir = os.path.join(save_dir, "Distribution_Counts")
+        os.makedirs(freq_dir, exist_ok=True)
+        os.makedirs(std_dir, exist_ok=True)
+        _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
+        _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
+        
+        if _is_notebook():
+            clear_output(wait=False)
+        print(f"Saved {saved_plots} plot(s):")
 
 
 def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFrame:
@@ -368,7 +412,7 @@ def split_continuous_and_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Data
         df (pd.DataFrame): Input DataFrame with only numeric columns.
 
     Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]: (continuous_columns_df, binary_columns_df)
+        Tuple(pd.DataFrame, pd.DataFrame): (continuous_columns_df, binary_columns_df)
 
     Raises:
         TypeError: If any column is not numeric.
@@ -522,6 +566,10 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     print(f"Dropping {len(to_drop)} feature(s) with VIF > {threshold}: {to_drop}")
 
     return df.drop(columns=to_drop, errors="ignore")
+
+
+def _is_notebook():
+    return get_ipython() is not None
 
 
 def info(full_info: bool=True):
