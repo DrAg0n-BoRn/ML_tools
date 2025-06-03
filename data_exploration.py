@@ -22,6 +22,7 @@ __all__ = ["get_features_targets",
            "clip_outliers_multi",
            "plot_correlation_heatmap",
            "check_value_distributions",
+           "plot_value_distributions",
            "merge_dataframes",
            "split_continuous_and_binary",
            "save_dataframe",
@@ -82,7 +83,7 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
         ].round(round_digits)
         summary = summary.join(summary_numeric, how='left')
 
-    print(summary)
+    # print(summary)
     return summary
 
 
@@ -300,6 +301,8 @@ def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=False, bi
         columns = df.columns.to_list()
     
     for col in columns:
+        if _is_notebook():
+            clear_output(wait=False)
         if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
             bins_number = 10
             binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
@@ -312,7 +315,7 @@ def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=False, bi
             if binned.nunique() <= 2:
                 view_std = df[col].value_counts(ascending=False)
             else:
-                view_std = binned.value_counts(ascending=False)
+                view_std = binned.value_counts(sort=False)
             
         else:
             view_std = df[col].value_counts(ascending=False)
@@ -332,8 +335,6 @@ def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=False, bi
         
         time.sleep(1)
         user_input_ = input("Press enter to continue")
-        if _is_notebook():
-            clear_output(wait=False)
 
 
 def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
@@ -395,7 +396,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
         if view_std.sum() == 0:
             view_freq = view_std
         else:
-            view_freq = view_std / view_std.sum()
+            view_freq = 100 * view_std / view_std.sum() # Percentage
         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
         
         if save_dir:
@@ -539,6 +540,7 @@ def save_dataframe(df: pd.DataFrame, save_path: str) -> None:
 def compute_vif(
     df: pd.DataFrame,
     features: Optional[list[str]] = None,
+    ignore_cols: Optional[list[str]] = None,
     plot: bool = True,
     save_dir: Union[str, None] = None
 ) -> pd.DataFrame:
@@ -550,6 +552,7 @@ def compute_vif(
     Args:
         df (pd.DataFrame): The input DataFrame.
         features (list[str] | None): Optional list of column names to evaluate. Defaults to all numeric columns.
+        ignore_cols (list[str] | None): Optional list of column names to ignore.
         plot (bool): Whether to display a barplot of VIF values.
         save_dir (str | None): Directory to save the plot as SVG. If None, plot is not saved.
 
@@ -564,6 +567,12 @@ def compute_vif(
     """
     if features is None:
         features = df.select_dtypes(include='number').columns.tolist()
+    
+    if ignore_cols is not None:
+        missing = set(ignore_cols) - set(features)
+        if missing:
+            raise ValueError(f"The following 'columns to ignore' are not in the Dataframe:\n{missing}")
+        features = [f for f in features if f not in ignore_cols]
 
     X = df[features].copy()
     X = add_constant(X, has_constant='add')
