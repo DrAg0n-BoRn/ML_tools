@@ -299,13 +299,24 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
     saved_plots = 0
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > plot_values_threshold:
-            binned = pd.qcut(df[col], q=10, duplicates='drop')
-            view_std = binned.value_counts(ascending=False)
+            bins_number = 10
+            binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+            while binned.nunique() <= 2:
+                bins_number -= 1
+                binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+                if bins_number <= 2:
+                    break
+            
+            if binned.nunique() <= 2:
+                view_std = df[col].value_counts(ascending=False)
+            else:
+                view_std = binned.value_counts(ascending=False)
+            
         else:
             view_std = df[col].value_counts(ascending=False)
 
         view_std.name = col
-   
+
         # unlikely scenario where the series is empty
         if view_std.sum() == 0:
             view_freq = view_std
