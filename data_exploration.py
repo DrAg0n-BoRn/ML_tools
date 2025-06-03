@@ -298,24 +298,25 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
     
     saved_plots = 0
     for col in df.columns:
-        if df[col].nunique() > plot_values_threshold:
-            binned_counts = df[col].value_counts(ascending=False, bins=10)
-            view_std = binned_counts
+        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > plot_values_threshold:
+            binned = pd.qcut(df[col], q=10, duplicates='drop')
+            view_std = binned.value_counts(ascending=False)
         else:
-            raw_counts = df[col].value_counts(ascending=False)
-            view_std = raw_counts
-        
+            view_std = df[col].value_counts(ascending=False)
+
+        view_std.name = col
+   
         # unlikely scenario where the series is empty
         if view_std.sum() == 0:
             view_freq = view_std
         else:
             view_freq = view_std / view_std.sum()
         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
-     
-        if view_frequencies:
-            print(view_freq)
-        else:
-            print(view_std)
+        view_freq.name = col
+
+        # Print value counts
+        print(f"=== Distribution for column: {col} ===")
+        print(view_freq if view_frequencies else view_std)
         
         if save_dir:
             dict_to_plot_std[col] = dict(view_std)
