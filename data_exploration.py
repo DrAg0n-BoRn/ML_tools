@@ -8,6 +8,23 @@ from IPython.display import clear_output
 import time
 from typing import Union, Literal, Dict, Tuple, Optional
 import os
+import sys
+import textwrap
+
+# Keep track of all available functions, show using `info()`
+__all__ = ["get_features_targets", 
+           "summarize_dataframe",
+           "show_null_columns",
+           "drop_columns_with_missing_data",
+           "clip_outliers_single",
+           "clip_outliers_multi",
+           "plot_correlation_heatmap",
+           "check_value_distributions",
+           "merge_dataframes",
+           "split_continuous_and_binary",
+           "save_dataframe",
+           "compute_vif",
+           "drop_vif_based"]
 
 
 def get_features_targets(df_path: str, targets: list[str]):
@@ -307,30 +324,99 @@ def check_value_distributions(df: pd.DataFrame, save_dir: Union[str, None]=None,
         print(f"{saved_plots}")
 
 
-def merge_features_targets(features: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFrame:
     """
-    Merges processed feature DataFrame with target DataFrame, ensuring index alignment.
+    Merges multiple DataFrames on their index, ensuring alignment.
 
     Parameters:
-        features (pd.DataFrame): Processed feature set.
-        targets (pd.DataFrame): Target set.
+        *dfs (pd.DataFrame): Variable number of DataFrames to merge.
+        reset_index (bool): Whether to reset index in the final merged DataFrame.
 
     Returns:
-        pd.DataFrame: Merged DataFrame with matching indexes.
+        pd.DataFrame: A single DataFrame containing all columns from input DataFrames.
+
+    Raises:
+        ValueError: If indexes of input DataFrames do not match.
     """
-    # Ensure indexes match
-    if not features.index.equals(targets.index):
-        raise ValueError("Indexes of features and targets do not match!")
+    if not dfs:
+        raise ValueError("At least one DataFrame must be provided.")
 
-    # Perform merging on index
-    merged_df = pd.concat([features, targets], axis=1)
+    reference_index = dfs[0].index
+    for i, df in enumerate(dfs, start=1):
+        if not df.index.equals(reference_index):
+            raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
 
-    # Print dataset shapes
-    print(f"Processed dataset shape: {merged_df.shape}")
-    print(f"Targets shape: {targets.shape}")
-    print(f"Features shape: {features.shape}")
+    for i, df in enumerate(dfs, start=1):
+        print(f"DataFrame {i} shape: {df.shape}")
+
+    merged_df = pd.concat(dfs, axis=1)
+
+    if reset_index:
+        merged_df = merged_df.reset_index(drop=True)
+
+    print(f"Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
+
+
+def split_continuous_and_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split DataFrame into two DataFrames: one with continuous columns, one with binary columns.
+    Normalize binary values like 0.0/1.0 to 0/1 if detected.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame with only numeric columns.
+
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame]: (continuous_columns_df, binary_columns_df)
+
+    Raises:
+        TypeError: If any column is not numeric.
+    """
+    if not all(np.issubdtype(dtype, np.number) for dtype in df.dtypes):
+        raise TypeError("All columns must be numeric (int or float).")
+
+    binary_cols = []
+    continuous_cols = []
+
+    for col in df.columns:
+        series = df[col]
+        unique_values = set(series[~series.isna()].unique())
+
+        if unique_values.issubset({0, 1}):
+            binary_cols.append(col)
+        elif unique_values.issubset({0.0, 1.0}):
+            df[col] = df[col].apply(lambda x: 0 if x == 0.0 else (1 if x == 1.0 else x))
+            binary_cols.append(col)
+        else:
+            continuous_cols.append(col)
+
+    binary_cols.sort()
+
+    df_cont = df[continuous_cols]
+    df_bin = df[binary_cols]
+
+    print(f"Continuous columns shape: {df_cont.shape}")
+    print(f"Binary columns shape: {df_bin.shape}")
+
+    return df_cont, df_bin # type: ignore
+
+
+def save_dataframe(df: pd.DataFrame, save_path: str) -> None:
+    """
+    Save a pandas DataFrame to a CSV file.
+
+    Parameters:
+        df: pandas.DataFrame to save
+        path: str, CSV file path.
+
+    Returns:
+        None
+    """
+    if not save_path.endswith('.csv'):
+        save_path += '.csv'
+    df.to_csv(save_path, index=False, encoding='utf-8')
+    print(f"Dataframe saved to {save_path}")
 
 
 def compute_vif(
@@ -341,6 +427,8 @@ def compute_vif(
 ) -> pd.DataFrame:
     """
     Computes Variance Inflation Factors (VIF) for numeric features, optionally plots and saves the results.
+    
+    There cannot be empty values in the dataset.
 
     Args:
         df (pd.DataFrame): The input DataFrame.
@@ -369,7 +457,7 @@ def compute_vif(
 
     # Drop the constant column
     vif_data = vif_data[vif_data["feature"] != "const"]
-    vif_data = vif_data.sort_values(by="VIF", ascending=False).reset_index(drop=True)
+    vif_data = vif_data.sort_values(by="VIF", ascending=False).reset_index(drop=True) # type: ignore
 
     # Add color coding based on thresholds
     def vif_color(v: float) -> str:
@@ -435,3 +523,23 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
 
     return df.drop(columns=to_drop, errors="ignore")
 
+
+def info(full_info: bool=True):
+    """
+    List available functions and their descriptions.
+    """
+    print("Available functions for data exploration:")
+    if full_info:
+        module = sys.modules[__name__]
+        for name in __all__:
+            obj = getattr(module, name, None)
+            if callable(obj):
+                doc = obj.__doc__ or "No docstring provided."
+                formatted_doc = textwrap.indent(textwrap.dedent(doc.strip()), prefix="    ")
+                print(f"\n{name}:\n{formatted_doc}")
+    else:
+        print(", ".join(__all__))
+
+
+if __name__ == "__main__":
+    info()
