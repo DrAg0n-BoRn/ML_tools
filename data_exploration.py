@@ -269,7 +269,6 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.yticks(rotation=0)
 
     plt.tight_layout()
-    plt.show()
     
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
@@ -277,6 +276,7 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
         plt.savefig(full_path, bbox_inches="tight", format='svg')
         print(f"Saved correlation heatmap to: {full_path}")
     
+    plt.show()
     plt.close()
 
 
