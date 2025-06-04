@@ -420,7 +420,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
             plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
             plt.xlabel("Values", fontsize=base_fontsize)
             plt.ylabel(ylabel, fontsize=base_fontsize)
-            plt.title(f"Value Distribution for '{safe_col}'", fontsize=base_fontsize+2)
+            plt.title(f"Value Distribution for '{col}'", fontsize=base_fontsize+2)
             plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
             plt.yticks(fontsize=base_fontsize-2)
             plt.grid(axis='y', linestyle='--', alpha=0.6)
