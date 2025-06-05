@@ -5,6 +5,44 @@ import pandas as pd
 from typing import List, Optional
 
 
+def split_sheets_excel(file_path: str):
+    """
+    Splits a multi-sheet Excel file into separate Excel files per sheet which are saved in a subdirectory.
+
+    Parameters:
+        file_path (str): Path to the target Excel file.
+        
+    Returns:
+        output_dir (str): Path to output directory.
+    """
+    wb = load_workbook(file_path)
+    sheet_names = wb.sheetnames
+    
+    base_dir = os.path.dirname(os.path.abspath(file_path))
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    output_dir = os.path.join(base_dir, f"{base_name}_split_sheets")
+    os.makedirs(output_dir, exist_ok=True)
+
+    count = 0
+    for sheet_name in sheet_names:
+        ws = wb[sheet_name]
+        new_wb = Workbook()
+        new_ws = new_wb.active
+        new_ws.title = sheet_name
+
+        for row in ws.iter_rows():
+            for cell in row:
+                new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
+
+        output_filename = f"{base_name}_{sheet_name}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
+        new_wb.save(output_path)
+        count += 1
+
+    print(f"Created {count} Excel files (one for each sheet).")
+    return output_dir
+
+
 def unmerge_columns_excel(file_path: str):
     """
     Processes an Excel workbook by unmerging vertically merged cells in each sheet.
@@ -14,7 +52,10 @@ def unmerge_columns_excel(file_path: str):
       - The modified worksheets are saved as separate Excel files in a subdirectory.
 
     Parameters:
-        file_path (str): Path to the target Excel file (.xlsx).
+        file_path (str): Path to the target Excel file.
+        
+    Returns:
+        output_dir (str): Path to output directory.
     """
     def _copy_and_process_worksheet(src_ws: Worksheet) -> Worksheet:
         new_ws = Workbook().active
@@ -43,7 +84,7 @@ def unmerge_columns_excel(file_path: str):
     
     # START-O
     wb = load_workbook(file_path)
-    base_dir = os.path.dirname(file_path)
+    base_dir = os.path.dirname(os.path.abspath(file_path))
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     output_dir = os.path.join(base_dir, f"{base_name}_split_sheets")
     os.makedirs(output_dir, exist_ok=True)
@@ -59,11 +100,68 @@ def unmerge_columns_excel(file_path: str):
         output_path = os.path.join(output_dir, f"{base_name}_{sheet_name}.xlsx")
         new_wb.save(output_path)
         print(f"Processed sheet: {sheet_name}")
+        
+    return output_dir
+
+
+def validate_excel_schema(
+    target_dir: str,
+    expected_columns: List[str],
+    strict: bool = False
+) -> List[str]:
+    """
+    Validates that each Excel file in a directory conforms to the expected column schema.
+    
+    Parameters:
+        target_dir (str): Path to the directory containing Excel files.
+        expected_columns (list[str]): List of expected column names.
+        strict (bool): If True, columns must match exactly (names and order).
+                      If False, columns must contain at least all expected names.
+
+    Returns:
+        List[str]: List of file paths that failed the schema validation.
+    """
+    invalid_files = []
+    expected_set = set(expected_columns)
+    
+    excel_seen = 0
+
+    for filename in os.listdir(target_dir):
+        if not filename.lower().endswith(".xlsx"):
+            continue  # Skip non-Excel files
+
+        file_path = os.path.join(target_dir, filename)
+        excel_seen += 1
+        try:
+            wb = load_workbook(file_path, read_only=True)
+            ws = wb.active  # Only check the first worksheet
+
+            header = [cell.value for cell in next(ws.iter_rows(max_row=1))]
+
+            if strict:
+                if header != expected_columns:
+                    invalid_files.append(file_path)
+            else:
+                header_set = set(header)
+                if not expected_set.issubset(header_set):
+                    invalid_files.append(file_path)
+
+        except Exception as e:
+            print(f"Error processing '{file_path}': {e}")
+            invalid_files.append(file_path)
+    
+    valid_excel_number = excel_seen - len(invalid_files)
+    print(f"{valid_excel_number} excel files conform to the schema.")
+    if invalid_files:
+        print(f"{len(invalid_files)} excel files are invalid.")
+
+    return invalid_files
 
 
 def vertical_merge_transform_excel(
     target_dir: str,
     csv_filename: str,
+    output_dir: str,
     target_columns: Optional[List[str]] = None,
     rename_columns: Optional[List[str]] = None
 ) -> None:
@@ -78,15 +176,19 @@ def vertical_merge_transform_excel(
     Parameters:
         target_dir (str): Directory containing Excel files.
         csv_filename (str): Output CSV filename.
+        output_dir (str): Directory to save the output CSV file.
         target_columns (list[str] | None): Columns to select from each Excel file.
         rename_columns (list[str] | None): Optional renaming for columns.
+        
+    Returns:
+        csv_path (str): 
     """
     excel_files = [f for f in os.listdir(target_dir) if f.endswith(('.xlsx', '.xls'))]
     if not excel_files:
         raise ValueError("No Excel files found in the target directory.")
 
     csv_filename = csv_filename if csv_filename.endswith('.csv') else f"{csv_filename}.csv"
-    csv_path = os.path.join(target_dir, csv_filename)
+    csv_path = os.path.join(output_dir, csv_filename)
 
     dataframes = []
     for file in excel_files:
@@ -116,6 +218,7 @@ def vertical_merge_transform_excel(
 def horizontal_merge_transform_excel(
     target_dir: str,
     csv_filename: str,
+    output_dir: str,
     drop_columns: Optional[list[str]] = None,
     skip_duplicates: bool = False
 ) -> None:
@@ -133,6 +236,7 @@ def horizontal_merge_transform_excel(
     Parameters:
         target_dir (str): Directory containing Excel files.
         csv_filename (str): Name of the output CSV file.
+        output_dir (str): Directory to save the output CSV file.
         drop_columns (list[str] | None): Columns to exclude from each file before merging.
         skip_duplicates (bool): Whether to skip duplicate columns or rename them.
     """
@@ -141,7 +245,7 @@ def horizontal_merge_transform_excel(
         raise ValueError("No Excel files found in the target directory.")
 
     csv_filename = csv_filename if csv_filename.endswith('.csv') else f"{csv_filename}.csv"
-    csv_path = os.path.join(target_dir, csv_filename)
+    csv_path = os.path.join(output_dir, csv_filename)
 
     dataframes = []
     max_rows = 0
@@ -187,40 +291,3 @@ def horizontal_merge_transform_excel(
     if duplicate_columns:
         print(f"⚠️ Duplicate columns: {duplicate_columns}")
 
-
-def split_excel_sheets(file_path: str) -> None:
-    """
-    Splits a multi-sheet Excel file into separate Excel files per sheet which are saved in a subdirectory.
-
-    Parameters:
-        file_path (str): Path to the target Excel file.
-    """
-    wb = load_workbook(file_path)
-    sheet_names = wb.sheetnames
-
-    if len(sheet_names) == 1:
-        print(f"The workbook contains only one sheet ('{sheet_names[0]}'), no files created.")
-        return
-
-    base_dir = os.path.dirname(file_path)
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = os.path.join(base_dir, f"{base_name}_split_sheets")
-    os.makedirs(output_dir, exist_ok=True)
-
-    count = 0
-    for sheet_name in sheet_names:
-        ws = wb[sheet_name]
-        new_wb = Workbook()
-        new_ws = new_wb.active
-        new_ws.title = sheet_name
-
-        for row in ws.iter_rows():
-            for cell in row:
-                new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
-
-        output_filename = f"{base_name}_{sheet_name}.xlsx"
-        output_path = os.path.join(output_dir, output_filename)
-        new_wb.save(output_path)
-        count += 1
-
-    print(f"Created {count} Excel files (one for each sheet).")
