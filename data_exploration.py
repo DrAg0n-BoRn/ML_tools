@@ -17,6 +17,7 @@ import re
 __all__ = ["get_features_targets", 
            "summarize_dataframe",
            "show_null_columns",
+           "drop_rows_with_missing_data",
            "drop_columns_with_missing_data",
            "clip_outliers_single",
            "clip_outliers_multi",
@@ -109,7 +110,29 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     # Sort by descending percentage of missing values
     null_summary = null_summary.sort_values(by='Missing %', ascending=False)
     print(null_summary)
-    
+
+
+def drop_rows_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
+    """
+    Drops rows with more than `threshold` fraction of missing values.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        threshold (float): Fraction of missing values above which rows are dropped.
+
+    Returns:
+        pd.DataFrame: A new DataFrame without the dropped rows.
+    """
+    missing_fraction = df.isnull().mean(axis=1)
+    rows_to_drop = missing_fraction[missing_fraction > threshold].index
+
+    if len(rows_to_drop) > 0:
+        print(f"Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing data.")
+    else:
+        print(f"No rows have more than {threshold*100:.0f}% missing data.")
+
+    return df.drop(index=rows_to_drop)
+
     
 def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
     """
