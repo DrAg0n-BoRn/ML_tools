@@ -5,213 +5,123 @@ import pandas as pd
 from typing import List, Optional
 
 
-def split_sheets_excel(file_path: str):
+def unmerge_and_split_excel(filepath: str) -> None:
     """
-    Splits a multi-sheet Excel file into separate Excel files per sheet which are saved in a subdirectory.
+    Processes a single Excel file:
+      - Unmerges all merged cells (vertical and horizontal),
+      - Fills each merged region with the top-left cell value,
+      - Splits each sheet into a separate Excel file,
+      - Saves all results in the same directory as the input file.
 
     Parameters:
-        file_path (str): Path to the target Excel file.
-        
-    Returns:
-        output_dir (str): Path to output directory.
-    """
-    wb = load_workbook(file_path)
-    sheet_names = wb.sheetnames
-    
-    base_dir = os.path.dirname(os.path.abspath(file_path))
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = os.path.join(base_dir, f"{base_name}_split_sheets")
-    os.makedirs(output_dir, exist_ok=True)
+        filepath (str): Full path to the Excel file to process.
 
-    count = 0
-    for sheet_name in sheet_names:
+    Returns:
+        None
+    """
+    wb = load_workbook(filepath)
+    base_dir = os.path.dirname(os.path.abspath(filepath))
+    base_name = os.path.splitext(os.path.basename(filepath))[0]
+
+    total_output_files = 0
+
+    for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         new_wb = Workbook()
         new_ws = new_wb.active
         new_ws.title = sheet_name
 
+        # Copy all cell values
         for row in ws.iter_rows():
             for cell in row:
                 new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
-        output_filename = f"{base_name}_{sheet_name}.xlsx"
-        output_path = os.path.join(output_dir, output_filename)
+        # Fill and unmerge merged regions
+        for merged_range in list(ws.merged_cells.ranges):
+            min_row, min_col, max_row, max_col = (
+                merged_range.min_row, merged_range.min_col,
+                merged_range.max_row, merged_range.max_col
+            )
+            value = ws.cell(row=min_row, column=min_col).value
+            for row in range(min_row, max_row + 1):
+                for col in range(min_col, max_col + 1):
+                    new_ws.cell(row=row, column=col, value=value)
+            new_ws.unmerge_cells(start_row=min_row, start_column=min_col, end_row=max_row, end_column=max_col)
+
+        # Construct flat output file name
+        sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
+        output_filename = f"{base_name}_{sanitized_sheet_name}.xlsx"
+        output_path = os.path.join(base_dir, output_filename)
         new_wb.save(output_path)
-        count += 1
 
-    print(f"Created {count} Excel files (one for each sheet).")
-    return output_dir
+        print(f"Saved: {output_path}")
+        total_output_files += 1
 
-
-def split_sheets_from_directory(input_dir: str, output_dir: str) -> None:
-    """
-    Processes all Excel files in `input_dir` by splitting each sheet into a separate Excel file
-    and saving them in `output_dir`.
-
-    Parameters:
-        input_dir (str): Path to the directory containing input Excel files.
-        output_dir (str): Path to the directory where split files will be saved.
-    """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    input_files = [
-        f for f in os.listdir(input_dir)
-        if f.endswith('.xlsx') and not f.startswith('~')
-    ]
-    
-    if not input_files:
-        raise FileNotFoundError("No Excel files found in the input directory.")
-
-    output_file_count = 0
-
-    for filename in input_files:
-        file_path = os.path.join(input_dir, filename)
-        wb = load_workbook(file_path)
-        sheet_names = wb.sheetnames
-        base_name = os.path.splitext(filename)[0]
-
-        for sheet_name in sheet_names:
-            ws = wb[sheet_name]
-            new_wb = Workbook()
-            new_ws = new_wb.active
-            new_ws.title = sheet_name
-                    
-            for row in ws.iter_rows():
-                for cell in row:
-                    new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
-
-            output_filename = f"{base_name}_{sheet_name}.xlsx"
-            output_path = os.path.join(output_dir, output_filename)
-            new_wb.save(output_path)
-            output_file_count += 1
-
-    print(f"Processed {len(input_files)} input Excel file(s).")
-    print(f"Generated {output_file_count} output Excel file(s).")
+    print(f"Processed file: {filepath} into {total_output_files} output file(s).")
     return None
 
 
-def unmerge_columns_excel(file_path: str) -> None:
+def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
     """
-    Unmerges vertically merged cells of an Excel file. Must contain exactly one worksheet.
-    Fills down the top-left value for each vertically merged column range.
-    Saves the modified file in the same directory with '_unmerged' suffix.
+    Processes all Excel files in the input directory:
+      - Unmerges all merged cells (vertical and horizontal),
+      - Fills each merged region with the top-left cell value,
+      - Splits each sheet into separate Excel files,
+      - Saves all results into the output directory.
 
     Parameters:
-        file_path (str): Path to the target Excel file.
+        input_dir (str): Directory containing Excel files to process.
+        output_dir (str): Directory to save processed Excel files.
 
     Returns:
         None
     """
-    def _process_into_sheet(src_ws: Worksheet, target_ws: Worksheet) -> None:
-        target_ws.title = src_ws.title
+    raw_files = [f for f in os.listdir(input_dir) if f.endswith(('.xlsx', '.xls'))]
+    excel_files = [os.path.join(input_dir, f) for f in raw_files if not f.startswith('~')]
 
-        for row in src_ws.iter_rows():
-            for cell in row:
-                target_ws.cell(row=cell.row, column=cell.column, value=cell.value)
-
-        for merged_range in list(src_ws.merged_cells.ranges):
-            min_row, min_col, max_row, max_col = (
-                merged_range.min_row, merged_range.min_col,
-                merged_range.max_row, merged_range.max_col
-            )
-            if min_col == max_col:
-                value = src_ws.cell(row=min_row, column=min_col).value
-                for row in range(min_row, max_row + 1):
-                    target_ws.cell(row=row, column=min_col, value=value)
-            target_ws.unmerge_cells(
-                start_row=min_row, start_column=min_col,
-                end_row=max_row, end_column=max_col
-            )
-
-    wb = load_workbook(file_path)
-    sheet_names = wb.sheetnames
-
-    if len(sheet_names) != 1:
-        raise ValueError("Expected exactly one sheet in the workbook.")
-
-    src_ws = wb[sheet_names[0]]
-
-    new_wb = Workbook()
-    new_ws = new_wb.active
-    _process_into_sheet(src_ws, new_ws)
-
-    base_dir = os.path.dirname(os.path.abspath(file_path))
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = os.path.join(base_dir, f"{base_name}_processed")
-    os.makedirs(output_dir, exist_ok=True)
-
-    output_path = os.path.join(output_dir, f"{base_name}_unmerged.xlsx")
-    new_wb.save(output_path)
-    print(f"Processed and saved: {output_path}")
-    return None
-
-
-def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
-    """
-    Processes all Excel files in `input_dir` by unmerging vertically merged columns. Each file must contain exactly one worksheet.
-    Saves modified files with '_unmerged' suffix in `output_dir`.
-
-    Parameters:
-        input_dir (str): Path to the directory containing input Excel files.
-        output_dir (str): Path to the directory for output Excel files.
-    """
-    def _process_into_sheet(src_ws: Worksheet, target_ws: Worksheet) -> None:
-        target_ws.title = src_ws.title
-
-        for row in src_ws.iter_rows():
-            for cell in row:
-                target_ws.cell(row=cell.row, column=cell.column, value=cell.value)
-
-        for merged_range in list(src_ws.merged_cells.ranges):
-            min_row, min_col, max_row, max_col = (
-                merged_range.min_row, merged_range.min_col,
-                merged_range.max_row, merged_range.max_col
-            )
-            if min_col == max_col:
-                value = src_ws.cell(row=min_row, column=min_col).value
-                for row in range(min_row, max_row + 1):
-                    target_ws.cell(row=row, column=min_col, value=value)
-            target_ws.unmerge_cells(
-                start_row=min_row, start_column=min_col,
-                end_row=max_row, end_column=max_col
-            )
+    if not excel_files:
+        raise FileNotFoundError(f"No valid Excel files found in directory: {input_dir}")
 
     os.makedirs(output_dir, exist_ok=True)
+    total_output_files = 0
 
-    input_files = [
-        f for f in os.listdir(input_dir)
-        if f.endswith('.xlsx') and not f.startswith('~')
-    ]
-
-    if not input_files:
-        raise FileNotFoundError("No Excel files found in the input directory.")
-
-    output_count = 0
-
-    for filename in input_files:
-        file_path = os.path.join(input_dir, filename)
+    for file_path in excel_files:
         wb = load_workbook(file_path)
-        sheet_names = wb.sheetnames
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
 
-        if len(sheet_names) != 1:
-            print(f"Skipping '{filename}' (expected exactly one sheet).")
-            continue
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            new_wb = Workbook()
+            new_ws = new_wb.active
+            new_ws.title = sheet_name
 
-        src_ws = wb[sheet_names[0]]
+            # Copy all cell values
+            for row in ws.iter_rows():
+                for cell in row:
+                    new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
-        new_wb = Workbook()
-        new_ws = new_wb.active
-        _process_into_sheet(src_ws, new_ws)
+            # Fill and unmerge merged regions
+            for merged_range in list(ws.merged_cells.ranges):
+                min_row, min_col, max_row, max_col = (
+                    merged_range.min_row, merged_range.min_col,
+                    merged_range.max_row, merged_range.max_col
+                )
+                value = ws.cell(row=min_row, column=min_col).value
+                for row in range(min_row, max_row + 1):
+                    for col in range(min_col, max_col + 1):
+                        new_ws.cell(row=row, column=col, value=value)
+                new_ws.unmerge_cells(start_row=min_row, start_column=min_col, end_row=max_row, end_column=max_col)
 
-        base_name = os.path.splitext(filename)[0]
-        output_path = os.path.join(output_dir, f"{base_name}_unmerged.xlsx")
-        new_wb.save(output_path)
-        output_count += 1
-        print(f"Processed: {filename}")
+            # Construct flat output file name
+            sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
+            output_filename = f"{base_name}_{sanitized_sheet_name}.xlsx"
+            output_path = os.path.join(output_dir, output_filename)
+            new_wb.save(output_path)
 
-    print(f"Processed {len(input_files)} input file(s).")
-    print(f"Generated {output_count} output file(s).")
+            print(f"Saved: {output_path}")
+            total_output_files += 1
+
+    print(f"Processed {len(excel_files)} Excel file(s) with a total of {total_output_files} output file(s).")
     return None
 
 
