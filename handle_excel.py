@@ -150,14 +150,11 @@ def unmerge_columns_excel(file_path: str) -> None:
 def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
     """
     Processes all Excel files in `input_dir` by unmerging vertically merged columns. Each file must contain exactly one worksheet.
-    Saves modified files with '_unmerged' suffix in output_dir.
+    Saves modified files with '_unmerged' suffix in `output_dir`.
 
     Parameters:
         input_dir (str): Path to the directory containing input Excel files.
         output_dir (str): Path to the directory for output Excel files.
-
-    Returns:
-        None
     """
     def _process_single_sheet(src_ws: Worksheet) -> Worksheet:
         new_ws = Workbook().active
@@ -298,9 +295,6 @@ def vertical_merge_transform_excel(
         output_dir (str): Directory to save the output CSV file.
         target_columns (list[str] | None): Columns to select from each Excel file.
         rename_columns (list[str] | None): Optional renaming for columns. Position-based matching.
-        
-    Returns:
-        csv_path (str): 
     """
     raw_excel_files = [f for f in os.listdir(target_dir) if f.endswith(('.xlsx', '.xls'))]
     excel_files = [f for f in raw_excel_files if not f.startswith('~')]  # Exclude temporary files
