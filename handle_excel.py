@@ -15,9 +15,6 @@ def unmerge_and_split_excel(filepath: str) -> None:
 
     Parameters:
         filepath (str): Full path to the Excel file to process.
-
-    Returns:
-        None
     """
     wb = load_workbook(filepath)
     base_dir = os.path.dirname(os.path.abspath(filepath))
@@ -46,7 +43,6 @@ def unmerge_and_split_excel(filepath: str) -> None:
             for row in range(min_row, max_row + 1):
                 for col in range(min_col, max_col + 1):
                     new_ws.cell(row=row, column=col, value=value)
-            new_ws.unmerge_cells(start_row=min_row, start_column=min_col, end_row=max_row, end_column=max_col)
 
         # Construct flat output file name
         sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
@@ -72,9 +68,6 @@ def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
     Parameters:
         input_dir (str): Directory containing Excel files to process.
         output_dir (str): Directory to save processed Excel files.
-
-    Returns:
-        None
     """
     raw_files = [f for f in os.listdir(input_dir) if f.endswith(('.xlsx', '.xls'))]
     excel_files = [os.path.join(input_dir, f) for f in raw_files if not f.startswith('~')]
@@ -110,7 +103,6 @@ def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
                 for row in range(min_row, max_row + 1):
                     for col in range(min_col, max_col + 1):
                         new_ws.cell(row=row, column=col, value=value)
-                new_ws.unmerge_cells(start_row=min_row, start_column=min_col, end_row=max_row, end_column=max_col)
 
             # Construct flat output file name
             sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
