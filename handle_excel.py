@@ -1,6 +1,5 @@
 import os
 from openpyxl import load_workbook, Workbook
-from openpyxl.worksheet.worksheet import Worksheet
 import pandas as pd
 from typing import List, Optional
 
@@ -50,10 +49,10 @@ def unmerge_and_split_excel(filepath: str) -> None:
         output_path = os.path.join(base_dir, output_filename)
         new_wb.save(output_path)
 
-        print(f"Saved: {output_path}")
+        # print(f"Saved: {output_path}")
         total_output_files += 1
 
-    print(f"Processed file: {filepath} into {total_output_files} output file(s).")
+    print(f"✅ Processed file: {filepath} into {total_output_files} output file(s).")
     return None
 
 
@@ -110,10 +109,10 @@ def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
             output_path = os.path.join(output_dir, output_filename)
             new_wb.save(output_path)
 
-            print(f"Saved: {output_path}")
+            # print(f"Saved: {output_path}")
             total_output_files += 1
 
-    print(f"Processed {len(excel_files)} Excel file(s) with a total of {total_output_files} output file(s).")
+    print(f"✅ Processed {len(excel_files)} input Excel file(s) with a total of {total_output_files} output Excel file(s).")
     return None
 
 
@@ -121,7 +120,7 @@ def validate_excel_schema(
     target_dir: str,
     expected_columns: List[str],
     strict: bool = False
-) -> List[str]:
+) -> None:
     """
     Validates that each Excel file in a directory conforms to the expected column schema.
     
@@ -167,11 +166,13 @@ def validate_excel_schema(
             invalid_files.append(file_path)
     
     valid_excel_number = excel_seen - len(invalid_files)
-    print(f"{valid_excel_number} excel files conform to the schema.")
+    print(f"{valid_excel_number} out of {excel_seen} excel files conform to the schema.")
     if invalid_files:
-        print(f"{len(invalid_files)} excel files are invalid.")
+        print(f"⚠️ {len(invalid_files)} excel files are invalid:")
+        for file in invalid_files:
+            print(f"  - {file}")
 
-    return invalid_files
+    return None
 
 
 def vertical_merge_transform_excel(
