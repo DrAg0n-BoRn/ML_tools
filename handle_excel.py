@@ -103,47 +103,47 @@ def unmerge_columns_excel(file_path: str) -> None:
     Returns:
         None
     """
-    def _process_single_sheet(src_ws: Worksheet) -> Worksheet:
-        new_ws = Workbook().active
-        new_ws.title = src_ws.title
+    def _process_into_sheet(src_ws: Worksheet, target_ws: Worksheet) -> None:
+        target_ws.title = src_ws.title
 
         for row in src_ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                target_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
         for merged_range in list(src_ws.merged_cells.ranges):
             min_row, min_col, max_row, max_col = (
                 merged_range.min_row, merged_range.min_col,
                 merged_range.max_row, merged_range.max_col
             )
-            if min_col == max_col:  # Vertical merge in a single column
+            if min_col == max_col:
                 value = src_ws.cell(row=min_row, column=min_col).value
                 for row in range(min_row, max_row + 1):
-                    new_ws.cell(row=row, column=min_col, value=value)
-            new_ws.unmerge_cells(
+                    target_ws.cell(row=row, column=min_col, value=value)
+            target_ws.unmerge_cells(
                 start_row=min_row, start_column=min_col,
                 end_row=max_row, end_column=max_col
             )
 
-        return new_ws
-
     wb = load_workbook(file_path)
     sheet_names = wb.sheetnames
+
     if len(sheet_names) != 1:
-        raise ValueError("The workbook must contain exactly one worksheet.")
+        raise ValueError("Expected exactly one sheet in the workbook.")
 
     src_ws = wb[sheet_names[0]]
+
     new_wb = Workbook()
-    new_wb.remove(new_wb.active)
-    processed_ws = _process_single_sheet(src_ws)
-    new_wb._add_sheet(processed_ws)
+    new_ws = new_wb.active
+    _process_into_sheet(src_ws, new_ws)
 
     base_dir = os.path.dirname(os.path.abspath(file_path))
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_path = os.path.join(base_dir, f"{base_name}_unmerged.xlsx")
-    new_wb.save(output_path)
+    output_dir = os.path.join(base_dir, f"{base_name}_processed")
+    os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Unmerged and saved: {output_path}")
+    output_path = os.path.join(output_dir, f"{base_name}_unmerged.xlsx")
+    new_wb.save(output_path)
+    print(f"Processed and saved: {output_path}")
     return None
 
 
@@ -156,13 +156,12 @@ def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
         input_dir (str): Path to the directory containing input Excel files.
         output_dir (str): Path to the directory for output Excel files.
     """
-    def _process_single_sheet(src_ws: Worksheet) -> Worksheet:
-        new_ws = Workbook().active
-        new_ws.title = src_ws.title
+    def _process_into_sheet(src_ws: Worksheet, target_ws: Worksheet) -> None:
+        target_ws.title = src_ws.title
 
         for row in src_ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                target_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
         for merged_range in list(src_ws.merged_cells.ranges):
             min_row, min_col, max_row, max_col = (
@@ -172,13 +171,11 @@ def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
             if min_col == max_col:
                 value = src_ws.cell(row=min_row, column=min_col).value
                 for row in range(min_row, max_row + 1):
-                    new_ws.cell(row=row, column=min_col, value=value)
-            new_ws.unmerge_cells(
+                    target_ws.cell(row=row, column=min_col, value=value)
+            target_ws.unmerge_cells(
                 start_row=min_row, start_column=min_col,
                 end_row=max_row, end_column=max_col
             )
-
-        return new_ws
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -196,15 +193,16 @@ def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
         file_path = os.path.join(input_dir, filename)
         wb = load_workbook(file_path)
         sheet_names = wb.sheetnames
+
         if len(sheet_names) != 1:
             print(f"Skipping '{filename}' (expected exactly one sheet).")
             continue
 
         src_ws = wb[sheet_names[0]]
+
         new_wb = Workbook()
-        new_wb.remove(new_wb.active)
-        processed_ws = _process_single_sheet(src_ws)
-        new_wb._add_sheet(processed_ws)
+        new_ws = new_wb.active
+        _process_into_sheet(src_ws, new_ws)
 
         base_name = os.path.splitext(filename)[0]
         output_path = os.path.join(output_dir, f"{base_name}_unmerged.xlsx")
