@@ -32,7 +32,7 @@ def split_sheets_excel(file_path: str):
 
         for row in ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
+                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
         output_filename = f"{base_name}_{sheet_name}.xlsx"
         output_path = os.path.join(output_dir, output_filename)
@@ -76,10 +76,10 @@ def split_sheets_from_directory(input_dir: str, output_dir: str) -> None:
             new_wb = Workbook()
             new_ws = new_wb.active
             new_ws.title = sheet_name
-
+                    
             for row in ws.iter_rows():
                 for cell in row:
-                    new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
+                    new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
             output_filename = f"{base_name}_{sheet_name}.xlsx"
             output_path = os.path.join(output_dir, output_filename)
@@ -109,7 +109,7 @@ def unmerge_columns_excel(file_path: str) -> None:
 
         for row in src_ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
+                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
         for merged_range in list(src_ws.merged_cells.ranges):
             min_row, min_col, max_row, max_col = (
@@ -162,7 +162,7 @@ def unmerge_columns_from_directory(input_dir: str, output_dir: str) -> None:
 
         for row in src_ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.col_idx, value=cell.value)
+                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
 
         for merged_range in list(src_ws.merged_cells.ranges):
             min_row, min_col, max_row, max_col = (
