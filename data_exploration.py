@@ -14,47 +14,37 @@ import textwrap
 import re
 
 # Keep track of all available functions, show using `info()`
-__all__ = ["get_features_targets", 
+__all__ = ["load_dataframe",
            "summarize_dataframe",
            "show_null_columns",
            "drop_rows_with_missing_data",
+           "split_features_targets", 
+           "split_continuous_binary",
            "drop_columns_with_missing_data",
-           "clip_outliers_single",
-           "clip_outliers_multi",
            "plot_correlation_heatmap",
            "check_value_distributions",
            "plot_value_distributions",
+           "clip_outliers_single",
+           "clip_outliers_multi",
            "merge_dataframes",
-           "split_continuous_and_binary",
            "save_dataframe",
            "compute_vif",
            "drop_vif_based"]
 
 
-def get_features_targets(df_path: str, targets: list[str]):
+def load_dataframe(df_path: str) -> pd.DataFrame:
     """
-    Reads a CSV file and separates its columns into features and targets.
+    Loads a DataFrame from a CSV file.
 
     Args:
-        df_path (str): Path to the CSV file containing the dataset.
-        targets (list[str]): List of column names to be treated as target variables.
+        df_path (str): Path to the CSV file.
 
     Returns:
-        tuple: A tuple containing:
-            - pd.DataFrame: Full dataset.
-            - pd.DataFrame: Target variables dataset.
-            - pd.DataFrame: Feature variables dataset.
-
-    Prints:
-        - Shape of the original dataframe.
-        - Shape of the targets dataframe.
-        - Shape of the features dataframe.
+        pd.DataFrame: Loaded DataFrame.
     """
     df = pd.read_csv(df_path, encoding='utf-8')
-    df_targets = df[targets]
-    df_features = df.drop(columns=targets)
-    print(f"Original shape: {df.shape}\nTargets shape: {df_targets.shape}\nFeatures shape: {df_features.shape}")
-    return df, df_targets, df_features
+    print(f"DataFrame shape {df.shape}")
+    return df
 
 
 def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
@@ -133,6 +123,73 @@ def drop_rows_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.
 
     return df.drop(index=rows_to_drop)
 
+
+def split_features_targets(df: pd.DataFrame, targets: list[str]):
+    """
+    Splits a DataFrame's columns into features and targets.
+
+    Args:
+        df (pd.DataFrame): Pandas DataFrame containing the dataset.
+        targets (list[str]): List of column names to be treated as target variables.
+
+    Returns:
+        tuple: A tuple containing:
+            - pd.DataFrame: Targets dataframe.
+            - pd.DataFrame: Features dataframe.
+
+    Prints:
+        - Shape of the original dataframe.
+        - Shape of the targets dataframe.
+        - Shape of the features dataframe.
+    """
+    df_targets = df[targets]
+    df_features = df.drop(columns=targets)
+    print(f"Original shape: {df.shape}\nTargets shape: {df_targets.shape}\nFeatures shape: {df_features.shape}")
+    return df_targets, df_features
+
+
+def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split DataFrame into two DataFrames: one with continuous columns, one with binary columns.
+    Normalize binary values like 0.0/1.0 to 0/1 if detected.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame with only numeric columns.
+
+    Returns:
+        Tuple(pd.DataFrame, pd.DataFrame): (continuous_columns_df, binary_columns_df)
+
+    Raises:
+        TypeError: If any column is not numeric.
+    """
+    if not all(np.issubdtype(dtype, np.number) for dtype in df.dtypes):
+        raise TypeError("All columns must be numeric (int or float).")
+
+    binary_cols = []
+    continuous_cols = []
+
+    for col in df.columns:
+        series = df[col]
+        unique_values = set(series[~series.isna()].unique())
+
+        if unique_values.issubset({0, 1}):
+            binary_cols.append(col)
+        elif unique_values.issubset({0.0, 1.0}):
+            df[col] = df[col].apply(lambda x: 0 if x == 0.0 else (1 if x == 1.0 else x))
+            binary_cols.append(col)
+        else:
+            continuous_cols.append(col)
+
+    binary_cols.sort()
+
+    df_cont = df[continuous_cols]
+    df_bin = df[binary_cols]
+
+    print(f"Continuous columns shape: {df_cont.shape}")
+    print(f"Binary columns shape: {df_bin.shape}")
+
+    return df_cont, df_bin # type: ignore
+
     
 def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
     """
@@ -155,94 +212,6 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> 
         print(f"No columns have more than {threshold*100:.0f}% missing data.")
 
     return df.drop(columns=cols_to_drop)
-
-
-def clip_outliers_single(
-    df: pd.DataFrame,
-    column: str,
-    min_val: float,
-    max_val: float
-) -> Union[pd.DataFrame, None]:
-    """
-    Clips values in the specified numeric column to the range [min_val, max_val],
-    and returns a new DataFrame where the original column is replaced by the clipped version.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        column (str): The name of the column to clip.
-        min_val (float): Minimum allowable value; values below are clipped to this.
-        max_val (float): Maximum allowable value; values above are clipped to this.
-
-    Returns:
-        pd.DataFrame: A new DataFrame with the specified column clipped in place.
-        
-        None: if a problem with the dataframe column occurred.
-    """
-    if column not in df.columns:
-        print(f"Column '{column}' not found in DataFrame.")
-        return None
-
-    if not pd.api.types.is_numeric_dtype(df[column]):
-        print(f"Column '{column}' must be numeric.")
-        return None
-
-    new_df = df.copy(deep=True)
-    new_df[column] = new_df[column].clip(lower=min_val, upper=max_val)
-
-    print(f"Column '{column}' clipped to range [{min_val}, {max_val}].")
-    return new_df
-
-
-def clip_outliers_multi(
-    df: pd.DataFrame,
-    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
-    verbose: bool=False
-) -> pd.DataFrame:
-    """
-    Clips values in multiple specified numeric columns to given [min, max] ranges,
-    updating values (deep copy) and skipping invalid entries.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        clip_dict (dict): A dictionary where keys are column names and values are (min_val, max_val) tuples.
-        verbose (bool): prints clipped range for each column.
-
-    Returns:
-        pd.DataFrame: A new DataFrame with specified columns clipped.
-
-    Notes:
-        - Invalid specifications (missing column, non-numeric type, wrong tuple length)
-          will be reported but skipped.
-    """
-    new_df = df.copy()
-    skipped_columns = []
-
-    for col, bounds in clip_dict.items():
-        try:
-            if col not in df.columns:
-                raise ValueError(f"Column '{col}' not found in DataFrame.")
-
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                raise TypeError(f"Column '{col}' is not numeric.")
-
-            if not (isinstance(bounds, tuple) and len(bounds) == 2):
-                raise ValueError(f"Bounds for '{col}' must be a tuple of (min, max).")
-
-            min_val, max_val = bounds
-            new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
-            if verbose:
-                print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
-
-        except Exception as e:
-            skipped_columns.append((col, str(e)))
-            continue
-
-    if skipped_columns:
-        print("\n⚠️ Some columns were skipped due to errors:")
-        for col, msg in skipped_columns:
-            print(f" - {col}: {msg}")
-
-    return new_df
 
 
 def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
@@ -465,6 +434,94 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
     print(f"Saved {saved_plots} plot(s)")
 
 
+def clip_outliers_single(
+    df: pd.DataFrame,
+    column: str,
+    min_val: float,
+    max_val: float
+) -> Union[pd.DataFrame, None]:
+    """
+    Clips values in the specified numeric column to the range [min_val, max_val],
+    and returns a new DataFrame where the original column is replaced by the clipped version.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        column (str): The name of the column to clip.
+        min_val (float): Minimum allowable value; values below are clipped to this.
+        max_val (float): Maximum allowable value; values above are clipped to this.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the specified column clipped in place.
+        
+        None: if a problem with the dataframe column occurred.
+    """
+    if column not in df.columns:
+        print(f"Column '{column}' not found in DataFrame.")
+        return None
+
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        print(f"Column '{column}' must be numeric.")
+        return None
+
+    new_df = df.copy(deep=True)
+    new_df[column] = new_df[column].clip(lower=min_val, upper=max_val)
+
+    print(f"Column '{column}' clipped to range [{min_val}, {max_val}].")
+    return new_df
+
+
+def clip_outliers_multi(
+    df: pd.DataFrame,
+    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    verbose: bool=False
+) -> pd.DataFrame:
+    """
+    Clips values in multiple specified numeric columns to given [min, max] ranges,
+    updating values (deep copy) and skipping invalid entries.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        clip_dict (dict): A dictionary where keys are column names and values are (min_val, max_val) tuples.
+        verbose (bool): prints clipped range for each column.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with specified columns clipped.
+
+    Notes:
+        - Invalid specifications (missing column, non-numeric type, wrong tuple length)
+          will be reported but skipped.
+    """
+    new_df = df.copy()
+    skipped_columns = []
+
+    for col, bounds in clip_dict.items():
+        try:
+            if col not in df.columns:
+                raise ValueError(f"Column '{col}' not found in DataFrame.")
+
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                raise TypeError(f"Column '{col}' is not numeric.")
+
+            if not (isinstance(bounds, tuple) and len(bounds) == 2):
+                raise ValueError(f"Bounds for '{col}' must be a tuple of (min, max).")
+
+            min_val, max_val = bounds
+            new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
+            if verbose:
+                print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
+
+        except Exception as e:
+            skipped_columns.append((col, str(e)))
+            continue
+
+    if skipped_columns:
+        print("\n⚠️ Some columns were skipped due to errors:")
+        for col, msg in skipped_columns:
+            print(f" - {col}: {msg}")
+
+    return new_df
+
+
 def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFrame:
     """
     Merges multiple DataFrames on their index, ensuring alignment.
@@ -498,49 +555,6 @@ def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFr
     print(f"Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
-
-
-def split_continuous_and_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Split DataFrame into two DataFrames: one with continuous columns, one with binary columns.
-    Normalize binary values like 0.0/1.0 to 0/1 if detected.
-
-    Parameters:
-        df (pd.DataFrame): Input DataFrame with only numeric columns.
-
-    Returns:
-        Tuple(pd.DataFrame, pd.DataFrame): (continuous_columns_df, binary_columns_df)
-
-    Raises:
-        TypeError: If any column is not numeric.
-    """
-    if not all(np.issubdtype(dtype, np.number) for dtype in df.dtypes):
-        raise TypeError("All columns must be numeric (int or float).")
-
-    binary_cols = []
-    continuous_cols = []
-
-    for col in df.columns:
-        series = df[col]
-        unique_values = set(series[~series.isna()].unique())
-
-        if unique_values.issubset({0, 1}):
-            binary_cols.append(col)
-        elif unique_values.issubset({0.0, 1.0}):
-            df[col] = df[col].apply(lambda x: 0 if x == 0.0 else (1 if x == 1.0 else x))
-            binary_cols.append(col)
-        else:
-            continuous_cols.append(col)
-
-    binary_cols.sort()
-
-    df_cont = df[continuous_cols]
-    df_bin = df[binary_cols]
-
-    print(f"Continuous columns shape: {df_cont.shape}")
-    print(f"Binary columns shape: {df_bin.shape}")
-
-    return df_cont, df_bin # type: ignore
 
 
 def save_dataframe(df: pd.DataFrame, save_path: str) -> None:
@@ -691,7 +705,8 @@ def info(full_info: bool=True):
                 formatted_doc = textwrap.indent(textwrap.dedent(doc.strip()), prefix="    ")
                 print(f"\n{name}:\n{formatted_doc}")
     else:
-        print(", ".join(__all__))
+        for i, name in enumerate(__all__, start=1):
+            print(f"{i} - {name}")
 
 
 if __name__ == "__main__":
