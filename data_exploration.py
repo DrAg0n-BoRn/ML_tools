@@ -74,7 +74,7 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
         ].round(round_digits)
         summary = summary.join(summary_numeric, how='left')
 
-    # print(summary)
+    print(f"Shape: {df.shape}")
     return summary
 
 
@@ -102,7 +102,7 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
 
     # Sort by descending percentage of missing values
     null_summary = null_summary.sort_values(by='Missing %', ascending=False)
-    print(null_summary)
+    # print(null_summary)
     return null_summary
 
 
