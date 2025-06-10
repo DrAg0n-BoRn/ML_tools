@@ -16,11 +16,11 @@ import re
 # Keep track of all available functions, show using `info()`
 __all__ = ["load_dataframe",
            "summarize_dataframe",
-           "show_null_columns",
            "drop_rows_with_missing_data",
            "split_features_targets", 
-           "split_continuous_binary",
+           "show_null_columns",
            "drop_columns_with_missing_data",
+           "split_continuous_binary",
            "plot_correlation_heatmap",
            "check_value_distributions",
            "plot_value_distributions",
@@ -86,6 +86,9 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     Parameters:
         df (pd.DataFrame): The input DataFrame.
         round_digits (int): Number of decimal places for the percentage.
+        
+    Returns:
+        pd.DataFrame: A DataFrame summarizing missing values in each column.
     """
     null_counts = df.isnull().sum()
     null_percent = df.isnull().mean() * 100
@@ -100,6 +103,7 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     # Sort by descending percentage of missing values
     null_summary = null_summary.sort_values(by='Missing %', ascending=False)
     print(null_summary)
+    return null_summary
 
 
 def drop_rows_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
@@ -564,9 +568,6 @@ def save_dataframe(df: pd.DataFrame, save_path: str) -> None:
     Parameters:
         df: pandas.DataFrame to save
         path: str, CSV file path.
-
-    Returns:
-        None
     """
     if not save_path.endswith('.csv'):
         save_path += '.csv'
