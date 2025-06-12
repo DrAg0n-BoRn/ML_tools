@@ -11,7 +11,8 @@ from typing import Union, Literal, Dict, Tuple, Optional
 import os
 import sys
 import textwrap
-import re
+from utilities import sanitize_filename
+
 
 # Keep track of all available functions, show using `info()`
 __all__ = ["load_dataframe",
@@ -259,6 +260,9 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
         fmt=".2f",
         cbar_kws={"shrink": 0.8}
     )
+    
+    # sanitize the plot title
+    plot_title = sanitize_filename(plot_title)
 
     plt.title(plot_title)
     plt.xticks(rotation=45, ha='right')
@@ -276,7 +280,7 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.close()
 
 
-def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=False, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
+def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=True, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
     """
     Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
     and saves them as .png files in the specified directory.
@@ -403,7 +407,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
     # plot helper
     def _plot_helper(dict_: dict, target_dir: str, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
         for col, data in dict_.items():
-            safe_col = re.sub(r"[^\w\-_. ]", "_", col)
+            safe_col = sanitize_filename(col)
             
             if isinstance(list(data.keys())[0], pd.Interval):
                 labels = [str(interval) for interval in data.keys()]
@@ -497,6 +501,7 @@ def clip_outliers_multi(
     """
     new_df = df.copy()
     skipped_columns = []
+    clipped_columns = 0
 
     for col, bounds in clip_dict.items():
         try:
@@ -513,45 +518,69 @@ def clip_outliers_multi(
             new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
             if verbose:
                 print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
+            clipped_columns += 1
 
         except Exception as e:
             skipped_columns.append((col, str(e)))
             continue
+        
+    print(f"Clipped {clipped_columns} columns.")
 
     if skipped_columns:
-        print("\n⚠️ Some columns were skipped due to errors:")
+        print("\n⚠️ Skipped columns:")
         for col, msg in skipped_columns:
             print(f" - {col}: {msg}")
 
     return new_df
 
 
-def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFrame:
+def merge_dataframes(
+    *dfs: pd.DataFrame,
+    reset_index: bool = False,
+    direction: Literal["horizontal", "vertical"] = "horizontal"
+) -> pd.DataFrame:
     """
-    Merges multiple DataFrames on their index, ensuring alignment.
+    Merges multiple DataFrames either horizontally or vertically.
 
     Parameters:
         *dfs (pd.DataFrame): Variable number of DataFrames to merge.
         reset_index (bool): Whether to reset index in the final merged DataFrame.
+        direction (["horizontal" | "vertical"]):
+            - "horizontal": Merge on index, adding columns.
+            - "vertical": Append rows; all DataFrames must have identical columns.
 
     Returns:
-        pd.DataFrame: A single DataFrame containing all columns from input DataFrames.
+        pd.DataFrame: A single merged DataFrame.
 
     Raises:
-        ValueError: If indexes of input DataFrames do not match.
+        ValueError:
+            - If fewer than 2 DataFrames are provided.
+            - If indexes do not match for horizontal merge.
+            - If column names or order differ for vertical merge.
     """
-    if not dfs:
-        raise ValueError("At least one DataFrame must be provided.")
-
-    reference_index = dfs[0].index
-    for i, df in enumerate(dfs, start=1):
-        if not df.index.equals(reference_index):
-            raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
-
+    if len(dfs) < 2:
+        raise ValueError("At least 2 DataFrames must be provided.")
+    
     for i, df in enumerate(dfs, start=1):
         print(f"DataFrame {i} shape: {df.shape}")
+    
 
-    merged_df = pd.concat(dfs, axis=1)
+    if direction == "horizontal":
+        reference_index = dfs[0].index
+        for i, df in enumerate(dfs, start=1):
+            if not df.index.equals(reference_index):
+                raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
+        merged_df = pd.concat(dfs, axis=1)
+
+    elif direction == "vertical":
+        reference_columns = dfs[0].columns
+        for i, df in enumerate(dfs, start=1):
+            if not df.columns.equals(reference_columns):
+                raise ValueError(f"Column names/order do not match: Dataset 1 and Dataset {i}.")
+        merged_df = pd.concat(dfs, axis=0)
+
+    else:
+        raise ValueError(f"Invalid merge direction: {direction}")
 
     if reset_index:
         merged_df = merged_df.reset_index(drop=True)
@@ -561,18 +590,26 @@ def merge_dataframes(*dfs: pd.DataFrame, reset_index: bool = False) -> pd.DataFr
     return merged_df
 
 
-def save_dataframe(df: pd.DataFrame, save_path: str) -> None:
+def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
     """
     Save a pandas DataFrame to a CSV file.
 
     Parameters:
         df: pandas.DataFrame to save
-        path: str, CSV file path.
+        save_dir: str, directory where the CSV file will be saved.
+        filename: str, CSV filename, extension will be added if missing.
     """
-    if not save_path.endswith('.csv'):
-        save_path += '.csv'
-    df.to_csv(save_path, index=False, encoding='utf-8')
-    print(f"Dataframe saved to {save_path}")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    filename = sanitize_filename(filename)
+    
+    if not filename.endswith('.csv'):
+        filename += '.csv'
+        
+    output_path = os.path.join(save_dir, filename)
+        
+    df.to_csv(output_path, index=False, encoding='utf-8')
+    print(f"Saved file: '{filename}'")
 
 
 def compute_vif(
