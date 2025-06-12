@@ -26,7 +26,7 @@ pip install -e '.[utilities]'
 Install the latest stable release from PyPI with optional dependencies:
 
 ```bash
-pip install dragon-ml-tools[utilities]
+pip install dragon-ml-tools[logger,trainer]
 ```
 
 ## Usage
