@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - MIT "LICENSE" file.
+
+### Changed
+
 - Update reference to license in "pyproject.toml" to adhere to the new format of SPDX license expression.
 
 ## [1.1.5] - 2025-06-12
