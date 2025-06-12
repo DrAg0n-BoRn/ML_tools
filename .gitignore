@@ -4,5 +4,6 @@ __pycache__
 .DS_Store
 .python-version
 .python-info
-ml_tools.egg-info
+*.egg-info
 dist
+Makefile
