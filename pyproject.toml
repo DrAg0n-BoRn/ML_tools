@@ -1,13 +1,21 @@
 [project]
-name = "ml_tools"
-version = "1.1.0"
+name = "dragon-ml-toolbox"
+version = "1.1.4"
 description = "A collection of tools for machine learning projects"
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "numpy"
+]
 
 [project.optional-dependencies]
 data_exploration = [
