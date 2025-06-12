@@ -18,7 +18,7 @@ Clone the repository and install in editable mode with optional dependencies:
 ```bash
 git clone https://github.com/DrAg0n-BoRn/ML_tools.git
 cd ML_tools
-pip install -e '.[utilities]'
+pip install -e '.[logger]'
 ```
 
 ### Via PyPI (Stable Releases)
