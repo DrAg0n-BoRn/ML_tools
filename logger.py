@@ -5,7 +5,7 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-import re
+from utilities import sanitize_filename
 
 
 def custom_logger(
@@ -79,31 +79,6 @@ def custom_logger(
 
     except Exception as e:
         print(f"Error in custom_logger: {e}")
-
-
-def sanitize_filename(filename: str) -> str:
-    """
-    Sanitizes the name by:
-    - Stripping leading/trailing whitespace.
-    - Replacing all internal whitespace characters with underscores.
-    - Removing or replacing characters invalid in filenames.
-
-    Args:
-        name (str): Base filename.
-
-    Returns:
-        str: A sanitized string suitable to use as a filename.
-    """
-    # Strip leading/trailing whitespace
-    sanitized = filename.strip()
-    
-    # Replace all whitespace sequences (space, tab, etc.) with underscores
-    sanitized = re.sub(r'\s+', '_', sanitized)
-
-    # Conservative filter to keep filenames safe across platforms
-    sanitized = re.sub(r'[^\w\-.]', '', sanitized)
-
-    return sanitized
 
 
 def _log_list_to_txt(data: List[Any], path: str) -> None:
