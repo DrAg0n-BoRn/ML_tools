@@ -3,15 +3,10 @@ import miceforest as mf
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+from utilities import load_dataframe, list_csv_paths
 
 
-def load_dataframe(df_path: str):
-    df = pd.read_csv(df_path, encoding='utf-8')
-    print(f"Loaded dataframe shape: {df.shape}")
-    return df
-
-
-def apply_mice(df: pd.DataFrame, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
+def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
     
     # Initialize kernel with number of imputed datasets to generate
     kernel = mf.ImputationKernel(
@@ -26,36 +21,37 @@ def apply_mice(df: pd.DataFrame, resulting_datasets: int=1, iterations: int=20, 
     # Retrieve the imputed datasets 
     imputed_datasets = [kernel.complete_data(dataset=i) for i in range(resulting_datasets)]
     
-    # Ensure indexes match
-    for i, imputed_df in enumerate(imputed_datasets, start=1):
-        assert imputed_df.shape[0] == df.shape[0], f"Row count mismatch in dataset {i}"
-        assert all(imputed_df.index == df.index), f"Index mismatch in dataset {i}"
-    print("✅ All imputed datasets match the original DataFrame indexes.")
+    if resulting_datasets == 1:
+        imputed_dataset_names = [f"{df_name}_imputed"]
+    else:
+        imputed_dataset_names = [f"{df_name}_imputed_{i+1}" for i in range(resulting_datasets)]
     
-    return kernel, imputed_datasets
+    # Ensure indexes match
+    for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
+        assert imputed_df.shape[0] == df.shape[0], f"Row count mismatch in dataset {subname}"
+        assert all(imputed_df.index == df.index), f"Index mismatch in dataset {subname}"
+    # print("✅ All imputed datasets match the original DataFrame indexes.")
+    
+    return kernel, imputed_datasets, imputed_dataset_names
 
 
-def save_datasets(save_dir: str, imputed_datasets: list):
+def save_imputed_datasets(save_dir: str, imputed_datasets: list, imputed_dataset_names: list[str]):
     # Check path
     os.makedirs(save_dir, exist_ok=True)
     
-    for i, imputed_df in enumerate(imputed_datasets, start=1):
-        if i < 10:
-            file_name = f"imputed_0{i}.csv"
-        else:
-            file_name = f"imputed_{i}.csv"
-        output_path = os.path.join(save_dir, file_name)
+    for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
+        output_path = os.path.join(save_dir, subname + ".csv")
         imputed_df.to_csv(output_path, index=False, encoding='utf-8')
-        print(f"Saved {file_name} with shape {imputed_df.shape}")
+        print(f"\tSaved {subname} with shape {imputed_df.shape}")
         
 
 #Get names of features that had missing values before imputation
-def get_na_feature_names(df: pd.DataFrame):
+def get_na_column_names(df: pd.DataFrame):
     return [col for col in df.columns if df[col].isna().any()]
 
 
 #Convergence diagnostic
-def get_convergence_diagnostic(kernel: mf.ImputationKernel, feature_names: list[str], root_dir: str):
+def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_names: list[str], column_names: list[str], root_dir: str):
     # get number of iterations used
     iterations_cap = kernel.iteration_count()
     
@@ -63,14 +59,14 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, feature_names: list[
     os.makedirs(root_dir, exist_ok=True)
     
     # iterate over each imputed dataset
-    for dataset_id in range(kernel.num_datasets):
+    for dataset_id, imputed_dataset_name in zip(range(kernel.num_datasets), imputed_dataset_names):
         #Check directory for current dataset
-        dataset_file_dir = f"Convergence Metrics {dataset_id + 1}"
+        dataset_file_dir = f"Convergence_Metrics_{imputed_dataset_name}"
         local_save_dir = os.path.join(root_dir, dataset_file_dir)
         if not os.path.isdir(local_save_dir):
             os.makedirs(local_save_dir)
         
-        for feature_name in feature_names:
+        for feature_name in column_names:
             means_per_iteration = []
             for iteration in range(iterations_cap):
                 current_imputed = kernel.complete_data(dataset=dataset_id, iteration=iteration)
@@ -94,7 +90,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, feature_names: list[
 
 
 # Imputed distributions
-def get_imputed_distributions(kernel: mf.ImputationKernel, root_dir: str, feature_names: list[str], one_plot: bool=False, fontsize: int=18):
+def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_dir: str, column_names: list[str], one_plot: bool=False, fontsize: int=18):
     ''' 
     It works using miceforest's authors implementation of the method `.plot_imputed_distributions()`.
     
@@ -102,7 +98,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, root_dir: str, featur
     '''
     # Check path
     os.makedirs(root_dir, exist_ok=True)
-    local_save_dir = os.path.join(root_dir, "Distribution Metrics")
+    local_save_dir = os.path.join(root_dir, f"Distribution_Metrics_{df_name}")
     if not os.path.isdir(local_save_dir):
         os.makedirs(local_save_dir)
     
@@ -137,39 +133,46 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, root_dir: str, featur
 
     if one_plot:
         # Generate combined plot
-        fig = kernel.plot_imputed_distributions(variables=feature_names)
+        fig = kernel.plot_imputed_distributions(variables=column_names)
         _process_figure(fig, "Combined_Distributions.svg")
         # Generate individual plots per feature
     else:
-        for feature in feature_names:
+        for feature in column_names:
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, f"{feature}.svg")
 
     print("Imputed distributions saved successfully.")
 
 
-def run_mice_pipeline(df_path: str, save_datasets_dir: str, save_metrics_dir: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
+def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_dir: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
     """
-    Call functions in sequence:
+    Call functions in sequence for each dataset in the provided path or directory:
         1. Load dataframe
         2. Apply MICE
         3. Save imputed dataset(s)
         4. Save convergence metrics
         5. Save distribution metrics
     """
-    # Check path
+    # Check paths
     os.makedirs(save_datasets_dir, exist_ok=True)
     os.makedirs(save_metrics_dir, exist_ok=True)
     
-    df = load_dataframe(df_path=df_path)
+    if os.path.isfile(df_path_or_dir):
+        all_file_paths = [df_path_or_dir]
+    elif os.path.isdir(df_path_or_dir):
+        all_file_paths, _ = list_csv_paths(df_path_or_dir)
+    else:
+        raise ValueError(f"Invalid path or directory: {df_path_or_dir}")
     
-    kernel, imputed_datasets = apply_mice(df=df, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
-    
-    save_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets)
-    
-    feature_names = get_na_feature_names(df=df)
-    
-    get_convergence_diagnostic(kernel=kernel, feature_names=feature_names, root_dir=save_metrics_dir)
-    
-    get_imputed_distributions(kernel=kernel, root_dir=save_metrics_dir, feature_names=feature_names)
-    
+    for df_path in all_file_paths:
+        df, df_name = load_dataframe(df_path=df_path)
+        
+        kernel, imputed_datasets, imputed_dataset_names = apply_mice(df=df, df_name=df_name, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
+        
+        save_imputed_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets, imputed_dataset_names=imputed_dataset_names)
+        
+        imputed_column_names = get_na_column_names(df=df)
+        
+        get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_dir)
+        
+        get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_dir, column_names=imputed_column_names)
