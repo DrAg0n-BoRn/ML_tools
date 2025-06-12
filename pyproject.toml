@@ -1,0 +1,96 @@
+[project]
+name = "ml_tools"
+version = "1.1.0"
+description = "A collection of tools for machine learning projects"
+authors = [
+    { name = "Karl Loza", email = "luigiloza@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+data_exploration = [
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "statsmodels",
+    "ipython"
+]
+
+datasetmaster = [
+    "torch",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "imblearn",
+    "Pillow",
+    "matplotlib"
+]
+
+ensemble_learning = [
+    "pandas",
+    "numpy",
+    "seaborn",
+    "matplotlib",
+    "joblib",
+    "imblearn",
+    "scikit-learn",
+    "xgboost",
+    "lightgbm",
+    "shap"
+]
+
+handle_excel = [
+    "openpyxl",
+    "pandas"
+]
+
+logger = [
+    "pandas",
+    "openpyxl"
+]
+
+mice_imputation = [
+    "pandas",
+    "miceforest",
+    "matplotlib",
+    "numpy"
+]
+
+particle_swarm_optimization = [
+    "numpy",
+    "joblib",
+    "xgboost",
+    "lightgbm",
+    "scikit-learn",
+    "polars"
+]
+
+pytorch_models = [
+    "torch"
+]
+
+trainer = [
+    "numpy",
+    "torch",
+    "matplotlib",
+    "scikit-learn"
+]
+
+utilities = [
+    "numpy",
+    "pandas"
+]
+
+vision_helpers = [
+    "Pillow",
+    "torch",
+    "torchvision"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+

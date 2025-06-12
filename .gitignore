@@ -1,7 +1,7 @@
 test.ipynb
 .vscode
 __pycache__
-rnn.ipynb
 .DS_Store
-test2.ipynb
-temp_augmented_images
+.python-version
+.python-info
+ml_tools.egg-info
