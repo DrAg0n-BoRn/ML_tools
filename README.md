@@ -1,4 +1,4 @@
-# ml_tools
+# dragon-ml-tools
 
 A collection of Python utilities and machine learning tools, structured as a modular package for easy reuse and installation.
 
@@ -25,7 +25,9 @@ pip install -e '.[utilities]'
 
 Install the latest stable release from PyPI with optional dependencies:
 
-pip install ml_tools[utilities]
+```bash
+pip install dragon-ml-tools[utilities]
+```
 
 ## Usage
 
