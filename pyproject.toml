@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "1.1.4"
+version = "1.1.5"
 description = "A collection of tools for machine learning projects"
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -14,8 +14,15 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "numpy"
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "scikit-learn",
 ]
+
+[project.urls]
+Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
+Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
 data_exploration = [
@@ -85,11 +92,6 @@ trainer = [
     "torch",
     "matplotlib",
     "scikit-learn"
-]
-
-utilities = [
-    "numpy",
-    "pandas"
 ]
 
 vision_helpers = [
