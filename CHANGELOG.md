@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0]
+
 ### Added
+
+- \[full\] option to download all dependencies on installation.
 
 ### Fixed
 
+- Bugs in local import paths.
+
 ### Changed
+
+- README file to clearly display installation and usage.
 
 ## [1.1.6] - 2025-06-13
 
@@ -27,7 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- "requirements.txt" to build the project.
 - Default dependencies for the project: numpy, pandas, matplotlib, scikit-learn.
 - url-links in "pyproject.toml"
 
