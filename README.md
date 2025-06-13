@@ -11,15 +11,7 @@ A collection of Python utilities and machine learning tools, structured as a mod
 
 ## Installation
 
-### Via GitHub (Editable / Development Mode)
-
-Clone the repository and install in editable mode with optional dependencies:
-
-```bash
-git clone https://github.com/DrAg0n-BoRn/ML_tools.git
-cd ML_tools
-pip install -e '.[logger]'
-```
+Python 3.9+ recommended.
 
 ### Via PyPI (Stable Releases)
 
@@ -27,6 +19,22 @@ Install the latest stable release from PyPI with optional dependencies:
 
 ```bash
 pip install dragon-ml-tools[logger,trainer]
+```
+
+To install dependencies from all modules
+
+```bash
+pip install dragon-ml-tools[full]
+```
+
+### Via GitHub (Editable)
+
+Clone the repository and install in editable mode with optional dependencies:
+
+```bash
+git clone https://github.com/DrAg0n-BoRn/ML_tools.git
+cd ML_tools
+pip install -e '.[logger]'
 ```
 
 ## Usage
@@ -37,14 +45,3 @@ After installation, import modules like this:
 from ml_tools.utilities import sanitize_filename
 from ml_tools.logger import custom_logger
 ```
-
-## Development
-
-Python 3.9+ recommended.
-
-To install all dependencies including development tools:
-
-```python
-pip install -e '.[dev]'
-```
-
