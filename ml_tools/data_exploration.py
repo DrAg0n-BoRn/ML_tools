@@ -11,7 +11,7 @@ from typing import Union, Literal, Dict, Tuple, Optional
 import os
 import sys
 import textwrap
-from utilities import sanitize_filename
+from ml_tools.utilities import sanitize_filename
 
 
 # Keep track of all available functions, show using `info()`

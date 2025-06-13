@@ -3,7 +3,7 @@ import miceforest as mf
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from utilities import load_dataframe, list_csv_paths
+from ml_tools.utilities import load_dataframe, list_csv_paths
 
 
 def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):

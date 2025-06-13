@@ -5,7 +5,7 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-from utilities import sanitize_filename
+from ml_tools.utilities import sanitize_filename
 
 
 def custom_logger(
