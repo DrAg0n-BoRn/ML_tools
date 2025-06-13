@@ -1,7 +1,7 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "1.1.6"
-description = "A collection of tools for machine learning projects"
+version = "1.2.0"
+description = "A collection of tools for data science and machine learning projects"
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
 ]
@@ -99,7 +99,30 @@ vision_helpers = [
     "torchvision"
 ]
 
+full = [
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "statsmodels",
+    "ipython",
+    "torch",
+    "scikit-learn",
+    "imblearn",
+    "Pillow",
+    "joblib",
+    "xgboost",
+    "lightgbm",
+    "shap",
+    "openpyxl",
+    "miceforest",
+    "polars",
+    "torchvision"
+]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["ml_tools"]
