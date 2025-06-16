@@ -21,6 +21,8 @@ from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
+from .utilities import yield_dataframes_from_dir
+
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -28,23 +30,6 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 
 ###### 1. Dataset Loader ######
-#Load imputed datasets as a generator
-def yield_imputed_dataframe(datasets_dir: str):
-    '''
-    Yields a tuple `(dataframe, dataframe_name)`
-    '''
-    dataset_filenames = [dataset for dataset in os.listdir(datasets_dir) if dataset.endswith(".csv")]
-    if not dataset_filenames:
-        raise IOError(f"No imputed datasets have been found at {datasets_dir}")
-    
-    for dataset_filename in dataset_filenames:
-        full_path = os.path.join(datasets_dir, dataset_filename)
-        df = pd.read_csv(full_path)
-        #remove extension
-        filename = os.path.splitext(os.path.basename(dataset_filename))[0]
-        print(f"Working on dataset: {filename}")
-        yield (df, filename)
-
 #Split a dataset into features and targets datasets
 def dataset_yielder(df: pd.DataFrame, target_cols: list[str]):
     ''' 
@@ -543,7 +528,7 @@ def get_shap_values(model, model_name: str,
             plot_size=figsize,
             max_display=max_display_features,
             alpha=0.7,
-            color=plt.get_cmap('viridis')
+            color=plt.get_cmap('viridis') # type: ignore
         )
         
         # Add professional styling
@@ -674,7 +659,7 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
     #Check paths
     _check_paths(datasets_dir, save_dir)
     #Yield imputed dataset
-    for dataframe, dataframe_name in yield_imputed_dataframe(datasets_dir):
+    for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_dir):
         #Yield features dataframe and target dataframe
         for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline

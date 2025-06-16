@@ -15,8 +15,7 @@ from ml_tools.utilities import sanitize_filename
 
 
 # Keep track of all available functions, show using `info()`
-__all__ = ["load_dataframe",
-           "summarize_dataframe",
+__all__ = ["summarize_dataframe",
            "drop_rows_with_missing_data",
            "split_features_targets", 
            "show_null_columns",
@@ -31,21 +30,6 @@ __all__ = ["load_dataframe",
            "save_dataframe",
            "compute_vif",
            "drop_vif_based"]
-
-
-def load_dataframe(df_path: str) -> pd.DataFrame:
-    """
-    Loads a DataFrame from a CSV file.
-
-    Args:
-        df_path (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame.
-    """
-    df = pd.read_csv(df_path, encoding='utf-8')
-    print(f"DataFrame shape {df.shape}")
-    return df
 
 
 def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):

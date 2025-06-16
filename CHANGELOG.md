@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Update README with conda-forge installation.
+
+## [1.2.1]
+
+### Deleted
+
+- 'load.dataframe()' from 'data_exploration.py'
+
+### Changed
+
+- 'yield_dataframes()' from 'ensemble_learning.py'. Uses the 'utilities.yield_dataframes_from_dir()' instead.
+
 ## [1.2.0]
 
 ### Added
@@ -29,14 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update reference to license in "pyproject.toml" to adhere to the new format of SPDX license expression.
+- Update reference to license to adhere to the new format of SPDX license expression.
 
 ## [1.1.5] - 2025-06-12
 
 ### Added
 
 - Default dependencies for the project: numpy, pandas, matplotlib, scikit-learn.
-- url-links in "pyproject.toml"
+- url-links in project
 
 ### Changed
 
