@@ -176,7 +176,7 @@ def _resample(X_train_scaled: np.ndarray, y_train: pd.Series,
     else:
         raise ValueError(f"Invalid resampling strategy: {strategy}")
     
-    X_res, y_res = resample_algorithm.fit_resample(X_train_scaled, y_train)
+    X_res, y_res, *_ = resample_algorithm.fit_resample(X_train_scaled, y_train)
     return X_res, y_res
 
 # DATASET PIPELINE
@@ -672,7 +672,7 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
             #Train models
             for model_name, model in models_dict.items():
                 train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,
-                                    train_features=X_train, train_target=y_train,
+                                    train_features=X_train, train_target=y_train, # type: ignore
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_id=target_name, scaler_object=scaler_object,
                                     debug=debug, save_dir=save_dir, save_model=save_model)
