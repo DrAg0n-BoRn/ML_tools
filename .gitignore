@@ -9,3 +9,4 @@ dist
 Makefile
 conda_release
 test.py
+test_dir
