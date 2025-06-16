@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2]
+
+### Changed
+
+- MICE Imputation
+    - Pin dependency `miceforest>=6.0.0,<7.0.0`.
+    - Pin dependency version `lightgbm<=4.5.0`
+    - Pin dependency `plotnine>=0.12,<0.13`.
+
+### Fixed
+
+- MICE Imputation script bugs
+
+### Added
+
+- Notebook dependencies:
+    - "ipykernel"
+    - "notebook"
+    - "jupyterlab"
+
 ## [1.3.1]
 
 ### Fixed
@@ -18,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Revamped base and optional dependencies, only pytorch-related are optional. 
-- Set requirement `numpy<2.0` for broad compatibility.
+- Set requirement `numpy<2.0` for broad compatibility. (including miceforest v6)
 - Update README with conda-forge installation.
 
 ## [1.2.1]

@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "1.3.1"
+version = "1.3.2"
 description = "A collection of tools for data science and machine learning projects"
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -16,7 +16,8 @@ dependencies = [
     "numpy<2.0",
     "scikit-learn",
     "openpyxl", 
-    "miceforest",
+    "miceforest>=6.0.0,<7.0.0",
+    "plotnine>=0.12,<0.13",
     "matplotlib",
     "seaborn",
     "pandas",
@@ -24,9 +25,12 @@ dependencies = [
     "imbalanced-learn",
     "statsmodels",
     "ipython",
+    "ipykernel",
+    "notebook",
+    "jupyterlab",
     "joblib",
     "xgboost",
-    "lightgbm",
+    "lightgbm<=4.5.0",
     "shap"
 ]
 
