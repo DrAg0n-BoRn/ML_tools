@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "1.2.1"
+version = "1.3.1"
 description = "A collection of tools for data science and machine learning projects"
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -13,10 +13,21 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib",
+    "numpy<2.0",
     "scikit-learn",
+    "openpyxl", 
+    "miceforest",
+    "matplotlib",
+    "seaborn",
+    "pandas",
+    "polars",
+    "imbalanced-learn",
+    "statsmodels",
+    "ipython",
+    "joblib",
+    "xgboost",
+    "lightgbm",
+    "shap"
 ]
 
 [project.urls]
@@ -24,99 +35,9 @@ Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
 Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-data_exploration = [
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "seaborn",
-    "statsmodels",
-    "ipython"
-]
-
-datasetmaster = [
+pytorch = [
     "torch",
-    "pandas",
-    "numpy",
-    "scikit-learn",
-    "imblearn",
     "Pillow",
-    "matplotlib"
-]
-
-ensemble_learning = [
-    "pandas",
-    "numpy",
-    "seaborn",
-    "matplotlib",
-    "joblib",
-    "imblearn",
-    "scikit-learn",
-    "xgboost",
-    "lightgbm",
-    "shap"
-]
-
-handle_excel = [
-    "openpyxl",
-    "pandas"
-]
-
-logger = [
-    "pandas",
-    "openpyxl"
-]
-
-mice_imputation = [
-    "pandas",
-    "miceforest",
-    "matplotlib",
-    "numpy"
-]
-
-particle_swarm_optimization = [
-    "numpy",
-    "joblib",
-    "xgboost",
-    "lightgbm",
-    "scikit-learn",
-    "polars"
-]
-
-pytorch_models = [
-    "torch"
-]
-
-trainer = [
-    "numpy",
-    "torch",
-    "matplotlib",
-    "scikit-learn"
-]
-
-vision_helpers = [
-    "Pillow",
-    "torch",
-    "torchvision"
-]
-
-full = [
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "seaborn",
-    "statsmodels",
-    "ipython",
-    "torch",
-    "scikit-learn",
-    "imblearn",
-    "Pillow",
-    "joblib",
-    "xgboost",
-    "lightgbm",
-    "shap",
-    "openpyxl",
-    "miceforest",
-    "polars",
     "torchvision"
 ]
 

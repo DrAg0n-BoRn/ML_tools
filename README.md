@@ -1,30 +1,36 @@
 # dragon-ml-tools
 
-A collection of Python utilities and machine learning tools, structured as a modular package for easy reuse and installation.
+A collection of Python utilities for data science and machine learning, structured as a modular package for easy reuse and installation.
 
 ## Features
 
 - Modular scripts for data exploration, logging, machine learning, and more.
-- Optional dependencies grouped by functionality for lightweight installs.
 - Designed for seamless integration as a Git submodule or installable Python package.
-
 
 ## Installation
 
-Python 3.9+ recommended.
+**Python 3.9+ recommended.**
 
-### Via PyPI (Stable Releases)
+### Via PyPI
 
-Install the latest stable release from PyPI with optional dependencies:
+Install the latest stable release from PyPI:
 
 ```bash
-pip install dragon-ml-tools[logger,trainer]
+pip install dragon-ml-tools
 ```
 
-To install dependencies from all modules
+### Via conda-forge
+
+Install from the conda-forge channel:
 
 ```bash
-pip install dragon-ml-tools[full]
+conda install -c conda-forge dragon-ml-toolbox
+```
+
+#### Optional dependencies
+
+```bash
+pip install dragon-ml-tools[pytorch]
 ```
 
 ### Via GitHub (Editable)
@@ -34,7 +40,7 @@ Clone the repository and install in editable mode with optional dependencies:
 ```bash
 git clone https://github.com/DrAg0n-BoRn/ML_tools.git
 cd ML_tools
-pip install -e '.[logger]'
+pip install -e '.[pytorch]'
 ```
 
 ## Usage

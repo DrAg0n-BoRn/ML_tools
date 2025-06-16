@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1]
+
+### Fixed
+
+- Correctly list "imbalanced-learn" as a dependency instead of "imblearn".
+
+## [1.3.0]
+
+### Changed
+
+- Revamped base and optional dependencies, only pytorch-related are optional. 
+- Set requirement `numpy<2.0` for broad compatibility.
 - Update README with conda-forge installation.
 
 ## [1.2.1]
