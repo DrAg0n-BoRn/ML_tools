@@ -278,7 +278,7 @@ def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=True, bin
     Notes:
         - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
     """
-    # cherrypick columns
+    # cherry-pick columns
     if skip_cols_with_key is not None:
         columns = [col for col in df.columns if skip_cols_with_key not in col]
     else:
@@ -351,7 +351,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
     dict_to_plot_std = dict()
     dict_to_plot_freq = dict()
     
-    # cherrypick columns
+    # cherry-pick columns
     if skip_cols_with_key is not None:
         columns = [col for col in df.columns if skip_cols_with_key not in col]
     else:
@@ -399,7 +399,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
                 labels = data.keys()
                 
             plt.figure(figsize=(10, 6))
-            colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data)))
+            colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data))) # type: ignore
                 
             plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
             plt.xlabel("Values", fontsize=base_fontsize)
