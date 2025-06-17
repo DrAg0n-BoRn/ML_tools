@@ -139,8 +139,9 @@ def get_models(task: Literal["classification", "regression"], random_state: int=
 
 ###### 3. Process Dataset ######
 # function to split data into train and test
-def _split_data(features, target, test_size, random_state):
-    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=test_size, random_state=random_state, stratify=target)   
+def _split_data(features, target, test_size, random_state, task):
+    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=test_size, random_state=random_state, 
+                                                        stratify=target if task=="classification" else None)   
     return X_train, X_test, y_train, y_test
 
 # function to standardize the data
@@ -199,7 +200,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
         print(f"\tUnique values for '{df_target.name}': {unique_values}")
     
     #Train test split
-    X_train, X_test, y_train, y_test = _split_data(features=df_features, target=df_target, test_size=test_size, random_state=random_state)
+    X_train, X_test, y_train, y_test = _split_data(features=df_features, target=df_target, test_size=test_size, random_state=random_state, task=task)
     
     #DEBUG
     if debug:
@@ -343,8 +344,7 @@ def plot_roc_curve(
     color: str = "darkorange",
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
-    title_fontsize: int = 24,
-    label_fontsize: int = 24,
+    base_fontsize: int = 24,
     input_features: Optional[np.ndarray] = None,
 ) -> plt.Figure: # type: ignore
     """
@@ -402,11 +402,11 @@ def plot_roc_curve(
     ax.plot(fpr, tpr, color=color, lw=linewidth, label=f"AUC = {auc_score:.2f}")
     ax.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=1)
 
-    ax.set_title(f"{model_name} - {target_name}", fontsize=title_fontsize)
-    ax.set_xlabel("False Positive Rate", fontsize=label_fontsize)
-    ax.set_ylabel("True Positive Rate", fontsize=label_fontsize)
-    ax.tick_params(axis='both', labelsize=label_fontsize)
-    ax.legend(loc="lower right", fontsize=label_fontsize)
+    ax.set_title(f"{model_name} - {target_name}", fontsize=base_fontsize)
+    ax.set_xlabel("False Positive Rate", fontsize=base_fontsize)
+    ax.set_ylabel("True Positive Rate", fontsize=base_fontsize)
+    ax.tick_params(axis='both', labelsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=base_fontsize)
     ax.grid(True)
 
     # Save figure
@@ -416,6 +416,7 @@ def plot_roc_curve(
 
     return fig
 
+
 # function to evaluate the model and save metrics (Regression)
 def evaluate_model_regression(model, model_name: str, 
                                save_dir: str,
@@ -423,8 +424,7 @@ def evaluate_model_regression(model, model_name: str,
                                target_id: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
-                               title_fontsize: int = 24,
-                               normal_fontsize: int = 24):
+                               base_fontsize: int = 24):
     # Generate predictions
     y_pred = model.predict(x_test_scaled)
     
@@ -448,9 +448,9 @@ def evaluate_model_regression(model, model_name: str,
     plt.figure(figsize=figure_size)
     plt.scatter(y_pred, residuals, alpha=alpha_transparency)
     plt.axhline(0, color='red', linestyle='--')
-    plt.xlabel("Predicted Values", fontsize=normal_fontsize)
-    plt.ylabel("Residuals", fontsize=normal_fontsize)
-    plt.title(f"{model_name} - Residual Plot for {target_id}", fontsize=title_fontsize)
+    plt.xlabel("Predicted Values", fontsize=base_fontsize)
+    plt.ylabel("Residuals", fontsize=base_fontsize)
+    plt.title(f"{model_name} - Residual Plot for {target_id}", fontsize=base_fontsize)
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, f"Residual_Plot_{target_id}.svg"), bbox_inches='tight', format="svg")
@@ -462,9 +462,9 @@ def evaluate_model_regression(model, model_name: str,
     plt.plot([single_y_test.min(), single_y_test.max()], 
              [single_y_test.min(), single_y_test.max()], 
              'k--', lw=2)
-    plt.xlabel('True Values', fontsize=normal_fontsize)
-    plt.ylabel('Predictions', fontsize=normal_fontsize)
-    plt.title(f"{model_name} - True vs Predicted for {target_id}", fontsize=title_fontsize)
+    plt.xlabel('True Values', fontsize=base_fontsize)
+    plt.ylabel('Predictions', fontsize=base_fontsize)
+    plt.title(f"{model_name} - True vs Predicted for {target_id}", fontsize=base_fontsize)
     plt.grid(True)
     plot_path = os.path.join(save_dir, f"Regression_Plot_{target_id}.svg")
     plt.savefig(plot_path, bbox_inches='tight', format="svg")
@@ -473,52 +473,53 @@ def evaluate_model_regression(model, model_name: str,
     return y_pred
 
 # Get SHAP values
-def get_shap_values(model, model_name: str, 
-                   save_dir: str,
-                   features_to_explain: np.ndarray, 
-                   feature_names: list[str], 
-                   target_id: str,
-                   task: Literal["classification", "regression"],
-                   max_display_features: int=8,
-                   figsize: tuple=(14, 20),
-                   title_fontsize: int=38,
-                   label_fontsize: int=38,
-                   plot_type: Literal["bar", "dot"] = "dot"
-                   ):
+def get_shap_values(
+    model,
+    model_name: str,
+    save_dir: str,
+    features_to_explain: np.ndarray,
+    feature_names: list[str],
+    target_id: str,
+    task: Literal["classification", "regression"],
+    max_display_features: int = 10,
+    figsize: tuple = (16, 20),
+    base_fontsize: int = 38,
+):
     """
     Universal SHAP explainer for regression and classification.
-    - Use `X_train` (or a subsample of it) to see how the model explains the data it was trained on.
-	- Use `X_test` (or a hold-out set) to see how the model explains unseen data.
-	- Use the entire dataset to get the global view. 
+        * Use `X_train` (or a subsample of it) to see how the model explains the data it was trained on.
+        
+	    * Use `X_test` (or a hold-out set) to see how the model explains unseen data.
+     
+	    * Use the entire dataset to get the global view. 
  
     Parameters:
-    - 'task': 'regression' or 'classification'
-    - 'features_to_explain': Should match the model's training data format, including scaling.
-    - 'save_dir': Directory to save visualizations
+        task: 'regression' or 'classification'
+        features_to_explain: Should match the model's training data format, including scaling.
+        save_dir: Directory to save visualizations
     """
-    def _create_shap_plot(shap_values, features, feature_names, 
-                         full_save_path: str, plot_type: str, 
-                         title: str):
-        """Helper function to create and save SHAP plots"""
-        # Set style
-        preferred_styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
-        for style in preferred_styles:
+
+    def _apply_plot_style():
+        styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
+        for style in styles:
             if style in plt.style.available or style == 'default':
                 plt.style.use(style)
                 break
-        
+
+    def _configure_rcparams():
+        plt.rc('font', size=base_fontsize)
+        plt.rc('axes', titlesize=base_fontsize)
+        plt.rc('axes', labelsize=base_fontsize)
+        plt.rc('xtick', labelsize=base_fontsize)
+        plt.rc('ytick', labelsize=base_fontsize + 2)
+        plt.rc('legend', fontsize=base_fontsize)
+        plt.rc('figure', titlesize=base_fontsize)
+
+    def _create_shap_plot(shap_values, features, save_path: str, plot_type: str, title: str):
+        _apply_plot_style()
+        _configure_rcparams()
         plt.figure(figsize=figsize)
-        
-        #set rc parameters for better readability
-        plt.rc('font', size=label_fontsize)
-        plt.rc('axes', titlesize=title_fontsize)
-        plt.rc('axes', labelsize=label_fontsize)
-        plt.rc('xtick', labelsize=label_fontsize)
-        plt.rc('ytick', labelsize=label_fontsize)
-        plt.rc('legend', fontsize=label_fontsize)
-        plt.rc('figure', titlesize=title_fontsize)
-        
-        # Create the SHAP plot
+
         shap.summary_plot(
             shap_values=shap_values,
             features=features,
@@ -528,85 +529,75 @@ def get_shap_values(model, model_name: str,
             plot_size=figsize,
             max_display=max_display_features,
             alpha=0.7,
-            color=plt.get_cmap('viridis') # type: ignore
+            # color='viridis'
         )
-        
-        # Add professional styling
-        ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", fontsize=title_fontsize, weight='bold')
-        ax.set_ylabel("Features", fontsize=title_fontsize, weight='bold')
-        plt.title(title, fontsize=title_fontsize, pad=20, weight='bold')
-        
-        # Manually fix tick fonts
-        for tick in ax.get_xticklabels():
-            tick.set_fontsize(label_fontsize)
-            tick.set_rotation(45)
-        for tick in ax.get_yticklabels():
-            tick.set_fontsize(label_fontsize)
 
-        # Handle colorbar for dot plots
+        ax = plt.gca()
+        ax.set_xlabel("SHAP Value Impact", fontsize=base_fontsize + 2, weight='bold', labelpad=20)
+        plt.title(title, fontsize=base_fontsize + 2, pad=20, weight='bold')
+
+        for tick in ax.get_xticklabels():
+            tick.set_fontsize(base_fontsize)
+            tick.set_rotation(30)
+        for tick in ax.get_yticklabels():
+            tick.set_fontsize(base_fontsize + 2)
+
         if plot_type == "dot":
             cb = plt.gcf().axes[-1]
-            # cb.set_ylabel("Feature Value", size=label_fontsize)
             cb.set_ylabel("", size=1)
-            cb.tick_params(labelsize=label_fontsize - 2)
-        
-        # Save and clean up
-        plt.savefig(
-            full_save_path,
-            bbox_inches='tight',
-            facecolor='white', 
-            format="svg"
-        )
+            cb.tick_params(labelsize=base_fontsize - 2)
+
+        plt.savefig(save_path, bbox_inches='tight', facecolor='white', format="svg")
         plt.close()
-        rcdefaults()  # Reset rc parameters to default
-    
-    # START
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(features_to_explain)
-    
-    # Handle different model types
-    if task == 'classification':
-        # Determine if multiclass
-        try:
-            is_multiclass = len(model.classes_) > 2
-            class_names = model.classes_
-        except AttributeError:
-            is_multiclass = isinstance(shap_values, list) and len(shap_values) > 1
-            class_names = list(range(len(shap_values))) if is_multiclass else [0, 1]
-        
+        rcdefaults()
+
+    def _plot_for_classification(shap_values, class_names):
+        is_multiclass = isinstance(shap_values, list) and len(shap_values) > 1
+
         if is_multiclass:
-            for class_idx, (class_shap, class_name) in enumerate(zip(shap_values, class_names)):
-                _create_shap_plot(
-                    shap_values=class_shap,
-                    features=features_to_explain,
-                    feature_names=feature_names,
-                    full_save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}.svg"),
-                    plot_type=plot_type,
-                    title=f"{model_name} - {target_id} (Class {class_name})"
-                )
+            for class_shap, class_name in zip(shap_values, class_names):
+                for plot_type in ["bar", "dot"]:
+                    _create_shap_plot(
+                        shap_values=class_shap,
+                        features=features_to_explain,
+                        save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}_{plot_type}.svg"),
+                        plot_type=plot_type,
+                        title=f"{model_name} - {target_id} (Class {class_name})"
+                    )
         else:
-            # Handle binary classification (single array case)
-            plot_vals = shap_values[1] if isinstance(shap_values, list) else shap_values
+            values = shap_values[1] if isinstance(shap_values, list) else shap_values
+            for plot_type in ["bar", "dot"]:
+                _create_shap_plot(
+                    shap_values=values,
+                    features=features_to_explain,
+                    save_path=os.path.join(save_dir, f"SHAP_{target_id}_{plot_type}.svg"),
+                    plot_type=plot_type,
+                    title=f"{model_name} - {target_id}"
+                )
+
+    def _plot_for_regression(shap_values):
+        for plot_type in ["bar", "dot"]:
             _create_shap_plot(
-                shap_values=plot_vals,
+                shap_values=shap_values,
                 features=features_to_explain,
-                feature_names=feature_names,
-                full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
+                save_path=os.path.join(save_dir, f"SHAP_{target_id}_{plot_type}.svg"),
                 plot_type=plot_type,
                 title=f"{model_name} - {target_id}"
             )
-    
-    else:  # Regression
-        _create_shap_plot(
-            shap_values=shap_values,
-            features=features_to_explain,
-            feature_names=feature_names,
-            full_save_path=os.path.join(save_dir, f"SHAP_{target_id}.svg"),
-            plot_type=plot_type,
-            title=f"{model_name} - {target_id}"
-        )
-        
+
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(features_to_explain)
+
+    if task == 'classification':
+        try:
+            class_names = model.classes_ if hasattr(model, 'classes_') else list(range(len(shap_values)))
+        except Exception:
+            class_names = list(range(len(shap_values)))
+        _plot_for_classification(shap_values, class_names)
+    else:
+        _plot_for_regression(shap_values)
+
+
 # TRAIN TEST PIPELINE
 def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
              train_features: np.ndarray, train_target: np.ndarray,
@@ -653,7 +644,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     return trained_model, y_pred
 
 ###### 5. Execution ######
-def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], task: Literal["classification", "regression"]="regression",
+def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], task: Literal["classification", "regression"],
          resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, scaler: Literal["standard", "minmax", "maxabs"]="minmax", save_model: bool=False,
          test_size: float=0.2, debug:bool=False, L1_regularization: float=0.5, L2_regularization: float=0.5, learning_rate: float=0.005, random_state: int=101):
     #Check paths
@@ -676,11 +667,11 @@ def run_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], ta
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_id=target_name, scaler_object=scaler_object,
                                     debug=debug, save_dir=save_dir, save_model=save_model)
-    print("\nTraining and evaluation complete.")
+    print("\n✅ Training and evaluation complete.")
     
     
 def _check_paths(datasets_dir: str, save_dir:str):
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)   
     if not os.path.isdir(datasets_dir):
-        raise IOError(f"Datasets directory '{datasets_dir}' not found.\nCheck path or run MICE script first.")
+        raise IOError(f"Datasets directory '{datasets_dir}' not found.")

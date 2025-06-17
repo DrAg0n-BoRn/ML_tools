@@ -2,12 +2,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.tools.tools import add_constant
 from IPython import get_ipython
 from IPython.display import clear_output
 import time
-from typing import Union, Literal, Dict, Tuple, Optional
+from typing import Union, Literal, Dict, Tuple
 import os
 import sys
 import textwrap
@@ -26,10 +24,7 @@ __all__ = ["summarize_dataframe",
            "plot_value_distributions",
            "clip_outliers_single",
            "clip_outliers_multi",
-           "merge_dataframes",
-           "save_dataframe",
-           "compute_vif",
-           "drop_vif_based"]
+           "merge_dataframes"]
 
 
 def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
@@ -572,141 +567,6 @@ def merge_dataframes(
     print(f"Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
-
-
-def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
-    """
-    Save a pandas DataFrame to a CSV file.
-
-    Parameters:
-        df: pandas.DataFrame to save
-        save_dir: str, directory where the CSV file will be saved.
-        filename: str, CSV filename, extension will be added if missing.
-    """
-    os.makedirs(save_dir, exist_ok=True)
-    
-    filename = sanitize_filename(filename)
-    
-    if not filename.endswith('.csv'):
-        filename += '.csv'
-        
-    output_path = os.path.join(save_dir, filename)
-        
-    df.to_csv(output_path, index=False, encoding='utf-8')
-    print(f"Saved file: '{filename}'")
-
-
-def compute_vif(
-    df: pd.DataFrame,
-    features: Optional[list[str]] = None,
-    ignore_cols: Optional[list[str]] = None,
-    plot: bool = True,
-    save_dir: Union[str, None] = None
-) -> pd.DataFrame:
-    """
-    Computes Variance Inflation Factors (VIF) for numeric features, optionally plots and saves the results.
-    
-    There cannot be empty values in the dataset.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        features (list[str] | None): Optional list of column names to evaluate. Defaults to all numeric columns.
-        ignore_cols (list[str] | None): Optional list of column names to ignore.
-        plot (bool): Whether to display a barplot of VIF values.
-        save_dir (str | None): Directory to save the plot as SVG. If None, plot is not saved.
-
-    Returns:
-        pd.DataFrame: DataFrame with features and corresponding VIF values, sorted descending.
-    
-    NOTE:
-    **Variance Inflation Factor (VIF)** quantifies the degree of multicollinearity among features in a dataset. 
-    A VIF value indicates how much the variance of a regression coefficient is inflated due to linear dependence with other features. 
-    A VIF of 1 suggests no correlation, values between 1 and 5 indicate moderate correlation, and values greater than 10 typically signal high multicollinearity, which may distort model interpretation and degrade performance.
-        
-    """
-    if features is None:
-        features = df.select_dtypes(include='number').columns.tolist()
-    
-    if ignore_cols is not None:
-        missing = set(ignore_cols) - set(features)
-        if missing:
-            raise ValueError(f"The following 'columns to ignore' are not in the Dataframe:\n{missing}")
-        features = [f for f in features if f not in ignore_cols]
-
-    X = df[features].copy()
-    X = add_constant(X, has_constant='add')
-
-    vif_data = pd.DataFrame()
-    vif_data["feature"] = X.columns
-    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
-
-    # Drop the constant column
-    vif_data = vif_data[vif_data["feature"] != "const"]
-    vif_data = vif_data.sort_values(by="VIF", ascending=False).reset_index(drop=True) # type: ignore
-
-    # Add color coding based on thresholds
-    def vif_color(v: float) -> str:
-        if v > 10:
-            return "red"
-        elif v > 5:
-            return "gold"
-        else:
-            return "green"
-
-    vif_data["color"] = vif_data["VIF"].apply(vif_color)
-
-    # Plot
-    if plot or save_dir:
-        plt.figure(figsize=(10, 6))
-        bars = plt.barh(
-            vif_data["feature"], 
-            vif_data["VIF"], 
-            color=vif_data["color"], 
-            edgecolor='black'
-        )
-        plt.title("Variance Inflation Factor (VIF) per Feature")
-        plt.xlabel("VIF")
-        plt.axvline(x=5, color='gold', linestyle='--', label='VIF = 5')
-        plt.axvline(x=10, color='red', linestyle='--', label='VIF = 10')
-        plt.legend(loc='lower right')
-        plt.gca().invert_yaxis()
-        plt.grid(axis='x', linestyle='--', alpha=0.5)
-        plt.tight_layout()
-
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, "VIF_plot.svg")
-            plt.savefig(save_path, format='svg', bbox_inches='tight')
-            print(f"Saved VIF plot to: {save_path}")
-
-        if plot:
-            plt.show()
-        plt.close()
-
-    return vif_data.drop(columns="color")
-
-
-def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10.0) -> pd.DataFrame:
-    """
-    Drops features from the original DataFrame based on their VIF values exceeding a given threshold.
-
-    Args:
-        df (pd.DataFrame): Original DataFrame containing the features.
-        vif_df (pd.DataFrame): DataFrame with 'feature' and 'VIF' columns as returned by `compute_vif()`.
-        threshold (float): VIF threshold above which features will be dropped.
-
-    Returns:
-        pd.DataFrame: A new DataFrame with high-VIF features removed.
-    """
-    # Ensure expected structure
-    if 'feature' not in vif_df.columns or 'VIF' not in vif_df.columns:
-        raise ValueError("`vif_df` must contain 'feature' and 'VIF' columns.")
-    
-    # Identify features to drop
-    to_drop = vif_df[vif_df["VIF"] > threshold]["feature"].tolist()
-    print(f"Dropping {len(to_drop)} feature(s) with VIF > {threshold}: {to_drop}")
-
-    return df.drop(columns=to_drop, errors="ignore")
 
 
 def _is_notebook():

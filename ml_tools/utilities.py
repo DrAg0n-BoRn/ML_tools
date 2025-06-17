@@ -6,17 +6,15 @@ from pathlib import Path
 import re
 
 
-def list_csv_paths(directory: str) -> tuple[list[str], list[str]]:
+def list_csv_paths(directory: str) -> dict[str, str]:
     """
-    Lists all CSV files in a given directory and returns their paths with corresponding base names.
+    Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
 
     Parameters:
         directory (str): Path to the directory containing `.csv` files.
 
     Returns:
-        Tuple ([List[str], List[str]]):
-        - List of absolute paths to `.csv` files.
-        - List of corresponding base names (without extensions).
+        (dict[str, str]): Mapping {name, path}.
     """
     dir_path = Path(directory).expanduser().resolve()
 
@@ -26,11 +24,15 @@ def list_csv_paths(directory: str) -> tuple[list[str], list[str]]:
     csv_paths = list(dir_path.glob("*.csv"))
     if not csv_paths:
         raise IOError(f"No CSV files found in directory: {dir_path}")
+    
+    # make a dictionary of paths and names
+    name_path_dict = {p.stem: str(p) for p in csv_paths}
+    
+    print("🗂️ CSV files found:")
+    for name in name_path_dict.keys():
+        print(f"\t{name}")
 
-    paths = [str(p) for p in csv_paths]
-    names = [p.stem for p in csv_paths]
-
-    return paths, names
+    return name_path_dict
 
 
 def load_dataframe(df_path: str) -> tuple[pd.DataFrame, str]:
@@ -49,7 +51,7 @@ def load_dataframe(df_path: str) -> tuple[pd.DataFrame, str]:
     df_name = path.stem
     if df.empty:
         raise ValueError(f"DataFrame '{df_name}' is empty.")
-    print(f"Loaded dataset: '{df_name}' with shape: {df.shape}")
+    print(f"\n💿 Loaded dataset: '{df_name}' with shape: {df.shape}")
     return df, df_name
 
 
@@ -71,9 +73,8 @@ def yield_dataframes_from_dir(datasets_dir: str):
     - CSV files are read using UTF-8 encoding.
     - Output is streamed via a generator to support lazy loading of multiple datasets.
     """
-    for df_path, df_name in list_csv_paths(datasets_dir):
-        df = pd.read_csv(df_path)
-        print(f"Loaded dataset: '{df_name}' with shape: {df.shape}")
+    for df_name, df_path in list_csv_paths(datasets_dir).items():
+        df, _ = load_dataframe(df_path)
         yield df, df_name
         
         
@@ -166,3 +167,28 @@ def sanitize_filename(filename: str) -> str:
 
     return sanitized
 
+
+def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
+    """
+    Save a pandas DataFrame to a CSV file.
+
+    Parameters:
+        df: pandas.DataFrame to save
+        save_dir: str, directory where the CSV file will be saved.
+        filename: str, CSV filename, extension will be added if missing.
+    """
+    if df.empty:
+        print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
+        return
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    filename = sanitize_filename(filename)
+    
+    if not filename.endswith('.csv'):
+        filename += '.csv'
+        
+    output_path = os.path.join(save_dir, filename)
+        
+    df.to_csv(output_path, index=False, encoding='utf-8')
+    print(f"✅ Saved file: '{filename}'")

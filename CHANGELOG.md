@@ -5,7 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+<!-- ## [Unreleased] -->
+
+## [1.4.0]
+
+### Added
+
+- VIF_factor:
+    - `compute_vif` revamped. Additionally, it now accepts an optional filename when saving a plot, and a maximum number of features to plot.
+    - `compute_vif` will correctly handle perfect multicollinearity and suppress warnings.
+    - `compute_vif_multi` function to automate the process.
+- Dependency: `ipywidgets`
+
+### Changed
+
+- MICE_imputation: 
+    - keep original feature names for metric plots, sanitize before saving them.
+    - Update usage of `list_csv_paths` with the new return type.
+- utilities: 
+    - `list_csv_paths` now returns a dictionary {name, path}. 
+    - `save_dataframe` now warns about and skips empty dataframes.
+- data_exploration: 
+    - VIF related functions moved to "VIF_factor".
+    - `save_dataframe` moved to "utilities".
+- ensemble_learning:
+    - `run_pipeline` renamed to `run_ensemble_pipeline`.
+    - Use a unique "base_fontsize" for plotting functions.
+    - `get_shap_values` outputs bar and dot plots.
+
+### Fixed
+
+- Bugs in the ensemble_learning pipeline.
+- Bugs in the MICE_imputation pipeline.
 
 ## [1.3.2]
 
@@ -13,12 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MICE Imputation
     - Pin dependency `miceforest>=6.0.0,<7.0.0`.
-    - Pin dependency version `lightgbm<=4.5.0`
+    - Pin dependency version `lightgbm<=4.5.0`.
     - Pin dependency `plotnine>=0.12,<0.13`.
 
 ### Fixed
 
-- MICE Imputation script bugs
+- MICE Imputation script bugs.
 
 ### Added
 
@@ -38,14 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Revamped base and optional dependencies, only pytorch-related are optional. 
-- Set requirement `numpy<2.0` for broad compatibility. (including miceforest v6)
+- Set requirement `numpy<2.0` for broad compatibility (including miceforest v6).
 - Update README with conda-forge installation.
 
 ## [1.2.1]
 
 ### Deleted
 
-- 'load.dataframe()' from 'data_exploration.py'
+- 'load.dataframe()' from 'data_exploration.py'.
 
 ### Changed
 
@@ -90,10 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Incorrect metadata in "pyproject.toml"
+- Incorrect metadata in "pyproject.toml".
 
 ## [1.1.0] - 2025-06-12
 
 ### Added
 
-- Initial public release
+- Initial public release.

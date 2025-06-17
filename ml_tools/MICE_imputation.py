@@ -120,7 +120,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
     '''
     # Check path
     os.makedirs(root_dir, exist_ok=True)
-    local_save_dir = os.path.join(root_dir, f"Distribution_Metrics_{df_name}")
+    local_save_dir = os.path.join(root_dir, f"Distribution_Metrics_{df_name}_imputed")
     if not os.path.isdir(local_save_dir):
         os.makedirs(local_save_dir)
     
@@ -169,8 +169,12 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         # Adjust layout and save
         # fig.tight_layout()
         # fig.subplots_adjust(bottom=0.2, left=0.2)  # Optional, depending on overflow
+        
+        # sanitize savename
+        feature_save_name = sanitize_filename(filename)
+        
         fig.savefig(
-            os.path.join(local_save_dir, filename + ".svg"),
+            os.path.join(local_save_dir, feature_save_name + ".svg"),
             format='svg',
             bbox_inches='tight',
             pad_inches=0.1
@@ -185,8 +189,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
     else:
         for feature in column_names:
             fig = kernel.plot_imputed_distributions(variables=[feature])
-            feature_save_name = sanitize_filename(feature)
-            _process_figure(fig, feature_save_name)
+            _process_figure(fig, feature)
 
     print("\tImputed distributions saved successfully.")
 
@@ -207,7 +210,7 @@ def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_
     if os.path.isfile(df_path_or_dir):
         all_file_paths = [df_path_or_dir]
     elif os.path.isdir(df_path_or_dir):
-        all_file_paths, _ = list_csv_paths(df_path_or_dir)
+        all_file_paths = list_csv_paths(df_path_or_dir).values()
     else:
         raise ValueError(f"Invalid path or directory: {df_path_or_dir}")
     
