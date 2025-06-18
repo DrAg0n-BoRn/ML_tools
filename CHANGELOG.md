@@ -5,15 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2]
+
+### Changed
+
+- ensemble_learning: Remove scalers, unnecessary for tree-based methods.
+- PSO: 
+    - Remove scalers.
+    - `ObjectiveFunction`: Add noise only to continuous features.
+
+### Fixed
+
+- PSO: 
+    - `run_pso()` correctly flips the sign of the target in the last iteration if "maximization" was used.
+    - `run_pso()` correctly saves binary values.
+
+### Added
+
+- utilities: `threshold_binary_values()` accepts a 1D sequence and returns a numpy 1D array.
+
 ## [1.4.1]
 
 ### Changed
 
 - handle_excel: sanitize filenames before saving files.
+- data_exploration: `merge_dataframes()` moved to "utilities".
 - VIF_factor: 
     - `drop_vif_based()` now returns the names of the dropped columns.
-    - `compute_vif_multi` will not save CSV files if there was no dropped columns.
-- data_exploration: `merge_dataframes` moved to "utilities".
+    - `compute_vif_multi()` will not save CSV files if there was no dropped columns.
 
 ### Fixed
 
@@ -38,26 +57,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - VIF_factor:
-    - `compute_vif` revamped. Additionally, it now accepts an optional filename when saving a plot, and a maximum number of features to plot.
-    - `compute_vif` will correctly handle perfect multicollinearity and suppress warnings.
-    - `compute_vif_multi` function to automate the process.
+    - `compute_vif()` revamped. Additionally, it now accepts an optional filename when saving a plot, and a maximum number of features to plot.
+    - `compute_vif()` will correctly handle perfect multicollinearity and suppress warnings.
+    - `compute_vif_multi()` function to automate the process.
 - Dependency: `ipywidgets`
 
 ### Changed
 
 - MICE_imputation: 
     - keep original feature names for metric plots, sanitize before saving them.
-    - Update usage of `list_csv_paths` with the new return type.
+    - Update usage of `list_csv_paths()` with the new return type.
 - utilities: 
-    - `list_csv_paths` now returns a dictionary {name, path}. 
-    - `save_dataframe` now warns about and skips empty dataframes.
+    - `list_csv_paths()` now returns a dictionary {name, path}. 
+    - `save_dataframe()` now warns about and skips empty dataframes.
 - data_exploration: 
     - VIF related functions moved to "VIF_factor".
-    - `save_dataframe` moved to "utilities".
+    - `save_dataframe()` moved to "utilities".
 - ensemble_learning:
-    - `run_pipeline` renamed to `run_ensemble_pipeline`.
+    - `run_pipeline()` renamed to `run_ensemble_pipeline()`.
     - Use a unique "base_fontsize" for plotting functions.
-    - `get_shap_values` outputs bar and dot plots.
+    - `get_shap_values()` outputs bar and dot plots.
 
 ### Fixed
 

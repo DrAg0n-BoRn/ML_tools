@@ -17,11 +17,10 @@ import xgboost as xgb
 import lightgbm as lgb
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir, sanitize_filename
+from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -29,9 +28,21 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 
 
+__all__ = [
+    "get_models",
+    "dataset_pipeline",
+    "evaluate_model_classification",
+    "plot_roc_curve",
+    "evaluate_model_regression",
+    "get_shap_values",
+    "train_test_pipeline",
+    "run_ensemble_pipeline"
+]
+
+
 ###### 1. Dataset Loader ######
 #Split a dataset into features and targets datasets
-def dataset_yielder(df: pd.DataFrame, target_cols: list[str]):
+def _dataset_yielder(df: pd.DataFrame, target_cols: list[str]):
     ''' 
     Yields one Tuple at a time: `(df_features, df_target, feature_names, target_name)`
     '''
@@ -144,22 +155,8 @@ def _split_data(features, target, test_size, random_state, task):
                                                         stratify=target if task=="classification" else None)   
     return X_train, X_test, y_train, y_test
 
-# function to standardize the data
-def _standardize_data(train_features, test_features, scaler_code):
-    if scaler_code == "standard":
-        scaler = StandardScaler()
-    elif scaler_code == "minmax":
-        scaler = MinMaxScaler()
-    elif scaler_code == "maxabs":
-        scaler = MaxAbsScaler()
-    else:
-        raise ValueError(f"Unrecognized scaler {scaler_code}")
-    train_scaled = scaler.fit_transform(train_features)
-    test_scaled = scaler.transform(test_features)
-    return train_scaled, test_scaled, scaler
-
 # Over-sample minority class (Positive cases) and return several single target datasets (Classification)
-def _resample(X_train_scaled: np.ndarray, y_train: pd.Series, 
+def _resample(X_train: np.ndarray, y_train: pd.Series, 
               strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], random_state):
     ''' 
     Oversample minority class or undersample majority class.
@@ -177,21 +174,20 @@ def _resample(X_train_scaled: np.ndarray, y_train: pd.Series,
     else:
         raise ValueError(f"Invalid resampling strategy: {strategy}")
     
-    X_res, y_res, *_ = resample_algorithm.fit_resample(X_train_scaled, y_train)
+    X_res, y_res, *_ = resample_algorithm.fit_resample(X_train, y_train)
     return X_res, y_res
 
 # DATASET PIPELINE
 def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Literal["classification", "regression"],
-                     resample_strategy: Union[Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], None], scaler: Literal["standard", "minmax", "maxabs"],
+                     resample_strategy: Union[Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], None],
                      test_size: float=0.2, debug: bool=False, random_state: int=101):
     ''' 
     1. Make Train/Test splits
-    2. Standardize Train and Test Features
-    3. Oversample imbalanced classes (classification)
+    2. Oversample imbalanced classes (classification)
     
-    Return a processed Tuple: (X_train, y_train, X_test, y_test, Scaler)
+    Return a processed Tuple: (X_train, y_train, X_test, y_test)
     
-    `(nD-array, 1D-array, nD-array, Series, Scaler)`
+    `(nD-array, 1D-array, nD-array, Series)`
     '''
     #DEBUG
     if debug:
@@ -206,24 +202,18 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
     if debug:
         print(f"Shapes after train test split - X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
-    # Standardize    
-    X_train_scaled, X_test_scaled, scaler_object = _standardize_data(train_features=X_train, test_features=X_test, scaler_code=scaler)
-    
-    #DEBUG
-    if debug:
-        print(f"Shapes after scaling features - X_train: {X_train_scaled.shape}, y_train: {y_train.shape}, X_test: {X_test_scaled.shape}, y_test: {y_test.shape}")
  
-    # Scale
+    # Resample
     if resample_strategy is None or task == "regression":
-        X_train_oversampled, y_train_oversampled = X_train_scaled, y_train
+        X_train_oversampled, y_train_oversampled = X_train, y_train
     else:
-        X_train_oversampled, y_train_oversampled = _resample(X_train_scaled=X_train_scaled, y_train=y_train, strategy=resample_strategy, random_state=random_state)
+        X_train_oversampled, y_train_oversampled = _resample(X_train=X_train, y_train=y_train, strategy=resample_strategy, random_state=random_state)
     
     #DEBUG
     if debug:
-        print(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test_scaled.shape}, y_test: {y_test.shape}")
+        print(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
-    return X_train_oversampled, y_train_oversampled, X_test_scaled, y_test, scaler_object
+    return X_train_oversampled, y_train_oversampled, X_test, y_test
 
 ###### 4. Train and Evaluation ######
 # Trainer function
@@ -244,11 +234,11 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
     return model_dir
 
 # save model
-def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str, scaler_object: Union[StandardScaler, MinMaxScaler, MaxAbsScaler]):
+def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str):
     #Sanitize filenames to save
     sanitized_target_name = sanitize_filename(target_name)
     full_path = os.path.join(save_directory, f"{model_name}_{sanitized_target_name}.joblib")
-    joblib.dump({'model': trained_model, 'scaler':scaler_object, 'feature_names': feature_names, 'target_name':target_name}, full_path)
+    joblib.dump({'model': trained_model, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
 # function to evaluate the model and save metrics (Classification)
 def evaluate_model_classification(
@@ -257,10 +247,9 @@ def evaluate_model_classification(
     save_dir: str,
     x_test_scaled: np.ndarray,
     single_y_test: np.ndarray,
-    target_id: str,
+    target_name: str,
     figsize: tuple = (10, 8),
-    title_fontsize: int = 24,
-    label_fontsize: int = 24,
+    base_fontsize: int = 24,
     cmap: Colormap = plt.cm.Blues # type: ignore
 ) -> np.ndarray:
     """
@@ -271,8 +260,8 @@ def evaluate_model_classification(
         model_name: Identifier for the model
         save_dir: Directory where results are saved
         x_test_scaled: Feature matrix for test set
-        single_y_test: True binary labels
-        target_id: Suffix for naming output files
+        single_y_test: True targets
+        target_name: Target name
         figsize: Size of the confusion matrix figure (width, height)
         fontsize: Font size used for title, axis labels and ticks
         cmap: Color map for the confusion matrix. Examples include:
@@ -300,10 +289,10 @@ def evaluate_model_classification(
     )
 
     # Save text report
-    sanitized_target_id = sanitize_filename(target_id)
-    report_path = os.path.join(save_dir, f"Classification_Report_{sanitized_target_id}.txt")
+    sanitized_target_name = sanitize_filename(target_name)
+    report_path = os.path.join(save_dir, f"Classification_Report_{sanitized_target_name}.txt")
     with open(report_path, "w") as f:
-        f.write(f"{model_name} - {target_id}\t\tAccuracy: {accuracy:.2f}\n")
+        f.write(f"{model_name} - {target_name}\t\tAccuracy: {accuracy:.2f}\n")
         f.write("Classification Report:\n")
         f.write(report) # type: ignore
 
@@ -318,20 +307,20 @@ def evaluate_model_classification(
         ax=ax
     )
 
-    ax.set_title(f"{model_name} - {target_id}", fontsize=title_fontsize)
-    ax.tick_params(axis='both', labelsize=label_fontsize)
-    ax.set_xlabel("Predicted label", fontsize=label_fontsize)
-    ax.set_ylabel("True label", fontsize=label_fontsize)
+    ax.set_title(f"{model_name} - {target_name}", fontsize=base_fontsize)
+    ax.tick_params(axis='both', labelsize=base_fontsize)
+    ax.set_xlabel("Predicted label", fontsize=base_fontsize)
+    ax.set_ylabel("True label", fontsize=base_fontsize)
     
     # Turn off gridlines
     ax.grid(False)
     
     # Manually update font size of cell texts
     for text in ax.texts:
-        text.set_fontsize(title_fontsize+4)
+        text.set_fontsize(base_fontsize+4)
 
     fig.tight_layout()
-    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{sanitized_target_id}.svg")
+    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{sanitized_target_name}.svg")
     fig.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close(fig)
 
@@ -356,7 +345,7 @@ def plot_roc_curve(
     Parameters:
         true_labels: np.ndarray of shape (n_samples,), ground truth binary labels (0 or 1).
         probabilities_or_model: either predicted probabilities (ndarray), or a trained model with attribute `.predict_proba()`.
-        target_name: str, used for figure title and filename.
+        target_name: str, Target name.
         save_directory: str, path to directory where figure is saved.
         color: color of the ROC curve. Accepts any valid Matplotlib color specification. Examples:
             - Named colors: "darkorange", "blue", "red", "green", "black"
@@ -425,7 +414,7 @@ def plot_roc_curve(
 def evaluate_model_regression(model, model_name: str, 
                                save_dir: str,
                                x_test_scaled: np.ndarray, single_y_test: np.ndarray, 
-                               target_id: str,
+                               target_name: str,
                                figure_size: tuple = (12, 8),
                                alpha_transparency: float = 0.5,
                                base_fontsize: int = 24):
@@ -439,10 +428,10 @@ def evaluate_model_regression(model, model_name: str,
     r2 = r2_score(single_y_test, y_pred)
     
     # Create formatted report
-    sanitized_target_id = sanitize_filename(target_id)
-    report_path = os.path.join(save_dir, f"Regression_Report_{sanitized_target_id}.txt")
+    sanitized_target_name = sanitize_filename(target_name)
+    report_path = os.path.join(save_dir, f"Regression_Report_{sanitized_target_name}.txt")
     with open(report_path, "w") as f:
-        f.write(f"{model_name} - {target_id} Regression Performance\n")
+        f.write(f"{model_name} - {target_name} Regression Performance\n")
         f.write(f"Mean Absolute Error (MAE): {mae:.4f}\n")
         f.write(f"Mean Squared Error (MSE): {mse:.4f}\n")
         f.write(f"Root Mean Squared Error (RMSE): {rmse:.4f}\n")
@@ -455,10 +444,10 @@ def evaluate_model_regression(model, model_name: str,
     plt.axhline(0, color='red', linestyle='--')
     plt.xlabel("Predicted Values", fontsize=base_fontsize)
     plt.ylabel("Residuals", fontsize=base_fontsize)
-    plt.title(f"{model_name} - Residual Plot for {target_id}", fontsize=base_fontsize)
+    plt.title(f"{model_name} - Residual Plot for {target_name}", fontsize=base_fontsize)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{sanitized_target_id}.svg"), bbox_inches='tight', format="svg")
+    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{sanitized_target_name}.svg"), bbox_inches='tight', format="svg")
     plt.close()
     
     # Create true vs predicted values plot
@@ -469,9 +458,9 @@ def evaluate_model_regression(model, model_name: str,
              'k--', lw=2)
     plt.xlabel('True Values', fontsize=base_fontsize)
     plt.ylabel('Predictions', fontsize=base_fontsize)
-    plt.title(f"{model_name} - True vs Predicted for {target_id}", fontsize=base_fontsize)
+    plt.title(f"{model_name} - True vs Predicted for {target_name}", fontsize=base_fontsize)
     plt.grid(True)
-    plot_path = os.path.join(save_dir, f"Regression_Plot_{sanitized_target_id}.svg")
+    plot_path = os.path.join(save_dir, f"Regression_Plot_{sanitized_target_name}.svg")
     plt.savefig(plot_path, bbox_inches='tight', format="svg")
     plt.close()
 
@@ -485,7 +474,7 @@ def get_shap_values(
     save_dir: str,
     features_to_explain: np.ndarray,
     feature_names: list[str],
-    target_id: str,
+    target_name: str,
     task: Literal["classification", "regression"],
     max_display_features: int = 10,
     figsize: tuple = (16, 20),
@@ -504,7 +493,7 @@ def get_shap_values(
         features_to_explain: Should match the model's training data format, including scaling.
         save_dir: Directory to save visualizations
     """
-    sanitized_target_id = sanitize_filename(target_id)
+    sanitized_target_name = sanitize_filename(target_name)
     
     def _apply_plot_style():
         styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
@@ -567,9 +556,9 @@ def get_shap_values(
                     _create_shap_plot(
                         shap_values=class_shap,
                         features=features_to_explain,
-                        save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_Class{class_name}_{plot_type}.svg"),
+                        save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_Class{class_name}_{plot_type}.svg"),
                         plot_type=plot_type,
-                        title=f"{model_name} - {target_id} (Class {class_name})"
+                        title=f"{model_name} - {target_name} (Class {class_name})"
                     )
         else:
             values = shap_values[1] if isinstance(shap_values, list) else shap_values
@@ -577,9 +566,9 @@ def get_shap_values(
                 _create_shap_plot(
                     shap_values=values,
                     features=features_to_explain,
-                    save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_{plot_type}.svg"),
+                    save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_{plot_type}.svg"),
                     plot_type=plot_type,
-                    title=f"{model_name} - {target_id}"
+                    title=f"{model_name} - {target_name}"
                 )
 
     def _plot_for_regression(shap_values):
@@ -587,9 +576,9 @@ def get_shap_values(
             _create_shap_plot(
                 shap_values=shap_values,
                 features=features_to_explain,
-                save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_{plot_type}.svg"),
+                save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_{plot_type}.svg"),
                 plot_type=plot_type,
-                title=f"{model_name} - {target_id}"
+                title=f"{model_name} - {target_name}"
             )
     #START_O
 
@@ -610,7 +599,7 @@ def get_shap_values(
 def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
-             feature_names: list[str], target_id: str, scaler_object: Union[StandardScaler, MinMaxScaler, MaxAbsScaler],
+             feature_names: list[str], target_name: str,
              save_dir: str,
              debug: bool=False, save_model: bool=False):
     ''' 
@@ -620,7 +609,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     
     Returns: Tuple(Trained model, Test-set Predictions)
     '''
-    print(f"\tModel: {model_name} for Target: {target_id}...")
+    print(f"\tModel: {model_name} for Target: {target_name}...")
     trained_model = _train_model(model=model, train_features=train_features, train_target=train_target)
     if debug:
         print(f"Trained model object: {type(trained_model)}")
@@ -628,42 +617,42 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     
     if save_model:
         _save_model(trained_model=trained_model, model_name=model_name, 
-                    target_name=target_id, feature_names=feature_names, 
-                    save_directory=local_save_directory, scaler_object=scaler_object)
+                    target_name=target_name, feature_names=feature_names, 
+                    save_directory=local_save_directory)
         
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
-                             x_test_scaled=test_features, single_y_test=test_target, target_id=target_id)
+                             x_test_scaled=test_features, single_y_test=test_target, target_name=target_name)
         plot_roc_curve(true_labels=test_target,
                        probabilities_or_model=trained_model, model_name=model_name, 
-                       target_name=target_id, save_directory=local_save_directory, 
+                       target_name=target_name, save_directory=local_save_directory, 
                        input_features=test_features)
     elif task == "regression":
         y_pred = evaluate_model_regression(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
-                             x_test_scaled=test_features, single_y_test=test_target, target_id=target_id)
+                             x_test_scaled=test_features, single_y_test=test_target, target_name=target_name)
     else:
         raise ValueError(f"Unrecognized task '{task}' for model training,")
     if debug:
         print(f"Predicted vector: {type(y_pred)} with shape: {y_pred.shape}")
     
     get_shap_values(model=trained_model, model_name=model_name, save_dir=local_save_directory,
-                    features_to_explain=train_features, feature_names=feature_names, target_id=target_id, task=task)
+                    features_to_explain=train_features, feature_names=feature_names, target_name=target_name, task=task)
     print("\t...done.")
     return trained_model, y_pred
 
 ###### 5. Execution ######
 def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], task: Literal["classification", "regression"],
-         resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, scaler: Literal["standard", "minmax", "maxabs"]="minmax", save_model: bool=False,
+         resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, save_model: bool=False,
          test_size: float=0.2, debug:bool=False, L1_regularization: float=0.5, L2_regularization: float=0.5, learning_rate: float=0.005, random_state: int=101):
     #Check paths
     _check_paths(datasets_dir, save_dir)
     #Yield imputed dataset
     for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_dir):
         #Yield features dataframe and target dataframe
-        for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
+        for df_features, df_target, feature_names, target_name in _dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
-            X_train, y_train, X_test, y_test, scaler_object = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
-                                                                resample_strategy=resample_strategy, scaler=scaler,
+            X_train, y_train, X_test, y_test = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
+                                                                resample_strategy=resample_strategy,
                                                                 test_size=test_size, debug=debug, random_state=random_state)
             #Get models
             models_dict = get_models(task=task, is_balanced=False if resample_strategy is None else True, 
@@ -673,7 +662,7 @@ def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list
                 train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,
                                     train_features=X_train, train_target=y_train, # type: ignore
                                     test_features=X_test, test_target=y_test,
-                                    feature_names=feature_names,target_id=target_name, scaler_object=scaler_object,
+                                    feature_names=feature_names,target_name=target_name,
                                     debug=debug, save_dir=save_dir, save_model=save_model)
     print("\n✅ Training and evaluation complete.")
     
@@ -683,3 +672,7 @@ def _check_paths(datasets_dir: str, save_dir:str):
         os.makedirs(save_dir)
     if not os.path.isdir(datasets_dir):
         raise IOError(f"Datasets directory '{datasets_dir}' not found.")
+
+
+def info():
+    _script_info(__all__)

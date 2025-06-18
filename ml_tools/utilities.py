@@ -4,7 +4,7 @@ import pandas as pd
 import os
 from pathlib import Path
 import re
-from typing import Literal
+from typing import Literal, Union, Sequence
 
 
 # Keep track of available tools
@@ -15,7 +15,8 @@ __all__ = [
     "merge_dataframes",
     "save_dataframe",
     "normalize_mixed_list",
-    "sanitize_filename"
+    "sanitize_filename",
+    "threshold_binary_values"
 ]
 
 
@@ -261,6 +262,38 @@ def sanitize_filename(filename: str) -> str:
     sanitized = re.sub(r'[^\w\-.]', '', sanitized)
 
     return sanitized
+
+
+def threshold_binary_values(
+    input_array: Union[Sequence[float], np.ndarray],
+    binary_features: int
+) -> np.ndarray:
+    """
+    Thresholds binary features in a 1D numeric sequence. Binary features must be located at the end of the sequence.
+
+    Converts binary elements to values (0 or 1) using a threshold of 0.5. The rest of the array (assumed to be continuous features) is returned unchanged.
+
+    Parameters:
+        input_array (Union[Sequence[float], np.ndarray]) : A one-dimensional collection of numeric values. The binary features must be located at the end of the array.
+
+        binary_features (int) : Number of binary features to threshold from the end of the array. Must be between 0 and the total number of elements.
+
+    Returns:
+        np.ndarray : A 1D NumPy array where the final `binary_features` values have been binarized.
+    """
+    array = np.asarray(input_array).flatten()
+    total = array.shape[0]
+    
+    if binary_features < 0 or binary_features > total:
+        raise ValueError("Binary features must be between 0 and the total number of features.")
+    
+    if binary_features == 0:
+        return array
+
+    cont_part = array[:-binary_features]
+    bin_part = (array[-binary_features:] > 0.5).astype(int)
+    
+    return np.concatenate([cont_part, bin_part])
 
 
 def _script_info(all_data: list[str]):

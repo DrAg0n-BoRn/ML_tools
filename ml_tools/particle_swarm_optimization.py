@@ -5,11 +5,10 @@ import xgboost as xgb
 import lightgbm as lgb
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 from sklearn.base import ClassifierMixin
-from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
-from typing import Literal, Union, Tuple, Dict
+from typing import Literal, Union, Tuple, Dict, Optional
 import polars as pl
 from functools import partial
-from .utilities import sanitize_filename, _script_info
+from .utilities import sanitize_filename, _script_info, threshold_binary_values
 
 
 __all__ = [
@@ -20,14 +19,14 @@ __all__ = [
 
 class ObjectiveFunction():
     """
-    Callable objective function designed for optimizing continuous outputs from regression models.
+    Callable objective function designed for optimizing continuous outputs from tree-based regression models.
     
-    The target serialized file (joblib) must include a 'model' and a 'scaler'. Additionally 'feature_names' and 'target_name' will be parsed if present.
+    The target serialized file (joblib) must include a trained tree-based 'model'. Additionally 'feature_names' and 'target_name' will be parsed if present.
 
     Parameters
     ----------
     trained_model_path : str
-        Path to a serialized model and its scaler (joblib) compatible with scikit-learn-like `.predict`. 
+        Path to a serialized model (joblib) compatible with scikit-learn-like `.predict`. 
     add_noise : bool
         Whether to apply multiplicative noise to the input features during evaluation.
     binary_features : int, default=0
@@ -35,15 +34,14 @@ class ObjectiveFunction():
     task : Literal, default 'maximization'
         Whether to maximize or minimize the target.
     """
-    def __init__(self, trained_model_path: str, add_noise: bool=True, task: Literal["maximization", "minimization"]="maximization", binary_features: int=0) -> None:
+    def __init__(self, trained_model_path: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int=0) -> None:
         self.binary_features = binary_features
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
         self._artifact = joblib.load(trained_model_path)
         self.model = self._get_from_artifact('model')
-        self.scaler = self._get_from_artifact('scaler')
-        self.feature_names: list[str] = self._get_from_artifact('feature_names') # type: ignore
-        self.target_name: str = self._get_from_artifact('target_name') # type: ignore
+        self.feature_names: Optional[list[str]] = self._get_from_artifact('feature_names') # type: ignore
+        self.target_name: Optional[str] = self._get_from_artifact('target_name') # type: ignore
         self.task = task
         self.check_model() # check for classification models and None values
     
@@ -51,16 +49,15 @@ class ObjectiveFunction():
         if self.use_noise:
             features_array = self.add_noise(features_array)
         if self.is_hybrid:
-            features_array = self._handle_hybrid(features_array)
+            features_array = threshold_binary_values(input_array=features_array, binary_features=self.binary_features)
         
         if features_array.ndim == 1:
             features_array = features_array.reshape(1, -1)
         
-        # scale features as the model expects
-        features_array = self.scaler.transform(features_array) # type: ignore
-        
         result = self.model.predict(features_array) # type: ignore
         scalar = result.item()
+        # print(f"[DEBUG] Model predicted: {scalar}")
+        
         # pso minimizes by default, so we return the negative value to maximize
         if self.task == "maximization":
             return -scalar
@@ -68,33 +65,22 @@ class ObjectiveFunction():
             return scalar
     
     def add_noise(self, features_array):
-        noise_range = np.random.uniform(0.95, 1.05, size=features_array.shape)
-        new_feature_values = features_array * noise_range
-        return new_feature_values
-    
-    def _handle_hybrid(self, features_array):
-        total_features = features_array.shape[0]
-        if self.binary_features > total_features:
-            raise ValueError("self.binary_features exceeds total number of features.")
-        
-        # Handle corner case where all features are binary
-        if self.binary_features == total_features:
-            feat_binary = (features_array > 0.5).astype(int)
-            return feat_binary
-        
-        # Normal case: split into continuous and binary parts
-        feat_continuous = features_array[:-self.binary_features]
-        feat_binary = (features_array[-self.binary_features:] > 0.5).astype(int) #threshold binary values
-        new_feature_values = np.concatenate([feat_continuous, feat_binary])
-        return new_feature_values
+        if self.binary_features > 0:
+            split_idx = -self.binary_features
+            cont_part = features_array[:split_idx]
+            bin_part = features_array[split_idx:]
+            noise = np.random.uniform(0.95, 1.05, size=cont_part.shape)
+            cont_noised = cont_part * noise
+            return np.concatenate([cont_noised, bin_part])
+        else:
+            noise = np.random.uniform(0.95, 1.05, size=features_array.shape)
+            return features_array * noise 
     
     def check_model(self):
         if isinstance(self.model, ClassifierMixin) or isinstance(self.model, xgb.XGBClassifier) or isinstance(self.model, lgb.LGBMClassifier):
             raise ValueError(f"[Model Check Failed] ❌\nThe loaded model ({type(self.model).__name__}) is a Classifier.\nOptimization is not suitable for standard classification tasks.")
         if self.model is None:
             raise ValueError("Loaded model is None")
-        if self.scaler is None:
-            raise ValueError("Loaded scaler is None")
 
     def _get_from_artifact(self, key: str):
         val = self._artifact.get(key)
@@ -105,7 +91,7 @@ class ObjectiveFunction():
         return result
     
     def __repr__(self):
-        return (f"<ObjectiveFunction(model={type(self.model).__name__}, scaler={type(self.scaler).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
+        return (f"<ObjectiveFunction(model={type(self.model).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
 
 
 def _set_boundaries(lower_boundaries: list[float], upper_boundaries: list[float]):
@@ -142,11 +128,11 @@ def run_pso(lower_boundaries: list[float],
             auto_binary_boundaries: bool=True,
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
-            swarm_size: int=100, 
-            max_iterations: int=100,
+            swarm_size: int=200, 
+            max_iterations: int=400,
             inequality_constrain_function=None, 
-            post_hoc_analysis: Union[int, None]=None,
-            workers: int=5) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+            post_hoc_analysis: Optional[int]=3,
+            workers: int=3) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
     """
     Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
 
@@ -157,7 +143,7 @@ def run_pso(lower_boundaries: list[float],
     upper_boundaries : list[float]
         Upper bounds for each feature in the search space (as many as features expected by the model).
     objective_function : ObjectiveFunction
-        A callable object encapsulating a regression model and its scaler.
+        A callable object encapsulating a tree-based regression model.
     save_results_dir : str
         Directory path to save the results CSV file.
     auto_binary_boundaries : bool
@@ -172,7 +158,7 @@ def run_pso(lower_boundaries: list[float],
         Maximum number of iterations for the optimization algorithm.
     inequality_constrain_function : callable or None, optional
         Optional function defining inequality constraints to be respected by the optimization.
-    post_hoc_analysis : int or None, optional
+    post_hoc_analysis : int or None
         If specified, runs the optimization multiple times to perform post hoc analysis. The value indicates the number of repetitions.
     workers : int
         Number of parallel processes to use.
@@ -191,7 +177,6 @@ def run_pso(lower_boundaries: list[float],
     Notes
     -----
     - PSO minimizes the objective function by default; if maximization is desired, it should be handled inside the ObjectiveFunction.
-    - Feature values are scaled before being passed to the model and inverse-transformed before result saving.
     """
     # Append binary boundaries
     binary_number = objective_function.binary_features
@@ -229,12 +214,15 @@ def run_pso(lower_boundaries: list[float],
         best_features, best_target, *_ = _pso(**arguments)
         # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
         
-        # inverse transformation
-        best_features = np.array(best_features).reshape(1, -1)
-        best_features_real = objective_function.scaler.inverse_transform(best_features).flatten() # type: ignore
+        # flip best_target if maximization was used
+        if objective_function.task == "maximization":
+            best_target = -best_target
+        
+        # threshold binary features
+        best_features_threshold = threshold_binary_values(best_features, binary_number)
         
         # name features
-        best_features_named = {name: value for name, value in zip(names, best_features_real)}
+        best_features_named = {name: value for name, value in zip(names, best_features_threshold)}
         best_target_named = {target_name: best_target}
         
         # save results
@@ -248,11 +236,14 @@ def run_pso(lower_boundaries: list[float],
             best_features, best_target, *_ = _pso(**arguments)
             # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
             
-            # inverse transformation
-            best_features = np.array(best_features).reshape(1, -1)
-            best_features_real = objective_function.scaler.inverse_transform(best_features).flatten() # type: ignore
+            # flip best_target if maximization was used
+            if objective_function.task == "maximization":
+                best_target = -best_target
             
-            for i, best_feature in enumerate(best_features_real):
+            # threshold binary features
+            best_features_threshold = threshold_binary_values(best_features, binary_number)
+            
+            for i, best_feature in enumerate(best_features_threshold):
                 all_best_features[i].append(best_feature)
             all_best_targets.append(best_target)
         
