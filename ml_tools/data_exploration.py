@@ -9,22 +9,23 @@ from typing import Union, Literal, Dict, Tuple
 import os
 import sys
 import textwrap
-from ml_tools.utilities import sanitize_filename
+from ml_tools.utilities import sanitize_filename, _script_info
 
 
-# Keep track of all available functions, show using `info()`
-__all__ = ["summarize_dataframe",
-           "drop_rows_with_missing_data",
-           "split_features_targets", 
-           "show_null_columns",
-           "drop_columns_with_missing_data",
-           "split_continuous_binary",
-           "plot_correlation_heatmap",
-           "check_value_distributions",
-           "plot_value_distributions",
-           "clip_outliers_single",
-           "clip_outliers_multi",
-           "merge_dataframes"]
+# Keep track of all available tools, show using `info()`
+__all__ = [
+    "summarize_dataframe",
+    "drop_rows_with_missing_data",
+    "split_features_targets", 
+    "show_null_columns",
+    "drop_columns_with_missing_data",
+    "split_continuous_binary", 
+    "plot_correlation_heatmap", 
+    "check_value_distributions", 
+    "plot_value_distributions", 
+    "clip_outliers_single", 
+    "clip_outliers_multi"
+]
 
 
 def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
@@ -56,34 +57,6 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
 
     print(f"Shape: {df.shape}")
     return summary
-
-
-def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
-    """
-    Displays a table of columns with missing values, showing both the count and
-    percentage of missing entries per column.
-
-    Parameters:
-        df (pd.DataFrame): The input DataFrame.
-        round_digits (int): Number of decimal places for the percentage.
-        
-    Returns:
-        pd.DataFrame: A DataFrame summarizing missing values in each column.
-    """
-    null_counts = df.isnull().sum()
-    null_percent = df.isnull().mean() * 100
-
-    # Filter only columns with at least one null
-    mask = null_counts > 0
-    null_summary = pd.DataFrame({
-        'Missing Count': null_counts[mask],
-        'Missing %': null_percent[mask].round(round_digits)
-    })
-
-    # Sort by descending percentage of missing values
-    null_summary = null_summary.sort_values(by='Missing %', ascending=False)
-    # print(null_summary)
-    return null_summary
 
 
 def drop_rows_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
@@ -132,6 +105,57 @@ def split_features_targets(df: pd.DataFrame, targets: list[str]):
     return df_targets, df_features
 
 
+def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
+    """
+    Displays a table of columns with missing values, showing both the count and
+    percentage of missing entries per column.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        round_digits (int): Number of decimal places for the percentage.
+        
+    Returns:
+        pd.DataFrame: A DataFrame summarizing missing values in each column.
+    """
+    null_counts = df.isnull().sum()
+    null_percent = df.isnull().mean() * 100
+
+    # Filter only columns with at least one null
+    mask = null_counts > 0
+    null_summary = pd.DataFrame({
+        'Missing Count': null_counts[mask],
+        'Missing %': null_percent[mask].round(round_digits)
+    })
+
+    # Sort by descending percentage of missing values
+    null_summary = null_summary.sort_values(by='Missing %', ascending=False)
+    # print(null_summary)
+    return null_summary
+
+
+def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
+    """
+    Drops columns with more than `threshold` fraction of missing values.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        threshold (float): Fraction of missing values above which columns are dropped.
+
+    Returns:
+        pd.DataFrame: A new DataFrame without the dropped columns.
+    """
+    missing_fraction = df.isnull().mean()
+    cols_to_drop = missing_fraction[missing_fraction > threshold].index
+
+    if len(cols_to_drop) > 0:
+        print(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
+        print(list(cols_to_drop))
+    else:
+        print(f"No columns have more than {threshold*100:.0f}% missing data.")
+
+    return df.drop(columns=cols_to_drop)
+
+
 def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split DataFrame into two DataFrames: one with continuous columns, one with binary columns.
@@ -173,29 +197,6 @@ def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
     print(f"Binary columns shape: {df_bin.shape}")
 
     return df_cont, df_bin # type: ignore
-
-    
-def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
-    """
-    Drops columns with more than `threshold` fraction of missing values.
-
-    Parameters:
-        df (pd.DataFrame): The input DataFrame.
-        threshold (float): Fraction of missing values above which columns are dropped.
-
-    Returns:
-        pd.DataFrame: A new DataFrame without the dropped columns.
-    """
-    missing_fraction = df.isnull().mean()
-    cols_to_drop = missing_fraction[missing_fraction > threshold].index
-
-    if len(cols_to_drop) > 0:
-        print(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
-        print(list(cols_to_drop))
-    else:
-        print(f"No columns have more than {threshold*100:.0f}% missing data.")
-
-    return df.drop(columns=cols_to_drop)
 
 
 def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
@@ -513,83 +514,10 @@ def clip_outliers_multi(
     return new_df
 
 
-def merge_dataframes(
-    *dfs: pd.DataFrame,
-    reset_index: bool = False,
-    direction: Literal["horizontal", "vertical"] = "horizontal"
-) -> pd.DataFrame:
-    """
-    Merges multiple DataFrames either horizontally or vertically.
-
-    Parameters:
-        *dfs (pd.DataFrame): Variable number of DataFrames to merge.
-        reset_index (bool): Whether to reset index in the final merged DataFrame.
-        direction (["horizontal" | "vertical"]):
-            - "horizontal": Merge on index, adding columns.
-            - "vertical": Append rows; all DataFrames must have identical columns.
-
-    Returns:
-        pd.DataFrame: A single merged DataFrame.
-
-    Raises:
-        ValueError:
-            - If fewer than 2 DataFrames are provided.
-            - If indexes do not match for horizontal merge.
-            - If column names or order differ for vertical merge.
-    """
-    if len(dfs) < 2:
-        raise ValueError("At least 2 DataFrames must be provided.")
-    
-    for i, df in enumerate(dfs, start=1):
-        print(f"DataFrame {i} shape: {df.shape}")
-    
-
-    if direction == "horizontal":
-        reference_index = dfs[0].index
-        for i, df in enumerate(dfs, start=1):
-            if not df.index.equals(reference_index):
-                raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
-        merged_df = pd.concat(dfs, axis=1)
-
-    elif direction == "vertical":
-        reference_columns = dfs[0].columns
-        for i, df in enumerate(dfs, start=1):
-            if not df.columns.equals(reference_columns):
-                raise ValueError(f"Column names/order do not match: Dataset 1 and Dataset {i}.")
-        merged_df = pd.concat(dfs, axis=0)
-
-    else:
-        raise ValueError(f"Invalid merge direction: {direction}")
-
-    if reset_index:
-        merged_df = merged_df.reset_index(drop=True)
-
-    print(f"Merged DataFrame shape: {merged_df.shape}")
-
-    return merged_df
-
-
 def _is_notebook():
     return get_ipython() is not None
 
 
-def info(full_info: bool=True):
-    """
-    List available functions and their descriptions.
-    """
-    print("Available functions for data exploration:")
-    if full_info:
-        module = sys.modules[__name__]
-        for name in __all__:
-            obj = getattr(module, name, None)
-            if callable(obj):
-                doc = obj.__doc__ or "No docstring provided."
-                formatted_doc = textwrap.indent(textwrap.dedent(doc.strip()), prefix="    ")
-                print(f"\n{name}:\n{formatted_doc}")
-    else:
-        for i, name in enumerate(__all__, start=1):
-            print(f"{i} - {name}")
+def info():
+    _script_info(__all__)
 
-
-if __name__ == "__main__":
-    info()

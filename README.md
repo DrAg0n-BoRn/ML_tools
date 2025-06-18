@@ -40,7 +40,7 @@ Clone the repository and install in editable mode with optional dependencies:
 ```bash
 git clone https://github.com/DrAg0n-BoRn/ML_tools.git
 cd ML_tools
-pip install -e '.[pytorch]'
+pip install -e .
 ```
 
 ## Usage
@@ -50,4 +50,20 @@ After installation, import modules like this:
 ```python
 from ml_tools.utilities import sanitize_filename
 from ml_tools.logger import custom_logger
+```
+
+## Available modules
+
+```bash
+data_exploration
+datasetmaster
+ensemble_learning
+handle_excel
+logger
+MICE_imputation
+particle_swarm_optimization
+trainer
+utilities
+VIF_factor
+vision_helpers
 ```

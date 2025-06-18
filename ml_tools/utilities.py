@@ -4,6 +4,19 @@ import pandas as pd
 import os
 from pathlib import Path
 import re
+from typing import Literal
+
+
+# Keep track of available tools
+__all__ = [
+    "list_csv_paths",
+    "load_dataframe",
+    "yield_dataframes_from_dir",
+    "merge_dataframes",
+    "save_dataframe",
+    "normalize_mixed_list",
+    "sanitize_filename"
+]
 
 
 def list_csv_paths(directory: str) -> dict[str, str]:
@@ -76,11 +89,93 @@ def yield_dataframes_from_dir(datasets_dir: str):
     for df_name, df_path in list_csv_paths(datasets_dir).items():
         df, _ = load_dataframe(df_path)
         yield df, df_name
+
+
+def merge_dataframes(
+    *dfs: pd.DataFrame,
+    reset_index: bool = False,
+    direction: Literal["horizontal", "vertical"] = "horizontal"
+) -> pd.DataFrame:
+    """
+    Merges multiple DataFrames either horizontally or vertically.
+
+    Parameters:
+        *dfs (pd.DataFrame): Variable number of DataFrames to merge.
+        reset_index (bool): Whether to reset index in the final merged DataFrame.
+        direction (["horizontal" | "vertical"]):
+            - "horizontal": Merge on index, adding columns.
+            - "vertical": Append rows; all DataFrames must have identical columns.
+
+    Returns:
+        pd.DataFrame: A single merged DataFrame.
+
+    Raises:
+        ValueError:
+            - If fewer than 2 DataFrames are provided.
+            - If indexes do not match for horizontal merge.
+            - If column names or order differ for vertical merge.
+    """
+    if len(dfs) < 2:
+        raise ValueError("At least 2 DataFrames must be provided.")
+    
+    for i, df in enumerate(dfs, start=1):
+        print(f"DataFrame {i} shape: {df.shape}")
+    
+
+    if direction == "horizontal":
+        reference_index = dfs[0].index
+        for i, df in enumerate(dfs, start=1):
+            if not df.index.equals(reference_index):
+                raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
+        merged_df = pd.concat(dfs, axis=1)
+
+    elif direction == "vertical":
+        reference_columns = dfs[0].columns
+        for i, df in enumerate(dfs, start=1):
+            if not df.columns.equals(reference_columns):
+                raise ValueError(f"Column names/order do not match: Dataset 1 and Dataset {i}.")
+        merged_df = pd.concat(dfs, axis=0)
+
+    else:
+        raise ValueError(f"Invalid merge direction: {direction}")
+
+    if reset_index:
+        merged_df = merged_df.reset_index(drop=True)
+
+    print(f"Merged DataFrame shape: {merged_df.shape}")
+
+    return merged_df
+
+
+def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
+    """
+    Save a pandas DataFrame to a CSV file.
+
+    Parameters:
+        df: pandas.DataFrame to save
+        save_dir: str, directory where the CSV file will be saved.
+        filename: str, CSV filename, extension will be added if missing.
+    """
+    if df.empty:
+        print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
+        return
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    filename = sanitize_filename(filename)
+    
+    if not filename.endswith('.csv'):
+        filename += '.csv'
         
+    output_path = os.path.join(save_dir, filename)
         
+    df.to_csv(output_path, index=False, encoding='utf-8')
+    print(f"✅ Saved file: '{filename}'")
+
+
 def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
     """
-    Normalize a mixed list of numeric values and strings so that the sum of the values equals 1.0,
+    Normalize a mixed list of numeric values and strings casted to floats so that the sum of the values equals 1.0,
     applying heuristic adjustments to correct for potential data entry scale mismatches.
 
     Parameters:
@@ -168,27 +263,14 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
+def _script_info(all_data: list[str]):
     """
-    Save a pandas DataFrame to a CSV file.
+    List available names.
+    """
+    print("Available functions and objects:")
+    for i, name in enumerate(all_data, start=1):
+            print(f"{i} - {name}")
 
-    Parameters:
-        df: pandas.DataFrame to save
-        save_dir: str, directory where the CSV file will be saved.
-        filename: str, CSV filename, extension will be added if missing.
-    """
-    if df.empty:
-        print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
-        return
-    
-    os.makedirs(save_dir, exist_ok=True)
-    
-    filename = sanitize_filename(filename)
-    
-    if not filename.endswith('.csv'):
-        filename += '.csv'
-        
-    output_path = os.path.join(save_dir, filename)
-        
-    df.to_csv(output_path, index=False, encoding='utf-8')
-    print(f"✅ Saved file: '{filename}'")
+
+def info():
+    _script_info(__all__)

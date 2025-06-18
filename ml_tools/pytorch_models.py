@@ -1,5 +1,12 @@
 import torch
 from torch import nn
+from .utilities import _script_info
+
+
+__all__ = [
+    "MyNeuralNetwork",
+    "MyLSTMNetwork"
+]
 
 
 class MyNeuralNetwork(nn.Module):
@@ -73,9 +80,11 @@ class MyNeuralNetwork(nn.Module):
         return X
 
 
-class MyConvolutionalNetwork(nn.Module):
+class _MyConvolutionalNetwork(nn.Module):
     def __init__(self, outputs: int, color_channels: int=3, img_size: int=256, drop_out: float=0.2):
         """
+        - EDUCATIONAL PURPOSES ONLY, not optimized and requires lots of memory.
+        
         Create a basic Convolutional Neural Network with two convolution layers with a pooling layer after each convolution.
 
         Args:
@@ -225,3 +234,6 @@ class MyLSTMNetwork(nn.Module):
         else:
             return output
 
+
+def info():
+    _script_info(__all__)

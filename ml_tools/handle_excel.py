@@ -2,6 +2,16 @@ import os
 from openpyxl import load_workbook, Workbook
 import pandas as pd
 from typing import List, Optional
+from utilities import _script_info, sanitize_filename
+
+
+__all__ = [
+    "unmerge_and_split_excel",
+    "unmerge_and_split_from_directory",
+    "validate_excel_schema",
+    "vertical_merge_transform_excel",
+    "horizontal_merge_transform_excel"
+]
 
 
 def unmerge_and_split_excel(filepath: str) -> None:
@@ -25,12 +35,12 @@ def unmerge_and_split_excel(filepath: str) -> None:
         ws = wb[sheet_name]
         new_wb = Workbook()
         new_ws = new_wb.active
-        new_ws.title = sheet_name
+        new_ws.title = sheet_name # type: ignore
 
         # Copy all cell values
         for row in ws.iter_rows():
             for cell in row:
-                new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                new_ws.cell(row=cell.row, column=cell.column, value=cell.value) # type: ignore
 
         # Fill and unmerge merged regions
         for merged_range in list(ws.merged_cells.ranges):
@@ -41,10 +51,10 @@ def unmerge_and_split_excel(filepath: str) -> None:
             value = ws.cell(row=min_row, column=min_col).value
             for row in range(min_row, max_row + 1):
                 for col in range(min_col, max_col + 1):
-                    new_ws.cell(row=row, column=col, value=value)
+                    new_ws.cell(row=row, column=col, value=value) # type: ignore
 
         # Construct flat output file name
-        sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
+        sanitized_sheet_name = sanitize_filename(sheet_name)
         output_filename = f"{base_name}_{sanitized_sheet_name}.xlsx"
         output_path = os.path.join(base_dir, output_filename)
         new_wb.save(output_path)
@@ -85,12 +95,12 @@ def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
             ws = wb[sheet_name]
             new_wb = Workbook()
             new_ws = new_wb.active
-            new_ws.title = sheet_name
+            new_ws.title = sheet_name # type: ignore
 
             # Copy all cell values
             for row in ws.iter_rows():
                 for cell in row:
-                    new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                    new_ws.cell(row=cell.row, column=cell.column, value=cell.value) # type: ignore
 
             # Fill and unmerge merged regions
             for merged_range in list(ws.merged_cells.ranges):
@@ -101,10 +111,10 @@ def unmerge_and_split_from_directory(input_dir: str, output_dir: str) -> None:
                 value = ws.cell(row=min_row, column=min_col).value
                 for row in range(min_row, max_row + 1):
                     for col in range(min_col, max_col + 1):
-                        new_ws.cell(row=row, column=col, value=value)
+                        new_ws.cell(row=row, column=col, value=value) # type: ignore
 
             # Construct flat output file name
-            sanitized_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
+            sanitized_sheet_name = sanitize_filename(sheet_name)
             output_filename = f"{base_name}_{sanitized_sheet_name}.xlsx"
             output_path = os.path.join(output_dir, output_filename)
             new_wb.save(output_path)
@@ -151,7 +161,7 @@ def validate_excel_schema(
             wb = load_workbook(file_path, read_only=True)
             ws = wb.active  # Only check the first worksheet
 
-            header = [cell.value for cell in next(ws.iter_rows(max_row=1))]
+            header = [cell.value for cell in next(ws.iter_rows(max_row=1))] # type: ignore
 
             if strict:
                 if header != expected_columns:
@@ -202,6 +212,11 @@ def vertical_merge_transform_excel(
     
     if not excel_files:
         raise ValueError("No Excel files found in the target directory.")
+    
+    # sanitize filename
+    csv_filename = sanitize_filename(csv_filename)
+    # make directory
+    os.makedirs(output_dir, exist_ok=True)
 
     csv_filename = csv_filename if csv_filename.endswith('.csv') else f"{csv_filename}.csv"
     csv_path = os.path.join(output_dir, csv_filename)
@@ -260,6 +275,11 @@ def horizontal_merge_transform_excel(
     excel_files = [f for f in raw_excel_files if not f.startswith('~')]  # Exclude temporary files
     if not excel_files:
         raise ValueError("No Excel files found in the target directory.")
+    
+    # sanitize filename
+    csv_filename = sanitize_filename(csv_filename)
+    # make directory
+    os.makedirs(output_dir, exist_ok=True)
 
     csv_filename = csv_filename if csv_filename.endswith('.csv') else f"{csv_filename}.csv"
     csv_path = os.path.join(output_dir, csv_filename)
@@ -308,3 +328,6 @@ def horizontal_merge_transform_excel(
     if duplicate_columns:
         print(f"⚠️ Duplicate columns: {duplicate_columns}")
 
+
+def info():
+    _script_info(__all__)

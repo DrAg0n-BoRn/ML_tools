@@ -5,23 +5,29 @@ import xgboost as xgb
 import lightgbm as lgb
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 from sklearn.base import ClassifierMixin
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
 from typing import Literal, Union, Tuple, Dict
-from collections.abc import Sequence
 import polars as pl
 from functools import partial
+from .utilities import sanitize_filename, _script_info
+
+
+__all__ = [
+    "ObjectiveFunction",
+    "run_pso"
+]
 
 
 class ObjectiveFunction():
     """
     Callable objective function designed for optimizing continuous outputs from regression models.
     
-    The trained model must include a 'model' and a 'scaler'. Additionally 'feature_names' and 'target_name' will be parsed if present.
+    The target serialized file (joblib) must include a 'model' and a 'scaler'. Additionally 'feature_names' and 'target_name' will be parsed if present.
 
     Parameters
     ----------
     trained_model_path : str
-        Path to a serialized model (joblib) compatible with scikit-learn-like `.predict`. 
+        Path to a serialized model and its scaler (joblib) compatible with scikit-learn-like `.predict`. 
     add_noise : bool
         Whether to apply multiplicative noise to the input features during evaluation.
     binary_features : int, default=0
@@ -67,8 +73,18 @@ class ObjectiveFunction():
         return new_feature_values
     
     def _handle_hybrid(self, features_array):
-        feat_continuous = features_array[:self.binary_features]
-        feat_binary = (features_array[self.binary_features:] > 0.5).astype(int) #threshold binary values
+        total_features = features_array.shape[0]
+        if self.binary_features > total_features:
+            raise ValueError("self.binary_features exceeds total number of features.")
+        
+        # Handle corner case where all features are binary
+        if self.binary_features == total_features:
+            feat_binary = (features_array > 0.5).astype(int)
+            return feat_binary
+        
+        # Normal case: split into continuous and binary parts
+        feat_continuous = features_array[:-self.binary_features]
+        feat_binary = (features_array[-self.binary_features:] > 0.5).astype(int) #threshold binary values
         new_feature_values = np.concatenate([feat_continuous, feat_binary])
         return new_feature_values
     
@@ -92,7 +108,7 @@ class ObjectiveFunction():
         return (f"<ObjectiveFunction(model={type(self.model).__name__}, scaler={type(self.scaler).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
 
 
-def _set_boundaries(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]):
+def _set_boundaries(lower_boundaries: list[float], upper_boundaries: list[float]):
     assert len(lower_boundaries) == len(upper_boundaries), "Lower and upper boundaries must have the same length."
     assert len(lower_boundaries) >= 1, "At least one boundary pair is required."
     lower = np.array(lower_boundaries)
@@ -112,31 +128,40 @@ def _save_results(*dicts, save_dir: str, target_name: str):
     combined_dict = dict()
     for single_dict in dicts:
         combined_dict.update(single_dict)
-        
-    full_path = os.path.join(save_dir, f"results_{target_name}.csv")
+    
+    sanitized_target_name = sanitize_filename(target_name)
+    
+    full_path = os.path.join(save_dir, f"Optimization_{sanitized_target_name}.csv")
     pl.DataFrame(combined_dict).write_csv(full_path)
 
 
-def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float], objective_function: ObjectiveFunction,
-            save_results_dir: str, 
+def run_pso(lower_boundaries: list[float], 
+            upper_boundaries: list[float], 
+            objective_function: ObjectiveFunction,
+            save_results_dir: str,
+            auto_binary_boundaries: bool=True,
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
-            swarm_size: int=100, max_iterations: int=100,
+            swarm_size: int=100, 
+            max_iterations: int=100,
             inequality_constrain_function=None, 
-            post_hoc_analysis: Union[int, None]=None) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+            post_hoc_analysis: Union[int, None]=None,
+            workers: int=5) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
     """
-    Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results.
+    Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
 
     Parameters
     ----------
-    lower_boundaries : Sequence[float]
-        Lower bounds for each feature in the search space.
-    upper_boundaries : Sequence[float]
-        Upper bounds for each feature in the search space.
+    lower_boundaries : list[float]
+        Lower bounds for each feature in the search space (as many as features expected by the model).
+    upper_boundaries : list[float]
+        Upper bounds for each feature in the search space (as many as features expected by the model).
     objective_function : ObjectiveFunction
         A callable object encapsulating a regression model and its scaler.
     save_results_dir : str
         Directory path to save the results CSV file.
+    auto_binary_boundaries : bool
+        Use `ObjectiveFunction.binary_features` to append as many binary boundaries as needed to `lower_boundaries` and `upper_boundaries` automatically.
     target_name : str or None, optional
         Name of the target variable. If None, attempts to retrieve from the ObjectiveFunction object.
     feature_names : list[str] or None, optional
@@ -149,30 +174,38 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
         Optional function defining inequality constraints to be respected by the optimization.
     post_hoc_analysis : int or None, optional
         If specified, runs the optimization multiple times to perform post hoc analysis. The value indicates the number of repetitions.
+    workers : int
+        Number of parallel processes to use.
 
     Returns
     -------
     Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]
         If `post_hoc_analysis` is None, returns two dictionaries:
-            - best_features_named: Feature values (after inverse scaling) that yield the best result.
-            - best_target_named: Best result obtained for the target variable.
+            - feature_names: Feature values (after inverse scaling) that yield the best result.
+            - target_name: Best result obtained for the target variable.
 
         If `post_hoc_analysis` is an integer, returns two dictionaries:
-            - all_best_features_named: Lists of best feature values (after inverse scaling) for each repetition.
-            - all_best_targets_named: List of best target values across repetitions.
+            - feature_names: Lists of best feature values (after inverse scaling) for each repetition.
+            - target_name: List of best target values across repetitions.
 
     Notes
     -----
     - PSO minimizes the objective function by default; if maximization is desired, it should be handled inside the ObjectiveFunction.
     - Feature values are scaled before being passed to the model and inverse-transformed before result saving.
     """
+    # Append binary boundaries
+    binary_number = objective_function.binary_features
+    if auto_binary_boundaries and binary_number > 0:
+        lower_boundaries.extend([0] * binary_number)
+        upper_boundaries.extend([1] * binary_number)
+
     lower, upper = _set_boundaries(lower_boundaries, upper_boundaries)
-    
+
     # feature names
     if feature_names is None and objective_function.feature_names is not None:
         feature_names = objective_function.feature_names
     names = _set_feature_names(size=len(lower_boundaries), names=feature_names)
-        
+
     # target name
     if target_name is None and objective_function.target_name is not None:
         target_name = objective_function.target_name
@@ -186,13 +219,15 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
             "f_ieqcons": inequality_constrain_function,
             "swarmsize": swarm_size,
             "maxiter": max_iterations,
-            "processes": 1,
-            "particle_output": True
+            "processes": workers,
+            "particle_output": False
     }
     
-    if post_hoc_analysis is None:
-        # best_features, best_target = pso(**arguments)
-        best_features, best_target, _particle_positions, _target_values_per_position = pso(**arguments)
+    os.makedirs(save_results_dir, exist_ok=True)
+    
+    if post_hoc_analysis is None or post_hoc_analysis == 1:
+        best_features, best_target, *_ = _pso(**arguments)
+        # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
         
         # inverse transformation
         best_features = np.array(best_features).reshape(1, -1)
@@ -209,9 +244,9 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
     else:
         all_best_targets = list()
         all_best_features = [[] for _ in range(len(lower_boundaries))]
-        for  _ in range(post_hoc_analysis):
-            # best_features, best_target = pso(**arguments)
-            best_features, best_target, _particle_positions, _target_values_per_position = pso(**arguments)
+        for _ in range(post_hoc_analysis):
+            best_features, best_target, *_ = _pso(**arguments)
+            # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
             
             # inverse transformation
             best_features = np.array(best_features).reshape(1, -1)
@@ -231,6 +266,8 @@ def run_pso(lower_boundaries: Sequence[float], upper_boundaries: Sequence[float]
         return all_best_features_named, all_best_targets_named # type: ignore
 
 
+def info():
+    _script_info(__all__)
 
 
 ### SOURCE CODE FOR PSO ###
@@ -249,7 +286,7 @@ def _cons_ieqcons_wrapper(ieqcons, args, kwargs, x):
 def _cons_f_ieqcons_wrapper(f_ieqcons, args, kwargs, x):
     return np.array(f_ieqcons(x, *args, **kwargs))
     
-def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={}, 
+def _pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={}, 
         swarmsize=100, omega=0.5, phip=0.5, phig=0.5, maxiter=100, 
         minstep=1e-8, minfunc=1e-8, debug=False, processes=1,
         particle_output=False):
@@ -377,7 +414,7 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         for i in range(S):
             fx[i] = obj(x[i, :])
             fs[i] = is_feasible(x[i, :])
-       
+    
     # Store particle's best position (if constraints are satisfied)
     i_update = np.logical_and((fx < fp), fs)
     p[i_update, :] = x[i_update, :].copy()

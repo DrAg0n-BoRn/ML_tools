@@ -3,8 +3,19 @@ import miceforest as mf
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename
+from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
+
+
+__all__ = [
+    "apply_mice",
+    "save_imputed_datasets",
+    "get_na_column_names",
+    "get_convergence_diagnostic",
+    "get_imputed_distributions",
+    "run_mice_pipeline"
+]
+
 
 def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
     
@@ -210,7 +221,7 @@ def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_
     if os.path.isfile(df_path_or_dir):
         all_file_paths = [df_path_or_dir]
     elif os.path.isdir(df_path_or_dir):
-        all_file_paths = list_csv_paths(df_path_or_dir).values()
+        all_file_paths = list(list_csv_paths(df_path_or_dir).values())
     else:
         raise ValueError(f"Invalid path or directory: {df_path_or_dir}")
     
@@ -226,3 +237,7 @@ def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_
         get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_dir)
         
         get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_dir, column_names=imputed_column_names)
+
+
+def info():
+    _script_info(__all__)

@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from sklearn.metrics import mean_squared_error, classification_report, ConfusionMatrixDisplay, roc_curve, roc_auc_score, r2_score, median_absolute_error
+from .utilities import _script_info
+
+
+__all__ = [
+    "MyTrainer"
+]
 
 
 class MyTrainer():
@@ -288,36 +294,6 @@ class MyTrainer():
                 print(f"Area under the curve score: {area_under_curve:4.2f}")
         else:
             print("Error encountered while retrieving 'model.kind' attribute.")
-            
-
-    def forecast(self, samples_list: list[torch.Tensor], view_as: tuple[int,int]=(1,-1)):
-        """
-            DEPRECATED - Use `helpers.model_predict()` instead
-        
-        Returns a list containing lists of predicted values, one for each sample. 
-        
-        Each sample must be a tensor and have the same shape and normalization expected by the model 
-        (this method will add the batch dimension automatically).
-
-        Args:
-            `samples_list`: list of tensors.
-            
-            `view_as`: reshape each output, default is (1,-1).
-
-        Returns: List of lists.
-        """
-        self.model.eval()
-        results = list()
-        with torch.no_grad():
-            for data_point in samples_list:
-                data_point = data_point.unsqueeze(0).to(self.device)
-                output = self.model(data_point)
-                if self.kind == "classification":
-                    results.append(output.argmax(dim=1).view(view_as).cpu().tolist())
-                else:  #regression
-                    results.append(output.view(view_as).cpu().tolist())
-        
-        return results
     
     
     def rnn_forecast(self, sequence: torch.Tensor, steps: int):
@@ -364,3 +340,7 @@ class MyTrainer():
         # Cast to array and return
         predictions = numpy.array(predictions)
         return predictions
+
+
+def info():
+    _script_info(__all__)

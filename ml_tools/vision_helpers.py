@@ -4,9 +4,18 @@ from PIL import Image, ImageOps
 from typing import Literal
 from torchvision import transforms
 import torch
+from .utilities import _script_info
 
 
-# --- Helper Functions ---
+__all__ = [
+    "inspect_images",
+    "image_augmentation",
+    "ResizeAspectFill",
+    "is_image",
+    "model_predict"
+]
+
+
 def inspect_images(path: str):
     """
     Prints out the types, sizes and channels of image files found in the directory and its subdirectories.
@@ -216,3 +225,7 @@ def model_predict(model: torch.nn.Module, kind: Literal["regression", "classific
                 results.append(output.view(view_as).cpu().tolist())
     
     return results
+
+
+def info():
+    _script_info(__all__)

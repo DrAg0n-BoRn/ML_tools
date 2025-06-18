@@ -5,7 +5,12 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-from ml_tools.utilities import sanitize_filename
+from ml_tools.utilities import sanitize_filename, _script_info
+
+
+__all__ = [
+    "custom_logger"
+]
 
 
 def custom_logger(
@@ -143,3 +148,7 @@ def _log_exception_to_log(exc: BaseException, path: str) -> None:
 def _log_dict_to_json(data: Dict[Any, Any], path: str) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def info():
+    _script_info(__all__)

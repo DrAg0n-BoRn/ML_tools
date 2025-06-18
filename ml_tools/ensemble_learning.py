@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler, MaxAbsScaler, MinMaxScaler
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir
+from .utilities import yield_dataframes_from_dir, sanitize_filename
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -245,7 +245,9 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
 
 # save model
 def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str, scaler_object: Union[StandardScaler, MinMaxScaler, MaxAbsScaler]):
-    full_path = os.path.join(save_directory, f"{model_name}_{target_name}.joblib")
+    #Sanitize filenames to save
+    sanitized_target_name = sanitize_filename(target_name)
+    full_path = os.path.join(save_directory, f"{model_name}_{sanitized_target_name}.joblib")
     joblib.dump({'model': trained_model, 'scaler':scaler_object, 'feature_names': feature_names, 'target_name':target_name}, full_path)
 
 # function to evaluate the model and save metrics (Classification)
@@ -298,7 +300,8 @@ def evaluate_model_classification(
     )
 
     # Save text report
-    report_path = os.path.join(save_dir, f"Classification_Report_{target_id}.txt")
+    sanitized_target_id = sanitize_filename(target_id)
+    report_path = os.path.join(save_dir, f"Classification_Report_{sanitized_target_id}.txt")
     with open(report_path, "w") as f:
         f.write(f"{model_name} - {target_id}\t\tAccuracy: {accuracy:.2f}\n")
         f.write("Classification Report:\n")
@@ -328,7 +331,7 @@ def evaluate_model_classification(
         text.set_fontsize(title_fontsize+4)
 
     fig.tight_layout()
-    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{target_id}.svg")
+    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{sanitized_target_id}.svg")
     fig.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close(fig)
 
@@ -411,7 +414,8 @@ def plot_roc_curve(
 
     # Save figure
     os.makedirs(save_directory, exist_ok=True)
-    save_path = os.path.join(save_directory, f"ROC_{target_name}.svg")
+    sanitized_target_name = sanitize_filename(target_name)
+    save_path = os.path.join(save_directory, f"ROC_{sanitized_target_name}.svg")
     fig.savefig(save_path, bbox_inches="tight", format="svg")
 
     return fig
@@ -435,7 +439,8 @@ def evaluate_model_regression(model, model_name: str,
     r2 = r2_score(single_y_test, y_pred)
     
     # Create formatted report
-    report_path = os.path.join(save_dir, f"Regression_Report_{target_id}.txt")
+    sanitized_target_id = sanitize_filename(target_id)
+    report_path = os.path.join(save_dir, f"Regression_Report_{sanitized_target_id}.txt")
     with open(report_path, "w") as f:
         f.write(f"{model_name} - {target_id} Regression Performance\n")
         f.write(f"Mean Absolute Error (MAE): {mae:.4f}\n")
@@ -453,7 +458,7 @@ def evaluate_model_regression(model, model_name: str,
     plt.title(f"{model_name} - Residual Plot for {target_id}", fontsize=base_fontsize)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{target_id}.svg"), bbox_inches='tight', format="svg")
+    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{sanitized_target_id}.svg"), bbox_inches='tight', format="svg")
     plt.close()
     
     # Create true vs predicted values plot
@@ -466,11 +471,12 @@ def evaluate_model_regression(model, model_name: str,
     plt.ylabel('Predictions', fontsize=base_fontsize)
     plt.title(f"{model_name} - True vs Predicted for {target_id}", fontsize=base_fontsize)
     plt.grid(True)
-    plot_path = os.path.join(save_dir, f"Regression_Plot_{target_id}.svg")
+    plot_path = os.path.join(save_dir, f"Regression_Plot_{sanitized_target_id}.svg")
     plt.savefig(plot_path, bbox_inches='tight', format="svg")
     plt.close()
 
     return y_pred
+
 
 # Get SHAP values
 def get_shap_values(
@@ -498,7 +504,8 @@ def get_shap_values(
         features_to_explain: Should match the model's training data format, including scaling.
         save_dir: Directory to save visualizations
     """
-
+    sanitized_target_id = sanitize_filename(target_id)
+    
     def _apply_plot_style():
         styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
         for style in styles:
@@ -560,7 +567,7 @@ def get_shap_values(
                     _create_shap_plot(
                         shap_values=class_shap,
                         features=features_to_explain,
-                        save_path=os.path.join(save_dir, f"SHAP_{target_id}_Class{class_name}_{plot_type}.svg"),
+                        save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_Class{class_name}_{plot_type}.svg"),
                         plot_type=plot_type,
                         title=f"{model_name} - {target_id} (Class {class_name})"
                     )
@@ -570,7 +577,7 @@ def get_shap_values(
                 _create_shap_plot(
                     shap_values=values,
                     features=features_to_explain,
-                    save_path=os.path.join(save_dir, f"SHAP_{target_id}_{plot_type}.svg"),
+                    save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_{plot_type}.svg"),
                     plot_type=plot_type,
                     title=f"{model_name} - {target_id}"
                 )
@@ -580,10 +587,11 @@ def get_shap_values(
             _create_shap_plot(
                 shap_values=shap_values,
                 features=features_to_explain,
-                save_path=os.path.join(save_dir, f"SHAP_{target_id}_{plot_type}.svg"),
+                save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_id}_{plot_type}.svg"),
                 plot_type=plot_type,
                 title=f"{model_name} - {target_id}"
             )
+    #START_O
 
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(features_to_explain)
@@ -672,6 +680,6 @@ def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list
     
 def _check_paths(datasets_dir: str, save_dir:str):
     if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)   
+        os.makedirs(save_dir)
     if not os.path.isdir(datasets_dir):
         raise IOError(f"Datasets directory '{datasets_dir}' not found.")
