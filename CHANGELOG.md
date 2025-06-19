@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.2]
+## [1.4.3] - 2025-06-19
+
+### Changed
+
+- data_exploration: `drop_columns_with_missing_data()` has an option to display the state of columns with nulls after the drop.
+- utilities: `merge_dataframes()` now accepts a "verbose" boolean.
+- MICE: 
+    - `run_mice_pipeline()` requires a list of target column names. Targets must be skipped from the imputation process. 
+    - `save_imputed_datasets()` requires a DataFrame or Series with the target column(s) to merge before saving.
+- ensemble_learning: 
+    - `get_models()` replaced by classes `ClassificationTreeModels` and `RegressionTreeModels`.
+    - Integrate new classes into the pipeline.
+    - `dataset_yielder()` enhanced functionality.
+
+### Added
+
+- data_exploration: an iterator `distribute_datasets_by_target()` that yields a dataframe per target column, dropping rows with missing targets.
+
+## [1.4.2] - 2025-06-19
 
 ### Changed
 
@@ -24,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - utilities: `threshold_binary_values()` accepts a 1D sequence and returns a numpy 1D array.
 
-## [1.4.1]
+## [1.4.1] - 2025-06-19
 
 ### Changed
 
@@ -52,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - trainer: deprecated method.
 
-## [1.4.0]
+## [1.4.0] - 2025-06-17
 
 ### Added
 
@@ -83,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bugs in the ensemble_learning pipeline.
 - Bugs in the MICE_imputation pipeline.
 
-## [1.3.2]
+## [1.3.2] - 2025-06-16
 
 ### Changed
 
@@ -103,13 +121,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - "notebook"
     - "jupyterlab"
 
-## [1.3.1]
+## [1.3.1] - 2025-06-16
 
 ### Fixed
 
 - Correctly list "imbalanced-learn" as a dependency instead of "imblearn".
 
-## [1.3.0]
+## [1.3.0] - 2025-06-16
 
 ### Changed
 
@@ -117,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Set requirement `numpy<2.0` for broad compatibility (including miceforest v6).
 - Update README with conda-forge installation.
 
-## [1.2.1]
+## [1.2.1] - 2025-06-16
 
 ### Deleted
 
@@ -127,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 'yield_dataframes()' from 'ensemble_learning.py'. Uses the 'utilities.yield_dataframes_from_dir()' instead.
 
-## [1.2.0]
+## [1.2.0] - 2025-06-15
 
 ### Added
 

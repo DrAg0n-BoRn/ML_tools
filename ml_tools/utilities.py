@@ -95,7 +95,8 @@ def yield_dataframes_from_dir(datasets_dir: str):
 def merge_dataframes(
     *dfs: pd.DataFrame,
     reset_index: bool = False,
-    direction: Literal["horizontal", "vertical"] = "horizontal"
+    direction: Literal["horizontal", "vertical"] = "horizontal",
+    verbose: bool=True
 ) -> pd.DataFrame:
     """
     Merges multiple DataFrames either horizontally or vertically.
@@ -119,8 +120,9 @@ def merge_dataframes(
     if len(dfs) < 2:
         raise ValueError("At least 2 DataFrames must be provided.")
     
-    for i, df in enumerate(dfs, start=1):
-        print(f"DataFrame {i} shape: {df.shape}")
+    if verbose:
+        for i, df in enumerate(dfs, start=1):
+            print(f"DataFrame {i} shape: {df.shape}")
     
 
     if direction == "horizontal":
@@ -142,8 +144,9 @@ def merge_dataframes(
 
     if reset_index:
         merged_df = merged_df.reset_index(drop=True)
-
-    print(f"Merged DataFrame shape: {merged_df.shape}")
+    
+    if verbose:
+        print(f"Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
 
@@ -171,7 +174,7 @@ def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
     output_path = os.path.join(save_dir, filename)
         
     df.to_csv(output_path, index=False, encoding='utf-8')
-    print(f"✅ Saved file: '{filename}'")
+    print(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
 
 
 def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:

@@ -6,7 +6,7 @@ from matplotlib.colors import Colormap
 from matplotlib import rcdefaults
 
 import os
-from typing import Literal, Union, Optional
+from typing import Literal, Union, Optional, Iterator, Tuple
 import joblib
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
@@ -29,7 +29,9 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 
 __all__ = [
-    "get_models",
+    "dataset_yielder",
+    "RegressionTreeModels",
+    "ClassificationTreeModels",
     "dataset_pipeline",
     "evaluate_model_classification",
     "plot_roc_curve",
@@ -39,114 +41,364 @@ __all__ = [
     "run_ensemble_pipeline"
 ]
 
+## Type aliases
+HandleImbalanceStrategy = Literal[
+    "ADASYN", "SMOTE", "RAND_OVERSAMPLE", "RAND_UNDERSAMPLE", "by_model", None
+]
+
+TaskType = Literal[
+    "classification", "regression"
+]
 
 ###### 1. Dataset Loader ######
-#Split a dataset into features and targets datasets
-def _dataset_yielder(df: pd.DataFrame, target_cols: list[str]):
-    ''' 
-    Yields one Tuple at a time: `(df_features, df_target, feature_names, target_name)`
-    '''
-    df_features = df.drop(columns=target_cols)
+def dataset_yielder(
+    df: pd.DataFrame,
+    target_cols: list[str]
+) -> Iterator[Tuple[pd.DataFrame, pd.Series, list[str], str]]:
+    """ 
+    Yields one tuple at a time:
+        (features_dataframe, target_series, feature_names, target_name)
+
+    Skips any target columns not found in the DataFrame.
+    """
+    # Determine which target columns actually exist in the DataFrame
+    valid_targets = [col for col in target_cols if col in df.columns]
+
+    # Features = all columns excluding valid target columns
+    df_features = df.drop(columns=valid_targets)
     feature_names = df_features.columns.to_list()
-    
-    for target_col in target_cols:
+
+    for target_col in valid_targets:
         df_target = df[target_col]
         yield (df_features, df_target, feature_names, target_col)
 
+
 ###### 2. Initialize Models ######
-def get_models(task: Literal["classification", "regression"], random_state: int=101, is_balanced: bool = True, 
-              L1_regularization: float = 1.0, L2_regularization: float = 1.0, learning_rate: float=0.005) -> dict:
-    ''' 
-    Returns a dictionary `{Model_Name: Model}` with new instances of models.
-    Valid tasks: "classification" or "regression".
+class RegressionTreeModels:
+    """
+    A factory class for creating and configuring multiple gradient boosting regression models
+    with unified hyperparameters. This includes XGBoost, LightGBM, and HistGradientBoostingRegressor.
     
-    Classification Models:
-        - "XGBoost" - XGBClassifier
-        - "LightGBM" - LGBMClassifier
-        - "HistGB" - HistGradientBoostingClassifier
-    Regression Models:
-        - "XGBoost" - XGBRegressor
-        - "LightGBM" - LGBMRegressor
-        - "HistGB" - HistGradientBoostingRegressor
+    Use the `__call__`, `()` method.
+
+    Parameters
+    ----------
+    random_state : int
+        Seed used by the random number generator.
+
+    learning_rate : float [0.001 - 0.300]
+        Boosting learning rate (shrinkage).
+    
+    L1_regularization : float [0.0 - 10.0]
+        L1 regularization term (alpha). Might drive to sparsity.
+
+    L2_regularization : float [0.0 - 10.0]
+        L2 regularization term (lambda).
+
+    n_estimators : int [100 - 3000]
+        Number of boosting iterations for XGBoost and LightGBM.
+
+    max_depth : int [3 - 15]
+        Maximum depth of individual trees. Controls model complexity; high values may overfit.
+
+    subsample : float [0.5 - 1.0]
+        Fraction of rows per tree; used to prevent overfitting.
+
+    colsample_bytree : float [0.3 - 1.0]
+        Fraction of features per tree; useful for regularization (used by XGBoost and LightGBM).
+
+    min_samples_leaf : int [10 - 100]
+        Minimum samples per leaf; higher = less overfitting (used in HistGB).
+
+    max_iter : int [100 - 2000]
+        Maximum number of iterations (used in HistGB).
+
+    min_child_weight : float [0.1 - 10.0]
+        Minimum sum of instance weight (hessian) needed in a child; larger values make the algorithm more conservative (used in XGBoost).
+
+    gamma : float [0.0 - 5.0]
+        Minimum loss reduction required to make a further partition on a leaf node; higher = more regularization (used in XGBoost).
+
+    num_leaves : int [20 - 200]
+        Maximum number of leaves in one tree; should be less than 2^(max_depth); larger = more complex (used in LightGBM).
+
+    min_data_in_leaf : int [10 - 100]
+        Minimum number of data points in a leaf; increasing may prevent overfitting (used in LightGBM).
+    """
+    def __init__(self, 
+                 random_state: int = 101,
+                 learning_rate: float = 0.005,
+                 L1_regularization: float = 1.0,
+                 L2_regularization: float = 1.0,
+                 n_estimators: int = 1000,
+                 max_depth: int = 8,
+                 subsample: float = 0.8,
+                 colsample_bytree: float = 0.8,
+                 min_samples_leaf: int = 50,
+                 max_iter: int = 1000,
+                 min_child_weight: float = 3.0,
+                 gamma: float = 1.0,
+                 num_leaves: int = 31,
+                 min_data_in_leaf: int = 40):
+        # General config
+        self.random_state = random_state
+        self.lr = learning_rate
+        self.L1 = L1_regularization
+        self.L2 = L2_regularization
+
+        # Shared tree structure
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
+
+        # XGBoost specific
+        self.min_child_weight = min_child_weight
+        self.gamma = gamma
+
+        # LightGBM specific
+        if num_leaves >= (2**max_depth):
+            num_leaves = (2**max_depth) - 1
+            print(f"⚠️ Warning: 'num_leaves' should be set proportional to 'max_depth'. Value set as {num_leaves}.")
+        self.num_leaves = num_leaves
+        self.min_data_in_leaf = min_data_in_leaf
+
+        # HistGB specific
+        self.max_iter = max_iter
+        self.min_samples_leaf = min_samples_leaf
+
+    def __call__(self) -> dict[str, object]:
+        """
+        Returns a dictionary with new instances of:
+            - "XGBoost": XGBRegressor
+            - "LightGBM": LGBMRegressor
+            - "HistGB": HistGradientBoostingRegressor
+        """
+        # XGBoost Regressor
+        xgb_model = xgb.XGBRegressor(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.lr,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            random_state=self.random_state,
+            reg_alpha=self.L1,
+            reg_lambda=self.L2,
+            eval_metric='rmse',
+            min_child_weight=self.min_child_weight,
+            gamma=self.gamma,
+            tree_method='hist',
+            grow_policy='lossguide'
+        )
+
+        # LightGBM Regressor
+        lgb_model = lgb.LGBMRegressor(
+            n_estimators=self.n_estimators,
+            learning_rate=self.lr,
+            max_depth=self.max_depth,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            random_state=self.random_state,
+            verbose=-1,
+            reg_alpha=self.L1,
+            reg_lambda=self.L2,
+            boosting_type='dart',
+            num_leaves=self.num_leaves,
+            min_data_in_leaf=self.min_data_in_leaf
+        )
+
+        # HistGradientBoosting Regressor
+        hist_model = HistGradientBoostingRegressor(
+            max_iter=self.max_iter,
+            learning_rate=self.lr,
+            max_depth=self.max_depth,
+            min_samples_leaf=self.min_samples_leaf,
+            random_state=self.random_state,
+            l2_regularization=self.L2,
+            scoring='neg_mean_squared_error',
+            early_stopping=True,
+            validation_fraction=0.1
+        )
+
+        return {
+            "XGBoost": xgb_model,
+            "LightGBM": lgb_model,
+            "HistGB": hist_model
+        }
+    
+    def __str__(self):
+        return f"{self.__class__.__name__}(n_estimators={self.n_estimators}, max_depth={self.max_depth}, lr={self.lr}, L1={self.L1}, L2={self.L2}"
+
+
+class ClassificationTreeModels:
+    """
+    A factory class for creating and configuring multiple gradient boosting classification models
+    with unified hyperparameters. This includes: XGBoost, LightGBM, and HistGradientBoostingClassifier.
+    
+    Use the `__call__`, `()` method.
+
+    Parameters
+    ----------
+    random_state : int
+        Seed used by the random number generator to ensure reproducibility.
+
+    learning_rate : float [0.001 - 0.300]
+        Boosting learning rate (shrinkage factor). 
+
+    L1_regularization : float [0.0 - 10.0]
+        L1 regularization term (alpha), might drive to sparsity.
+
+    L2_regularization : float [0.0 - 10.0]
+        L2 regularization term (lambda).
+
+    n_estimators : int [100 - 3000]
+        Number of boosting rounds for XGBoost and LightGBM.
+
+    max_depth : int [3 - 15]
+        Maximum depth of individual trees in the ensemble. Controls model complexity; high values may overfit.
+
+    subsample : float [0.5 - 1.0]
+        Fraction of samples to use when fitting base learners; used to prevent overfitting.
+
+    colsample_bytree : float [0.3 - 1.0]
+        Fraction of features per tree; useful for regularization (used by XGBoost and LightGBM).
+
+    min_samples_leaf : int [10 - 100]
+        Minimum number of samples required to be at a leaf node; higher = less overfitting (used in HistGB).
+
+    max_iter : int [100 - 2000]
+        Maximum number of boosting iteration (used in HistGB).
+
+    min_child_weight : float [0.1 - 10.0]
+        Minimum sum of instance weight (Hessian) in a child node; larger values make the algorithm more conservative (used in XGBoost).
+
+    gamma : float [0.0 - 5.0]
+        Minimum loss reduction required to make a further partition; higher = more regularization (used in XGBoost).
+
+    num_leaves : int [20 - 200]
+        Maximum number of leaves in one tree. Should be less than 2^(max_depth); larger = more complex (used in LightGBM).
+
+    min_data_in_leaf : int [10 -100]
+        Minimum number of samples required in a leaf; increasing may prevent overfitting (used in LightGBM).
+
+    Attributes
+    ----------
+    use_model_balance : bool
+        Indicates whether to apply class balancing strategies internally. Can be overridden at runtime via the `__call__` method.
+    """
+    def __init__(self,
+                 random_state: int = 101,
+                 learning_rate: float = 0.005,
+                 L1_regularization: float = 1.0,
+                 L2_regularization: float = 1.0,
+                 n_estimators: int = 1000,
+                 max_depth: int = 8,
+                 subsample: float = 0.8,
+                 colsample_bytree: float = 0.8,
+                 min_samples_leaf: int = 50,
+                 max_iter: int = 1000,
+                 min_child_weight: float = 3.0,
+                 gamma: float = 1.0,
+                 num_leaves: int = 31,
+                 min_data_in_leaf: int = 40):
+        # General config
+        self.random_state = random_state
+        self.lr = learning_rate
+        self.L1 = L1_regularization
+        self.L2 = L2_regularization
         
-    For classification only: Set `is_balanced=False` for imbalanced datasets.
-    
-    Increase L1 and L2 if model is overfitting
-    '''
-    
-    # Model initialization logic
-    if task not in ["classification", "regression"]:
-        raise ValueError(f"Invalid task: {task}. Must be 'classification' or 'regression'.")
+        # To be set by the pipeline
+        self.use_model_balance: bool = True
 
-    models = {}
+        # Shared tree structure
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
 
-    # Common parameters
-    xgb_params = {
-        'n_estimators': 200,
-        'max_depth': 5,
-        'learning_rate': learning_rate,
-        'subsample': 0.8,
-        'colsample_bytree': 0.8,
-        'random_state': random_state,
-        'reg_alpha': L1_regularization,
-        'reg_lambda': L2_regularization,
-    }
+        # XGBoost specific
+        self.min_child_weight = min_child_weight
+        self.gamma = gamma
 
-    lgbm_params = {
-        'n_estimators': 200,
-        'learning_rate': learning_rate,
-        'max_depth': 5,
-        'subsample': 0.8,
-        'colsample_bytree': 0.8,
-        'random_state': random_state,
-        'verbose': -1,
-        'reg_alpha': L1_regularization,
-        'reg_lambda': L2_regularization,
-    }
+        # LightGBM specific
+        if num_leaves >= (2**max_depth):
+            num_leaves = (2**max_depth) - 1
+            print(f"⚠️ Warning: 'num_leaves' should be set proportional to 'max_depth'. Value set as {num_leaves}.")
+        self.num_leaves = num_leaves
+        self.min_data_in_leaf = min_data_in_leaf
 
-    hist_params = {
-        'max_iter': 200,
-        'learning_rate': learning_rate,
-        'max_depth': 5,
-        'min_samples_leaf': 30,
-        'random_state': random_state,
-        'l2_regularization': L2_regularization,
-    }
+        # HistGB specific
+        self.max_iter = max_iter
+        self.min_samples_leaf = min_samples_leaf
 
-    # XGB Model
-    if task == "classification":
-        xgb_params.update({
-            'scale_pos_weight': 1 if is_balanced else 8,
-            'eval_metric': 'aucpr'
-        })
-        models["XGBoost"] = xgb.XGBClassifier(**xgb_params)
-    else:
-        xgb_params.update({'eval_metric': 'rmse'})
-        models["XGBoost"] = xgb.XGBRegressor(**xgb_params)
+    def __call__(self, use_model_balance: Optional[bool]=None) -> dict[str, object]:
+        """
+        Returns a dictionary with new instances of:
+            - "XGBoost": XGBClassifier
+            - "LightGBM": LGBMClassifier
+            - "HistGB": HistGradientBoostingClassifier
+        """
+        if use_model_balance is not None:
+            self.use_model_balance = use_model_balance
+        
+        # XGBoost Classifier
+        xgb_model = xgb.XGBClassifier(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.lr,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            random_state=self.random_state,
+            reg_alpha=self.L1,
+            reg_lambda=self.L2,
+            eval_metric='aucpr',
+            min_child_weight=self.min_child_weight,
+            gamma=self.gamma,
+            tree_method='hist',
+            grow_policy='lossguide',
+            scale_pos_weight=8.0 if self.use_model_balance else 1.0
+        )
 
-    # LGBM Model
-    if task == "classification":
-        lgbm_params.update({
-            'class_weight': None if is_balanced else 'balanced',
-            'boosting_type': 'goss' if is_balanced else 'dart',
-        })
-        models["LightGBM"] = lgb.LGBMClassifier(**lgbm_params)
-    else:
-        lgbm_params['boosting_type'] = 'dart'
-        models["LightGBM"] = lgb.LGBMRegressor(**lgbm_params)
+        # LightGBM Classifier
+        lgb_model = lgb.LGBMClassifier(
+            n_estimators=self.n_estimators,
+            learning_rate=self.lr,
+            max_depth=self.max_depth,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            random_state=self.random_state,
+            verbose=-1,
+            reg_alpha=self.L1,
+            reg_lambda=self.L2,
+            boosting_type='dart' if self.use_model_balance else 'goss',
+            num_leaves=self.num_leaves,
+            min_data_in_leaf=self.min_data_in_leaf,
+            class_weight='balanced' if self.use_model_balance else None
+        )
 
-    # HistGB Model
-    if task == "classification":
-        hist_params.update({
-            'class_weight': None if is_balanced else 'balanced',
-            'scoring': 'loss' if is_balanced else 'balanced_accuracy',
-        })
-        models["HistGB"] = HistGradientBoostingClassifier(**hist_params)
-    else:
-        hist_params['scoring'] = 'neg_mean_squared_error'
-        models["HistGB"] = HistGradientBoostingRegressor(**hist_params)
+        # HistGradientBoosting Classifier
+        hist_model = HistGradientBoostingClassifier(
+            max_iter=self.max_iter,
+            learning_rate=self.lr,
+            max_depth=self.max_depth,
+            min_samples_leaf=self.min_samples_leaf,
+            random_state=self.random_state,
+            l2_regularization=self.L2,
+            early_stopping=True,
+            validation_fraction=0.1,
+            class_weight='balanced' if self.use_model_balance else None,
+            scoring='balanced_accuracy' if self.use_model_balance else 'loss'
+        )
 
-    return models
+        return {
+            "XGBoost": xgb_model,
+            "LightGBM": lgb_model,
+            "HistGB": hist_model
+        }
+        
+    def __str__(self):
+        return f"{self.__class__.__name__}(n_estimators={self.n_estimators}, max_depth={self.max_depth}, lr={self.lr}, L1={self.L1}, L2={self.L2}"
+
 
 ###### 3. Process Dataset ######
 # function to split data into train and test
@@ -157,7 +409,7 @@ def _split_data(features, target, test_size, random_state, task):
 
 # Over-sample minority class (Positive cases) and return several single target datasets (Classification)
 def _resample(X_train: np.ndarray, y_train: pd.Series, 
-              strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], random_state):
+              strategy: HandleImbalanceStrategy, random_state):
     ''' 
     Oversample minority class or undersample majority class.
     
@@ -165,9 +417,9 @@ def _resample(X_train: np.ndarray, y_train: pd.Series,
     '''
     if strategy == 'SMOTE':
         resample_algorithm = SMOTE(random_state=random_state, k_neighbors=3)
-    elif strategy == 'RANDOM':
+    elif strategy == 'RAND_OVERSAMPLE':
         resample_algorithm = RandomOverSampler(random_state=random_state)
-    elif strategy == 'UNDERSAMPLE':
+    elif strategy == 'RAND_UNDERSAMPLE':
         resample_algorithm = RandomUnderSampler(random_state=random_state)
     elif strategy == 'ADASYN':
         resample_algorithm = ADASYN(random_state=random_state, n_neighbors=3)
@@ -178,8 +430,8 @@ def _resample(X_train: np.ndarray, y_train: pd.Series,
     return X_res, y_res
 
 # DATASET PIPELINE
-def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Literal["classification", "regression"],
-                     resample_strategy: Union[Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE'], None],
+def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: TaskType,
+                     resample_strategy: HandleImbalanceStrategy,
                      test_size: float=0.2, debug: bool=False, random_state: int=101):
     ''' 
     1. Make Train/Test splits
@@ -204,7 +456,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Lite
     
  
     # Resample
-    if resample_strategy is None or task == "regression":
+    if resample_strategy is None or resample_strategy == "by_model" or task == "regression":
         X_train_oversampled, y_train_oversampled = X_train, y_train
     else:
         X_train_oversampled, y_train_oversampled = _resample(X_train=X_train, y_train=y_train, strategy=resample_strategy, random_state=random_state)
@@ -431,7 +683,7 @@ def evaluate_model_regression(model, model_name: str,
     sanitized_target_name = sanitize_filename(target_name)
     report_path = os.path.join(save_dir, f"Regression_Report_{sanitized_target_name}.txt")
     with open(report_path, "w") as f:
-        f.write(f"{model_name} - {target_name} Regression Performance\n")
+        f.write(f"{model_name} - Regression Performance for '{target_name}'\n\n")
         f.write(f"Mean Absolute Error (MAE): {mae:.4f}\n")
         f.write(f"Mean Squared Error (MSE): {mse:.4f}\n")
         f.write(f"Root Mean Squared Error (RMSE): {rmse:.4f}\n")
@@ -596,7 +848,7 @@ def get_shap_values(
 
 
 # TRAIN TEST PIPELINE
-def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
+def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
              feature_names: list[str], target_name: str,
@@ -609,7 +861,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     
     Returns: Tuple(Trained model, Test-set Predictions)
     '''
-    print(f"\tModel: {model_name} for Target: {target_name}...")
+    print(f"\tTraining model: {model_name} for Target: {target_name}...")
     trained_model = _train_model(model=model, train_features=train_features, train_target=train_target)
     if debug:
         print(f"Trained model object: {type(trained_model)}")
@@ -637,26 +889,40 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
     
     get_shap_values(model=trained_model, model_name=model_name, save_dir=local_save_directory,
                     features_to_explain=train_features, feature_names=feature_names, target_name=target_name, task=task)
-    print("\t...done.")
+    # print("\t...done.")
     return trained_model, y_pred
 
 ###### 5. Execution ######
-def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], task: Literal["classification", "regression"],
-         resample_strategy: Literal[r"ADASYN", r'SMOTE', r'RANDOM', r'UNDERSAMPLE', None]=None, save_model: bool=False,
-         test_size: float=0.2, debug:bool=False, L1_regularization: float=0.5, L2_regularization: float=0.5, learning_rate: float=0.005, random_state: int=101):
+def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], model_object: Union[RegressionTreeModels, ClassificationTreeModels],
+         handle_classification_imbalance: HandleImbalanceStrategy=None, save_model: bool=False,
+         test_size: float=0.2, debug:bool=False):
+    #Check models
+    if isinstance(model_object, RegressionTreeModels):
+        task = "regression"
+    elif isinstance(model_object, ClassificationTreeModels):
+        task = "classification"
+        if handle_classification_imbalance is None:
+            print("⚠️ No method to handle classification class imbalance has been selected. Datasets are assumed to be balanced.")
+        elif handle_classification_imbalance == "by_model":
+            model_object.use_model_balance = True
+        else:
+            model_object.use_model_balance = False
+    else:
+        raise TypeError(f"Unrecognized model {type(model_object)}")
+    
     #Check paths
     _check_paths(datasets_dir, save_dir)
+    
     #Yield imputed dataset
     for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_dir):
         #Yield features dataframe and target dataframe
-        for df_features, df_target, feature_names, target_name in _dataset_yielder(df=dataframe, target_cols=target_columns):
+        for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
             X_train, y_train, X_test, y_test = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
-                                                                resample_strategy=resample_strategy,
-                                                                test_size=test_size, debug=debug, random_state=random_state)
+                                                                resample_strategy=handle_classification_imbalance,
+                                                                test_size=test_size, debug=debug, random_state=model_object.random_state)
             #Get models
-            models_dict = get_models(task=task, is_balanced=False if resample_strategy is None else True, 
-                                     L1_regularization=L1_regularization, L2_regularization=L2_regularization, learning_rate=learning_rate)
+            models_dict = model_object()
             #Train models
             for model_name, model in models_dict.items():
                 train_test_pipeline(model=model, model_name=model_name, dataset_id=dataframe_name, task=task,

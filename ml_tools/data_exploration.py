@@ -5,10 +5,8 @@ import seaborn as sns
 from IPython import get_ipython
 from IPython.display import clear_output
 import time
-from typing import Union, Literal, Dict, Tuple
+from typing import Union, Literal, Dict, Tuple, Iterator
 import os
-import sys
-import textwrap
 from ml_tools.utilities import sanitize_filename, _script_info
 
 
@@ -24,7 +22,8 @@ __all__ = [
     "check_value_distributions", 
     "plot_value_distributions", 
     "clip_outliers_single", 
-    "clip_outliers_multi"
+    "clip_outliers_multi",
+    "distribute_datasets_by_target"
 ]
 
 
@@ -113,7 +112,7 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     Parameters:
         df (pd.DataFrame): The input DataFrame.
         round_digits (int): Number of decimal places for the percentage.
-        
+
     Returns:
         pd.DataFrame: A DataFrame summarizing missing values in each column.
     """
@@ -133,13 +132,14 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     return null_summary
 
 
-def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
+def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, show_nulls_after: bool = True) -> pd.DataFrame:
     """
     Drops columns with more than `threshold` fraction of missing values.
 
     Parameters:
         df (pd.DataFrame): The input DataFrame.
         threshold (float): Fraction of missing values above which columns are dropped.
+        show_nulls_after (bool): Prints `show_null_columns` after dropping columns. 
 
     Returns:
         pd.DataFrame: A new DataFrame without the dropped columns.
@@ -150,10 +150,15 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> 
     if len(cols_to_drop) > 0:
         print(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
         print(list(cols_to_drop))
+        
+        result_df = df.drop(columns=cols_to_drop)
+        if show_nulls_after:
+            show_null_columns(df=result_df).head(20)
+        
+        return result_df
     else:
         print(f"No columns have more than {threshold*100:.0f}% missing data.")
-
-    return df.drop(columns=cols_to_drop)
+        return df
 
 
 def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -512,6 +517,34 @@ def clip_outliers_multi(
             print(f" - {col}: {msg}")
 
     return new_df
+
+
+def distribute_datasets_by_target(
+    df: pd.DataFrame,
+    target_columns: list[str]
+) -> Iterator[Tuple[str, pd.DataFrame]]:
+    """
+    Yields cleaned DataFrames for each target column, where rows with missing
+    target values are removed. The target column is placed at the end.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Preprocessed dataframe with all feature and target columns ready to train.
+    target_columns : List[str]
+        List of target column names to generate per-target DataFrames.
+
+    Yields
+    ------
+    Tuple[str, pd.DataFrame]
+        * First element is the target column name.
+        * Second element is the corresponding cleaned DataFrame.
+    """
+    feature_columns = [col for col in df.columns if col not in target_columns]
+
+    for target in target_columns:
+        subset = df[feature_columns + [target]].dropna(subset=[target])
+        yield target, subset
 
 
 def _is_notebook():

@@ -129,7 +129,7 @@ def run_pso(lower_boundaries: list[float],
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=200, 
-            max_iterations: int=400,
+            max_iterations: int=1000,
             inequality_constrain_function=None, 
             post_hoc_analysis: Optional[int]=3,
             workers: int=3) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
@@ -261,7 +261,7 @@ def info():
     _script_info(__all__)
 
 
-### SOURCE CODE FOR PSO ###
+### SOURCE CODE FOR PSO FROM PYSWARM ###
 def _obj_wrapper(func, args, kwargs, x):
     return func(x, *args, **kwargs)
 

@@ -3,7 +3,7 @@ import miceforest as mf
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info
+from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
 
 
@@ -49,15 +49,11 @@ def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterat
     return kernel, imputed_datasets, imputed_dataset_names
 
 
-def save_imputed_datasets(save_dir: str, imputed_datasets: list, imputed_dataset_names: list[str]):
-    # Check path
-    os.makedirs(save_dir, exist_ok=True)
-    
+def save_imputed_datasets(save_dir: str, imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):    
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
-        output_path = os.path.join(save_dir, subname + ".csv")
-        imputed_df.to_csv(output_path, index=False, encoding='utf-8')
-        print(f"\tSaved {subname} with shape {imputed_df.shape}")
-        
+        merged_df = merge_dataframes(imputed_df, df_targets, direction="horizontal", verbose=False)
+        save_dataframe(df=merged_df, save_dir=save_dir, filename=subname)
+
 
 #Get names of features that had missing values before imputation
 def get_na_column_names(df: pd.DataFrame):
@@ -119,7 +115,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-        print(f"\t{dataset_file_dir} completed.")
+        print(f"{dataset_file_dir} completed.")
 
 
 # Imputed distributions
@@ -131,7 +127,8 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
     '''
     # Check path
     os.makedirs(root_dir, exist_ok=True)
-    local_save_dir = os.path.join(root_dir, f"Distribution_Metrics_{df_name}_imputed")
+    local_dir_name = f"Distribution_Metrics_{df_name}_imputed"
+    local_save_dir = os.path.join(root_dir, local_dir_name)
     if not os.path.isdir(local_save_dir):
         os.makedirs(local_save_dir)
     
@@ -202,10 +199,10 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    print("\tImputed distributions saved successfully.")
+    print(f"{local_dir_name} completed.")
 
 
-def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_dir: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
+def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], save_datasets_dir: str, save_metrics_dir: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
     """
     Call functions in sequence for each dataset in the provided path or directory:
         1. Load dataframe
@@ -213,6 +210,8 @@ def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_
         3. Save imputed dataset(s)
         4. Save convergence metrics
         5. Save distribution metrics
+        
+    Target columns must be skipped from the imputation.
     """
     # Check paths
     os.makedirs(save_datasets_dir, exist_ok=True)
@@ -228,15 +227,24 @@ def run_mice_pipeline(df_path_or_dir: str, save_datasets_dir: str, save_metrics_
     for df_path in all_file_paths:
         df, df_name = load_dataframe(df_path=df_path)
         
+        df, df_targets = _skip_targets(df, target_columns)
+        
         kernel, imputed_datasets, imputed_dataset_names = apply_mice(df=df, df_name=df_name, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
         
-        save_imputed_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets, imputed_dataset_names=imputed_dataset_names)
+        save_imputed_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
         
         imputed_column_names = get_na_column_names(df=df)
         
         get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_dir)
         
         get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_dir, column_names=imputed_column_names)
+
+
+def _skip_targets(df: pd.DataFrame, target_cols: list[str]):
+    valid_targets = [col for col in target_cols if col in df.columns]
+    df_targets = df[valid_targets]
+    df_feats = df.drop(columns=valid_targets)
+    return df_feats, df_targets
 
 
 def info():
