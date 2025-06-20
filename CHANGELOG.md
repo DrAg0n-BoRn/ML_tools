@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2025-06-20
+
+### Added
+
+- data_exploration: `distribute_datasets_by_target()` now has a verbose boolean parameter.
+- VIF: `compute_vif()` now has a verbose boolean parameter.
+
+### Fixed
+
+- data_exploration: `drop_columns_with_missing_data()` correctly displays the state of columns with nulls after the drop.
+
+### Changed
+
+- MICE: `apply_mice()` will name imputed datasets with the "_MICE" suffix.
+- VIF: `compute_vif_multi()` will name imputed datasets with the "_VIF" suffix.
+- ensemble_learning: LightGBM now uses 'gbdt' boosting.
+- PSO: `run_pso()` set 1500 iterations as default.
+
 ## [1.4.3] - 2025-06-19
 
 ### Changed

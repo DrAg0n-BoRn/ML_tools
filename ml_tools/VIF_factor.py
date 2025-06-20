@@ -26,6 +26,7 @@ def compute_vif(
     filename: Optional[str] = None,
     fontsize: int = 14,
     show_plot: bool = True,
+    verbose: bool = True
 ) -> pd.DataFrame:
     """
     Computes Variance Inflation Factors (VIF) for numeric columns in a DataFrame. Optionally, generates a bar plot of VIF values.
@@ -52,19 +53,20 @@ def compute_vif(
     if use_columns is None:
         sanitized_columns = df.select_dtypes(include='number').columns.tolist()
         missing_features = set(ground_truth_cols) - set(sanitized_columns)
-        if missing_features:
+        if missing_features and verbose:
             print(f"⚠️ These columns are not Numeric:\n{missing_features}")
     else:
         sanitized_columns = list()
         for feature in use_columns:
             if feature not in ground_truth_cols:
-                print(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
+                if verbose:
+                    print(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
             else:
                 sanitized_columns.append(feature)
     
     if ignore_columns is not None and use_columns is None:
         missing_ignore = set(ignore_columns) - set(ground_truth_cols)
-        if missing_ignore:
+        if missing_ignore and verbose:
             print(f"⚠️ Warning: The following 'columns to ignore' are not in the Dataframe:\n{missing_ignore}")
         sanitized_columns = [f for f in sanitized_columns if f not in ignore_columns]
 
@@ -182,7 +184,7 @@ def compute_vif_multi(input_directory: str,
                       max_features_to_plot: int = 20,
                       fontsize: int = 14):
     """
-    Computes Variance Inflation Factors (VIF) for numeric columns in a directory with CSV files (loaded as pandas DataFrames). 
+    Computes Variance Inflation Factors (VIF) for numeric columns in a directory with CSV files (loaded as pandas DataFrames). No plots or warnings will be displayed inline.
     Generates a bar plot of VIF values. Optionally drops columns with VIF >= 10 and saves as a new CSV file.
 
     Args:
@@ -210,10 +212,11 @@ def compute_vif_multi(input_directory: str,
                             fontsize=fontsize,
                             save_dir=output_plot_directory,
                             filename=df_name,
-                            show_plot=False)
+                            show_plot=False,
+                            verbose=False)
         
         if output_dataset_directory is not None:
-            new_filename = 'VIF_' + df_name
+            new_filename = df_name + '_VIF'
             result_df, dropped_cols = drop_vif_based(df=df, vif_df=vif_dataframe)
             
             if len(dropped_cols) > 0:

@@ -157,9 +157,7 @@ class RegressionTreeModels:
         self.gamma = gamma
 
         # LightGBM specific
-        if num_leaves >= (2**max_depth):
-            num_leaves = (2**max_depth) - 1
-            print(f"⚠️ Warning: 'num_leaves' should be set proportional to 'max_depth'. Value set as {num_leaves}.")
+        num_leaves = min(num_leaves, 2 ** (max_depth - 1))
         self.num_leaves = num_leaves
         self.min_data_in_leaf = min_data_in_leaf
 
@@ -202,7 +200,7 @@ class RegressionTreeModels:
             verbose=-1,
             reg_alpha=self.L1,
             reg_lambda=self.L2,
-            boosting_type='dart',
+            boosting_type='gbdt',
             num_leaves=self.num_leaves,
             min_data_in_leaf=self.min_data_in_leaf
         )
@@ -321,9 +319,7 @@ class ClassificationTreeModels:
         self.gamma = gamma
 
         # LightGBM specific
-        if num_leaves >= (2**max_depth):
-            num_leaves = (2**max_depth) - 1
-            print(f"⚠️ Warning: 'num_leaves' should be set proportional to 'max_depth'. Value set as {num_leaves}.")
+        num_leaves = min(num_leaves, 2 ** (max_depth - 1))
         self.num_leaves = num_leaves
         self.min_data_in_leaf = min_data_in_leaf
 
@@ -370,7 +366,7 @@ class ClassificationTreeModels:
             verbose=-1,
             reg_alpha=self.L1,
             reg_lambda=self.L2,
-            boosting_type='dart' if self.use_model_balance else 'goss',
+            boosting_type='gbdt' if self.use_model_balance else 'goss',
             num_leaves=self.num_leaves,
             min_data_in_leaf=self.min_data_in_leaf,
             class_weight='balanced' if self.use_model_balance else None

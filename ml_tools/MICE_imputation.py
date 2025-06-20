@@ -36,9 +36,9 @@ def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterat
         raise ValueError("No imputed datasets were generated. Check the MICE process.")
     
     if resulting_datasets == 1:
-        imputed_dataset_names = [f"{df_name}_imputed"]
+        imputed_dataset_names = [f"{df_name}_MICE"]
     else:
-        imputed_dataset_names = [f"{df_name}_imputed_{i+1}" for i in range(resulting_datasets)]
+        imputed_dataset_names = [f"{df_name}_MICE_{i+1}" for i in range(resulting_datasets)]
     
     # Ensure indexes match
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):

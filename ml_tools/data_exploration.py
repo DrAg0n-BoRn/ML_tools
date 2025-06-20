@@ -153,7 +153,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
         
         result_df = df.drop(columns=cols_to_drop)
         if show_nulls_after:
-            show_null_columns(df=result_df).head(20)
+            print(show_null_columns(df=result_df))
         
         return result_df
     else:
@@ -259,7 +259,7 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
         os.makedirs(save_dir, exist_ok=True)
         full_path = os.path.join(save_dir, plot_title + ".svg")
         plt.savefig(full_path, bbox_inches="tight", format='svg')
-        print(f"Saved correlation heatmap to: {full_path}")
+        print(f"Saved correlation heatmap: '{plot_title}.svg'")
     
     plt.show()
     plt.close()
@@ -521,7 +521,8 @@ def clip_outliers_multi(
 
 def distribute_datasets_by_target(
     df: pd.DataFrame,
-    target_columns: list[str]
+    target_columns: list[str],
+    verbose: bool = False
 ) -> Iterator[Tuple[str, pd.DataFrame]]:
     """
     Yields cleaned DataFrames for each target column, where rows with missing
@@ -533,6 +534,8 @@ def distribute_datasets_by_target(
         Preprocessed dataframe with all feature and target columns ready to train.
     target_columns : List[str]
         List of target column names to generate per-target DataFrames.
+    verbose: bool
+        Whether to print info for each yielded dataset.
 
     Yields
     ------
@@ -540,10 +543,13 @@ def distribute_datasets_by_target(
         * First element is the target column name.
         * Second element is the corresponding cleaned DataFrame.
     """
-    feature_columns = [col for col in df.columns if col not in target_columns]
+    valid_targets = [col for col in df.columns if col in target_columns]
+    feature_columns = [col for col in df.columns if col not in valid_targets]
 
-    for target in target_columns:
+    for target in valid_targets:
         subset = df[feature_columns + [target]].dropna(subset=[target])
+        if verbose:
+            print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
         yield target, subset
 
 

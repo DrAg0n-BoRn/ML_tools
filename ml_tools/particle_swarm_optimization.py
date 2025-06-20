@@ -129,10 +129,10 @@ def run_pso(lower_boundaries: list[float],
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=200, 
-            max_iterations: int=1000,
+            max_iterations: int=1500,
             inequality_constrain_function=None, 
-            post_hoc_analysis: Optional[int]=3,
-            workers: int=3) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+            post_hoc_analysis: Optional[int]=5,
+            workers: int=1) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
     """
     Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
 

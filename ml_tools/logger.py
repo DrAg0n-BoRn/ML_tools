@@ -55,7 +55,7 @@ def custom_logger(
     """
     try:
         os.makedirs(save_directory, exist_ok=True)
-        timestamp = datetime.now().strftime(r"%Y%m%d_%H%M")
+        timestamp = datetime.now().strftime(r"%Y%m%d_%H%M%S")
         log_name = sanitize_filename(log_name)
         base_path = os.path.join(save_directory, f"{log_name}_{timestamp}")
 
@@ -80,7 +80,7 @@ def custom_logger(
         else:
             raise ValueError("Unsupported data type. Must be list, dict, DataFrame, str, or BaseException.")
 
-        print(f"Log saved to: {base_path}")
+        print(f"Log saved to: '{base_path}'")
 
     except Exception as e:
         print(f"Error in custom_logger: {e}")
