@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info
+from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -485,8 +485,9 @@ def _local_directories(model_name: str, dataset_id: str, save_dir: str):
 def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str):
     #Sanitize filenames to save
     sanitized_target_name = sanitize_filename(target_name)
-    full_path = os.path.join(save_directory, f"{model_name}_{sanitized_target_name}.joblib")
-    joblib.dump({'model': trained_model, 'feature_names': feature_names, 'target_name':target_name}, full_path)
+    filename = f"{model_name}_{sanitized_target_name}"
+    to_save = {'model': trained_model, 'feature_names': feature_names, 'target_name':target_name}
+    serialize_object(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
 
 # function to evaluate the model and save metrics (Classification)
 def evaluate_model_classification(

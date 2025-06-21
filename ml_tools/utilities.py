@@ -1,10 +1,13 @@
 import math
 import numpy as np
 import pandas as pd
+import polars as pl
 import os
 from pathlib import Path
 import re
-from typing import Literal, Union, Sequence
+from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple
+import joblib
+from joblib.externals.loky.process_executor import TerminatedWorkerError
 
 
 # Keep track of available tools
@@ -16,7 +19,10 @@ __all__ = [
     "save_dataframe",
     "normalize_mixed_list",
     "sanitize_filename",
-    "threshold_binary_values"
+    "threshold_binary_values",
+    "serialize_object",
+    "deserialize_object",
+    "distribute_datasets_by_target"
 ]
 
 
@@ -194,12 +200,9 @@ def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
 
     Returns:
         List[float]: A list of normalized float values summing to 1.0. 
-            Values significantly smaller than the median scale are scaled up 
-            before normalization to correct likely input errors.
     
     Notes:
         - Zeros and None values remain zero.
-        - If all input values are zero or None, the function returns a list of zeros.
         - Input strings are automatically cast to floats if possible.
 
     Example:
@@ -268,35 +271,156 @@ def sanitize_filename(filename: str) -> str:
 
 
 def threshold_binary_values(
-    input_array: Union[Sequence[float], np.ndarray],
-    binary_features: int
-) -> np.ndarray:
+    input_array: Union[Sequence[float], np.ndarray, pd.Series, pl.Series],
+    binary_values: Optional[int] = None
+) -> Union[np.ndarray, pd.Series, pl.Series, list[float], tuple[float]]:
     """
-    Thresholds binary features in a 1D numeric sequence. Binary features must be located at the end of the sequence.
-
-    Converts binary elements to values (0 or 1) using a threshold of 0.5. The rest of the array (assumed to be continuous features) is returned unchanged.
+    Thresholds binary features in a 1D input. The number of binary features are counted starting from the end.
 
     Parameters:
-        input_array (Union[Sequence[float], np.ndarray]) : A one-dimensional collection of numeric values. The binary features must be located at the end of the array.
-
-        binary_features (int) : Number of binary features to threshold from the end of the array. Must be between 0 and the total number of elements.
+        input_array: 1D sequence, NumPy array, pandas Series, or polars Series.
+        binary_values (Optional[int]) :
+            - If `None`, all values are treated as binary.
+            - If `int`, only this many last `binary_values` are thresholded.
 
     Returns:
-        np.ndarray : A 1D NumPy array where the final `binary_features` values have been binarized.
+        Same type as input, with binary elements binarized to 0 or 1 using a 0.5 threshold.
     """
-    array = np.asarray(input_array).flatten()
-    total = array.shape[0]
-    
-    if binary_features < 0 or binary_features > total:
-        raise ValueError("Binary features must be between 0 and the total number of features.")
-    
-    if binary_features == 0:
-        return array
+    original_type = type(input_array)
 
-    cont_part = array[:-binary_features]
-    bin_part = (array[-binary_features:] > 0.5).astype(int)
+    if isinstance(input_array, pl.Series):
+        array = input_array.to_numpy()
+    elif isinstance(input_array, (pd.Series, np.ndarray)):
+        array = np.asarray(input_array)
+    elif isinstance(input_array, (list, tuple)):
+        array = np.array(input_array)
+    else:
+        raise TypeError("Unsupported input type")
+
+    array = array.flatten()
+    total = array.shape[0]
+
+    bin_count = total if binary_values is None else binary_values
+    if not (0 <= bin_count <= total):
+        raise ValueError("binary_values must be between 0 and the total number of elements")
+
+    if bin_count == 0:
+        result = array
+    else:
+        cont_part = array[:-bin_count] if bin_count < total else np.array([])
+        bin_part = (array[-bin_count:] > 0.5).astype(int)
+        result = np.concatenate([cont_part, bin_part])
+
+    if original_type is pd.Series:
+        return pd.Series(result, index=input_array.index if hasattr(input_array, 'index') else None) # type: ignore
+    elif original_type is pl.Series:
+        return pl.Series(input_array.name if hasattr(input_array, 'name') else "binary", result) # type: ignore
+    elif original_type is list:
+        return result.tolist()
+    elif original_type is tuple:
+        return tuple(result)
+    else:
+        return result
+
+
+def serialize_object(obj: Any, save_dir: str, filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[str]:
+    """
+    Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
+
+    Parameters:
+        obj (Any) : The Python object to serialize.
+        save_dir (str) : Directory path where the serialized object will be saved.
+        filename (str) : Name for the output file, extension will be appended if needed.
+
+    Returns:
+        (str | None) : The full file path where the object was saved if successful; otherwise, None.
+    """
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        sanitized_name = sanitize_filename(filename)
+        if not sanitized_name.endswith('.joblib'):
+            sanitized_name = sanitized_name + ".joblib"
+        full_path = os.path.join(save_dir, sanitized_name)
+        joblib.dump(obj, full_path)
+    except (IOError, OSError, TypeError, TerminatedWorkerError) as e:
+        message = f"❌ Failed to serialize object of type '{type(obj)}': {e}"
+        if raise_on_error:
+            raise Exception(message)
+        else:
+            print(message)
+        return None
+    else:
+        if verbose:
+            print(f"✅ Object of type '{type(obj)}' saved to '{full_path}'")
+        return full_path
+
+
+def deserialize_object(filepath: str, verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
+    """
+    Loads a serialized object from a .joblib file.
+
+    Parameters:
+        filepath (str): Full path to the serialized .joblib file.
+
+    Returns:
+        (Any | None): The deserialized Python object, or None if loading fails.
+    """
+    if not os.path.exists(filepath):
+        print(f"❌ File does not exist: {filepath}")
+        return None
+    try:
+        obj = joblib.load(filepath)
+    except (IOError, OSError, EOFError, TypeError, ValueError) as e:
+        message = f"❌ Failed to deserialize object from '{filepath}': {e}"
+        if raise_on_error:
+            raise Exception(message)
+        else:
+            print(message)
+        return None
+    else:
+        if verbose:
+            print(f"✅ Loaded object of type '{type(obj)}'")
+        return obj
+
+
+def distribute_datasets_by_target(
+    df_or_path: Union[pd.DataFrame, str],
+    target_columns: list[str],
+    verbose: bool = False
+) -> Iterator[Tuple[str, pd.DataFrame]]:
+    """
+    Yields cleaned DataFrames for each target column, where rows with missing
+    target values are removed. The target column is placed at the end.
+
+    Parameters
+    ----------
+    df_or_path : [pd.DataFrame | str]
+        Dataframe or path to Dataframe with all feature and target columns ready to split and train a model.
+    target_columns : List[str]
+        List of target column names to generate per-target DataFrames.
+    verbose: bool
+        Whether to print info for each yielded dataset.
+
+    Yields
+    ------
+    Tuple[str, pd.DataFrame]
+        * First element is the target column name.
+        * Second element is the corresponding cleaned DataFrame.
+    """
+    # Validate path
+    if isinstance(df_or_path, str):
+        df, _ = load_dataframe(df_or_path)
+    else:
+        df = df_or_path
     
-    return np.concatenate([cont_part, bin_part])
+    valid_targets = [col for col in df.columns if col in target_columns]
+    feature_columns = [col for col in df.columns if col not in valid_targets]
+
+    for target in valid_targets:
+        subset = df[feature_columns + [target]].dropna(subset=[target])
+        if verbose:
+            print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
+        yield target, subset
 
 
 def _script_info(all_data: list[str]):

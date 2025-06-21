@@ -22,8 +22,7 @@ __all__ = [
     "check_value_distributions", 
     "plot_value_distributions", 
     "clip_outliers_single", 
-    "clip_outliers_multi",
-    "distribute_datasets_by_target"
+    "clip_outliers_multi"
 ]
 
 
@@ -90,18 +89,18 @@ def split_features_targets(df: pd.DataFrame, targets: list[str]):
 
     Returns:
         tuple: A tuple containing:
-            - pd.DataFrame: Targets dataframe.
             - pd.DataFrame: Features dataframe.
+            - pd.DataFrame: Targets dataframe.
 
     Prints:
         - Shape of the original dataframe.
-        - Shape of the targets dataframe.
         - Shape of the features dataframe.
+        - Shape of the targets dataframe.
     """
     df_targets = df[targets]
     df_features = df.drop(columns=targets)
-    print(f"Original shape: {df.shape}\nTargets shape: {df_targets.shape}\nFeatures shape: {df_features.shape}")
-    return df_targets, df_features
+    print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
+    return df_features, df_targets
 
 
 def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
@@ -519,44 +518,9 @@ def clip_outliers_multi(
     return new_df
 
 
-def distribute_datasets_by_target(
-    df: pd.DataFrame,
-    target_columns: list[str],
-    verbose: bool = False
-) -> Iterator[Tuple[str, pd.DataFrame]]:
-    """
-    Yields cleaned DataFrames for each target column, where rows with missing
-    target values are removed. The target column is placed at the end.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Preprocessed dataframe with all feature and target columns ready to train.
-    target_columns : List[str]
-        List of target column names to generate per-target DataFrames.
-    verbose: bool
-        Whether to print info for each yielded dataset.
-
-    Yields
-    ------
-    Tuple[str, pd.DataFrame]
-        * First element is the target column name.
-        * Second element is the corresponding cleaned DataFrame.
-    """
-    valid_targets = [col for col in df.columns if col in target_columns]
-    feature_columns = [col for col in df.columns if col not in valid_targets]
-
-    for target in valid_targets:
-        subset = df[feature_columns + [target]].dropna(subset=[target])
-        if verbose:
-            print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
-        yield target, subset
-
-
 def _is_notebook():
     return get_ipython() is not None
 
 
 def info():
     _script_info(__all__)
-

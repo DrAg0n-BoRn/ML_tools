@@ -8,7 +8,7 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import polars as pl
 from functools import partial
-from .utilities import sanitize_filename, _script_info, threshold_binary_values
+from .utilities import sanitize_filename, _script_info, threshold_binary_values, deserialize_object
 
 
 __all__ = [
@@ -38,7 +38,7 @@ class ObjectiveFunction():
         self.binary_features = binary_features
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
-        self._artifact = joblib.load(trained_model_path)
+        self._artifact = deserialize_object(trained_model_path, verbose=False, raise_on_error=True)
         self.model = self._get_from_artifact('model')
         self.feature_names: Optional[list[str]] = self._get_from_artifact('feature_names') # type: ignore
         self.target_name: Optional[str] = self._get_from_artifact('target_name') # type: ignore
@@ -49,7 +49,7 @@ class ObjectiveFunction():
         if self.use_noise:
             features_array = self.add_noise(features_array)
         if self.is_hybrid:
-            features_array = threshold_binary_values(input_array=features_array, binary_features=self.binary_features)
+            features_array = threshold_binary_values(input_array=features_array, binary_values=self.binary_features) # type: ignore
         
         if features_array.ndim == 1:
             features_array = features_array.reshape(1, -1)
@@ -83,6 +83,8 @@ class ObjectiveFunction():
             raise ValueError("Loaded model is None")
 
     def _get_from_artifact(self, key: str):
+        if self._artifact is None:
+            raise TypeError("Load model error")
         val = self._artifact.get(key)
         if key == "feature_names":
             result = val if isinstance(val, list) and val else None

@@ -3,8 +3,9 @@ import miceforest as mf
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe
+from ml_tools.utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe, threshold_binary_values
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
+from typing import Optional
 
 
 __all__ = [
@@ -17,7 +18,7 @@ __all__ = [
 ]
 
 
-def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
+def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str]]=None, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
     
     # Initialize kernel with number of imputed datasets to generate
     kernel = mf.ImputationKernel(
@@ -35,6 +36,16 @@ def apply_mice(df: pd.DataFrame, df_name: str, resulting_datasets: int=1, iterat
     if imputed_datasets is None or len(imputed_datasets) == 0:
         raise ValueError("No imputed datasets were generated. Check the MICE process.")
     
+    # threshold binary columns
+    if binary_columns is not None:
+        invalid_binary_columns = set(binary_columns) - set(df.columns)
+        if invalid_binary_columns:
+            print(f"⚠️ These 'binary columns' are not in the dataset: {invalid_binary_columns}")
+        valid_binary_columns = [col for col in binary_columns if col not in invalid_binary_columns]
+        for imputed_df in imputed_datasets:
+            for binary_column_name in valid_binary_columns:
+                imputed_df[binary_column_name] = threshold_binary_values(imputed_df[binary_column_name]) # type: ignore
+            
     if resulting_datasets == 1:
         imputed_dataset_names = [f"{df_name}_MICE"]
     else:
@@ -106,7 +117,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             # Adjust plot display for the X axis
             _ticks = np.arange(iterations_cap)
             _labels = np.arange(1, iterations_cap + 1)
-            plt.xticks(ticks=_ticks, labels=_labels)
+            plt.xticks(ticks=_ticks, labels=_labels) # type: ignore
             plt.grid(True)
             
             feature_save_name = sanitize_filename(feature_name)
@@ -202,7 +213,12 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
     print(f"{local_dir_name} completed.")
 
 
-def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], save_datasets_dir: str, save_metrics_dir: str, resulting_datasets: int=1, iterations: int=20, random_state: int=101):
+def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], 
+                      save_datasets_dir: str, save_metrics_dir: str, 
+                      binary_columns: Optional[list[str]]=None,
+                      resulting_datasets: int=1, 
+                      iterations: int=20, 
+                      random_state: int=101):
     """
     Call functions in sequence for each dataset in the provided path or directory:
         1. Load dataframe
@@ -211,7 +227,7 @@ def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], save_datas
         4. Save convergence metrics
         5. Save distribution metrics
         
-    Target columns must be skipped from the imputation.
+    Target columns must be skipped from the imputation. Binary columns will be thresholded after imputation.
     """
     # Check paths
     os.makedirs(save_datasets_dir, exist_ok=True)
@@ -229,7 +245,7 @@ def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], save_datas
         
         df, df_targets = _skip_targets(df, target_columns)
         
-        kernel, imputed_datasets, imputed_dataset_names = apply_mice(df=df, df_name=df_name, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
+        kernel, imputed_datasets, imputed_dataset_names = apply_mice(df=df, df_name=df_name, binary_columns=binary_columns, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
         
         save_imputed_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
         

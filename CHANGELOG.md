@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2025-06-21
+
+### Added
+
+- utilities: `serialize_object()` and `deserialize_object()` to serialize objects using joblib.
+
+### Changed
+
+- utilities: `threshold_binary_values()` now returns the same data type as the input type.
+- ensemble_learning: make use of `serialize_object()` from utilities.
+- PSO: make use of `deserialize_object()` from utilities.
+- MICE: `apply_mice()` correctly thresholds binary columns after imputation.
+- data_exploration: 
+    - `distribute_datasets_by_target()`, enhanced functionality and moved to "utilities".
+    - `split_features_targets()` return order swapped to (df_features, df_targets).
+
 ## [1.4.4] - 2025-06-20
 
 ### Added
