@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 
+
+### Added
+
+- data_exploration: `match_and_filter_columns_by_regex()` returns a tuple of (filtered DataFrame, matched column names) based on a regex pattern.
+- utilities: `list_files_by_extension()` lists all files with the specified extension in a given directory and returns a mapping: filenames (without extensions) to their absolute paths.
+- PSO: `multiple_objective_functions_from_dir()` loads multiple objective functions from serialized models in the given directory.
+
+### Fixed
+
+- data_exploration: `plot_correlation_heatmap()` will sanitize the title name only before saving the file.
+
 ## [1.4.5] - 2025-06-21
 
 ### Added

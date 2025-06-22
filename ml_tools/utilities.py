@@ -13,6 +13,7 @@ from joblib.externals.loky.process_executor import TerminatedWorkerError
 # Keep track of available tools
 __all__ = [
     "list_csv_paths",
+    "list_files_by_extension",
     "load_dataframe",
     "yield_dataframes_from_dir",
     "merge_dataframes",
@@ -34,7 +35,7 @@ def list_csv_paths(directory: str) -> dict[str, str]:
         directory (str): Path to the directory containing `.csv` files.
 
     Returns:
-        (dict[str, str]): Mapping {name, path}.
+        (dict[str, str]): Dictionary mapping {filename: filepath}.
     """
     dir_path = Path(directory).expanduser().resolve()
 
@@ -48,10 +49,44 @@ def list_csv_paths(directory: str) -> dict[str, str]:
     # make a dictionary of paths and names
     name_path_dict = {p.stem: str(p) for p in csv_paths}
     
-    print("🗂️ CSV files found:")
+    print("\n🗂️ CSV files found:")
     for name in name_path_dict.keys():
         print(f"\t{name}")
 
+    return name_path_dict
+
+
+def list_files_by_extension(directory: str, extension: str) -> dict[str, str]:
+    """
+    Lists all files with the specified extension in the given directory and returns a mapping: 
+    filenames (without extensions) to their absolute paths.
+
+    Parameters:
+        directory (str): Path to the directory to search in.
+        extension (str): File extension to search for (e.g., 'json', 'txt').
+
+    Returns:
+        (dict[str, str]): Dictionary mapping {filename: filepath}.
+    """
+    dir_path = Path(directory).expanduser().resolve()
+
+    if not dir_path.is_dir():
+        raise FileNotFoundError(f"Directory not found: {dir_path}")
+    
+    # Normalize the extension (remove leading dot if present)
+    normalized_ext = extension.lstrip(".").lower()
+    pattern = f"*.{normalized_ext}"
+    
+    matched_paths = list(dir_path.glob(pattern))
+    if not matched_paths:
+        raise IOError(f"No '.{normalized_ext}' files found in directory: {dir_path}")
+
+    name_path_dict = {p.stem: str(p) for p in matched_paths}
+    
+    print(f"\n📂 '{normalized_ext.upper()}' files found:")
+    for name in name_path_dict:
+        print(f"\t{name}")
+    
     return name_path_dict
 
 
@@ -404,8 +439,8 @@ def distribute_datasets_by_target(
     Yields
     ------
     Tuple[str, pd.DataFrame]
-        * First element is the target column name.
-        * Second element is the corresponding cleaned DataFrame.
+        * Target name.
+        * Pandas DataFrame.
     """
     # Validate path
     if isinstance(df_or_path, str):

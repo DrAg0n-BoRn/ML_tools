@@ -5,9 +5,10 @@ import seaborn as sns
 from IPython import get_ipython
 from IPython.display import clear_output
 import time
-from typing import Union, Literal, Dict, Tuple, Iterator
+from typing import Union, Literal, Dict, Tuple, List
 import os
 from ml_tools.utilities import sanitize_filename, _script_info
+import re
 
 
 # Keep track of all available tools, show using `info()`
@@ -22,7 +23,8 @@ __all__ = [
     "check_value_distributions", 
     "plot_value_distributions", 
     "clip_outliers_single", 
-    "clip_outliers_multi"
+    "clip_outliers_multi",
+    "match_and_filter_columns_by_regex"
 ]
 
 
@@ -245,9 +247,6 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
         cbar_kws={"shrink": 0.8}
     )
     
-    # sanitize the plot title
-    plot_title = sanitize_filename(plot_title)
-
     plt.title(plot_title)
     plt.xticks(rotation=45, ha='right')
     plt.yticks(rotation=0)
@@ -255,6 +254,8 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.tight_layout()
     
     if save_dir:
+        # sanitize the plot title to save the file
+        plot_title = sanitize_filename(plot_title)
         os.makedirs(save_dir, exist_ok=True)
         full_path = os.path.join(save_dir, plot_title + ".svg")
         plt.savefig(full_path, bbox_inches="tight", format='svg')
@@ -516,6 +517,36 @@ def clip_outliers_multi(
             print(f" - {col}: {msg}")
 
     return new_df
+
+
+def match_and_filter_columns_by_regex(
+    df: pd.DataFrame,
+    pattern: str,
+    case_sensitive: bool = False,
+    escape_pattern: bool = False
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Return a tuple of (filtered DataFrame, matched column names) based on a regex pattern.
+
+    Parameters:
+        df (pd.DataFrame): The DataFrame to search.
+        pattern (str): The regex pattern to match column names (use a raw string).
+        case_sensitive (bool): Whether matching is case-sensitive.
+        escape_pattern (bool): If True, the pattern is escaped with `re.escape()` to treat it literally.
+
+    Returns:
+        (Tuple[pd.DataFrame, list[str]]): A DataFrame filtered to matched columns, and a list of matching column names.
+    """
+    if escape_pattern:
+        pattern = re.escape(pattern)
+
+    mask = df.columns.str.contains(pattern, case=case_sensitive, regex=True)
+    matched_columns = df.columns[mask].to_list()
+    filtered_df = df.loc[:, mask]
+    
+    print(f"{len(matched_columns)} column(s) match the regex pattern '{pattern}'.")
+
+    return filtered_df, matched_columns
 
 
 def _is_notebook():

@@ -8,11 +8,12 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import polars as pl
 from functools import partial
-from .utilities import sanitize_filename, _script_info, threshold_binary_values, deserialize_object
+from .utilities import sanitize_filename, _script_info, threshold_binary_values, deserialize_object, list_files_by_extension
 
 
 __all__ = [
     "ObjectiveFunction",
+    "multiple_objective_functions_from_dir",
     "run_pso"
 ]
 
@@ -29,12 +30,12 @@ class ObjectiveFunction():
         Path to a serialized model (joblib) compatible with scikit-learn-like `.predict`. 
     add_noise : bool
         Whether to apply multiplicative noise to the input features during evaluation.
-    binary_features : int, default=0
-        Number of binary features located at the END of the feature vector. Model should be trained with continuous features first, followed by binary.
-    task : Literal, default 'maximization'
+    task : (Literal["maximization", "minimization"])
         Whether to maximize or minimize the target.
+    binary_features : int
+        Number of binary features located at the END of the feature vector. Model should be trained with continuous features first, followed by binary.
     """
-    def __init__(self, trained_model_path: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int=0) -> None:
+    def __init__(self, trained_model_path: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int) -> None:
         self.binary_features = binary_features
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
@@ -96,6 +97,35 @@ class ObjectiveFunction():
         return (f"<ObjectiveFunction(model={type(self.model).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
 
 
+def multiple_objective_functions_from_dir(directory: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int):
+    """
+    Loads multiple objective functions from serialized models in the given directory.
+
+    Each `.joblib` file which is loaded and wrapped as an `ObjectiveFunction` instance. Returns a list of such instances along with their corresponding names.
+
+    Parameters:
+        directory (str) : Path to the directory containing `.joblib` files (serialized models).
+        add_noise (bool) : Whether to apply multiplicative noise to the input features during evaluation.
+        task (Literal["maximization", "minimization"]) : Defines the nature of the optimization task.
+        binary_features (int) : Number of binary features expected by each objective function.
+
+    Returns:
+        (tuple[list[ObjectiveFunction], list[str]]) : A tuple containing:
+            - list of `ObjectiveFunction` instances.
+            - list of corresponding filenames.
+    """
+    objective_functions = list()
+    objective_function_names = list()
+    for file_name, file_path in list_files_by_extension(directory=directory, extension='joblib').items():
+        current_objective = ObjectiveFunction(trained_model_path=file_path,
+                                              add_noise=add_noise,
+                                              task=task,
+                                              binary_features=binary_features)
+        objective_functions.append(current_objective)
+        objective_function_names.append(file_name)
+    return objective_functions, objective_function_names
+
+
 def _set_boundaries(lower_boundaries: list[float], upper_boundaries: list[float]):
     assert len(lower_boundaries) == len(upper_boundaries), "Lower and upper boundaries must have the same length."
     assert len(lower_boundaries) >= 1, "At least one boundary pair is required."
@@ -131,9 +161,9 @@ def run_pso(lower_boundaries: list[float],
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=200, 
-            max_iterations: int=1500,
+            max_iterations: int=1000,
             inequality_constrain_function=None, 
-            post_hoc_analysis: Optional[int]=5,
+            post_hoc_analysis: Optional[int]=3,
             workers: int=1) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
     """
     Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
