@@ -8,6 +8,7 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import polars as pl
 from functools import partial
+from copy import deepcopy
 from .utilities import sanitize_filename, _script_info, threshold_binary_values, deserialize_object, list_files_by_extension
 
 
@@ -210,18 +211,25 @@ def run_pso(lower_boundaries: list[float],
     -----
     - PSO minimizes the objective function by default; if maximization is desired, it should be handled inside the ObjectiveFunction.
     """
+    # set local deep copies to prevent in place list modification
+    local_lower_boundaries = deepcopy(lower_boundaries)
+    local_upper_boundaries = deepcopy(upper_boundaries)
+    
     # Append binary boundaries
     binary_number = objective_function.binary_features
     if auto_binary_boundaries and binary_number > 0:
-        lower_boundaries.extend([0] * binary_number)
-        upper_boundaries.extend([1] * binary_number)
+        local_lower_boundaries.extend([0] * binary_number)
+        local_upper_boundaries.extend([1] * binary_number)
+        
+    # Set the total length of features
+    size_of_features = len(local_lower_boundaries)
 
-    lower, upper = _set_boundaries(lower_boundaries, upper_boundaries)
+    lower, upper = _set_boundaries(local_lower_boundaries, local_upper_boundaries)
 
     # feature names
     if feature_names is None and objective_function.feature_names is not None:
         feature_names = objective_function.feature_names
-    names = _set_feature_names(size=len(lower_boundaries), names=feature_names)
+    names = _set_feature_names(size=size_of_features, names=feature_names)
 
     # target name
     if target_name is None and objective_function.target_name is not None:
@@ -263,7 +271,7 @@ def run_pso(lower_boundaries: list[float],
         return best_features_named, best_target_named
     else:
         all_best_targets = list()
-        all_best_features = [[] for _ in range(len(lower_boundaries))]
+        all_best_features = [[] for _ in range(size_of_features)]
         for _ in range(post_hoc_analysis):
             best_features, best_target, *_ = _pso(**arguments)
             # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
