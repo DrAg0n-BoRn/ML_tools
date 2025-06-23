@@ -7,7 +7,7 @@ from IPython.display import clear_output
 import time
 from typing import Union, Literal, Dict, Tuple, List
 import os
-from ml_tools.utilities import sanitize_filename, _script_info
+from .utilities import sanitize_filename, _script_info
 import re
 
 

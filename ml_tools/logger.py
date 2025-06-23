@@ -5,7 +5,7 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-from ml_tools.utilities import sanitize_filename, _script_info
+from .utilities import sanitize_filename, _script_info
 
 
 __all__ = [

@@ -2,7 +2,7 @@ import os
 from openpyxl import load_workbook, Workbook
 import pandas as pd
 from typing import List, Optional
-from utilities import _script_info, sanitize_filename
+from .utilities import _script_info, sanitize_filename
 
 
 __all__ = [

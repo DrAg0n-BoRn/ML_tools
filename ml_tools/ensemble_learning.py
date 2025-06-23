@@ -7,7 +7,6 @@ from matplotlib import rcdefaults
 
 import os
 from typing import Literal, Union, Optional, Iterator, Tuple
-import joblib
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
