@@ -21,6 +21,7 @@ __all__ = [
     "normalize_mixed_list",
     "sanitize_filename",
     "threshold_binary_values",
+    "threshold_binary_values_batch",
     "serialize_object",
     "deserialize_object",
     "distribute_datasets_by_target"
@@ -356,6 +357,39 @@ def threshold_binary_values(
         return tuple(result)
     else:
         return result
+    
+    
+def threshold_binary_values_batch(
+    input_array: np.ndarray,
+    binary_values: int
+) -> np.ndarray:
+    """
+    Threshold the last `binary_values` columns of a 2D NumPy array to binary {0,1} using 0.5 cutoff.
+
+    Parameters
+    ----------
+    input_array : np.ndarray
+        2D array with shape (batch_size, n_features).
+    binary_values : int
+        Number of binary features located at the END of each row.
+
+    Returns
+    -------
+    np.ndarray
+        Thresholded array, same shape as input.
+    """
+    assert input_array.ndim == 2, f"Expected 2D array, got {input_array.ndim}D"
+    batch_size, total_features = input_array.shape
+    assert 0 <= binary_values <= total_features, "binary_values out of valid range"
+
+    if binary_values == 0:
+        return input_array.copy()
+
+    cont_part = input_array[:, :-binary_values] if binary_values < total_features else np.empty((batch_size, 0))
+    bin_part = input_array[:, -binary_values:] > 0.5
+    bin_part = bin_part.astype(np.int32)
+
+    return np.hstack([cont_part, bin_part])
 
 
 def serialize_object(obj: Any, save_dir: str, filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[str]:

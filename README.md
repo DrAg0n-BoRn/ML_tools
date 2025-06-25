@@ -9,7 +9,7 @@ A collection of Python utilities for data science and machine learning, structur
 
 ## Installation
 
-**Python 3.9+ recommended.**
+**Python 3.10+ recommended.**
 
 ### Via PyPI
 
@@ -17,20 +17,6 @@ Install the latest stable release from PyPI:
 
 ```bash
 pip install dragon-ml-tools
-```
-
-### Via conda-forge
-
-Install from the conda-forge channel:
-
-```bash
-conda install -c conda-forge dragon-ml-toolbox
-```
-
-#### Optional dependencies
-
-```bash
-pip install dragon-ml-tools[pytorch]
 ```
 
 ### Via GitHub (Editable)
@@ -42,6 +28,29 @@ git clone https://github.com/DrAg0n-BoRn/ML_tools.git
 cd ML_tools
 pip install -e .
 ```
+
+### Via conda-forge
+
+Install from the conda-forge channel:
+
+```bash
+conda install -c conda-forge dragon-ml-toolbox
+```
+**Note:** This version is outdated or broken due to dependency incompatibilities.
+
+## Optional dependencies
+
+**PyTorch**, which provides different builds depending on the **platform** and **hardware acceleration** (e.g., CUDA for NVIDIA GPUs on Linux/Windows, or MPS for Apple Silicon on macOS).
+
+Install the default CPU-only version with
+
+```bash
+pip install dragon-ml-tools[pytorch]
+```
+
+To make use of GPU acceleration use the official PyTorch installation instructions:
+
+[PyTorch Instructions](https://pytorch.org/get-started/locally/)
 
 ## Usage
 
@@ -61,7 +70,7 @@ ensemble_learning
 handle_excel
 logger
 MICE_imputation
-particle_swarm_optimization
+PSO_optimization
 trainer
 utilities
 VIF_factor

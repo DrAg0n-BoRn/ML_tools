@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2025-06-25
+
+### Changed
+
+- Renamed module: "particle_swarm_optimization" to "_particle_swarm_optimization", deprecated.
+- Moved `Pillow` from optional to base dependencies.
+- Required Python version 3.10+.
+- Updated README.
+- Updated third party licenses.
+
+### Added
+
+- Package dependency: `tqdm>=4.0`
+- utilities: `threshold_binary_values_batch` threshold the last binary columns of a 2D NumPy array to binary {0,1} using 0.5 cutoff.
+- New module: "PSO_optimization"
+- PSO_optimization: 
+    - Calculate pso algorithm using PyTorch tensors in the backend.
+    - New `ObjectiveFunction` class that suits the new backend.
+
 ## [1.4.8] - 2025-06-23
 
 ### Changed
