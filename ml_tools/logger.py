@@ -1,11 +1,11 @@
-import os
+from pathlib import Path
 from datetime import datetime
 from typing import Union, List, Dict, Any
 import pandas as pd
 from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-from .utilities import sanitize_filename, _script_info
+from .utilities import sanitize_filename, _script_info, make_fullpath
 
 
 __all__ = [
@@ -21,7 +21,7 @@ def custom_logger(
         str,
         BaseException
     ],
-    save_directory: str,
+    save_directory: Union[str, Path],
     log_name: str,
 ) -> None:
     """
@@ -54,10 +54,12 @@ def custom_logger(
         ValueError: If the data type is unsupported.
     """
     try:
-        os.makedirs(save_directory, exist_ok=True)
+        save_path = make_fullpath(save_directory, make=True)
+        
         timestamp = datetime.now().strftime(r"%Y%m%d_%H%M%S")
         log_name = sanitize_filename(log_name)
-        base_path = os.path.join(save_directory, f"{log_name}_{timestamp}")
+        
+        base_path = save_path / f"{log_name}_{timestamp}"
 
         if isinstance(data, list):
             _log_list_to_txt(data, base_path + ".txt")
@@ -86,7 +88,7 @@ def custom_logger(
         print(f"Error in custom_logger: {e}")
 
 
-def _log_list_to_txt(data: List[Any], path: str) -> None:
+def _log_list_to_txt(data: List[Any], path: Path) -> None:
     log_lines = []
     for item in data:
         try:
@@ -98,7 +100,7 @@ def _log_list_to_txt(data: List[Any], path: str) -> None:
         f.write('\n'.join(log_lines))
 
 
-def _log_dict_to_csv(data: Dict[Any, List[Any]], path: str) -> None:
+def _log_dict_to_csv(data: Dict[Any, List[Any]], path: Path) -> None:
     sanitized_dict = {}
     max_length = max(len(v) for v in data.values()) if data else 0
 
@@ -113,7 +115,7 @@ def _log_dict_to_csv(data: Dict[Any, List[Any]], path: str) -> None:
     df.to_csv(path, index=False)
 
 
-def _log_dataframe_to_xlsx(data: pd.DataFrame, path: str) -> None:
+def _log_dataframe_to_xlsx(data: pd.DataFrame, path: Path) -> None:
     writer = pd.ExcelWriter(path, engine='openpyxl')
     data.to_excel(writer, index=True, sheet_name='Data')
 
@@ -134,18 +136,18 @@ def _log_dataframe_to_xlsx(data: pd.DataFrame, path: str) -> None:
     writer.close()
 
 
-def _log_string_to_log(data: str, path: str) -> None:
+def _log_string_to_log(data: str, path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         f.write(data.strip() + '\n')
 
 
-def _log_exception_to_log(exc: BaseException, path: str) -> None:
+def _log_exception_to_log(exc: BaseException, path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         f.write("Exception occurred:\n")
         traceback.print_exception(type(exc), exc, exc.__traceback__, file=f)
 
 
-def _log_dict_to_json(data: Dict[Any, Any], path: str) -> None:
+def _log_dict_to_json(data: Dict[Any, Any], path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 

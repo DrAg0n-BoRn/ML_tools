@@ -1,11 +1,11 @@
 import pandas as pd
 import miceforest as mf
-import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-from .utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe, threshold_binary_values
+from .utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe, threshold_binary_values, make_fullpath
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
-from typing import Optional
+from typing import Optional, Union
 
 
 __all__ = [
@@ -60,7 +60,7 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
     return kernel, imputed_datasets, imputed_dataset_names
 
 
-def save_imputed_datasets(save_dir: str, imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):    
+def save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
         merged_df = merge_dataframes(imputed_df, df_targets, direction="horizontal", verbose=False)
         save_dataframe(df=merged_df, save_dir=save_dir, filename=subname)
@@ -72,7 +72,7 @@ def get_na_column_names(df: pd.DataFrame):
 
 
 #Convergence diagnostic
-def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_names: list[str], column_names: list[str], root_dir: str, fontsize: int=16):
+def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_names: list[str], column_names: list[str], root_dir: Union[str,Path], fontsize: int=16):
     """
     Generate and save convergence diagnostic plots for imputed variables.
 
@@ -90,7 +90,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
         raise ValueError(f"Expected {dataset_count} names in imputed_dataset_names, got {len(imputed_dataset_names)}")
     
     # Check path
-    os.makedirs(root_dir, exist_ok=True)
+    root_path = make_fullpath(root_dir, make=True)
     
     # Styling parameters
     label_font = {'size': fontsize, 'weight': 'bold'}
@@ -99,8 +99,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
     for dataset_id, imputed_dataset_name in zip(range(dataset_count), imputed_dataset_names):
         #Check directory for current dataset
         dataset_file_dir = f"Convergence_Metrics_{imputed_dataset_name}"
-        local_save_dir = os.path.join(root_dir, dataset_file_dir)
-        os.makedirs(local_save_dir, exist_ok=True)
+        local_save_dir = make_fullpath(input_path=root_path / dataset_file_dir, make=True)
         
         for feature_name in column_names:
             means_per_iteration = []
@@ -121,8 +120,8 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.grid(True)
             
             feature_save_name = sanitize_filename(feature_name)
-            
-            save_path = os.path.join(local_save_dir, feature_save_name + ".svg")
+            feature_save_name = feature_save_name + ".svg"
+            save_path = local_save_dir / feature_save_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
@@ -130,18 +129,17 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
 
 
 # Imputed distributions
-def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_dir: str, column_names: list[str], one_plot: bool=False, fontsize: int=14):
+def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_dir: Union[str, Path], column_names: list[str], one_plot: bool=False, fontsize: int=14):
     ''' 
     It works using miceforest's authors implementation of the method `.plot_imputed_distributions()`.
     
     Set `one_plot=True` to save a single image including all feature distribution plots instead.
     '''
     # Check path
-    os.makedirs(root_dir, exist_ok=True)
+    root_path = make_fullpath(root_dir, make=True)
+
     local_dir_name = f"Distribution_Metrics_{df_name}_imputed"
-    local_save_dir = os.path.join(root_dir, local_dir_name)
-    if not os.path.isdir(local_save_dir):
-        os.makedirs(local_save_dir)
+    local_save_dir = make_fullpath(root_path / local_dir_name, make=True)
     
     # Styling parameters
     legend_kwargs = {'frameon': True, 'facecolor': 'white', 'framealpha': 0.8}
@@ -191,9 +189,11 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         
         # sanitize savename
         feature_save_name = sanitize_filename(filename)
+        feature_save_name = feature_save_name + ".svg"
+        new_save_path = local_save_dir / feature_save_name
         
         fig.savefig(
-            os.path.join(local_save_dir, feature_save_name + ".svg"),
+            new_save_path,
             format='svg',
             bbox_inches='tight',
             pad_inches=0.1
@@ -213,8 +213,8 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
     print(f"{local_dir_name} completed.")
 
 
-def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str], 
-                      save_datasets_dir: str, save_metrics_dir: str, 
+def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str], 
+                      save_datasets_dir: Union[str,Path], save_metrics_dir: Union[str,Path], 
                       binary_columns: Optional[list[str]]=None,
                       resulting_datasets: int=1, 
                       iterations: int=20, 
@@ -230,15 +230,14 @@ def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str],
     Target columns must be skipped from the imputation. Binary columns will be thresholded after imputation.
     """
     # Check paths
-    os.makedirs(save_datasets_dir, exist_ok=True)
-    os.makedirs(save_metrics_dir, exist_ok=True)
+    save_datasets_path = make_fullpath(save_datasets_dir, make=True)
+    save_metrics_path = make_fullpath(save_metrics_dir, make=True)
     
-    if os.path.isfile(df_path_or_dir):
-        all_file_paths = [df_path_or_dir]
-    elif os.path.isdir(df_path_or_dir):
-        all_file_paths = list(list_csv_paths(df_path_or_dir).values())
+    input_path = make_fullpath(df_path_or_dir)
+    if input_path.is_file():
+        all_file_paths = [input_path]
     else:
-        raise ValueError(f"Invalid path or directory: {df_path_or_dir}")
+        all_file_paths = list(list_csv_paths(input_path).values())
     
     for df_path in all_file_paths:
         df, df_name = load_dataframe(df_path=df_path)
@@ -247,13 +246,13 @@ def run_mice_pipeline(df_path_or_dir: str, target_columns: list[str],
         
         kernel, imputed_datasets, imputed_dataset_names = apply_mice(df=df, df_name=df_name, binary_columns=binary_columns, resulting_datasets=resulting_datasets, iterations=iterations, random_state=random_state)
         
-        save_imputed_datasets(save_dir=save_datasets_dir, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
+        save_imputed_datasets(save_dir=save_datasets_path, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
         
         imputed_column_names = get_na_column_names(df=df)
         
-        get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_dir)
+        get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_path)
         
-        get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_dir, column_names=imputed_column_names)
+        get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_path, column_names=imputed_column_names)
 
 
 def _skip_targets(df: pd.DataFrame, target_cols: list[str]):

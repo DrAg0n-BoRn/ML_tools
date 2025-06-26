@@ -2,12 +2,12 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional
+from typing import Optional, Union
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
 import warnings
-import os
-from .utilities import sanitize_filename, yield_dataframes_from_dir, save_dataframe, _script_info
+from pathlib import Path
+from .utilities import sanitize_filename, yield_dataframes_from_dir, save_dataframe, _script_info, make_fullpath
 
 
 __all__ = [
@@ -22,7 +22,7 @@ def compute_vif(
     use_columns: Optional[list[str]] = None,
     ignore_columns: Optional[list[str]] = None,
     max_features_to_plot: int = 20,
-    save_dir: Optional[str] = None,
+    save_dir: Optional[Union[str,Path]] = None,
     filename: Optional[str] = None,
     fontsize: int = 14,
     show_plot: bool = True,
@@ -36,7 +36,7 @@ def compute_vif(
         use_columns (list[str] | None): Optional list of columns to include. Defaults to all numeric columns.
         ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `target_columns` is provided.
         max_features_to_plot (int): Adjust the number of features shown in the plot.
-        save_dir (str | None): Directory to save the plot as SVG. If None, the plot is not saved.
+        save_dir (str | Path | None): Directory to save the plot as SVG. If None, the plot is not saved.
         filename (str | None): Optional filename for saving the plot. Defaults to "VIF_plot.svg".
         fontsize (int): Base fontsize to scale title and labels on the plot.
         show_plot (bool): Display plot.
@@ -128,15 +128,16 @@ def compute_vif(
             plt.tight_layout()
 
             if save_dir:
-                os.makedirs(save_dir, exist_ok=True)
+                save_path = make_fullpath(save_dir, make=True)
                 if filename is None:
                     filename = "VIF_plot.svg"
                 else:
                     filename = sanitize_filename(filename)
+                    filename = "VIF_" + filename
                     if not filename.endswith(".svg"):
                         filename += ".svg"
-                save_path = os.path.join(save_dir, "VIF_" + filename)
-                plt.savefig(save_path, format='svg', bbox_inches='tight')
+                full_save_path = save_path / filename
+                plt.savefig(full_save_path, format='svg', bbox_inches='tight')
                 print(f"\tSaved VIF plot: '{filename}'")
             
             if show_plot:
@@ -176,9 +177,9 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     return result_df, to_drop
 
 
-def compute_vif_multi(input_directory: str,
-                      output_plot_directory: str,
-                      output_dataset_directory: Optional[str] = None,
+def compute_vif_multi(input_directory: Union[str, Path],
+                      output_plot_directory: Union[str, Path],
+                      output_dataset_directory: Optional[Union[str, Path]] = None,
                       use_columns: Optional[list[str]] = None,
                       ignore_columns: Optional[list[str]] = None,
                       max_features_to_plot: int = 20,
@@ -188,9 +189,9 @@ def compute_vif_multi(input_directory: str,
     Generates a bar plot of VIF values. Optionally drops columns with VIF >= 10 and saves as a new CSV file.
 
     Args:
-        input_directory (str): Target directory with CSV files able to be loaded as DataFrame.
-        output_plot_directory (str): Save plots to this directory.
-        output_dataset_directory (str | None): If provided, saves new CSV files to this directory.
+        input_directory (str | Path): Target directory with CSV files able to be loaded as DataFrame.
+        output_plot_directory (str | Path): Save plots to this directory.
+        output_dataset_directory (str | Path | None): If provided, saves new CSV files to this directory.
         use_columns (list[str] | None): Optional list of columns to include. Defaults to all numeric columns.
         ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `target_columns` is provided.
         max_features_to_plot (int): Adjust the number of features shown in the plot.
@@ -202,7 +203,9 @@ def compute_vif_multi(input_directory: str,
     A VIF of 1 suggests no correlation, values between 1 and 5 indicate moderate correlation, and values greater than 10 typically signal high multicollinearity, which may distort model interpretation and degrade performance.
     """
     if output_dataset_directory is not None:
-        os.makedirs(output_dataset_directory, exist_ok=True)
+        output_dataset_path = make_fullpath(output_dataset_directory, make=True)
+    else:
+        output_dataset_path = None
     
     for df, df_name in yield_dataframes_from_dir(datasets_dir=input_directory):
         vif_dataframe = compute_vif(df=df,
@@ -215,12 +218,12 @@ def compute_vif_multi(input_directory: str,
                             show_plot=False,
                             verbose=False)
         
-        if output_dataset_directory is not None:
+        if output_dataset_path is not None:
             new_filename = df_name + '_VIF'
             result_df, dropped_cols = drop_vif_based(df=df, vif_df=vif_dataframe)
             
             if len(dropped_cols) > 0:
-                save_dataframe(df=result_df, save_dir=output_dataset_directory, filename=new_filename)
+                save_dataframe(df=result_df, save_dir=output_dataset_path, filename=new_filename)
 
 
 def info():

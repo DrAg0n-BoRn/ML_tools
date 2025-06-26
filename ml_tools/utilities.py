@@ -2,7 +2,6 @@ import math
 import numpy as np
 import pandas as pd
 import polars as pl
-import os
 from pathlib import Path
 import re
 from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple
@@ -12,6 +11,7 @@ from joblib.externals.loky.process_executor import TerminatedWorkerError
 
 # Keep track of available tools
 __all__ = [
+    "make_fullpath",
     "list_csv_paths",
     "list_files_by_extension",
     "load_dataframe",
@@ -28,27 +28,83 @@ __all__ = [
 ]
 
 
-def list_csv_paths(directory: str) -> dict[str, str]:
+def make_fullpath(
+        input_path: Union[str, Path],
+        make: bool = False,
+        verbose: bool = False
+    ) -> Path:
+    """
+    Resolves a string or Path into an absolute Path.
+
+    - If the path exists, it is returned.
+    - If the path does not exist and `make=True`, it will:
+        - Create the file if the path has a suffix (i.e., is treated as a file)
+        - Create the directory if it has no suffix
+    - If `make=False` and the path does not exist, an error is raised.
+    - Optionally prints whether the resolved path is a file or directory.
+
+    Parameters:
+        input_path (str | Path): Path to resolve.
+        make (bool): If True, attempt to create file or directory.
+        verbose (bool): Print classification after resolution.
+
+    Returns:
+        Path: Resolved absolute path.
+
+    Raises:
+        ValueError: If the path doesn't exist and can't be created.
+    """
+    path = Path(input_path).expanduser()
+
+    is_file = path.suffix != ""
+
+    try:
+        resolved = path.resolve(strict=True)
+    except FileNotFoundError:
+        if not make:
+            raise ValueError(f"❌ Path does not exist: '{path}'")
+
+        try:
+            if is_file:
+                # Create parent directories first
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch(exist_ok=False)
+            else:
+                path.mkdir(parents=True, exist_ok=True)
+            resolved = path.resolve(strict=True)
+        except Exception as e:
+            raise ValueError(f"❌ Failed to create {'file' if is_file else 'directory'} '{path}': {e}")
+
+    if verbose:
+        if resolved.is_file():
+            print("📄 Path is a File")
+        elif resolved.is_dir():
+            print("📁 Path is a Directory")
+        else:
+            print("❓ Path exists but is neither file nor directory")
+
+    return resolved
+
+
+
+def list_csv_paths(directory: Union[str,Path]) -> dict[str, Path]:
     """
     Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
 
     Parameters:
-        directory (str): Path to the directory containing `.csv` files.
+        directory (str | Path): Path to the directory containing `.csv` files.
 
     Returns:
-        (dict[str, str]): Dictionary mapping {filename: filepath}.
+        (dict[str, Path]): Dictionary mapping {filename: filepath}.
     """
-    dir_path = Path(directory).expanduser().resolve()
-
-    if not dir_path.is_dir():
-        raise FileNotFoundError(f"Directory not found: {dir_path}")
+    dir_path = make_fullpath(directory)
 
     csv_paths = list(dir_path.glob("*.csv"))
     if not csv_paths:
-        raise IOError(f"No CSV files found in directory: {dir_path}")
+        raise IOError(f"No CSV files found in directory: {dir_path.name}")
     
     # make a dictionary of paths and names
-    name_path_dict = {p.stem: str(p) for p in csv_paths}
+    name_path_dict = {p.stem: p for p in csv_paths}
     
     print("\n🗂️ CSV files found:")
     for name in name_path_dict.keys():
@@ -57,22 +113,19 @@ def list_csv_paths(directory: str) -> dict[str, str]:
     return name_path_dict
 
 
-def list_files_by_extension(directory: str, extension: str) -> dict[str, str]:
+def list_files_by_extension(directory: Union[str,Path], extension: str) -> dict[str, Path]:
     """
     Lists all files with the specified extension in the given directory and returns a mapping: 
     filenames (without extensions) to their absolute paths.
 
     Parameters:
-        directory (str): Path to the directory to search in.
+        directory (str | Path): Path to the directory to search in.
         extension (str): File extension to search for (e.g., 'json', 'txt').
 
     Returns:
-        (dict[str, str]): Dictionary mapping {filename: filepath}.
+        (dict[str, Path]): Dictionary mapping {filename: filepath}.
     """
-    dir_path = Path(directory).expanduser().resolve()
-
-    if not dir_path.is_dir():
-        raise FileNotFoundError(f"Directory not found: {dir_path}")
+    dir_path = make_fullpath(directory)
     
     # Normalize the extension (remove leading dot if present)
     normalized_ext = extension.lstrip(".").lower()
@@ -82,7 +135,7 @@ def list_files_by_extension(directory: str, extension: str) -> dict[str, str]:
     if not matched_paths:
         raise IOError(f"No '.{normalized_ext}' files found in directory: {dir_path}")
 
-    name_path_dict = {p.stem: str(p) for p in matched_paths}
+    name_path_dict = {p.stem: p for p in matched_paths}
     
     print(f"\n📂 '{normalized_ext.upper()}' files found:")
     for name in name_path_dict:
@@ -91,18 +144,18 @@ def list_files_by_extension(directory: str, extension: str) -> dict[str, str]:
     return name_path_dict
 
 
-def load_dataframe(df_path: str) -> tuple[pd.DataFrame, str]:
+def load_dataframe(df_path: Union[str,Path]) -> tuple[pd.DataFrame, str]:
     """
     Load a CSV file into a pandas DataFrame and extract the base name (without extension) from the file path.
 
     Args:
-        df_path (str): The path to the CSV file.
+        df_path (str | Path): The path to the CSV file.
 
     Returns:
         Tuple ([pd.DataFrame, str]):
         A tuple containing the loaded pandas DataFrame and the base name of the file.
     """
-    path = Path(df_path).expanduser().resolve()
+    path = make_fullpath(df_path)
     df = pd.read_csv(path, encoding='utf-8')
     df_name = path.stem
     if df.empty:
@@ -111,12 +164,12 @@ def load_dataframe(df_path: str) -> tuple[pd.DataFrame, str]:
     return df, df_name
 
 
-def yield_dataframes_from_dir(datasets_dir: str):
+def yield_dataframes_from_dir(datasets_dir: Union[str,Path]):
     """
     Iterates over all CSV files in a given directory, loading each into a pandas DataFrame.
 
     Parameters:
-        datasets_dir (str):
+        datasets_dir (str | Path):
         The path to the directory containing `.csv` dataset files.
 
     Yields:
@@ -129,7 +182,8 @@ def yield_dataframes_from_dir(datasets_dir: str):
     - CSV files are read using UTF-8 encoding.
     - Output is streamed via a generator to support lazy loading of multiple datasets.
     """
-    for df_name, df_path in list_csv_paths(datasets_dir).items():
+    datasets_path = make_fullpath(datasets_dir)
+    for df_name, df_path in list_csv_paths(datasets_path).items():
         df, _ = load_dataframe(df_path)
         yield df, df_name
 
@@ -193,27 +247,27 @@ def merge_dataframes(
     return merged_df
 
 
-def save_dataframe(df: pd.DataFrame, save_dir: str, filename: str) -> None:
+def save_dataframe(df: pd.DataFrame, save_dir: Union[str,Path], filename: str) -> None:
     """
     Save a pandas DataFrame to a CSV file.
 
     Parameters:
-        df: pandas.DataFrame to save
-        save_dir: str, directory where the CSV file will be saved.
-        filename: str, CSV filename, extension will be added if missing.
+        df (pd.DataFrame): Dataframe to save.
+        save_dir (str | Path): Directory where the CSV file will be saved.
+        filename (str): CSV filename, extension will be added if missing.
     """
     if df.empty:
         print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
         return
     
-    os.makedirs(save_dir, exist_ok=True)
+    save_path = make_fullpath(save_dir, make=True)
     
     filename = sanitize_filename(filename)
     
     if not filename.endswith('.csv'):
         filename += '.csv'
         
-    output_path = os.path.join(save_dir, filename)
+    output_path = save_path / filename
         
     df.to_csv(output_path, index=False, encoding='utf-8')
     print(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
@@ -392,24 +446,24 @@ def threshold_binary_values_batch(
     return np.hstack([cont_part, bin_part])
 
 
-def serialize_object(obj: Any, save_dir: str, filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[str]:
+def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[str]:
     """
     Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
 
     Parameters:
         obj (Any) : The Python object to serialize.
-        save_dir (str) : Directory path where the serialized object will be saved.
+        save_dir (str | Path) : Directory path where the serialized object will be saved.
         filename (str) : Name for the output file, extension will be appended if needed.
 
     Returns:
         (str | None) : The full file path where the object was saved if successful; otherwise, None.
     """
     try:
-        os.makedirs(save_dir, exist_ok=True)
+        save_path = make_fullpath(save_dir, make=True)
         sanitized_name = sanitize_filename(filename)
         if not sanitized_name.endswith('.joblib'):
             sanitized_name = sanitized_name + ".joblib"
-        full_path = os.path.join(save_dir, sanitized_name)
+        full_path = save_path / sanitized_name
         joblib.dump(obj, full_path)
     except (IOError, OSError, TypeError, TerminatedWorkerError) as e:
         message = f"❌ Failed to serialize object of type '{type(obj)}': {e}"
@@ -424,23 +478,22 @@ def serialize_object(obj: Any, save_dir: str, filename: str, verbose: bool=True,
         return full_path
 
 
-def deserialize_object(filepath: str, verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
+def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
     """
     Loads a serialized object from a .joblib file.
 
     Parameters:
-        filepath (str): Full path to the serialized .joblib file.
+        filepath (str | Path): Full path to the serialized .joblib file.
 
     Returns:
         (Any | None): The deserialized Python object, or None if loading fails.
     """
-    if not os.path.exists(filepath):
-        print(f"❌ File does not exist: {filepath}")
-        return None
+    true_filepath = make_fullpath(filepath)
+    
     try:
-        obj = joblib.load(filepath)
+        obj = joblib.load(true_filepath)
     except (IOError, OSError, EOFError, TypeError, ValueError) as e:
-        message = f"❌ Failed to deserialize object from '{filepath}': {e}"
+        message = f"❌ Failed to deserialize object from '{true_filepath}': {e}"
         if raise_on_error:
             raise Exception(message)
         else:
@@ -453,7 +506,7 @@ def deserialize_object(filepath: str, verbose: bool=True, raise_on_error: bool=T
 
 
 def distribute_datasets_by_target(
-    df_or_path: Union[pd.DataFrame, str],
+    df_or_path: Union[pd.DataFrame, str, Path],
     target_columns: list[str],
     verbose: bool = False
 ) -> Iterator[Tuple[str, pd.DataFrame]]:
@@ -463,7 +516,7 @@ def distribute_datasets_by_target(
 
     Parameters
     ----------
-    df_or_path : [pd.DataFrame | str]
+    df_or_path : [pd.DataFrame | str | Path]
         Dataframe or path to Dataframe with all feature and target columns ready to split and train a model.
     target_columns : List[str]
         List of target column names to generate per-target DataFrames.
@@ -476,9 +529,10 @@ def distribute_datasets_by_target(
         * Target name.
         * Pandas DataFrame.
     """
-    # Validate path
-    if isinstance(df_or_path, str):
-        df, _ = load_dataframe(df_or_path)
+    # Validate path or dataframe
+    if isinstance(df_or_path, str) or isinstance(df_or_path, Path):
+        df_path = make_fullpath(df_or_path)
+        df, _ = load_dataframe(df_path)
     else:
         df = df_or_path
     

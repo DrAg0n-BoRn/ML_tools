@@ -1,5 +1,5 @@
 import numpy as np
-import os
+from pathlib import Path
 import xgboost as xgb
 import lightgbm as lgb
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -7,7 +7,7 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import pandas as pd
 from copy import deepcopy
-from .utilities import _script_info, threshold_binary_values, threshold_binary_values_batch, deserialize_object, list_files_by_extension, save_dataframe
+from .utilities import _script_info, threshold_binary_values, threshold_binary_values_batch, deserialize_object, list_files_by_extension, save_dataframe, make_fullpath
 import torch
 from tqdm import trange
 
@@ -36,7 +36,7 @@ class ObjectiveFunction():
     binary_features : int
         Number of binary features located at the END of the feature vector. Model should be trained with continuous features first, followed by binary.
     """
-    def __init__(self, trained_model_path: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int) -> None:
+    def __init__(self, trained_model_path: Union[str, Path], add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int) -> None:
         self.binary_features = binary_features
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
@@ -129,7 +129,7 @@ class ObjectiveFunction():
         return (f"<ObjectiveFunction(model={type(self.model).__name__}, use_noise={self.use_noise}, is_hybrid={self.is_hybrid}, task='{self.task}')>")
 
 
-def multiple_objective_functions_from_dir(directory: str, add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int):
+def multiple_objective_functions_from_dir(directory: Union[str,Path], add_noise: bool, task: Literal["maximization", "minimization"], binary_features: int):
     """
     Loads multiple objective functions from serialized models in the given directory.
 
@@ -174,7 +174,7 @@ def _set_feature_names(size: int, names: Union[list[str], None]):
         return names
     
 
-def _save_results(*dicts, save_dir: str, target_name: str):
+def _save_results(*dicts, save_dir: Union[str,Path], target_name: str):
     combined_dict = dict()
     for single_dict in dicts:
         combined_dict.update(single_dict)
@@ -187,14 +187,14 @@ def _save_results(*dicts, save_dir: str, target_name: str):
 def run_pso(lower_boundaries: list[float], 
             upper_boundaries: list[float], 
             objective_function: ObjectiveFunction,
-            save_results_dir: str,
+            save_results_dir: Union[str,Path],
             auto_binary_boundaries: bool=True,
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=200, 
-            max_iterations: int=1000,
+            max_iterations: int=3000,
             random_state: int=101,
-            post_hoc_analysis: Optional[int]=3) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+            post_hoc_analysis: Optional[int]=10) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
     """
     Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
 
@@ -206,7 +206,7 @@ def run_pso(lower_boundaries: list[float],
         Upper bounds for each feature in the search space (as many as features expected by the model).
     objective_function : ObjectiveFunction
         A callable object encapsulating a tree-based regression model.
-    save_results_dir : str
+    save_results_dir : str | Path
         Directory path to save the results CSV file.
     auto_binary_boundaries : bool
         Use `ObjectiveFunction.binary_features` to append as many binary boundaries as needed to `lower_boundaries` and `upper_boundaries` automatically.
@@ -281,7 +281,7 @@ def run_pso(lower_boundaries: list[float],
             "particle_output": False,
     }
     
-    os.makedirs(save_results_dir, exist_ok=True)
+    save_results_path = make_fullpath(save_results_dir, make=True)
     
     if post_hoc_analysis is None or post_hoc_analysis == 1:
         arguments.update({"seed": random_state})
@@ -301,7 +301,7 @@ def run_pso(lower_boundaries: list[float],
         best_target_named = {target_name: best_target}
         
         # save results
-        _save_results(best_features_named, best_target_named, save_dir=save_results_dir, target_name=target_name)
+        _save_results(best_features_named, best_target_named, save_dir=save_results_path, target_name=target_name)
         
         return best_features_named, best_target_named
     else:
@@ -327,7 +327,7 @@ def run_pso(lower_boundaries: list[float],
         all_best_targets_named = {target_name: all_best_targets}
         
         # save results
-        _save_results(all_best_features_named, all_best_targets_named, save_dir=save_results_dir, target_name=target_name)
+        _save_results(all_best_features_named, all_best_targets_named, save_dir=save_results_path, target_name=target_name)
         
         return all_best_features_named, all_best_targets_named # type: ignore
 

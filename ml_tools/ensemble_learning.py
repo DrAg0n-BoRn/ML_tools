@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap
 from matplotlib import rcdefaults
 
-import os
+from pathlib import Path
 from typing import Literal, Union, Optional, Iterator, Tuple
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
@@ -19,7 +19,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object
+from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -469,30 +469,31 @@ def _train_model(model, train_features, train_target):
     return model
 
 # handle local directories
-def _local_directories(model_name: str, dataset_id: str, save_dir: str):
-    dataset_dir = os.path.join(save_dir, dataset_id)
-    if not os.path.isdir(dataset_dir):
-        os.makedirs(dataset_dir)
+def _local_directories(model_name: str, dataset_id: str, save_dir: Union[str,Path]):
+    save_path = make_fullpath(save_dir, make=True)
     
-    model_dir = os.path.join(dataset_dir, model_name)
-    if not os.path.isdir(model_dir):
-        os.makedirs(model_dir)
+    dataset_dir = save_path / dataset_id
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    
+    model_dir = dataset_dir / model_name
+    model_dir.mkdir(parents=True, exist_ok=True)
         
     return model_dir
 
 # save model
-def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: str):
+def _save_model(trained_model, model_name: str, target_name:str, feature_names: list[str], save_directory: Union[str,Path]):
     #Sanitize filenames to save
     sanitized_target_name = sanitize_filename(target_name)
     filename = f"{model_name}_{sanitized_target_name}"
     to_save = {'model': trained_model, 'feature_names': feature_names, 'target_name':target_name}
+    
     serialize_object(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
 
 # function to evaluate the model and save metrics (Classification)
 def evaluate_model_classification(
     model,
     model_name: str,
-    save_dir: str,
+    save_dir: Union[str,Path],
     x_test_scaled: np.ndarray,
     single_y_test: np.ndarray,
     target_name: str,
@@ -524,7 +525,7 @@ def evaluate_model_classification(
     Returns:
         y_pred: Predicted class labels
     """
-    os.makedirs(save_dir, exist_ok=True)
+    save_path = make_fullpath(save_dir, make=True)
 
     y_pred = model.predict(x_test_scaled)
     accuracy = accuracy_score(single_y_test, y_pred)
@@ -538,7 +539,7 @@ def evaluate_model_classification(
 
     # Save text report
     sanitized_target_name = sanitize_filename(target_name)
-    report_path = os.path.join(save_dir, f"Classification_Report_{sanitized_target_name}.txt")
+    report_path = save_path / f"Classification_Report_{sanitized_target_name}.txt"
     with open(report_path, "w") as f:
         f.write(f"{model_name} - {target_name}\t\tAccuracy: {accuracy:.2f}\n")
         f.write("Classification Report:\n")
@@ -568,7 +569,7 @@ def evaluate_model_classification(
         text.set_fontsize(base_fontsize+4)
 
     fig.tight_layout()
-    fig_path = os.path.join(save_dir, f"Confusion_Matrix_{sanitized_target_name}.svg")
+    fig_path = save_path / f"Confusion_Matrix_{sanitized_target_name}.svg"
     fig.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close(fig)
 
@@ -580,7 +581,7 @@ def plot_roc_curve(
     probabilities_or_model: Union[np.ndarray, xgb.XGBClassifier, lgb.LGBMClassifier, object],
     model_name: str,
     target_name: str,
-    save_directory: str,
+    save_directory: Union[str,Path],
     color: str = "darkorange",
     figure_size: tuple = (10, 10),
     linewidth: int = 2,
@@ -594,7 +595,7 @@ def plot_roc_curve(
         true_labels: np.ndarray of shape (n_samples,), ground truth binary labels (0 or 1).
         probabilities_or_model: either predicted probabilities (ndarray), or a trained model with attribute `.predict_proba()`.
         target_name: str, Target name.
-        save_directory: str, path to directory where figure is saved.
+        save_directory: str or Path, path to directory where figure is saved.
         color: color of the ROC curve. Accepts any valid Matplotlib color specification. Examples:
             - Named colors: "darkorange", "blue", "red", "green", "black"
             - Hex codes: "#1f77b4", "#ff7f0e"
@@ -650,17 +651,17 @@ def plot_roc_curve(
     ax.grid(True)
 
     # Save figure
-    os.makedirs(save_directory, exist_ok=True)
+    save_path = make_fullpath(save_directory, make=True)
     sanitized_target_name = sanitize_filename(target_name)
-    save_path = os.path.join(save_directory, f"ROC_{sanitized_target_name}.svg")
-    fig.savefig(save_path, bbox_inches="tight", format="svg")
+    full_save_path = save_path / f"ROC_{sanitized_target_name}.svg"
+    fig.savefig(full_save_path, bbox_inches="tight", format="svg")
 
     return fig
 
 
 # function to evaluate the model and save metrics (Regression)
 def evaluate_model_regression(model, model_name: str, 
-                               save_dir: str,
+                               save_dir: Union[str,Path],
                                x_test_scaled: np.ndarray, single_y_test: np.ndarray, 
                                target_name: str,
                                figure_size: tuple = (12, 8),
@@ -677,7 +678,8 @@ def evaluate_model_regression(model, model_name: str,
     
     # Create formatted report
     sanitized_target_name = sanitize_filename(target_name)
-    report_path = os.path.join(save_dir, f"Regression_Report_{sanitized_target_name}.txt")
+    save_path = make_fullpath(save_dir, make=True)
+    report_path = save_path / f"Regression_Report_{sanitized_target_name}.txt"
     with open(report_path, "w") as f:
         f.write(f"{model_name} - Regression Performance for '{target_name}'\n\n")
         f.write(f"Mean Absolute Error (MAE): {mae:.4f}\n")
@@ -695,7 +697,8 @@ def evaluate_model_regression(model, model_name: str,
     plt.title(f"{model_name} - Residual Plot for {target_name}", fontsize=base_fontsize)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f"Residual_Plot_{sanitized_target_name}.svg"), bbox_inches='tight', format="svg")
+    residual_path = save_path / f"Residual_Plot_{sanitized_target_name}.svg"
+    plt.savefig(residual_path, bbox_inches='tight', format="svg")
     plt.close()
     
     # Create true vs predicted values plot
@@ -708,7 +711,7 @@ def evaluate_model_regression(model, model_name: str,
     plt.ylabel('Predictions', fontsize=base_fontsize)
     plt.title(f"{model_name} - True vs Predicted for {target_name}", fontsize=base_fontsize)
     plt.grid(True)
-    plot_path = os.path.join(save_dir, f"Regression_Plot_{sanitized_target_name}.svg")
+    plot_path = save_path / f"Regression_Plot_{sanitized_target_name}.svg"
     plt.savefig(plot_path, bbox_inches='tight', format="svg")
     plt.close()
 
@@ -719,7 +722,7 @@ def evaluate_model_regression(model, model_name: str,
 def get_shap_values(
     model,
     model_name: str,
-    save_dir: str,
+    save_dir: Union[str, Path],
     features_to_explain: np.ndarray,
     feature_names: list[str],
     target_name: str,
@@ -737,11 +740,12 @@ def get_shap_values(
 	    * Use the entire dataset to get the global view. 
  
     Parameters:
-        task: 'regression' or 'classification'
+        task: 'regression' or 'classification'.
         features_to_explain: Should match the model's training data format, including scaling.
-        save_dir: Directory to save visualizations
+        save_dir: Directory to save visualizations.
     """
     sanitized_target_name = sanitize_filename(target_name)
+    global_save_path = make_fullpath(save_dir, make=True)
     
     def _apply_plot_style():
         styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
@@ -759,7 +763,7 @@ def get_shap_values(
         plt.rc('legend', fontsize=base_fontsize)
         plt.rc('figure', titlesize=base_fontsize)
 
-    def _create_shap_plot(shap_values, features, save_path: str, plot_type: str, title: str):
+    def _create_shap_plot(shap_values, features, save_path: Path, plot_type: str, title: str):
         _apply_plot_style()
         _configure_rcparams()
         plt.figure(figsize=figsize)
@@ -804,7 +808,7 @@ def get_shap_values(
                     _create_shap_plot(
                         shap_values=class_shap,
                         features=features_to_explain,
-                        save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_Class{class_name}_{plot_type}.svg"),
+                        save_path=global_save_path / f"SHAP_{sanitized_target_name}_Class{class_name}_{plot_type}.svg",
                         plot_type=plot_type,
                         title=f"{model_name} - {target_name} (Class {class_name})"
                     )
@@ -814,7 +818,7 @@ def get_shap_values(
                 _create_shap_plot(
                     shap_values=values,
                     features=features_to_explain,
-                    save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_{plot_type}.svg"),
+                    save_path=global_save_path / f"SHAP_{sanitized_target_name}_{plot_type}.svg",
                     plot_type=plot_type,
                     title=f"{model_name} - {target_name}"
                 )
@@ -824,7 +828,7 @@ def get_shap_values(
             _create_shap_plot(
                 shap_values=shap_values,
                 features=features_to_explain,
-                save_path=os.path.join(save_dir, f"SHAP_{sanitized_target_name}_{plot_type}.svg"),
+                save_path=global_save_path / f"SHAP_{sanitized_target_name}_{plot_type}.svg",
                 plot_type=plot_type,
                 title=f"{model_name} - {target_name}"
             )
@@ -848,7 +852,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
              feature_names: list[str], target_name: str,
-             save_dir: str,
+             save_dir: Union[str,Path],
              debug: bool=False, save_model: bool=False):
     ''' 
     1. Train model.
@@ -889,7 +893,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
     return trained_model, y_pred
 
 ###### 5. Execution ######
-def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list[str], model_object: Union[RegressionTreeModels, ClassificationTreeModels],
+def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Path], target_columns: list[str], model_object: Union[RegressionTreeModels, ClassificationTreeModels],
          handle_classification_imbalance: HandleImbalanceStrategy=None, save_model: bool=False,
          test_size: float=0.2, debug:bool=False):
     #Check models
@@ -907,10 +911,11 @@ def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list
         raise TypeError(f"Unrecognized model {type(model_object)}")
     
     #Check paths
-    _check_paths(datasets_dir, save_dir)
+    datasets_path = make_fullpath(datasets_dir)
+    save_path = make_fullpath(save_dir, make=True)
     
     #Yield imputed dataset
-    for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_dir):
+    for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_path):
         #Yield features dataframe and target dataframe
         for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
@@ -925,15 +930,8 @@ def run_ensemble_pipeline(datasets_dir: str, save_dir: str, target_columns: list
                                     train_features=X_train, train_target=y_train, # type: ignore
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_name=target_name,
-                                    debug=debug, save_dir=save_dir, save_model=save_model)
+                                    debug=debug, save_dir=save_path, save_model=save_model)
     print("\n✅ Training and evaluation complete.")
-    
-    
-def _check_paths(datasets_dir: str, save_dir:str):
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    if not os.path.isdir(datasets_dir):
-        raise IOError(f"Datasets directory '{datasets_dir}' not found.")
 
 
 def info():

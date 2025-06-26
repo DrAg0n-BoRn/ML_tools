@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased 2.1.0] - 2025-06-26
+
+### Added
+
+- data_exploration: Full compatibility with `pathlib.Path` objects.
+- ensemble_learning: Full compatibility with `pathlib.Path` objects.
+- logger: Full compatibility with `pathlib.Path` objects.
+- MICE_imputation: Full compatibility with `pathlib.Path` objects.
+- PSO_optimization: Full compatibility with `pathlib.Path` objects.
+- VIF_factor: Full compatibility with `pathlib.Path` objects.
+- utilities: 
+    - Full compatibility with `pathlib.Path` objects.
+    - `make_fullpath()` resolves a string or Path into an absolute Path.
+- handle_excel:
+    - Full compatibility with `pathlib.Path` objects.
+    - `find_excel_files()` returns a list of Excel file Paths in the specified directory.
+
+### Changed
+
+- data_exploration: `drop_rows_with_missing_data()` modified to inspect target columns and feature columns.
+
 ## [2.0.0] - 2025-06-25
 
 ### Changed

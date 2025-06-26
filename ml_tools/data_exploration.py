@@ -5,9 +5,9 @@ import seaborn as sns
 from IPython import get_ipython
 from IPython.display import clear_output
 import time
-from typing import Union, Literal, Dict, Tuple, List
-import os
-from .utilities import sanitize_filename, _script_info
+from typing import Union, Literal, Dict, Tuple, List, Optional
+from pathlib import Path
+from .utilities import sanitize_filename, _script_info, make_fullpath
 import re
 
 
@@ -59,26 +59,48 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
     return summary
 
 
-def drop_rows_with_missing_data(df: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
+def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], threshold: float = 0.7) -> pd.DataFrame:
     """
-    Drops rows with more than `threshold` fraction of missing values.
+    Drops rows from the DataFrame using a two-stage strategy:
+    
+    1. If `targets`, remove any row where all target columns are missing.
+    2. Among features, drop those with more than `threshold` fraction of missing values.
 
     Parameters:
         df (pd.DataFrame): The input DataFrame.
-        threshold (float): Fraction of missing values above which rows are dropped.
+        targets (list[str] | None): List of target column names. 
+        threshold (float): Maximum allowed fraction of missing values in feature columns.
 
     Returns:
-        pd.DataFrame: A new DataFrame without the dropped rows.
+        pd.DataFrame: A cleaned DataFrame with problematic rows removed.
     """
-    missing_fraction = df.isnull().mean(axis=1)
-    rows_to_drop = missing_fraction[missing_fraction > threshold].index
+    df_clean = df.copy()
 
-    if len(rows_to_drop) > 0:
-        print(f"Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing data.")
+    # Stage 1: Drop rows with all target columns missing
+    if targets is not None:
+        target_na = df_clean[targets].isnull().all(axis=1)
+        if target_na.any():
+            print(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
+            df_clean = df_clean[~target_na]
+        else:
+            print("✅ No rows with all targets missing.")
     else:
-        print(f"No rows have more than {threshold*100:.0f}% missing data.")
+        targets = []
 
-    return df.drop(index=rows_to_drop)
+    # Stage 2: Drop rows based on feature column missing values
+    feature_cols = [col for col in df_clean.columns if col not in targets]
+    if feature_cols:
+        feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
+        rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
+        if len(rows_to_drop) > 0:
+            print(f"📉 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
+            df_clean = df_clean.drop(index=rows_to_drop)
+        else:
+            print(f"✅ No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
+    else:
+        print("⚠️ No feature columns available to evaluate.")
+
+    return df_clean
 
 
 def split_features_targets(df: pd.DataFrame, targets: list[str]):
@@ -205,13 +227,16 @@ def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
     return df_cont, df_bin # type: ignore
 
 
-def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None, method: Literal["pearson", "kendall", "spearman"]="pearson", plot_title: str="Correlation Heatmap"):
+def plot_correlation_heatmap(df: pd.DataFrame, 
+                             save_dir: Union[str, Path, None] = None, 
+                             plot_title: str="Correlation Heatmap",
+                             method: Literal["pearson", "kendall", "spearman"]="pearson"):
     """
     Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
     
     Args:
         df (pd.DataFrame): The input dataset.
-        save_dir (str | None): If provided, the heatmap will be saved to this directory as a svg file.
+        save_dir (str | Path | None): If provided, the heatmap will be saved to this directory as a svg file.
         plot_title: To make different plots, or overwrite existing ones.
         method (str): Correlation method to use. Must be one of:
             - 'pearson' (default): measures linear correlation (assumes normally distributed data),
@@ -254,10 +279,13 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_dir: Union[str, None] = None
     plt.tight_layout()
     
     if save_dir:
+        save_path = make_fullpath(save_dir, make=True)
         # sanitize the plot title to save the file
         plot_title = sanitize_filename(plot_title)
-        os.makedirs(save_dir, exist_ok=True)
-        full_path = os.path.join(save_dir, plot_title + ".svg")
+        plot_title = plot_title + ".svg"
+        
+        full_path = save_path / plot_title
+        
         plt.savefig(full_path, bbox_inches="tight", format='svg')
         print(f"Saved correlation heatmap: '{plot_title}.svg'")
     
@@ -322,7 +350,7 @@ def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=True, bin
         user_input_ = input("Press enter to continue")
 
 
-def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
+def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
     """
     Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
     with adaptive binning for numerical columns when appropriate.
@@ -335,7 +363,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
 
     Args:
         df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
-        save_dir (str): Directory path where the plots will be saved. Will be created if it does not exist.
+        save_dir (str | Path): Directory path where the plots will be saved. Will be created if it does not exist.
         bin_threshold (int): Minimum number of unique values required to trigger binning
             for numerical columns.
         skip_cols_with_key (str | None): If provided, any column whose name contains this
@@ -346,8 +374,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
         - All non-alphanumeric characters in column names are sanitized for safe file naming.
         - Colormap is automatically adapted based on the number of categories or bins.
     """
-    if save_dir is not None:
-        os.makedirs(save_dir, exist_ok=True)    
+    save_path = make_fullpath(save_dir, make=True)
     
     dict_to_plot_std = dict()
     dict_to_plot_freq = dict()
@@ -384,13 +411,12 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
             view_freq = 100 * view_std / view_std.sum() # Percentage
         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
         
-        if save_dir:
-            dict_to_plot_std[col] = dict(view_std)
-            dict_to_plot_freq[col] = dict(view_freq)
-            saved_plots += 1
+        dict_to_plot_std[col] = dict(view_std)
+        dict_to_plot_freq[col] = dict(view_freq)
+        saved_plots += 1
     
     # plot helper
-    def _plot_helper(dict_: dict, target_dir: str, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
+    def _plot_helper(dict_: dict, target_dir: Path, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
         for col, data in dict_.items():
             safe_col = sanitize_filename(col)
             
@@ -412,15 +438,15 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: str, bin_threshold: int
             plt.gca().set_facecolor('#f9f9f9')
             plt.tight_layout()
             
-            plot_path = os.path.join(target_dir, f"{safe_col}.png")
+            plot_path = target_dir / f"{safe_col}.png"
             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
             plt.close()
     
     # Save plots
-    freq_dir = os.path.join(save_dir, "Distribution_Frequency")
-    std_dir = os.path.join(save_dir, "Distribution_Counts")
-    os.makedirs(freq_dir, exist_ok=True)
-    os.makedirs(std_dir, exist_ok=True)
+    freq_dir = save_path / "Distribution_Frequency"
+    std_dir = save_path / "Distribution_Counts"
+    freq_dir.mkdir(parents=True, exist_ok=True)
+    std_dir.mkdir(parents=True, exist_ok=True)
     _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
     _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
 
