@@ -101,7 +101,7 @@ class DataProcessor:
             raise TypeError("The recipe must be an instance of TransformationRecipe.")
         if len(recipe) == 0:
             raise ValueError("The recipe cannot be empty.")
-        self.recipe = recipe
+        self._recipe = recipe
 
     def transform(self, df: pl.DataFrame) -> pl.DataFrame:
         """
@@ -109,7 +109,7 @@ class DataProcessor:
         """
         processed_columns = []
         # Recipe object is iterable
-        for step in self.recipe:
+        for step in self._recipe:
             input_col_name = step["input_col"]
             output_col_spec = step["output_col"]
             transform_action = step["transform"]
@@ -154,6 +154,49 @@ class DataProcessor:
             return pl.DataFrame()
             
         return pl.DataFrame(processed_columns)
+    
+    def __str__(self) -> str:
+        """
+        Provides a detailed, human-readable string representation of the
+        entire processing pipeline.
+        """
+        header = "DataProcessor Pipeline"
+        divider = "-" * len(header)
+        num_steps = len(self._recipe)
+        
+        lines = [
+            header,
+            divider,
+            f"Number of steps: {num_steps}\n"
+        ]
+
+        if num_steps == 0:
+            lines.append("No transformation steps defined.")
+            return "\n".join(lines)
+
+        for i, step in enumerate(self._recipe, 1):
+            transform_action = step["transform"]
+            
+            # Get a clean name for the transformation action
+            if transform_action == _RENAME: # "rename"
+                transform_name = "Rename"
+            else:
+                # This works for both functions and class instances
+                transform_name = type(transform_action).__name__
+
+            lines.append(f"[{i}] Input: '{step['input_col']}'")
+            lines.append(f"    - Transform: {transform_name}")
+            lines.append(f"    - Output(s): {step['output_col']}")
+            if i < num_steps:
+                lines.append("") # Add a blank line between steps
+
+        return "\n".join(lines)
+
+    def inspect(self) -> None:
+        """
+        Prints the detailed string representation of the pipeline to the console.
+        """
+        print(self)
 
 
 class KeywordDummifier:
@@ -407,7 +450,22 @@ class CategoryMapper:
             pl.Series: A new Series with categories mapped to numbers.
         """
         # Ensure the column is treated as a string for matching keys
-        return column.cast(pl.Utf8).map_dict(self.mapping, default=self.default_value)
+        str_column = column.cast(pl.Utf8)
+
+        # Create a list of 'when/then' expressions, one for each mapping
+        mapping_expressions = [
+            pl.when(str_column == from_val).then(pl.lit(to_val))
+            for from_val, to_val in self.mapping.items()
+        ]
+
+        # Use coalesce to find the first non-null value.
+        # The default_value acts as the final fallback.
+        final_expr = pl.coalesce(
+            *mapping_expressions, # Unpack the list of expressions
+            pl.lit(self.default_value)
+        )
+        
+        return pl.select(final_expr).to_series()
 
 
 class ValueBinner:

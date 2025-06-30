@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2025-06-30
+
+### Added
+
+- data_exploration: `standardize_percentages()` Standardizes numeric columns containing mixed-format percentages.
+- ETL_engineering: `DataProcessor` now has a comprehensive `__str__`, call it through its method `.inspect()`.
+
+### Fixed
+
+- ETL_engineering: `CategoryMapper` fixed call method.
+
 ## [2.2.0] - 2025-06-30
 
 ### Fixed

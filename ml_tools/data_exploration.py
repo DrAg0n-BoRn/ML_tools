@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -24,7 +25,8 @@ __all__ = [
     "plot_value_distributions", 
     "clip_outliers_single", 
     "clip_outliers_multi",
-    "match_and_filter_columns_by_regex"
+    "match_and_filter_columns_by_regex",
+    "standardize_percentages"
 ]
 
 
@@ -573,6 +575,72 @@ def match_and_filter_columns_by_regex(
     print(f"{len(matched_columns)} column(s) match the regex pattern '{pattern}'.")
 
     return filtered_df, matched_columns
+
+
+def standardize_percentages(
+    df: pd.DataFrame,
+    columns: list[str],
+    treat_one_as_proportion: bool = True,
+    round_digits: int = 2
+) -> pd.DataFrame:
+    """
+    Standardizes numeric columns containing mixed-format percentages.
+
+    This function cleans columns where percentages might be entered as whole
+    numbers (e.g., 55) or as proportions (e.g., 0.55). It assumes values
+    between 0 and 1 are proportions and multiplies them by 100.
+
+    Args:
+        df (pd.Dataframe): The input pandas DataFrame.
+        columns (list[str]): A list of column names to standardize.
+        treat_one_as_proportion (bool):
+            - If True (default): The value `1` is treated as a proportion and converted to `100`.
+            - If False: The value `1` is treated as `1%`.
+        round_digits (int): The number of decimal places to round the final result to.
+
+    Returns:
+        (pd.Dataframe):
+        A new DataFrame with the specified columns cleaned and standardized.
+    """
+    df_copy = df.copy()
+
+    if df_copy.empty:
+        return df_copy
+
+    # This helper function contains the core cleaning logic
+    def _clean_value(x: float) -> float:
+        """Applies the standardization rule to a single value."""
+        if pd.isna(x):
+            return x
+
+        # If treat_one_as_proportion is True, the range for proportions is [0, 1]
+        if treat_one_as_proportion and 0 <= x <= 1:
+            return x * 100
+        # If False, the range for proportions is [0, 1) (1 is excluded)
+        elif not treat_one_as_proportion and 0 <= x < 1:
+            return x * 100
+
+        # Otherwise, the value is assumed to be a correctly formatted percentage
+        return x
+
+    for col in columns:
+        # --- Robustness Checks ---
+        if col not in df_copy.columns:
+            print(f"Warning: Column '{col}' not found. Skipping.")
+            continue
+
+        if not is_numeric_dtype(df_copy[col]):
+            print(f"Warning: Column '{col}' is not numeric. Skipping.")
+            continue
+
+        # --- Applying the Logic ---
+        # Apply the cleaning function to every value in the column
+        df_copy[col] = df_copy[col].apply(_clean_value)
+
+        # Round the result
+        df_copy[col] = df_copy[col].round(round_digits)
+
+    return df_copy
 
 
 def _is_notebook():
