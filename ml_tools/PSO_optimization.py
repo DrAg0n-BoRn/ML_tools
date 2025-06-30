@@ -340,8 +340,8 @@ def _pso(func: ObjectiveFunction,
          lb: np.ndarray,
          ub: np.ndarray,
          device: torch.device,
-         swarmsize=100,
-         maxiter=100, 
+         swarmsize: int,
+         maxiter: int, 
          omega = 0.729,     # Clerc and Kennedy’s constriction coefficient
          phip = 1.49445,    # Clerc and Kennedy’s constriction coefficient
          phig = 1.49445,    # Clerc and Kennedy’s constriction coefficient
@@ -391,7 +391,7 @@ def _pso(func: ObjectiveFunction,
         If True, returns the full history of particle positions and objective scores at each iteration.
 
     seed : int or None, default=None
-        Random seed for reproducibility. If None, defaults to 42.
+        Random seed for reproducibility. If None, the random state is not fixed.
 
     Returns
     -------

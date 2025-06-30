@@ -144,23 +144,61 @@ def list_files_by_extension(directory: Union[str,Path], extension: str) -> dict[
     return name_path_dict
 
 
-def load_dataframe(df_path: Union[str,Path]) -> tuple[pd.DataFrame, str]:
+def load_dataframe(
+    df_path: Union[str, Path], 
+    kind: Literal["pandas", "polars"] = "pandas",
+    all_strings: bool = False
+) -> Tuple[Union[pd.DataFrame, pl.DataFrame], str]:
     """
-    Load a CSV file into a pandas DataFrame and extract the base name (without extension) from the file path.
+    Load a CSV file into a DataFrame and extract its base name.
+
+    Can load data as either a pandas or a polars DataFrame. Allows for loading all
+    columns as string types to prevent type inference errors.
 
     Args:
-        df_path (str | Path): The path to the CSV file.
+        df_path (Union[str, Path]): 
+            The path to the CSV file.
+        kind (Literal["pandas", "polars"], optional): 
+            The type of DataFrame to load. Defaults to "pandas".
+        all_strings (bool, optional): 
+            If True, loads all columns as string data types. This is useful for
+            ETL tasks and to avoid type-inference errors. Defaults to False.
 
     Returns:
-        Tuple ([pd.DataFrame, str]):
-        A tuple containing the loaded pandas DataFrame and the base name of the file.
+        (Tuple[DataFrameType, str]):
+            A tuple containing the loaded DataFrame (either pandas or polars)
+            and the base name of the file (without extension).
+            
+    Raises:
+        FileNotFoundError: If the file does not exist at the given path.
+        ValueError: If the DataFrame is empty or an invalid 'kind' is provided.
     """
     path = make_fullpath(df_path)
-    df = pd.read_csv(path, encoding='utf-8')
+    
     df_name = path.stem
-    if df.empty:
-        raise ValueError(f"DataFrame '{df_name}' is empty.")
-    print(f"\n💿 Loaded dataset: '{df_name}' with shape: {df.shape}")
+
+    if kind == "pandas":
+        if all_strings:
+            df = pd.read_csv(path, encoding='utf-8', dtype=str)
+        else:
+            df = pd.read_csv(path, encoding='utf-8')
+            
+    elif kind == "polars":
+        if all_strings:
+            df = pl.read_csv(path, infer_schema=False)
+        else:
+            # Default behavior: infer the schema.
+            df = pl.read_csv(path, infer_schema_length=1000)
+            
+    else:
+        raise ValueError(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
+
+    # This check works for both pandas and polars DataFrames
+    if df.shape[0] == 0:
+        raise ValueError(f"DataFrame '{df_name}' loaded from '{path}' is empty.")
+
+    print(f"\n💿 Loaded {kind} dataset: '{df_name}' with shape: {df.shape}")
+    
     return df, df_name
 
 
@@ -247,29 +285,42 @@ def merge_dataframes(
     return merged_df
 
 
-def save_dataframe(df: pd.DataFrame, save_dir: Union[str,Path], filename: str) -> None:
+def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str) -> None:
     """
-    Save a pandas DataFrame to a CSV file.
+    Saves a pandas or polars DataFrame to a CSV file.
 
-    Parameters:
-        df (pd.DataFrame): Dataframe to save.
-        save_dir (str | Path): Directory where the CSV file will be saved.
-        filename (str): CSV filename, extension will be added if missing.
+    Args:
+        df (Union[pd.DataFrame, pl.DataFrame]): 
+            The DataFrame to save.
+        save_dir (Union[str, Path]): 
+            The directory where the CSV file will be saved.
+        filename (str): 
+            The CSV filename. The '.csv' extension will be added if missing.
     """
-    if df.empty:
+    # This check works for both pandas and polars
+    if df.shape[0] == 0:
         print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
         return
     
+    # Create the directory if it doesn't exist
     save_path = make_fullpath(save_dir, make=True)
     
+    # Clean the filename
     filename = sanitize_filename(filename)
-    
     if not filename.endswith('.csv'):
         filename += '.csv'
         
     output_path = save_path / filename
         
-    df.to_csv(output_path, index=False, encoding='utf-8')
+    # --- Type-specific saving logic ---
+    if isinstance(df, pd.DataFrame):
+        df.to_csv(output_path, index=False, encoding='utf-8')
+    elif isinstance(df, pl.DataFrame):
+        df.write_csv(output_path) # Polars defaults to utf8 and no index
+    else:
+        # This error handles cases where an unsupported type is passed
+        raise TypeError(f"Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
+    
     print(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
 
 
@@ -446,7 +497,7 @@ def threshold_binary_values_batch(
     return np.hstack([cont_part, bin_part])
 
 
-def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[str]:
+def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[Path]:
     """
     Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
 
@@ -456,7 +507,7 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         filename (str) : Name for the output file, extension will be appended if needed.
 
     Returns:
-        (str | None) : The full file path where the object was saved if successful; otherwise, None.
+        (Path | None) : The full file path where the object was saved if successful; otherwise, None.
     """
     try:
         save_path = make_fullpath(save_dir, make=True)
@@ -540,7 +591,7 @@ def distribute_datasets_by_target(
     feature_columns = [col for col in df.columns if col not in valid_targets]
 
     for target in valid_targets:
-        subset = df[feature_columns + [target]].dropna(subset=[target])
+        subset = df[feature_columns + [target]].dropna(subset=[target]) # type: ignore
         if verbose:
             print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
         yield target, subset

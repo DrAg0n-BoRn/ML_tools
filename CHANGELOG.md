@@ -5,11 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2025
+## [2.2.0] - 2025-06-30
 
 ### Fixed
 
 - utilities: docstrings not referencing the new `pathlib.Path` objects handled.
+
+### Added
+
+- New module: "ETL_engineering": Extract, Transform, Load data using Polars backend.
+    - `TransformationRecipe` A builder class for creating a data transformation recipe.
+    - `DataProcessor` Transforms a Polars DataFrame based on a provided `TransformationRecipe` object.
+    - `KeywordDummifier` A configurable transformer that creates one-hot encoded columns based on keyword matching in a Polars Series.
+    - `NumberExtractor` A configurable transformer that extracts a single number from a Polars string series using a regular expression.
+    - `MultiNumberExtractor` Extracts multiple numbers from a single Polars string column into several new columns.
+    - `CategoryMapper` A transformer that maps string categories to specified numerical values using a dictionary.
+    - `ValueBinner` A transformer that discretizes a continuous numerical Polars column into a finite number of bins.
+    - `DateFeatureExtractor` A one-to-many transformer that extracts multiple numerical features from a Polars date or datetime column.
+
+### Changed
+
+- utilities: 
+    - `load_dataframe()` can now load either Pandas or Polars dataframes.
+    - `save_dataframe()` can now save either Pandas or Polars dataframes.
 
 ## [2.1.0] - 2025-06-26
 
