@@ -2,18 +2,119 @@ import polars as pl
 import re
 from typing import Literal, Union, Optional, Any, Callable, List, Dict
 from .utilities import _script_info
+import pandas as pd
 
 
 __all__ = [
+    "ColumnCleaner",
+    "DataFrameCleaner"
     "TransformationRecipe",
     "DataProcessor",
     "KeywordDummifier",
     "NumberExtractor",
     "MultiNumberExtractor",
+    "RatioCalculator"
     "CategoryMapper",
+    "RegexMapper",
     "ValueBinner",
     "DateFeatureExtractor"
 ]
+
+########## EXTRACT and CLEAN ##########
+
+class ColumnCleaner:
+    """
+    Cleans and standardizes a single pandas Series based on a dictionary of regex-to-value replacement rules.
+    
+    Args:
+        rules (Dict[str, str]):
+            A dictionary where each key is a regular expression pattern and
+            each value is the standardized string to replace matches with.
+    """
+    def __init__(self, rules: Dict[str, str]):
+        if not isinstance(rules, dict):
+            raise TypeError("The 'rules' argument must be a dictionary.")
+
+        # Validate that all keys are valid regular expressions
+        for pattern in rules.keys():
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
+
+        self.rules = rules
+
+    def clean(self, series: pd.Series) -> pd.Series:
+        """
+        Applies the standardization rules to the provided Series (requires string data).
+        
+        Non-matching values are kept as they are.
+
+        Args:
+            series (pd.Series): The pandas Series to clean.
+
+        Returns:
+            pd.Series: A new Series with the values cleaned and standardized.
+        """
+        return series.astype(str).replace(self.rules, regex=True)
+
+
+class DataFrameCleaner:
+    """
+    Orchestrates the cleaning of multiple columns in a pandas DataFrame using a nested dictionary of rules and `ColumnCleaner` objects.
+
+    Args:
+        rules (Dict[str, Dict[str, str]]):
+            A nested dictionary where each top-level key is a column name,
+            and its value is a dictionary of regex rules for that column, as expected by `ColumnCleaner`.
+    """
+    def __init__(self, rules: Dict[str, Dict[str, str]]):
+        if not isinstance(rules, dict):
+            raise TypeError("The 'rules' argument must be a nested dictionary.")
+        
+        for col_name, col_rules in rules.items():
+            if not isinstance(col_rules, dict):
+                raise TypeError(
+                    f"The value for column '{col_name}' must be a dictionary "
+                    f"of rules, but got type {type(col_rules).__name__}."
+                )
+        
+        self.rules = rules
+
+    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Applies all defined cleaning rules to the DataFrame.
+
+        Args:
+            df (pd.DataFrame): The pandas DataFrame to clean.
+
+        Returns:
+            pd.DataFrame: A new, cleaned DataFrame.
+        """
+        rule_columns = set(self.rules.keys())
+        df_columns = set(df.columns)
+        
+        missing_columns = rule_columns - df_columns
+        
+        if missing_columns:
+            # Report all missing columns in a single, clear error message
+            raise ValueError(
+                f"The following columns specified in the cleaning rules "
+                f"were not found in the DataFrame: {sorted(list(missing_columns))}"
+            )
+        
+        # Start the process
+        df_cleaned = df.copy()
+        
+        for column_name, column_rules in self.rules.items():
+            # Create and apply the specific cleaner for the column
+            cleaner = ColumnCleaner(rules=column_rules)
+            df_cleaned[column_name] = cleaner.clean(df_cleaned[column_name])
+            
+        return df_cleaned
+
+
+############ TRANSFORM ####################
 
 # Magic word for rename-only transformation
 _RENAME = "rename"
@@ -336,8 +437,7 @@ class MultiNumberExtractor:
     """
     Extracts multiple numbers from a single polars string column into several new columns.
 
-    This transformer is designed for one-to-many mappings, such as parsing
-    ratios (100:30) or coordinates (10, 25) into separate columns.
+    This transformer is designed for one-to-many mappings, such as parsing coordinates (10, 25) into separate columns.
 
     Args:
         num_outputs (int):
@@ -413,6 +513,59 @@ class MultiNumberExtractor:
         return pl.select(output_expressions)
 
 
+class RatioCalculator:
+    """
+    A transformer that parses a string ratio (e.g., "40:5" or "30/2") and computes the result of the division.
+
+    Args:
+        regex_pattern (str, optional):
+            The regex pattern to find the numerator and denominator. It MUST
+            contain exactly two capturing groups: the first for the
+            numerator and the second for the denominator. Defaults to a
+            pattern that handles common delimiters like ':' and '/'.
+    """
+    def __init__(
+        self,
+        regex_pattern: str = r"(\d+\.?\d*)\s*[:/]\s*(\d+\.?\d*)"
+    ):
+        # --- Validation ---
+        try:
+            if re.compile(regex_pattern).groups != 2:
+                raise ValueError(
+                    "regex_pattern must contain exactly two "
+                    "capturing groups '(...)'."
+                )
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern provided: {e}") from e
+
+        self.regex_pattern = regex_pattern
+
+    def __call__(self, column: pl.Series) -> pl.Series:
+        """
+        Applies the ratio calculation logic to the input column.
+
+        Args:
+            column (pl.Series): The input Polars Series of ratio strings.
+
+        Returns:
+            pl.Series: A new Series of floats containing the division result.
+                       Returns null for invalid formats or division by zero.
+        """
+        # .extract_groups returns a struct with a field for each capture group
+        # e.g., {"group_1": "40", "group_2": "5"}
+        groups = column.str.extract_groups(self.regex_pattern)
+
+        # Extract numerator and denominator, casting to float
+        # strict=False ensures that non-matches become null
+        numerator = groups.struct.field("group_1").cast(pl.Float64, strict=False)
+        denominator = groups.struct.field("group_2").cast(pl.Float64, strict=False)
+
+        # Safely perform division, returning null if denominator is 0
+        return pl.when(denominator != 0).then(
+            numerator / denominator
+        ).otherwise(None)
+
+
 class CategoryMapper:
     """
     A transformer that maps string categories to specified numerical values using a dictionary.
@@ -466,6 +619,74 @@ class CategoryMapper:
         )
         
         return pl.select(final_expr).to_series()
+
+
+class RegexMapper:
+    """
+    A transformer that maps string categories to numerical values based on a
+    dictionary of regular expression patterns.
+
+    The class iterates through the mapping dictionary in order, and the first
+    pattern that matches a given string determines the output value. This
+    "first match wins" logic makes the order of the mapping important.
+
+    Args:
+        mapping (Dict[str, Union[int, float]]):
+            An ordered dictionary where keys are regex patterns and values are
+            the numbers to map to if the pattern is found.
+        unseen_value (Optional[Union[int, float]], optional):
+            The numerical value to use for strings that do not match any
+            of the regex patterns. If None (default), unseen values are
+            mapped to null.
+    """
+    def __init__(
+        self,
+        mapping: Dict[str, Union[int, float]],
+        unseen_value: Optional[Union[int, float]] = None,
+    ):
+        # --- Validation ---
+        if not isinstance(mapping, dict):
+            raise TypeError("The 'mapping' argument must be a dictionary.")
+        
+        for pattern, value in mapping.items():
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
+            if not isinstance(value, (int, float)):
+                raise TypeError(f"Mapping values must be int or float, but got {type(value)} for pattern '{pattern}'.")
+
+        self.mapping = mapping
+        self.unseen_value = unseen_value
+
+    def __call__(self, column: pl.Series) -> pl.Series:
+        """
+        Applies the regex mapping logic to the input column.
+
+        Args:
+            column (pl.Series): The input Polars Series of string data.
+
+        Returns:
+            pl.Series: A new Series with strings mapped to numbers based on
+                       the first matching regex pattern.
+        """
+        # Ensure the column is treated as a string for matching
+        str_column = column.cast(pl.Utf8)
+
+        # Build the when/then/otherwise chain from the inside out.
+        # Start with the final fallback value for non-matches.
+        mapping_expr = pl.lit(self.unseen_value)
+
+        # Iterate through the mapping in reverse to construct the nested expression
+        for pattern, value in reversed(list(self.mapping.items())):
+            mapping_expr = (
+                pl.when(str_column.str.contains(pattern))
+                .then(pl.lit(value))
+                .otherwise(mapping_expr)
+            )
+        
+        # Execute the complete expression chain and return the resulting Series
+        return pl.select(mapping_expr).to_series()
 
 
 class ValueBinner:

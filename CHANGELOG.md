@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2025-07-02
+
+### Added
+
+- ETL_engineering: 
+    - `RegexMapper` A transformer that maps string categories to numerical values based on a dictionary of regular expression patterns.
+    - `RatioCalculator` A transformer that parses a string ratio and computes the result of the division.
+    - `ColumnCleaner` Cleans and standardizes a single pandas Series based on a dictionary of regex-to-value replacement rules.
+    - `DataFrameCleaner` Orchestrates the cleaning of multiple columns in a pandas DataFrame using a nested dictionary of rules and `ColumnCleaner` objects.
+
+- PSO_optimization: `plot_optimal_feature_distributions()` Analyzes optimization results and plots the distribution of optimal values for each feature.
+
+### Changed
+
+- PSO_optimization: `run_pso()` Refactor, add logger, add dynamic inertia weight for faster convergence.
+
 ## [2.2.1] - 2025-06-30
 
 ### Added

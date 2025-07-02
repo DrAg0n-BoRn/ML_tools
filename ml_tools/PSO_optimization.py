@@ -7,15 +7,27 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import pandas as pd
 from copy import deepcopy
-from .utilities import _script_info, threshold_binary_values, threshold_binary_values_batch, deserialize_object, list_files_by_extension, save_dataframe, make_fullpath
+from .utilities import _script_info, threshold_binary_values, threshold_binary_values_batch, deserialize_object, list_files_by_extension, save_dataframe, make_fullpath, yield_dataframes_from_dir, sanitize_filename
 import torch
 from tqdm import trange
+import logging
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import defaultdict
+
+# Configure logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 
 __all__ = [
     "ObjectiveFunction",
     "multiple_objective_functions_from_dir",
-    "run_pso"
+    "run_pso",
+    "plot_optimal_feature_distributions"
 ]
 
 
@@ -184,6 +196,52 @@ def _save_results(*dicts, save_dir: Union[str,Path], target_name: str):
     save_dataframe(df=df, save_dir=save_dir, filename=f"Optimization_{target_name}")
 
 
+def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, random_state: int):
+    """Helper for a single PSO run."""
+    pso_args.update({"seed": random_state})
+    
+    best_features, best_target, *_ = _pso(**pso_args)
+    
+    # Flip best_target if maximization was used
+    if objective_function.task == "maximization":
+        best_target = -best_target
+    
+    # Threshold binary features
+    binary_number = objective_function.binary_features
+    best_features_threshold = threshold_binary_values(best_features, binary_number)
+    
+    # Name features and target
+    best_features_named = {name: value for name, value in zip(feature_names, best_features_threshold)}
+    best_target_named = {target_name: best_target}
+    
+    return best_features_named, best_target_named
+
+
+def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, repetitions: int):
+    """Helper for post-hoc PSO analysis."""
+    all_best_targets = []
+    all_best_features = [[] for _ in range(len(feature_names))]
+    
+    for _ in range(repetitions):
+        best_features, best_target, *_ = _pso(**pso_args)
+        
+        if objective_function.task == "maximization":
+            best_target = -best_target
+        
+        binary_number = objective_function.binary_features
+        best_features_threshold = threshold_binary_values(best_features, binary_number)
+        
+        for i, best_feature in enumerate(best_features_threshold):
+            all_best_features[i].append(best_feature)
+        all_best_targets.append(best_target)
+    
+    # Name features and target
+    all_best_features_named = {name: lst for name, lst in zip(feature_names, all_best_features)}
+    all_best_targets_named = {target_name: all_best_targets}
+    
+    return all_best_features_named, all_best_targets_named
+
+
 def run_pso(lower_boundaries: list[float], 
             upper_boundaries: list[float], 
             objective_function: ObjectiveFunction,
@@ -236,6 +294,8 @@ def run_pso(lower_boundaries: list[float],
     -----
     - PSO minimizes the objective function by default; if maximization is desired, it should be handled inside the ObjectiveFunction.
     """
+
+    
     # Select device
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -243,7 +303,8 @@ def run_pso(lower_boundaries: list[float],
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
-    print(f"[PSO] Using device: '{device}'")
+    
+    logging.info(f"Using device: '{device}'")
     
     # set local deep copies to prevent in place list modification
     local_lower_boundaries = deepcopy(lower_boundaries)
@@ -271,7 +332,7 @@ def run_pso(lower_boundaries: list[float],
     if target_name is None:
         target_name = "Target"
         
-    arguments = {
+    pso_arguments = {
             "func":objective_function,
             "lb": lower,
             "ub": upper,
@@ -281,59 +342,17 @@ def run_pso(lower_boundaries: list[float],
             "particle_output": False,
     }
     
-    save_results_path = make_fullpath(save_results_dir, make=True)
-    
-    if post_hoc_analysis is None or post_hoc_analysis == 1:
-        arguments.update({"seed": random_state})
-        
-        best_features, best_target, *_ = _pso(**arguments)
-        # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
-        
-        # flip best_target if maximization was used
-        if objective_function.task == "maximization":
-            best_target = -best_target
-        
-        # threshold binary features
-        best_features_threshold = threshold_binary_values(best_features, binary_number)
-        
-        # name features
-        best_features_named = {name: value for name, value in zip(names, best_features_threshold)}
-        best_target_named = {target_name: best_target}
-        
-        # save results
-        _save_results(best_features_named, best_target_named, save_dir=save_results_path, target_name=target_name)
-        
-        return best_features_named, best_target_named
+    # Dispatcher
+    if post_hoc_analysis is None or post_hoc_analysis <= 1:
+        features, target = _run_single_pso(objective_function, pso_arguments, names, target_name, random_state)
     else:
-        all_best_targets = list()
-        all_best_features = [[] for _ in range(size_of_features)]
-        for _ in range(post_hoc_analysis):
-            best_features, best_target, *_ = _pso(**arguments)
-            # best_features, best_target, _particle_positions, _target_values_per_position = _pso(**arguments)
-            
-            # flip best_target if maximization was used
-            if objective_function.task == "maximization":
-                best_target = -best_target
-            
-            # threshold binary features
-            best_features_threshold = threshold_binary_values(best_features, binary_number)
-            
-            for i, best_feature in enumerate(best_features_threshold):
-                all_best_features[i].append(best_feature)
-            all_best_targets.append(best_target)
-        
-        # name features
-        all_best_features_named = {name: list_values for name, list_values in zip(names, all_best_features)}
-        all_best_targets_named = {target_name: all_best_targets}
-        
-        # save results
-        _save_results(all_best_features_named, all_best_targets_named, save_dir=save_results_path, target_name=target_name)
-        
-        return all_best_features_named, all_best_targets_named # type: ignore
-
-
-def info():
-    _script_info(__all__)
+        features, target = _run_post_hoc_pso(objective_function, pso_arguments, names, target_name, post_hoc_analysis)
+    
+    # --- Save Results ---
+    save_results_path = make_fullpath(save_results_dir, make=True)
+    _save_results(features, target, save_dir=save_results_path, target_name=target_name)
+    
+    return features, target
 
 
 def _pso(func: ObjectiveFunction,
@@ -342,7 +361,9 @@ def _pso(func: ObjectiveFunction,
          device: torch.device,
          swarmsize: int,
          maxiter: int, 
-         omega = 0.729,     # Clerc and Kennedy’s constriction coefficient
+         omega_start = 0.9, # STARTING inertia weight
+         omega_end = 0.4,   # ENDING inertia weight
+        #  omega = 0.729,     # Clerc and Kennedy’s constriction coefficient
          phip = 1.49445,    # Clerc and Kennedy’s constriction coefficient
          phig = 1.49445,    # Clerc and Kennedy’s constriction coefficient
          tolerance = 1e-8,
@@ -418,7 +439,7 @@ def _pso(func: ObjectiveFunction,
     
     # Initialize positions and velocities
     r = torch.rand((swarmsize, ndim), device=device, requires_grad=False)
-    positions = lb_t + r * (ub_t - lb_t)  # shape: (swarmsize, ndim)
+    positions = lb_t + r * (ub_t - lb_t)
     velocities = torch.zeros_like(positions, requires_grad=False)
 
     # Initialize best positions and scores
@@ -428,19 +449,17 @@ def _pso(func: ObjectiveFunction,
     global_best_score = float('inf')
     global_best_position = torch.zeros(ndim, device=device, requires_grad=False)
 
-    # History (optional)
     if particle_output:
         history_positions = []
         history_scores = []
 
-    # Main loop
     previous_best_score = float('inf')
-    progress = trange(maxiter, desc="PSO", unit="iter", leave=True) #tqdm bar
+    progress = trange(maxiter, desc="PSO", unit="iter", leave=True)
     with torch.no_grad():
         for i in progress:
             # Evaluate objective for all particles
-            positions_np = positions.detach().cpu().numpy() # shape: (swarmsize, n_features)
-            scores_np = func(positions_np)  # shape: (swarmsize,)
+            positions_np = positions.detach().cpu().numpy()
+            scores_np = func(positions_np)
             scores = torch.tensor(scores_np, device=device, dtype=torch.float32)
 
             # Update personal bests
@@ -454,17 +473,18 @@ def _pso(func: ObjectiveFunction,
                 global_best_score = min_score.item()
                 global_best_position = personal_best_positions[min_idx].clone()
                 
-                # Early stopping criteria
                 if abs(previous_best_score - global_best_score) < tolerance:
                     progress.set_description(f"PSO (early stop at iteration {i+1})")
                     break
                 previous_best_score = global_best_score
 
-            # Optional: track history for debugging/visualization
             if particle_output:
                 history_positions.append(positions.detach().cpu().numpy())
                 history_scores.append(scores_np)
-                
+         
+            # Linearly decreasing inertia weight
+            omega = omega_start - (omega_start - omega_end) * (i / maxiter)
+
             # Velocity update
             rp = torch.rand((swarmsize, ndim), device=device, requires_grad=False)
             rg = torch.rand((swarmsize, ndim), device=device, requires_grad=False)
@@ -476,11 +496,9 @@ def _pso(func: ObjectiveFunction,
             # Position update
             positions = positions + velocities
 
-            # Clamp to search space bounds
             positions = torch.max(positions, lb_t)
             positions = torch.min(positions, ub_t)
 
-    # Move to CPU and convert to NumPy
     best_position = global_best_position.detach().cpu().numpy()
     best_score = global_best_score
 
@@ -488,3 +506,91 @@ def _pso(func: ObjectiveFunction,
         return best_position, best_score, history_positions, history_scores
     else:
         return best_position, best_score
+
+
+def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: Union[str, Path], color_by_target: bool = True):
+    """
+    Analyzes optimization results and plots the distribution of optimal values for each feature.
+
+    This function can operate in two modes based on the `color_by_target` parameter:
+    1.  Aggregates all values for a feature into a single group and plots one overall distribution (histogram + KDE).
+    2.  Color-coded: Plots a separate, color-coded Kernel Density Estimate (KDE) for each source target, allowing for direct comparison on a single chart.
+
+    Parameters
+    ----------
+    results_dir : str or Path
+        The path to the directory containing the optimization result CSV files.
+    save_dir : str or Path
+        The directory where the output plots will be saved.
+    color_by_target : bool, optional
+        If True, generates comparative plots with distributions colored by their source target.
+    """
+    mode = "Comparative (color-coded)" if color_by_target else "Aggregate"
+    logging.info(f"Starting analysis in '{mode}' mode from results in: '{results_dir}'")
+    
+    output_path = make_fullpath(save_dir, make=True)
+    all_files = list(yield_dataframes_from_dir(results_dir))
+
+    if not all_files:
+        logging.warning("No data found. No plots will be generated.")
+        return
+
+    # --- MODE 1: Color-coded plots by target ---
+    if color_by_target:
+        data_to_plot = []
+        for df, df_name in all_files:
+            # Assumes last col is target, rest are features
+            melted_df = df.iloc[:, :-1].melt(var_name='feature', value_name='value')
+            # Sanitize target name for cleaner legend labels
+            melted_df['target'] = df_name.replace("Optimization_", "")
+            data_to_plot.append(melted_df)
+        
+        long_df = pd.concat(data_to_plot, ignore_index=True)
+        features = long_df['feature'].unique()
+        logging.info(f"Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
+
+        for feature_name in features:
+            plt.figure(figsize=(12, 7))
+            feature_df = long_df[long_df['feature'] == feature_name]
+            
+            sns.kdeplot(data=feature_df, x='value', hue='target', fill=True, alpha=0.1)
+            
+            plt.title(f"Comparative Distribution for '{feature_name}'", fontsize=16)
+            plt.xlabel("Feature Value", fontsize=12)
+            plt.ylabel("Density", fontsize=12)
+            plt.grid(axis='y', alpha=0.5, linestyle='--')
+            plt.legend(title='Target')
+
+            sanitized_feature_name = sanitize_filename(feature_name)
+            plot_filename = output_path / f"Comparative_{sanitized_feature_name}.svg"
+            plt.savefig(plot_filename, bbox_inches='tight')
+            plt.close()
+
+    # --- MODE 2: Aggregate plot ---
+    else:
+        feature_distributions = defaultdict(list)
+        for df, _ in all_files:
+            feature_columns = df.iloc[:, :-1]
+            for feature_name in feature_columns:
+                feature_distributions[feature_name].extend(df[feature_name].tolist())
+        
+        logging.info(f"Found data for {len(feature_distributions)} features. Generating plots...")
+        for feature_name, values in feature_distributions.items():
+            plt.figure(figsize=(12, 7))
+            sns.histplot(x=values, kde=True, bins='auto', stat="density")
+            
+            plt.title(f"Aggregate Distribution for '{feature_name}'", fontsize=16)
+            plt.xlabel("Feature Value", fontsize=12)
+            plt.ylabel("Density", fontsize=12)
+            plt.grid(axis='y', alpha=0.5, linestyle='--')
+
+            sanitized_feature_name = sanitize_filename(feature_name)
+            plot_filename = output_path / f"Aggregate_{sanitized_feature_name}.svg"
+            plt.savefig(plot_filename, bbox_inches='tight')
+            plt.close()
+
+    logging.info(f"✅ All plots saved successfully to: {output_path}")
+
+
+def info():
+    _script_info(__all__)

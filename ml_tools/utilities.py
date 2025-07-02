@@ -86,7 +86,6 @@ def make_fullpath(
     return resolved
 
 
-
 def list_csv_paths(directory: Union[str,Path]) -> dict[str, Path]:
     """
     Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
