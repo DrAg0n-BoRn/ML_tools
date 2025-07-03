@@ -1,4 +1,4 @@
-# dragon-ml-tools
+# dragon-ml-toolbox
 
 A collection of Python utilities for data science and machine learning, structured as a modular package for easy reuse and installation.
 
@@ -16,7 +16,7 @@ A collection of Python utilities for data science and machine learning, structur
 Install the latest stable release from PyPI:
 
 ```bash
-pip install dragon-ml-tools
+pip install dragon-ml-toolbox
 ```
 
 ### Via GitHub (Editable)
@@ -36,16 +36,26 @@ Install from the conda-forge channel:
 ```bash
 conda install -c conda-forge dragon-ml-toolbox
 ```
-**Note:** This version is outdated or broken due to dependency incompatibilities.
+**Note:** This version is outdated or broken due to dependency incompatibilities. Use PyPi instead.
 
 ## Optional dependencies
 
-**PyTorch**, which provides different builds depending on the **platform** and **hardware acceleration** (e.g., CUDA for NVIDIA GPUs on Linux/Windows, or MPS for Apple Silicon on macOS).
+### FreeSimpleGUI
+
+Wrapper library used to build powerful GUIs. Requires the tkinter backend.
+
+```bash
+pip install dragon-ml-toolbox[gui]
+```
+
+### PyTorch
+
+Different builds available depending on the **platform** and **hardware acceleration** (e.g., CUDA for NVIDIA GPUs on Linux/Windows, or MPS for Apple Silicon on macOS).
 
 Install the default CPU-only version with
 
 ```bash
-pip install dragon-ml-tools[pytorch]
+pip install dragon-ml-toolbox[pytorch]
 ```
 
 To make use of GPU acceleration use the official PyTorch installation instructions:
@@ -67,6 +77,8 @@ from ml_tools.logger import custom_logger
 data_exploration
 datasetmaster
 ensemble_learning
+ETL_engineering
+GUI_tools
 handle_excel
 logger
 MICE_imputation
