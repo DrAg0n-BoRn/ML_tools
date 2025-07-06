@@ -5,12 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2025-07-06
+
+## Changed
+
+- "trainer" revamped into the following modules using PyTorch:
+    - ML_trainer, Uses the main class `MyTrainer` to train PyTorch models. It imports ML_callbacks and ML_evaluation helpers.
+    - ML_callbacks, Includes callbacks to use during model training.
+    - ML_evaluation, Helper functions to visualize training and evaluation metrics.
+    - ML_tutorial, produces a notebook script with a tutorial on how to use these modules.
+    - RNN_forecast, `rnn_forecast()` runs a sequential forecast for a trained RNN-based model.
+
+- "datasetmaster" and "vision_helpers" merged and revamped into the new module "datasetmaster" with the following classes:
+    - `DatasetMaker`Creates processed PyTorch datasets from a Pandas DataFrame using a fluent, step-by-step interface.
+    - `VisionDatasetMaker` Creates processed PyTorch datasets for computer vision tasks from an image folder directory.
+    - `SequenceMaker` Creates windowed PyTorch datasets from time-series data.
+    - `ResizeAspectFill` Custom transformation to make an image square.
+
+- Update most scripts to work with the package logger when printing messages, warnings, and errors.
+
 ## [2.4.0] - 2025-07-03
 
 ### Added
 
 - Optional dependency: `FreeSimpleGUI`
-- New Module: `GUI_tools`:
+- New Module: "GUI_tools":
     - `PathManager` Manages paths for a Python application, supporting both development mode and bundled mode via Briefcase.
     - `ConfigManager` Loads a .ini file and provides access to its configuration values as object attributes.
     - `GUIFactory` Builds styled FreeSimpleGUI elements and layouts using a "building block" approach, driven by a ConfigManager instance.

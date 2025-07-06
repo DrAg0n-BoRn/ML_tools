@@ -6,6 +6,9 @@ from openpyxl.styles import Font, PatternFill
 import traceback
 import json
 from .utilities import sanitize_filename, _script_info, make_fullpath
+import logging
+import sys
+
 
 
 __all__ = [
@@ -62,30 +65,30 @@ def custom_logger(
         base_path = save_path / f"{log_name}_{timestamp}"
 
         if isinstance(data, list):
-            _log_list_to_txt(data, base_path + ".txt")
+            _log_list_to_txt(data, base_path.with_suffix(".txt"))
 
         elif isinstance(data, dict):
             if all(isinstance(v, list) for v in data.values()):
-                _log_dict_to_csv(data, base_path + ".csv")
+                _log_dict_to_csv(data, base_path.with_suffix(".csv"))
             else:
-                _log_dict_to_json(data, base_path + ".json")
+                _log_dict_to_json(data, base_path.with_suffix(".json"))
 
         elif isinstance(data, pd.DataFrame):
-            _log_dataframe_to_xlsx(data, base_path + ".xlsx")
+            _log_dataframe_to_xlsx(data, base_path.with_suffix(".xlsx"))
 
         elif isinstance(data, str):
-            _log_string_to_log(data, base_path + ".log")
+            _log_string_to_log(data, base_path.with_suffix(".log"))
 
         elif isinstance(data, BaseException):
-            _log_exception_to_log(data, base_path + ".log")
+            _log_exception_to_log(data, base_path.with_suffix(".log"))
 
         else:
             raise ValueError("Unsupported data type. Must be list, dict, DataFrame, str, or BaseException.")
 
-        print(f"Log saved to: '{base_path}'")
+        _LOGGER.info(f"Log saved to: '{base_path}'")
 
     except Exception as e:
-        print(f"Error in custom_logger: {e}")
+        _LOGGER.error(f"Log not saved: {e}")
 
 
 def _log_list_to_txt(data: List[Any], path: Path) -> None:
@@ -154,3 +157,37 @@ def _log_dict_to_json(data: Dict[Any, Any], path: Path) -> None:
 
 def info():
     _script_info(__all__)
+
+
+def _get_logger(name: str = "ml_tools", level: int = logging.INFO):
+    """
+    Initializes and returns a configured logger instance.
+    
+    - `logger.info()`
+    - `logger.warning()`
+    - `logger.error()` the program can potentially recover.
+    - `logger.critical()` the program is going to crash.
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    # Prevents adding handlers multiple times if the function is called again
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        
+        # Define the format string and the date format separately
+        log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        date_format = '%Y-%m-%d %H:%M' # Format: Year-Month-Day Hour:Minute
+        
+        # Pass both the format and the date format to the Formatter
+        formatter = logging.Formatter(log_format, datefmt=date_format)
+        
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    
+    logger.propagate = False
+    
+    return logger
+
+# Create a single logger instance to be imported by other modules
+_LOGGER = _get_logger()

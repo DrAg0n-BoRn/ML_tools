@@ -8,6 +8,7 @@ from statsmodels.tools.tools import add_constant
 import warnings
 from pathlib import Path
 from .utilities import sanitize_filename, yield_dataframes_from_dir, save_dataframe, _script_info, make_fullpath
+from .logger import _LOGGER
 
 
 __all__ = [
@@ -54,20 +55,20 @@ def compute_vif(
         sanitized_columns = df.select_dtypes(include='number').columns.tolist()
         missing_features = set(ground_truth_cols) - set(sanitized_columns)
         if missing_features and verbose:
-            print(f"⚠️ These columns are not Numeric:\n{missing_features}")
+            _LOGGER.warning(f"⚠️ These columns are not Numeric:\n{missing_features}")
     else:
         sanitized_columns = list()
         for feature in use_columns:
             if feature not in ground_truth_cols:
                 if verbose:
-                    print(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
+                    _LOGGER.warning(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
             else:
                 sanitized_columns.append(feature)
     
     if ignore_columns is not None and use_columns is None:
         missing_ignore = set(ignore_columns) - set(ground_truth_cols)
         if missing_ignore and verbose:
-            print(f"⚠️ Warning: The following 'columns to ignore' are not in the Dataframe:\n{missing_ignore}")
+            _LOGGER.warning(f"⚠️ Warning: The following 'columns to ignore' are not in the Dataframe:\n{missing_ignore}")
         sanitized_columns = [f for f in sanitized_columns if f not in ignore_columns]
 
     X = df[sanitized_columns].copy()
@@ -167,12 +168,12 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     
     # Identify features to drop
     to_drop = vif_df[vif_df["VIF"] > threshold]["feature"].tolist()
-    print(f"\tDropping {len(to_drop)} column(s) with VIF > {threshold}: {to_drop}")
+    _LOGGER.info(f"\tDropping {len(to_drop)} column(s) with VIF > {threshold}: {to_drop}")
     
     result_df = df.drop(columns=to_drop)
     
     if result_df.empty:
-        print(f"\t⚠️ Warning: All columns were dropped.")
+        _LOGGER.warning(f"\t⚠️ All columns were dropped.")
 
     return result_df, to_drop
 

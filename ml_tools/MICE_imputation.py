@@ -6,6 +6,7 @@ import numpy as np
 from .utilities import load_dataframe, list_csv_paths, sanitize_filename, _script_info, merge_dataframes, save_dataframe, threshold_binary_values, make_fullpath
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
 from typing import Optional, Union
+from .logger import _LOGGER
 
 
 __all__ = [
@@ -40,7 +41,9 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
     if binary_columns is not None:
         invalid_binary_columns = set(binary_columns) - set(df.columns)
         if invalid_binary_columns:
-            print(f"⚠️ These 'binary columns' are not in the dataset: {invalid_binary_columns}")
+            _LOGGER.warning(f"⚠️ These 'binary columns' are not in the dataset:")
+            for invalid_binary_col in invalid_binary_columns:
+                print(f"  - {invalid_binary_col}")
         valid_binary_columns = [col for col in binary_columns if col not in invalid_binary_columns]
         for imputed_df in imputed_datasets:
             for binary_column_name in valid_binary_columns:
@@ -125,7 +128,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-        print(f"{dataset_file_dir} completed.")
+        _LOGGER.info(f"{dataset_file_dir} completed.")
 
 
 # Imputed distributions
@@ -210,7 +213,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    print(f"{local_dir_name} completed.")
+    _LOGGER.info(f"{local_dir_name} completed.")
 
 
 def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str], 
@@ -240,7 +243,8 @@ def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str]
         all_file_paths = list(list_csv_paths(input_path).values())
     
     for df_path in all_file_paths:
-        df, df_name = load_dataframe(df_path=df_path)
+        df: pd.DataFrame
+        df, df_name = load_dataframe(df_path=df_path, kind="pandas") # type: ignore
         
         df, df_targets = _skip_targets(df, target_columns)
         

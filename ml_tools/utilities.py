@@ -221,7 +221,8 @@ def yield_dataframes_from_dir(datasets_dir: Union[str,Path]):
     """
     datasets_path = make_fullpath(datasets_dir)
     for df_name, df_path in list_csv_paths(datasets_path).items():
-        df, _ = load_dataframe(df_path)
+        df: pd.DataFrame
+        df, _ = load_dataframe(df_path, kind="pandas") # type: ignore
         yield df, df_name
 
 
@@ -594,6 +595,22 @@ def distribute_datasets_by_target(
         if verbose:
             print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
         yield target, subset
+
+
+class LogKeys:
+    """
+    Used for ML scripts only
+    
+    Centralized keys for logging and history.
+    """
+    # --- Epoch Level ---
+    TRAIN_LOSS = 'train_loss'
+    VAL_LOSS = 'val_loss'
+
+    # --- Batch Level ---
+    BATCH_LOSS = 'loss'
+    BATCH_INDEX = 'batch'
+    BATCH_SIZE = 'size'
 
 
 def _script_info(all_data: list[str]):

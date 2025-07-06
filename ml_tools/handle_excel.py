@@ -3,6 +3,7 @@ from openpyxl import load_workbook, Workbook
 import pandas as pd
 from typing import List, Optional, Union
 from .utilities import _script_info, sanitize_filename, make_fullpath
+from .logger import _LOGGER
 
 
 __all__ = [
@@ -95,10 +96,9 @@ def unmerge_and_split_excel(filepath: Union[str,Path]) -> None:
         output_path = base_dir / output_filename
         new_wb.save(output_path)
 
-        # print(f"Saved: {output_path}")
         total_output_files += 1
 
-    print(f"✅ Processed file: {file_path} into {total_output_files} output file(s).")
+    _LOGGER.info(f"✅ Processed file: {file_path} into {total_output_files} output file(s).")
     return None
 
 
@@ -152,10 +152,9 @@ def unmerge_and_split_from_directory(input_dir: Union[str,Path], output_dir: Uni
             output_path = global_output_path / output_filename
             new_wb.save(output_path)
 
-            # print(f"Saved: {output_path}")
             total_output_files += 1
 
-    print(f"✅ Processed {len(excel_files)} input Excel file(s) with a total of {total_output_files} output Excel file(s).")
+    _LOGGER.info(f"✅ Processed {len(excel_files)} input Excel file(s) with a total of {total_output_files} output Excel file(s).")
     return None
 
 
@@ -199,13 +198,13 @@ def validate_excel_schema(
                     invalid_files.append(file)
 
         except Exception as e:
-            print(f"Error processing '{file}': {e}")
+            _LOGGER.error(f"Error processing '{file}': {e}")
             invalid_files.append(file)
     
     valid_excel_number = len(excel_paths) - len(invalid_files)
-    print(f"{valid_excel_number} out of {len(excel_paths)} excel files conform to the schema.")
+    _LOGGER.info(f"{valid_excel_number} out of {len(excel_paths)} excel files conform to the schema.")
     if invalid_files:
-        print(f"⚠️ {len(invalid_files)} excel files are invalid:")
+        _LOGGER.warning(f"⚠️ {len(invalid_files)} excel files are invalid:")
         for in_file in invalid_files:
             print(f"  - {in_file.name}")
 
@@ -266,7 +265,7 @@ def vertical_merge_transform_excel(
         merged_df.columns = rename_columns
 
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
-    print(f"✅ Merged {len(dataframes)} excel files into '{csv_filename}'.")
+    _LOGGER.info(f"✅ Merged {len(dataframes)} excel files into '{csv_filename}'.")
 
 
 def horizontal_merge_transform_excel(
@@ -344,9 +343,9 @@ def horizontal_merge_transform_excel(
 
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
 
-    print(f"✅ Merged {len(excel_files)} Excel files into '{csv_filename}'.")
+    _LOGGER.info(f"✅ Merged {len(excel_files)} Excel files into '{csv_filename}'.")
     if duplicate_columns:
-        print(f"⚠️ Duplicate columns: {duplicate_columns}")
+        _LOGGER.warning(f"⚠️ Duplicate columns: {duplicate_columns}")
 
 
 def info():

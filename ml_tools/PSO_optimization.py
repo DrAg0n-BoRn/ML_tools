@@ -7,20 +7,23 @@ from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import pandas as pd
 from copy import deepcopy
-from .utilities import _script_info, threshold_binary_values, threshold_binary_values_batch, deserialize_object, list_files_by_extension, save_dataframe, make_fullpath, yield_dataframes_from_dir, sanitize_filename
+from .utilities import (
+    _script_info, 
+    list_csv_paths,
+    threshold_binary_values, 
+    threshold_binary_values_batch, 
+    deserialize_object, 
+    list_files_by_extension, 
+    save_dataframe, 
+    make_fullpath, 
+    yield_dataframes_from_dir, 
+    sanitize_filename)
 import torch
 from tqdm import trange
-import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
-
-# Configure logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
+from .logger import _LOGGER
 
 
 __all__ = [
@@ -304,7 +307,7 @@ def run_pso(lower_boundaries: list[float],
     else:
         device = torch.device("cpu")
     
-    logging.info(f"Using device: '{device}'")
+    _LOGGER.info(f"Using device: '{device}'")
     
     # set local deep copies to prevent in place list modification
     local_lower_boundaries = deepcopy(lower_boundaries)
@@ -352,7 +355,7 @@ def run_pso(lower_boundaries: list[float],
     save_results_path = make_fullpath(save_results_dir, make=True)
     _save_results(features, target, save_dir=save_results_path, target_name=target_name)
     
-    return features, target
+    return features, target # type: ignore
 
 
 def _pso(func: ObjectiveFunction,
@@ -526,19 +529,23 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
         If True, generates comparative plots with distributions colored by their source target.
     """
     mode = "Comparative (color-coded)" if color_by_target else "Aggregate"
-    logging.info(f"Starting analysis in '{mode}' mode from results in: '{results_dir}'")
+    _LOGGER.info(f"Starting analysis in '{mode}' mode from results in: '{results_dir}'")
     
+    # Check results_dir
+    results_path = make_fullpath(results_dir)
+    # make output path
     output_path = make_fullpath(save_dir, make=True)
-    all_files = list(yield_dataframes_from_dir(results_dir))
+    
+    all_csvs = list_csv_paths(results_path)
 
-    if not all_files:
-        logging.warning("No data found. No plots will be generated.")
+    if not all_csvs:
+        _LOGGER.warning("No data found. No plots will be generated.")
         return
 
     # --- MODE 1: Color-coded plots by target ---
     if color_by_target:
         data_to_plot = []
-        for df, df_name in all_files:
+        for df, df_name in yield_dataframes_from_dir(results_path):
             # Assumes last col is target, rest are features
             melted_df = df.iloc[:, :-1].melt(var_name='feature', value_name='value')
             # Sanitize target name for cleaner legend labels
@@ -547,7 +554,7 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
         
         long_df = pd.concat(data_to_plot, ignore_index=True)
         features = long_df['feature'].unique()
-        logging.info(f"Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
+        _LOGGER.info(f"Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
 
         for feature_name in features:
             plt.figure(figsize=(12, 7))
@@ -569,12 +576,12 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
     # --- MODE 2: Aggregate plot ---
     else:
         feature_distributions = defaultdict(list)
-        for df, _ in all_files:
+        for df, _ in yield_dataframes_from_dir(results_path):
             feature_columns = df.iloc[:, :-1]
             for feature_name in feature_columns:
                 feature_distributions[feature_name].extend(df[feature_name].tolist())
         
-        logging.info(f"Found data for {len(feature_distributions)} features. Generating plots...")
+        _LOGGER.info(f"Found data for {len(feature_distributions)} features. Generating plots...")
         for feature_name, values in feature_distributions.items():
             plt.figure(figsize=(12, 7))
             sns.histplot(x=values, kde=True, bins='auto', stat="density")
@@ -589,7 +596,7 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
             plt.savefig(plot_filename, bbox_inches='tight')
             plt.close()
 
-    logging.info(f"✅ All plots saved successfully to: {output_path}")
+    _LOGGER.info(f"✅ All plots saved successfully to: '{output_path}'")
 
 
 def info():

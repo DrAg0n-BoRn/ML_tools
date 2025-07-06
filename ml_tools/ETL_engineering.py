@@ -3,17 +3,18 @@ import re
 from typing import Literal, Union, Optional, Any, Callable, List, Dict
 from .utilities import _script_info
 import pandas as pd
+from .logger import _LOGGER
 
 
 __all__ = [
     "ColumnCleaner",
-    "DataFrameCleaner"
+    "DataFrameCleaner",
     "TransformationRecipe",
     "DataProcessor",
     "KeywordDummifier",
     "NumberExtractor",
     "MultiNumberExtractor",
-    "RatioCalculator"
+    "RatioCalculator",
     "CategoryMapper",
     "RegexMapper",
     "ValueBinner",
@@ -251,7 +252,7 @@ class DataProcessor:
                 raise TypeError(f"Invalid 'transform' action for '{input_col_name}': {transform_action}")
 
         if not processed_columns:
-            print("Warning: The transformation resulted in an empty DataFrame.")
+            _LOGGER.warning("The transformation resulted in an empty DataFrame.")
             return pl.DataFrame()
             
         return pl.DataFrame(processed_columns)
@@ -403,7 +404,7 @@ class NumberExtractor:
             if not isinstance(round_digits, int):
                 raise TypeError("round_digits must be an integer.")
             if dtype == "int":
-                print(f"Warning: 'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
+                _LOGGER.warning(f"'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
 
         self.regex_pattern = regex_pattern
         self.dtype = dtype
@@ -561,9 +562,9 @@ class RatioCalculator:
         denominator = groups.struct.field("group_2").cast(pl.Float64, strict=False)
 
         # Safely perform division, returning null if denominator is 0
-        return pl.when(denominator != 0).then(
-            numerator / denominator
-        ).otherwise(None)
+        final_expr = pl.when(denominator != 0).then(numerator / denominator).otherwise(None)
+        
+        return pl.select(final_expr).to_series()
 
 
 class CategoryMapper:

@@ -82,9 +82,12 @@ GUI_tools
 handle_excel
 logger
 MICE_imputation
+ML_callbacks
+ML_evaluation
+ML_trainer
+ML_tutorial
 PSO_optimization
-trainer
+RNN_forecast
 utilities
 VIF_factor
-vision_helpers
 ```

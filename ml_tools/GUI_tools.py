@@ -7,6 +7,7 @@ from functools import wraps
 from typing import Any, Dict, Tuple, List
 from .utilities import _script_info
 import numpy as np
+from .logger import _LOGGER
 
 
 __all__ = [
@@ -46,7 +47,7 @@ class PathManager:
         if self._is_bundled:
             # In a Briefcase bundle, resource_path gives an absolute path
             # to the resource directory.
-            self.package_root = self._resource_path_func(self.package_name, "")
+            self.package_root = self._resource_path_func(self.package_name, "") # type: ignore
         else:
             # In development mode, the package root is the directory
             # containing the anchor file.
@@ -56,7 +57,7 @@ class PathManager:
         """Checks if the app is running in a bundled environment."""
         try:
             # This is the function Briefcase provides in a bundled app
-            from briefcase.platforms.base import resource_path
+            from briefcase.platforms.base import resource_path # type: ignore
             return True, resource_path
         except ImportError:
             return False, None
@@ -147,7 +148,7 @@ class ConfigManager:
         """
         path = Path(file_path)
         if path.exists() and not force_overwrite:
-            print(f"Configuration file already exists at {path}. Aborting.")
+            _LOGGER.warning(f"Configuration file already exists at {path}. Aborting.")
             return
 
         config = configparser.ConfigParser()
@@ -205,7 +206,7 @@ class ConfigManager:
 
         with open(path, 'w') as configfile:
             config.write(configfile)
-        print(f"Successfully generated config template at: '{path}'")
+        _LOGGER.info(f"Successfully generated config template at: '{path}'")
 
 
 # --- GUI Factory ---
@@ -219,8 +220,8 @@ class GUIFactory:
         Initializes the factory with a configuration object.
         """
         self.config = config
-        sg.theme(self.config.general.theme)
-        sg.set_options(font=(self.config.general.font_family, 12))
+        sg.theme(self.config.general.theme) # type: ignore
+        sg.set_options(font=(self.config.general.font_family, 12)) # type: ignore
 
     # --- Atomic Element Generators ---
     def make_button(self, text: str, key: str, **kwargs) -> sg.Button:
@@ -234,13 +235,13 @@ class GUIFactory:
                       (e.g., `tooltip='Click me'`, `disabled=True`).
         """
         cfg = self.config
-        font = (cfg.fonts.font_family, cfg.fonts.button_size, cfg.fonts.button_style)
+        font = (cfg.fonts.font_family, cfg.fonts.button_size, cfg.fonts.button_style) # type: ignore
         
         style_args = {
-            "size": cfg.layout.button_size,
+            "size": cfg.layout.button_size, # type: ignore
             "font": font,
-            "button_color": (cfg.colors.button_text, cfg.colors.button_background),
-            "mouseover_colors": (cfg.colors.button_text, cfg.colors.button_background_hover),
+            "button_color": (cfg.colors.button_text, cfg.colors.button_background), # type: ignore
+            "mouseover_colors": (cfg.colors.button_text, cfg.colors.button_background_hover), # type: ignore
             "border_width": 0,
             **kwargs
         }
@@ -257,7 +258,7 @@ class GUIFactory:
                       (e.g., `title_color='red'`, `relief=sg.RELIEF_SUNKEN`).
         """
         cfg = self.config
-        font = (cfg.fonts.font_family, cfg.fonts.frame_size)
+        font = (cfg.fonts.font_family, cfg.fonts.frame_size) # type: ignore
         
         style_args = {
             "font": font,
@@ -289,7 +290,7 @@ class GUIFactory:
         """
         cfg = self.config
         bg_color = sg.theme_background_color()
-        label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style)
+        label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
         
         columns = []
         for name, (val_min, val_max) in data_dict.items():
@@ -298,21 +299,21 @@ class GUIFactory:
             
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
             
-            input_style = {"size": cfg.layout.input_size_cont, "justification": "center"}
+            input_style = {"size": cfg.layout.input_size_cont, "justification": "center"} # type: ignore
             if is_target:
-                input_style["text_color"] = cfg.colors.target_text
-                input_style["disabled_readonly_background_color"] = cfg.colors.target_background
+                input_style["text_color"] = cfg.colors.target_text # type: ignore
+                input_style["disabled_readonly_background_color"] = cfg.colors.target_background # type: ignore
             
             element = sg.Input(default_text, key=key, disabled=is_target, **input_style)
             
             if is_target:
                 layout = [[label], [element]]
             else:
-                range_font = (cfg.fonts.font_family, cfg.fonts.range_size)
+                range_font = (cfg.fonts.font_family, cfg.fonts.range_size) # type: ignore
                 range_text = sg.Text(f"Range: {int(val_min)}-{int(val_max)}", font=range_font, background_color=bg_color)
                 layout = [[label], [element], [range_text]]
             
-            layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)])
+            layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
             columns.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
@@ -340,17 +341,17 @@ class GUIFactory:
         """
         cfg = self.config
         bg_color = sg.theme_background_color()
-        label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style)
+        label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
 
         columns = []
         for name, values in data_dict.items():
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
             element = sg.Combo(
                 values, default_value=values[0], key=name,
-                size=cfg.layout.input_size_binary, readonly=True
+                size=cfg.layout.input_size_binary, readonly=True # type: ignore
             )
             layout = [[label], [element]]
-            layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)])
+            layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
             columns.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
@@ -370,8 +371,8 @@ class GUIFactory:
             **kwargs: Additional arguments to pass to the sg.Window constructor
                       (e.g., `location=(100, 100)`, `keep_on_top=True`).
         """
-        cfg = self.config.general
-        version = getattr(self.config.meta, 'version', None)
+        cfg = self.config.general # type: ignore
+        version = getattr(self.config.meta, 'version', None) # type: ignore
         full_title = f"{title} v{version}" if version else title
 
         window_args = {
@@ -406,9 +407,7 @@ def catch_exceptions(show_popup: bool = True):
                     sg.popup_error("An error occurred:", error_msg, title="Error")
                 else:
                     # Fallback for non-GUI contexts or if popup is disabled
-                    print("--- An exception occurred ---")
-                    print(error_msg)
-                    print("-----------------------------")
+                    _LOGGER.error(error_msg)
         return wrapper
     return decorator
 

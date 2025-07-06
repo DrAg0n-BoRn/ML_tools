@@ -1,606 +1,680 @@
-import torch 
-from torch.utils.data import Dataset, TensorDataset
+import torch
+from torch.utils.data import Dataset, Subset
 from torch import nn
 import pandas
 import numpy
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from typing import Literal, Union
+from typing import Literal, Union, Tuple, List, Optional
 from imblearn.combine import SMOTETomek
-from PIL import Image
+from abc import ABC, abstractmethod
+from PIL import Image, ImageOps
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import matplotlib.pyplot as plt
+from pathlib import Path
 from .utilities import _script_info
+from .logger import _LOGGER
 
 
+# --- public-facing API ---
 __all__ = [
     "DatasetMaker",
-    "PytorchDataset",
-    "make_vision_dataset",
-    "SequenceDataset",
+    "VisionDatasetMaker",
+    "SequenceMaker",
+    "ResizeAspectFill",
 ]
 
 
-class DatasetMaker():
-    def __init__(self, *, pandas_df: pandas.DataFrame, label_col: str, cat_features: Union[list[str], None]=None, 
-                 cat_method: Union[Literal["one-hot", "embed"], None]="one-hot", test_size: float=0.2, random_state: Union[int, None]=None, 
-                 normalize: Union[Literal["standard", "minmax"], None]="standard", cast_labels: bool=True, balance: bool=False, **kwargs):
-        """
-        Create Train-Test datasets from a Pandas DataFrame. Four datasets will be created: 
-        
-            1. Features Train
-            2. Features Test
-            3. Labels Train
-            4. Labels Test
-            
-        Use the method `to_pytorch()` to quickly get Train and Test PytorchDataset objects.
-        
-        `label_col` Specify the name of the label column. If label encoding is required (str -> int) set `cast_labels=True` (default). 
-        A dictionary will be created with the label mapping {code: original_name}.
-        
-        `cat_features` List of column names to perform embedding or one-hot-encoding of categorical features. 
-        Any categorical column not in the list will not be returned. 
-        If `None` (default), columns containing categorical data will be inferred from dtypes: object, string and category, if any. 
-        
-        `cat_method` can be set to: 
-        
-            * `'one-hot'` (default) to perform One-Hot-Encoding using Pandas "get_dummies".
-            * `'embed'` to perform Embedding using PyTorch "nn.Embedding".
-            * `None` all data will be considered to be continuous.
-        
-        `normalize` if not None, continuous features will be normalized using Scikit-Learn's StandardScaler or MinMaxScaler.
-        
-        If `balance=True` attempts to balance the minority class(es) in the training data using Imbalanced-Learn's `SMOTETomek` algorithm.
-        
-        `**kwargs` Pass any additional keyword parameters to `pandas.get_dummies()` or `torch.nn.Embedding()`. 
-            i.e. pandas `drop_first=False`.
-        """
-        
-        # Validate dataframe
-        if not isinstance(pandas_df, pandas.DataFrame):
-            raise TypeError("pandas_df must be a pandas.DataFrame object.")
-        # Validate label column
-        if not isinstance(label_col, (str, list)):
-            raise TypeError("label_col must be a string or list of strings.")
-        # Validate categorical features
-        if not (isinstance(cat_features, list) or cat_features is None):
-            raise TypeError("cat_features must be a list of strings or None.")
-        if cat_method not in ["one-hot", "embed", None]:
-            raise TypeError("cat_method must be 'one-hot', 'embed' or None.")
-        # Validate test size
-        if not isinstance(test_size, (float, int)):
-            raise TypeError("test_size must be a float in the range 0.0 to 1.0")
-        if not (1.0 >= test_size >= 0.0):
-            raise ValueError("test_size must be a float in the range 0.0 to 1.0")
-        # Validate random state
-        if not (isinstance(random_state, int) or random_state is None):
-            raise TypeError("random_state must be an integer or None.")
-        # validate normalize
-        if not (normalize in ["standard", "minmax"] or normalize is None):
-            raise TypeError("normalize must be 'standard', 'minmax' or None.")
-        # Validate cast labels
-        if not isinstance(cast_labels, bool):
-            raise TypeError("cast_labels must be either True or False.")
-        
-        # Start-o
-        self._labels = pandas_df[label_col]
-        pandas_df = pandas_df.drop(columns=label_col)
-        # Set None parameters
-        self._categorical = None
-        self._continuous = None
-        self.labels_train = None
-        self.labels_test = None
-        self.labels_map = None
-        self.features_test = None
-        self.features_train = None
-        
-        # Find categorical
-        cat_columns = list()
-        if cat_method is not None:
-            if cat_features is None:
-                # find categorical columns from Object, String or Category dtypes automatically
-                for column_ in pandas_df.columns:
-                    if pandas_df[column_].dtype == object or pandas_df[column_].dtype == 'string' or pandas_df[column_].dtype.name == 'category':
-                        cat_columns.append(column_)
-            else:
-                cat_columns = cat_features
-                
-        # Handle categorical data if required
-        if len(cat_columns) > 0:
-            # Set continuous/categorical data if categorical detected
-            self._continuous = pandas_df.drop(columns=cat_columns)
-            self._categorical = pandas_df[cat_columns].copy()
-            
-            # Perform one-hot-encoding
-            if cat_method == "one-hot":
-                for col_ in cat_columns:
-                    self._categorical[col_] = self._categorical[col_].astype("category")
-                self._categorical = pandas.get_dummies(data=self._categorical, dtype=numpy.int32, **kwargs)
-            # Perform embedding
-            else:
-                self._categorical = self.embed_categorical(cat_df=self._categorical, random_state=random_state, **kwargs)
-                
-            # Something went wrong?
-            if self._categorical.empty:
-                raise AttributeError("Categorical data couldn't be processed")
-        else:
-            # Assume all data is continuous
-            if not pandas_df.empty:
-                self._continuous = pandas_df
-        
-        # Map labels
-        if cast_labels:
-            labels_ = self._labels.astype("category")
-            # Get mapping
-            self.labels_map = {key: value for key, value in enumerate(labels_.cat.categories)}
-            self._labels = labels_.cat.codes
-        
-        # Train-Test splits
-        if self._continuous is not None and self._categorical is not None:
-            continuous_train, continuous_test, categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._continuous, 
-                                                                                                                                           self._categorical, 
-                                                                                                                                           self._labels, 
-                                                                                                                                           test_size=test_size, 
-                                                                                                                                           random_state=random_state)
-        elif self._categorical is None:
-            continuous_train, continuous_test, self.labels_train, self.labels_test = train_test_split(self._continuous, self._labels, 
-                                                                                                      test_size=test_size, random_state=random_state)
-        elif self._continuous is None:
-            categorical_train, categorical_test, self.labels_train, self.labels_test = train_test_split(self._categorical, self._labels, 
-                                                                                                        test_size=test_size, random_state=random_state)
+# --- Custom Vision Transform Class ---
+class ResizeAspectFill:
+    """
+    Custom transformation to make an image square by padding it to match the
+    longest side, preserving the aspect ratio. The image is finally centered.
 
-        # Normalize continuous features
-        if normalize is not None and self._continuous is not None:
-            continuous_train, continuous_test = self.normalize_continuous(train_set=continuous_train, test_set=continuous_test, method=normalize)
-        
-        # Merge continuous and categorical
-        if self._categorical is not None and self._continuous is not None:
-            self.features_train = pandas.concat(objs=[continuous_train, categorical_train], axis=1)
-            self.features_test = pandas.concat(objs=[continuous_test, categorical_test], axis=1)
-        elif self._continuous is not None:
-            self.features_train = continuous_train
-            self.features_test = continuous_test
-        elif self._categorical is not None:
-            self.features_train = categorical_train
-            self.features_test = categorical_test
-            
-        # Balance train dataset
-        if balance and self.features_train is not None and self.labels_train is not None:
-            self.features_train, self.labels_train = self.balance_classes(train_features=self.features_train, train_labels=self.labels_train)
-            
-    def to_pytorch(self):
-        """
-        Convert the train and test features and labels to Pytorch Datasets with default dtypes.
-        
-        Returns: Tuple(Train Dataset, Test Dataset)
-        """
-        train = None
-        test = None
-        # Train set
-        if self.labels_train is not None and self.features_train is not None:
-            train = PytorchDataset(features=self.features_train, labels=self.labels_train)
-        # Test set
-        if self.labels_test is not None and self.features_test is not None:
-            test = PytorchDataset(features=self.features_test, labels=self.labels_test)
-        
-        return train, test
-            
-    @staticmethod
-    def embed_categorical(cat_df: pandas.DataFrame, random_state: Union[int, None]=None, **kwargs) -> pandas.DataFrame:
-        """
-        Takes a DataFrame object containing categorical data only.
-        
-        Calculates embedding dimensions for each categorical feature. Using `(Number_of_categories + 1) // 2` up to a maximum value of 50.
-        
-        Applies embedding using PyTorch and returns a Pandas Dataframe with embedded features.
-        """
-        df = cat_df.copy()
-        embedded_tensors = list()
-        columns = list()
-        for col in df.columns:
-            df[col] = df[col].astype("category")
-            # Get number of categories
-            size: int = df[col].cat.categories.size
-            # Embedding dimension
-            embedding_dim: int = min(50, (size+1)//2)
-            # Create instance of Embedding tensor using half the value for embedding dimensions
-            with torch.no_grad():
-                if random_state:
-                    torch.manual_seed(random_state)
-                embedder = nn.Embedding(num_embeddings=size, embedding_dim=embedding_dim, **kwargs)
-                # Embed column of features and store tensor
-                embedded_tensors.append(embedder(torch.LongTensor(df[col].cat.codes.copy().values)))
-            # Preserve column names for embedded features
-            for i in range(1, embedding_dim+1):
-                columns.append(f"{col}_{i}")
-            
-        # Concatenate tensors
-        with torch.no_grad():
-            tensor = torch.cat(tensors=embedded_tensors, dim=1)
-            # Convert to dataframe
-        return pandas.DataFrame(data=tensor.numpy(), columns=columns)
+    Args:
+        pad_color (Union[str, int]): Color to use for the padding.
+                                     Defaults to "black".
+    """
+    def __init__(self, pad_color: Union[str, int] = "black") -> None:
+        self.pad_color = pad_color
 
-    @staticmethod
-    def normalize_continuous(train_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series], test_set: Union[numpy.ndarray, pandas.DataFrame, pandas.Series],
-                             method: Literal["standard", "minmax"]="standard"):
-        """
-        Takes a train and a test dataset, then returns the standardized datasets as a tuple (train, test).
-        
-        `method`: Standardization by the mean and variance or MinMax Normalization.
-        
-        The transformer is fitted on the training set, so there is no data-leak of the test set.
-        
-        Output type is the same as Input type: nD-array, DataFrame or Series.
-        """
-        if method == "standard":
-            scaler = StandardScaler()
-        elif method == "minmax":
-            scaler = MinMaxScaler()
-        else:
-            raise ValueError("Normalization method must be 'standard' or 'minmax'.")
-        
-        X_train = scaler.fit_transform(train_set)
-        X_test = scaler.transform(test_set)
-        
-        if isinstance(train_set, pandas.DataFrame):
-            train_indexes = train_set.index
-            test_indexes = test_set.index
-            cols = train_set.columns
-            X_train = pandas.DataFrame(data=X_train, index=train_indexes, columns=cols)
-            X_test = pandas.DataFrame(data=X_test, index=test_indexes, columns=cols)
-        elif isinstance(train_set, pandas.Series):
-            train_indexes = train_set.index
-            test_indexes = test_set.index
-            X_train = pandas.Series(data=X_train, index=train_indexes)
-            X_test = pandas.Series(data=X_test, index=test_indexes)
-        else:
-            pass
-        
-        return X_train, X_test
-    
-    @staticmethod
-    def balance_classes(train_features, train_labels, **kwargs):
-        """
-        Attempts to balance the minority class(es) using Imbalanced-Learn's `SMOTETomek` algorithm.
-        """
-        resampler = SMOTETomek(**kwargs)
-        X, y = resampler.fit_resample(X=train_features, y=train_labels)
-        
-        return X, y
+    def __call__(self, image: Image.Image) -> Image.Image:
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"Expected PIL.Image.Image, got {type(image).__name__}")
+
+        w, h = image.size
+        if w == h:
+            return image
+
+        # Determine padding to center the image
+        if w > h:
+            top_padding = (w - h) // 2
+            bottom_padding = w - h - top_padding
+            padding = (0, top_padding, 0, bottom_padding)
+        else: # h > w
+            left_padding = (h - w) // 2
+            right_padding = h - w - left_padding
+            padding = (left_padding, 0, right_padding, 0)
+
+        return ImageOps.expand(image, padding, fill=self.pad_color)
 
 
-class PytorchDataset(Dataset):
-    def __init__(self, features: Union[numpy.ndarray, pandas.Series, pandas.DataFrame], labels: Union[numpy.ndarray, pandas.Series, pandas.DataFrame], 
-                 features_dtype: torch.dtype=torch.float32, labels_dtype: torch.dtype=torch.int64, balance: bool=False) -> None:
-        """
-        Make a PyTorch dataset of Features and Labels casted to Tensors.
+# --- Internal Helper Class ---
+class _PytorchDataset(Dataset):
+    """
+    Internal helper class to create a PyTorch Dataset.
+    Converts numpy/pandas data into tensors for model consumption.
+    """
+    def __init__(self, features: Union[numpy.ndarray, pandas.DataFrame], 
+                 labels: Union[numpy.ndarray, pandas.Series],
+                 features_dtype: torch.dtype = torch.float32, 
+                 labels_dtype: torch.dtype = torch.int64):
         
-        Defaults: `float32` for features and `int64` for labels.
-        
-        If `balance=True` attempts to balance the minority class(es) using Imbalanced-Learn's `SMOTETomek` algorithm.
-        Note: Only Train-Data should be balanced.
-        """
-        # Validate features
-        if not isinstance(features, (pandas.DataFrame, pandas.Series, numpy.ndarray)):
-            raise TypeError("features must be a numpy.ndarray, pandas.Series or pandas.DataFrame")
-        # Validate labels
-        if not isinstance(labels, (pandas.DataFrame, pandas.Series, numpy.ndarray)):
-            raise TypeError("labels must be a numpy.ndarray, pandas.Series or pandas.DataFrame")
-        
-        # Balance classes
-        if balance:
-            features, labels = self.balance_classes(train_features=features, train_labels=labels)
-    
-        # Cast features
         if isinstance(features, numpy.ndarray):
             self.features = torch.tensor(features, dtype=features_dtype)
         else:
             self.features = torch.tensor(features.values, dtype=features_dtype)
-        
-        # Cast labels 
+
         if isinstance(labels, numpy.ndarray):
             self.labels = torch.tensor(labels, dtype=labels_dtype)
         else:
             self.labels = torch.tensor(labels.values, dtype=labels_dtype)
-    
+
     def __len__(self):
         return len(self.features)
-    
+
     def __getitem__(self, index):
         return self.features[index], self.labels[index]
-    
-    @staticmethod
-    def balance_classes(train_features, train_labels, **kwargs):
-        """
-        Attempts to balance the minority class(es) using Imbalanced-Learn's `SMOTETomek` algorithm.
-        """
-        resampler = SMOTETomek(**kwargs)
-        X, y = resampler.fit_resample(X=train_features, y=train_labels)
-        
-        return X, y
 
 
-def make_vision_dataset(inputs: Union[list[Image.Image], numpy.ndarray, str], labels: Union[list[int], numpy.ndarray, None], resize: int=256, 
-                        transform: Union[transforms.Compose, None]=None, test_set: bool=False):
+# --- Private Base Class ---
+class _BaseMaker(ABC):
     """
-    Make a Torchvision Dataset of images to be used in a Convolutional Neural Network. 
-    
-    If no transform object is given, Images will undergo the following transformations by default: `RandomHorizontalFlip`, `RandomRotation`, 
-    `Resize`, `CenterCrop`, `ToTensor`, `Normalize`. Except if 'test_set=True'.
-
-    Args:
-        `inputs`: List of PIL Image objects | Numpy array of image arrays | Path to root directory containing subdirectories that classify image files.
-        
-        `labels`: List of integer values | Numpy array of labels. Labels size must match `inputs` size. 
-        If a path to a directory is given, then `labels` must be None.
-        
-        `transform`: Custom transformations to use. If None, use default transformations. 
-        
-        `test_set`: Flip, rotation and center-crop transformations will not be applied.
-
-    Returns:
-        `Dataset`: Either a `TensorDataset` or `ImageFolder` instance, depending on the method used. 
-        Data dimensions: (samples, color channels, height, width).
+    Abstract Base Class for all dataset makers.
+    Ensures a consistent API across the library.
     """
-    # Validate inputs
-    if not isinstance(inputs, (list, numpy.ndarray, str)):
-        raise TypeError("Inputs must be one of the following:\n\ta) List of PIL Image objects.\n\tb) Numpy array of 2D or 3D arrays.\
-                        \n\tc) Directory path to image files.")
-    # Validate labels
-    if not (isinstance(labels, (list, numpy.ndarray)) or labels is None):
-        raise TypeError("Inputs must be one of the following:\n\ta) List of labels (integers).\n\tb) Numpy array of 2D or 3D arrays.\
-                        \n\tc) None if inputs path is given.\nLabels size must match Inputs size.")
-    # Validate resize shape
-    if not isinstance(resize, int):
-        raise TypeError("Resize must be an integer value for a square image of shape (W, H).")
-    # Validate transform
-    if isinstance(transform, transforms.Compose):
+    def __init__(self):
+        self._train_dataset = None
+        self._test_dataset = None
+        self._val_dataset = None
+
+    @abstractmethod
+    def get_datasets(self) -> Tuple[Dataset, ...]:
+        """
+        The primary method to retrieve the final, processed PyTorch datasets.
+        Must be implemented by all subclasses.
+        """
         pass
-    elif transform is None:
-        if test_set:
-            transform = transforms.Compose([
-                transforms.Resize(size=(resize,resize)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-        else:
-            transform = transforms.Compose([
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.RandomRotation(degrees=30),
-                transforms.Resize(size=(int(resize*1.2),int(resize*1.2))),
-                transforms.CenterCrop(size=resize),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-    else:
-        raise TypeError("Transform must be a `torchvision.transforms.Compose` object or None to use a default transform.")
-    
-    # Start-o
-    dataset = None
-    
-    # CASE A: input is a path to image files, Labels is None
-    if labels is None:
-        if isinstance(inputs, str):
-            dataset = ImageFolder(root=inputs, transform=transform)
-        else:
-            raise TypeError("Labels must be None if 'path' to inputs is provided. Labels will be inferred from subdirectory names in 'path'.")
-    # CASE B: input is Numpy array or a list of PIL Images. Labels is Numpy array or List of integers    
-    elif not isinstance(inputs, str):
-        # Transform labels to tensor
-        labels_ = torch.tensor(labels, dtype=torch.int64)
-        
-        # Transform each image to tensor
-        transformed = list()
-        for img_ in inputs:
-            transformed.append(transform(img_))  
-        # Stack image tensors
-        features_ = torch.stack(transformed, dim=0)
-        
-        # Make a dataset with images and labels
-        dataset = TensorDataset(features_, labels_)
-    else:
-        raise TypeError("Labels must be None if 'path' to inputs is provided. Labels will be inferred from subdirectory names in 'path'.")
-    
-    return dataset
 
 
-class SequenceDataset():
-    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_size: int, last_seq_test: bool=True, 
-                 seq_labels: bool=True, normalize: Union[Literal["standard", "minmax"], None]="minmax"):
+# --- Refactored DatasetMaker ---
+class DatasetMaker(_BaseMaker):
+    """
+    Creates processed PyTorch datasets from a Pandas DataFrame using a fluent, step-by-step interface.
+    
+    Recommended pipeline:
+    
+    - Full Control (step-by-step):
+        1. Process categorical features `.process_categoricals()`
+        2. Split train-test datasets `.split_data()`
+        3. Normalize continuous features `.normalize_continuous()`; `.denormalize()` becomes available.
+        4. [Optional][Classification only] Balance classes `.balance_data()`
+        5. Get PyTorch datasets: `train, test = .get_datasets()`
+        6. [Optional] Inspect the processed data as DataFrames `X_train, X_test, y_train, y_test = .inspect_dataframes()`
+
+    - Automated (single call):
+    ```python
+    maker = DatasetMaker(df, label_col='target')
+    maker.process() # uses simplified arguments
+    train_ds, test_ds = maker.get_datasets()
+    ```
+    """
+    def __init__(self, pandas_df: pandas.DataFrame, label_col: str):
+        super().__init__()
+        if not isinstance(pandas_df, pandas.DataFrame):
+            raise TypeError("Input must be a pandas.DataFrame.")
+        if label_col not in pandas_df.columns:
+            raise ValueError(f"Label column '{label_col}' not found in DataFrame.")
+
+        self.labels = pandas_df[label_col]
+        self.features = pandas_df.drop(columns=label_col)
+        self.labels_map = None
+        self.scaler = None
+
+        self._is_split = False
+        self._is_balanced = False
+        self._is_normalized = False
+        self._is_categoricals_processed = False
+        
+        self.features_train = None
+        self.features_test = None
+        self.labels_train = None
+        self.labels_test = None
+        
+        self.continuous_columns = None 
+
+    def process_categoricals(self, method: Literal["one-hot", "embed"] = "one-hot", 
+                             cat_features: Union[list[str], None] = None, **kwargs) -> 'DatasetMaker':
         """
-        Make train/test datasets from a single timestamp sequence.
-        
-        Create an object containing 2 PyTorchDataset objects to be used in a Recurrent Neural Network: 
-        
-            1. Train Dataset
-            2. Test Dataset
-        
-        To plot call the static method `plot()`.
-        
-        If normalization is used, an scaler object will be stored. 
-        The scaler object can be used to invert normalization on a Tensor/Array using the method `self.denormalize()`.
+        Encodes categorical features using the specified method.
 
         Args:
-            * `data`: Pandas Dataframe with 2 columns [datetime, sequence] | 1-column Dataframe or Series sequence, where index is the datetime.
-            * `sequence_size (int)`: Length of each subsequence that will be used for training.
-            * `last_seq_test (bool)`: Last sequence will be used as test_set, if false a dummy test set will be returned. Default is True.
-            * `seq_labels (bool)`: Labels will be returned as sequences, if false return single values for 1 future timestamp.
-            * `normalize`: Whether to normalize ('minmax'), standardize ('standard') or ignore (None). Default is 'minmax'.
+            method (str, optional): 'one-hot' (default) or 'embed'.
+            cat_features (list, optional): A list of categorical column names. 
+                If None, they will be inferred from the DataFrame's dtypes.
+            **kwargs: Additional keyword arguments to pass to the underlying
+                pandas.get_dummies() or torch.nn.Embedding() functions.
+                For 'one-hot' encoding, it is often recommended to add
+                `drop_first=True` to help reduce multicollinearity.
         """
-        # Validate data
-        if not isinstance(data, (pandas.Series, pandas.DataFrame, numpy.ndarray)):
-            raise TypeError("Data must be pandas dataframe, pandas series or numpy array.")
-        # Validate window size
-        if not isinstance(sequence_size, int):
-            raise TypeError("Sequence size must be an integer.")
-        elif len(data) % sequence_size != 0:
-            raise ValueError(f"data with length {len(data)} is not divisible in sequences of {sequence_size} values.")
-        # Validate test sequence
-        if not isinstance(last_seq_test, bool):
-            raise TypeError("Last sequence treated as Test-set must be True or False.")
-        # validate normalize
-        if not (normalize in ["standard", "minmax"] or normalize is None):
-            raise TypeError("normalize must be 'standard', 'minmax' or None.")
+        if self._is_split:
+            raise RuntimeError("Categoricals must be processed before splitting data to avoid data leakage.")
         
-        # Handle data -> array
-        self.time_axis = None
+        if cat_features is None:
+            cat_columns = self.features.select_dtypes(include=['object', 'category', 'string']).columns.tolist()
+        else:
+            cat_columns = cat_features
+
+        if not cat_columns:
+            _LOGGER.info("No categorical features to process.")
+            self._is_categoricals_processed = True
+            return self
+
+        continuous_df = self.features.drop(columns=cat_columns)
+        # store continuous column names
+        self.continuous_columns = continuous_df.columns.tolist()
+        
+        categorical_df = self.features[cat_columns].copy()
+
+        if method == "one-hot":
+            processed_cats = pandas.get_dummies(categorical_df, dtype=numpy.int32, **kwargs)
+        elif method == "embed":
+            processed_cats = self._embed_categorical(categorical_df, **kwargs)
+        else:
+            raise ValueError("`method` must be 'one-hot' or 'embed'.")
+
+        self.features = pandas.concat([continuous_df, processed_cats], axis=1)
+        self._is_categoricals_processed = True
+        _LOGGER.info("Categorical features processed.")
+        return self
+
+    def normalize_continuous(self, method: Literal["standard", "minmax"] = "standard") -> 'DatasetMaker':
+        """Normalizes all numeric features and saves the scaler."""
+        if not self._is_split:
+            raise RuntimeError("Continuous features must be normalized AFTER splitting data. Call .split_data() first.")
+        if self._is_normalized:
+            _LOGGER.warning("Data has already been normalized.")
+            return self
+
+        # Use continuous features columns
+        self.scaler_columns = self.continuous_columns
+        if not self.scaler_columns:
+            _LOGGER.info("No continuous features to normalize.")
+            self._is_normalized = True
+            return self
+
+        if method == "standard":
+            self.scaler = StandardScaler()
+        elif method == "minmax":
+            self.scaler = MinMaxScaler()
+        else:
+            raise ValueError("Normalization `method` must be 'standard' or 'minmax'.")
+
+        # Fit on training data only, then transform both
+        self.features_train[self.scaler_columns] = self.scaler.fit_transform(self.features_train[self.scaler_columns]) # type: ignore
+        self.features_test[self.scaler_columns] = self.scaler.transform(self.features_test[self.scaler_columns]) # type: ignore
+        
+        self._is_normalized = True
+        _LOGGER.info(f"Continuous features normalized using {self.scaler.__class__.__name__}. Scaler stored in `self.scaler`.")
+        return self
+
+    def split_data(self, test_size: float = 0.2, stratify: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
+        """Splits the data into training and testing sets."""
+        if self._is_split:
+            _LOGGER.warning("Data has already been split.")
+            return self
+
+        if self.labels.dtype == 'object' or self.labels.dtype.name == 'category':
+            labels_numeric = self.labels.astype("category")
+            self.labels_map = {code: val for code, val in enumerate(labels_numeric.cat.categories)}
+            self.labels = pandas.Series(labels_numeric.cat.codes, index=self.labels.index)
+            _LOGGER.info("Labels have been encoded. Mapping stored in `self.labels_map`.")
+
+        stratify_array = self.labels if stratify else None
+        
+        self.features_train, self.features_test, self.labels_train, self.labels_test = train_test_split(
+            self.features, self.labels, test_size=test_size, random_state=random_state, stratify=stratify_array
+        )
+        
+        self._is_split = True
+        _LOGGER.info(f"Data split into training ({len(self.features_train)} samples) and testing ({len(self.features_test)} samples).")
+        return self
+
+    def balance_data(self, resampler=None, **kwargs) -> 'DatasetMaker':
+        """
+        Only useful for classification tasks.
+        
+        Balances the training data using a specified resampler. 
+        
+        Defaults to `SMOTETomek`.
+        """
+        if not self._is_split:
+            raise RuntimeError("Cannot balance data before it has been split. Call .split_data() first.")
+        if self._is_balanced:
+            _LOGGER.warning("Training data has already been balanced.")
+            return self
+
+        if resampler is None:
+            resampler = SMOTETomek(**kwargs)
+
+        _LOGGER.info(f"Balancing training data with {resampler.__class__.__name__}...")
+        self.features_train, self.labels_train = resampler.fit_resample(self.features_train, self.labels_train) # type: ignore
+        
+        self._is_balanced = True
+        _LOGGER.info(f"Balancing complete. New training set size: {len(self.features_train)} samples.")
+        return self
+
+    def process(self, test_size: float = 0.2, cat_method: Literal["one-hot", "embed"] = "one-hot", normalize_method: Literal["standard", "minmax"] = "standard", 
+                balance: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
+        """Runs a standard, fully automated preprocessing pipeline."""
+        _LOGGER.info("--- Running Automated Processing Pipeline ---")
+        self.process_categoricals(method=cat_method)
+        self.split_data(test_size=test_size, stratify=True, random_state=random_state)
+        self.normalize_continuous(method=normalize_method)
+        if balance:
+            self.balance_data()
+        _LOGGER.info("--- Automated Processing Complete ---")
+        return self
+        
+    def denormalize(self, data: Union[torch.Tensor, numpy.ndarray, pandas.DataFrame]) -> Union[numpy.ndarray, pandas.DataFrame]:
+        """
+        Applies inverse transformation to denormalize data, preserving DataFrame
+        structure if provided.
+
+        Args:
+            data: The normalized data to be transformed back to its original scale.
+                Can be a PyTorch Tensor, NumPy array, or Pandas DataFrame.
+                If a DataFrame, it must contain the columns that were originally scaled.
+
+        Returns:
+            The denormalized data. Returns a Pandas DataFrame if the input was a
+            DataFrame, otherwise returns a NumPy array.
+        """
+        if self.scaler is None:
+            raise RuntimeError("Data was not normalized. Cannot denormalize.")
+
         if isinstance(data, pandas.DataFrame):
-            if len(data.columns) == 2:
-                self.sequence = data[data.columns[1]].values.astype("float")
-                self.time_axis = data[data.columns[0]].values
-            elif len(data.columns) == 1:
-                self.sequence = data[data.columns[0]].values.astype("float")
-                self.time_axis = data.index.values
-            else:
-                raise ValueError("Dataframe contains more than 2 columns.")
-        elif isinstance(data, pandas.Series):
-            self.sequence = data.values.astype("float")
-            self.time_axis = data.index.values
-        else:
-            self.sequence = data.astype("float")
+            # If input is a DataFrame, denormalize in place and return a copy
+            if not all(col in data.columns for col in self.scaler_columns): # type: ignore
+                raise ValueError(f"Input DataFrame is missing one or more required columns for denormalization. Required: {self.scaler_columns}")
             
-        # Save last sequence
-        self._last_sequence = self.sequence[-sequence_size:]
+            output_df = data.copy()
+            output_df[self.scaler_columns] = self.scaler.inverse_transform(data[self.scaler_columns]) # type: ignore
+            return output_df
         
-        # Last sequence as test
-        train_sequence = self.sequence
-        test_sequence = None
-        if last_seq_test:
-            test_sequence = self.sequence[-(sequence_size*2):]
-            train_sequence = self.sequence[:-sequence_size]
-        
-        # Normalize values
-        norm_train_sequence = train_sequence
-        norm_test_sequence = test_sequence
-        if normalize is not None:
-            # Define scaler
-            if normalize == "standard":
-                self.scaler = StandardScaler()
-            elif normalize == "minmax":
-                self.scaler = MinMaxScaler(feature_range=(-1,1))
-            # Scale and transform training set + reshape
-            self.scaler.fit(train_sequence.reshape(-1,1))
-            norm_train_sequence = self.scaler.transform(train_sequence.reshape(-1,1))
-            norm_train_sequence = norm_train_sequence.reshape(-1)
-            # Scale test if it exists + reshape
-            if last_seq_test:
-                norm_test_sequence = self.scaler.transform(test_sequence.reshape(-1,1))
-                norm_test_sequence = norm_test_sequence.reshape(-1)
-        
-        # Divide train sequence into subsequences
-        train_features_list = list()
-        train_labels_list = list()
-        train_size = len(norm_train_sequence)
-        for i in range(train_size - sequence_size - 1):
-            subsequence = norm_train_sequence[i:sequence_size + i]
-            train_features_list.append(subsequence.reshape(1,-1))
-            # Labels as sequence
-            if seq_labels:
-                label = norm_train_sequence[i + 1:sequence_size + i + 1]
-                train_labels_list.append(label.reshape(1,-1))
-            # Single value label
-            else:
-                label = norm_train_sequence[sequence_size + i + 1]
-                train_labels_list.append(label)
-            
-        # Divide test sequence into subsequences
-        if last_seq_test:
-            test_features_list = list()
-            test_labels_list = list()
-            test_size = len(norm_test_sequence)
-            for i in range(test_size - sequence_size - 1):
-                subsequence = norm_test_sequence[i:sequence_size + i]
-                test_features_list.append(subsequence.reshape(1,-1))
-                # Labels as sequence
-                if seq_labels:
-                    label = norm_test_sequence[i + 1:sequence_size + i + 1]
-                    test_labels_list.append(label.reshape(1,-1))
-                # Single value label
-                else:
-                    label = norm_test_sequence[sequence_size + i + 1]
-                    test_labels_list.append(label)
-            
-        # Create training arrays then cast to pytorch dataset
-        train_features = numpy.concatenate(train_features_list, axis=0)
-        # Check if labels are a sequence
-        if seq_labels:
-            train_labels = numpy.concatenate(train_labels_list, axis=0)
-        else:
-            train_labels = numpy.array(train_labels_list).reshape(-1,1)
-        self.train_dataset = PytorchDataset(features=train_features, labels=train_labels, labels_dtype=torch.float32)
-        
-        # Create test arrays then cast to pytorch dataset
-        if last_seq_test:
-            test_features = numpy.concatenate(test_features_list, axis=0)
-            # Check if labels are a sequence
-            if seq_labels:
-                test_labels = numpy.concatenate(test_labels_list, axis=0)
-            else:
-                test_labels = numpy.array(test_labels_list).reshape(-1,1)
-            self.test_dataset = PytorchDataset(features=test_features, labels=test_labels, labels_dtype=torch.float32)
-        else:
-            self.test_dataset = PytorchDataset(features=numpy.ones(shape=(10, sequence_size)), labels=numpy.ones(shape=(10,1)), labels_dtype=torch.float32)
-        
-        # Attempt to plot the sequence
-        if self.time_axis is not None:
-            try:
-                self.plot(self.time_axis, self.sequence)
-            except:
-                print("Plot failed, try it manually to find the problem.")
+        # Handle tensor or numpy array input
+        if isinstance(data, torch.Tensor):
+            data_np = data.cpu().numpy()
+        else: # It's already a numpy array
+            data_np = data
 
-    @staticmethod   
-    def plot(x_axis, y_axis, x_pred=None, y_pred=None):
-        """
-        Plot Time-values (X) Vs Data-values (Y).
-        """
-        plt.figure(figsize=(12,5))
-        plt.title('Sequence')
-        plt.grid(True)
-        plt.autoscale(axis='x', tight=True)
-        plt.plot(x_axis, y_axis)
-        if x_pred is not None and y_pred is not None:
-            plt.plot(x_pred, y_pred)
-        plt.show()
+        if data_np.ndim == 1:
+            data_np = data_np.reshape(-1, 1)
+
+        if data_np.shape[1] != len(self.scaler_columns): # type: ignore
+            raise ValueError(f"Input array has {data_np.shape[1]} columns, but scaler was fitted on {len(self.scaler_columns)} columns.") # type: ignore
+
+        return self.scaler.inverse_transform(data_np)
+
+    def get_datasets(self) -> Tuple[_PytorchDataset, _PytorchDataset]:
+        """Primary method to get the final PyTorch Datasets."""
+        if not self._is_split:
+            raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
         
-    def denormalize(self, input: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
-        """
-        Applies the inverse transformation of the object's stored scaler to a tensor or array.
-
-        Args:
-            `input`: Tensor/Array predicted using the current sequence.
-
-        Returns: numpy.ndarray with default index.
-        """
-        if isinstance(input, torch.Tensor):
-            with torch.no_grad():
-                array = input.numpy().reshape(-1,1)
-        elif isinstance(input, numpy.ndarray):
-            array = input.reshape(-1,1)
-        else:
-            raise TypeError("Input must be a Pytorch tensor or Numpy array.")
-        return self.scaler.inverse_transform(array)
+        self._train_dataset = _PytorchDataset(self.features_train, self.labels_train) # type: ignore
+        self._test_dataset = _PytorchDataset(self.features_test, self.labels_test) # type: ignore
+        
+        return self._train_dataset, self._test_dataset
     
-    def get_last_sequence(self, normalize: bool=True, to_tensor: bool=True):
-        """
-        Returns the last subsequence of the sequence.
+    def inspect_dataframes(self) -> Tuple[pandas.DataFrame, pandas.DataFrame, pandas.Series, pandas.Series]:
+        """Utility method to inspect the processed data as Pandas DataFrames."""
+        if not self._is_split:
+             raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
+        return self.features_train, self.features_test, self.labels_train, self.labels_test # type: ignore
 
-        Args:
-            `normalize`: Normalize using the object's stored scaler. Defaults to True.
+    @staticmethod
+    def _embed_categorical(cat_df: pandas.DataFrame, random_state: Optional[int] = None, **kwargs) -> pandas.DataFrame:
+        """Internal helper to perform embedding on categorical features."""
+        embedded_tensors = []
+        new_columns = []
+        for col in cat_df.columns:
+            cat_series = cat_df[col].astype("category")
+            num_categories = len(cat_series.cat.categories)
+            embedding_dim = min(50, (num_categories + 1) // 2)
             
-            `to_tensor`: Cast to Pytorch tensor. Defaults to True.
-
-        Returns: numpy.ndarray or torch.Tensor
-        """
-        last_seq = self._last_sequence.reshape(-1,1)
-        if normalize:
-            last_seq = self.scaler.transform(last_seq)
-        if to_tensor:
-            last_seq = torch.Tensor(last_seq)
-        return last_seq
+            if random_state:
+                torch.manual_seed(random_state)
+            
+            embedder = nn.Embedding(num_embeddings=num_categories, embedding_dim=embedding_dim, **kwargs)
+            
+            with torch.no_grad():
+                codes = torch.LongTensor(cat_series.cat.codes.values)
+                embedded_tensors.append(embedder(codes))
+            
+            new_columns.extend([f"{col}_{i+1}" for i in range(embedding_dim)])
         
-    def __len__(self):
-        return f"Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}"
+        with torch.no_grad():
+            full_tensor = torch.cat(embedded_tensors, dim=1)
+        return pandas.DataFrame(full_tensor.numpy(), columns=new_columns, index=cat_df.index)
+
+
+# --- VisionDatasetMaker ---
+class VisionDatasetMaker(_BaseMaker):
+    """
+    Creates processed PyTorch datasets for computer vision tasks from an
+    image folder directory.
+    
+    Uses online augmentations per epoch (image augmentation without creating new files).
+    """
+    def __init__(self, full_dataset: ImageFolder):
+        super().__init__()
+        self.full_dataset = full_dataset
+        self.labels = [s[1] for s in self.full_dataset.samples]
+        self.class_map = full_dataset.class_to_idx
+        
+        self._is_split = False
+        self._are_transforms_configured = False
+
+    @classmethod
+    def from_folder(cls, root_dir: str) -> 'VisionDatasetMaker':
+        """Creates a maker instance from a root directory of images."""
+        initial_transform = transforms.Compose([transforms.ToTensor()])
+        full_dataset = ImageFolder(root=root_dir, transform=initial_transform)
+        _LOGGER.info(f"Found {len(full_dataset)} images in {len(full_dataset.classes)} classes.")
+        return cls(full_dataset)
+        
+    @staticmethod
+    def inspect_folder(path: Union[str, Path]):
+        """
+        Logs a report of the types, sizes, and channels of image files
+        found in the directory and its subdirectories.
+        """
+        path_obj = Path(path)
+        if not path_obj.is_dir():
+            _LOGGER.error(f"Path is not a valid directory: {path_obj}")
+            return
+
+        non_image_files = set()
+        img_types = set()
+        img_sizes = set()
+        img_channels = set()
+        img_counter = 0
+
+        _LOGGER.info(f"Inspecting folder: {path_obj}...")
+        # Use rglob to recursively find all files
+        for filepath in path_obj.rglob('*'):
+            if filepath.is_file():
+                try:
+                    # Using PIL to open is a more reliable check
+                    with Image.open(filepath) as img:
+                        img_types.add(img.format)
+                        img_sizes.add(img.size)
+                        img_channels.update(img.getbands())
+                        img_counter += 1
+                except (IOError, SyntaxError):
+                    non_image_files.add(filepath.name)
+
+        if non_image_files:
+            _LOGGER.warning(f"Non-image or corrupted files found and ignored: {non_image_files}")
+
+        report = (
+            f"\n--- Inspection Report for '{path_obj.name}' ---\n"
+            f"Total images found: {img_counter}\n"
+            f"Image formats: {img_types or 'None'}\n"
+            f"Image sizes (WxH): {img_sizes or 'None'}\n"
+            f"Image channels (bands): {img_channels or 'None'}\n"
+            f"--------------------------------------"
+        )
+        _LOGGER.info(report)
+
+    def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
+                   stratify: bool = True, random_state: Optional[int] = None) -> 'VisionDatasetMaker':
+        """Splits the dataset into training, validation, and optional test sets."""
+        if self._is_split:
+            _LOGGER.warning("Data has already been split.")
+            return self
+
+        if val_size + test_size >= 1.0:
+            raise ValueError("The sum of val_size and test_size must be less than 1.")
+
+        indices = list(range(len(self.full_dataset)))
+        labels_for_split = self.labels if stratify else None
+
+        train_indices, val_test_indices = train_test_split(
+            indices, test_size=(val_size + test_size), random_state=random_state, stratify=labels_for_split
+        )
+
+        if test_size > 0:
+            val_test_labels = [self.labels[i] for i in val_test_indices]
+            stratify_val_test = val_test_labels if stratify else None
+            val_indices, test_indices = train_test_split(
+                val_test_indices, test_size=(test_size / (val_size + test_size)), 
+                random_state=random_state, stratify=stratify_val_test
+            )
+            self._test_dataset = Subset(self.full_dataset, test_indices)
+            _LOGGER.info(f"Test set created with {len(self._test_dataset)} images.")
+        else:
+            val_indices = val_test_indices
+        
+        self._train_dataset = Subset(self.full_dataset, train_indices)
+        self._val_dataset = Subset(self.full_dataset, val_indices)
+        self._is_split = True
+        
+        _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
+        return self
+
+    def configure_transforms(self, resize_size: int = 256, crop_size: int = 224, 
+                             mean: List[float] = [0.485, 0.456, 0.406], 
+                             std: List[float] = [0.229, 0.224, 0.225],
+                             extra_train_transforms: Optional[List] = None) -> 'VisionDatasetMaker':
+        """Configures and applies the image transformations (augmentations)."""
+        if not self._is_split:
+            raise RuntimeError("Transforms must be configured AFTER splitting data. Call .split_data() first.")
+
+        base_train_transforms = [transforms.RandomResizedCrop(crop_size), transforms.RandomHorizontalFlip()]
+        if extra_train_transforms:
+            base_train_transforms.extend(extra_train_transforms)
+        
+        final_transforms = [transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)]
+
+        val_transform = transforms.Compose([transforms.Resize(resize_size), transforms.CenterCrop(crop_size), *final_transforms])
+        train_transform = transforms.Compose([*base_train_transforms, *final_transforms])
+
+        self._train_dataset.dataset.transform = train_transform # type: ignore
+        self._val_dataset.dataset.transform = val_transform # type: ignore
+        if self._test_dataset:
+            self._test_dataset.dataset.transform = val_transform # type: ignore
+        
+        self._are_transforms_configured = True
+        _LOGGER.info("Image transforms configured and applied.")
+        return self
+
+    def get_datasets(self) -> Tuple[Dataset, ...]:
+        """Returns the final train, validation, and optional test datasets."""
+        if not self._is_split:
+            raise RuntimeError("Data has not been split. Call .split_data() first.")
+        if not self._are_transforms_configured:
+            _LOGGER.warning("Transforms have not been configured. Using default ToTensor only.")
+
+        if self._test_dataset:
+            return self._train_dataset, self._val_dataset, self._test_dataset
+        return self._train_dataset, self._val_dataset
+
+
+# --- SequenceMaker ---
+class SequenceMaker(_BaseMaker):
+    """
+    Creates windowed PyTorch datasets from time-series data.
+    
+    Pipeline:
+    
+    1. `.split_data()`: Separate time series into training and testing portions.
+    2. `.normalize_data()`: Normalize the data. The scaler will be fitted on the training portion.
+    3. `.generate_windows()`: Create the windowed sequences from the split and normalized data.
+    """
+    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_length: int):
+        super().__init__()
+        self.sequence_length = sequence_length
+        self.scaler = None
+        
+        if isinstance(data, pandas.DataFrame):
+            self.time_axis = data.index.values
+            self.sequence = data.iloc[:, 0].values.astype(numpy.float32)
+        elif isinstance(data, pandas.Series):
+            self.time_axis = data.index.values
+            self.sequence = data.values.astype(numpy.float32)
+        elif isinstance(data, numpy.ndarray):
+            self.time_axis = numpy.arange(len(data))
+            self.sequence = data.astype(numpy.float32)
+        else:
+            raise TypeError("Data must be a pandas DataFrame/Series or a numpy array.")
+            
+        self.train_sequence = None
+        self.test_sequence = None
+        
+        self._is_split = False
+        self._is_normalized = False
+        self._are_windows_generated = False
+
+    def normalize_data(self, method: Literal["standard", "minmax"] = "minmax") -> 'SequenceMaker':
+        """
+        Normalizes the sequence data. Must be called AFTER splitting to prevent data leakage from the test set.
+        """
+        if not self._is_split:
+            raise RuntimeError("Data must be split BEFORE normalizing. Call .split_data() first.")
+        
+        if self.scaler:
+            _LOGGER.warning("Data has already been normalized.")
+            return self
+            
+        if method == "standard":
+            self.scaler = StandardScaler()
+        elif method == "minmax":
+            self.scaler = MinMaxScaler(feature_range=(-1, 1))
+        else:
+            raise ValueError("Normalization `method` must be 'standard' or 'minmax'.")
+
+        # Fit scaler ONLY on the training data
+        self.scaler.fit(self.train_sequence.reshape(-1, 1)) # type: ignore
+        
+        # Transform both train and test data using the fitted scaler
+        self.train_sequence = self.scaler.transform(self.train_sequence.reshape(-1, 1)).flatten() # type: ignore
+        self.test_sequence = self.scaler.transform(self.test_sequence.reshape(-1, 1)).flatten() # type: ignore
+        
+        self._is_normalized = True
+        _LOGGER.info(f"Sequence data normalized using {self.scaler.__class__.__name__}. Scaler was fit on the training set only.")
+        return self
+
+    def split_data(self, test_size: float = 0.2) -> 'SequenceMaker':
+        """Splits the sequence into training and testing portions."""
+        if self._is_split:
+            _LOGGER.warning("Data has already been split.")
+            return self
+
+        split_idx = int(len(self.sequence) * (1 - test_size))
+        self.train_sequence = self.sequence[:split_idx]
+        self.test_sequence = self.sequence[split_idx - self.sequence_length:]
+        
+        self.train_time_axis = self.time_axis[:split_idx]
+        self.test_time_axis = self.time_axis[split_idx:]
+
+        self._is_split = True
+        _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)} points) and testing ({len(self.test_sequence)} points).")
+        return self
+
+    def generate_windows(self, sequence_to_sequence: bool = False) -> 'SequenceMaker':
+        """
+        Generates overlapping windows for features and labels.
+        
+        "sequence-to-sequence": Label vectors are of the same size as the feature vectors instead of a single future prediction.
+        """
+        if not self._is_split:
+            raise RuntimeError("Cannot generate windows before splitting data. Call .split_data() first.")
+
+        self._train_dataset = self._create_windowed_dataset(self.train_sequence, sequence_to_sequence) # type: ignore
+        self._test_dataset = self._create_windowed_dataset(self.test_sequence, sequence_to_sequence) # type: ignore
+        
+        self._are_windows_generated = True
+        _LOGGER.info("Feature and label windows generated for train and test sets.")
+        return self
+
+    def _create_windowed_dataset(self, data: numpy.ndarray, use_sequence_labels: bool) -> _PytorchDataset:
+        """Efficiently creates windowed features and labels using numpy."""
+        if len(data) <= self.sequence_length:
+            raise ValueError("Data length must be greater than the sequence_length to create at least one window.")
+            
+        if not use_sequence_labels:
+            features = data[:-1]
+            labels = data[self.sequence_length:]
+            
+            n_windows = len(features) - self.sequence_length + 1
+            bytes_per_item = features.strides[0]
+            strided_features = numpy.lib.stride_tricks.as_strided(
+                features, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item)
+            )
+            return _PytorchDataset(strided_features, labels, labels_dtype=torch.float32)
+        
+        else:
+            x_data = data[:-1]
+            y_data = data[1:]
+            
+            n_windows = len(x_data) - self.sequence_length + 1
+            bytes_per_item = x_data.strides[0]
+            
+            strided_x = numpy.lib.stride_tricks.as_strided(x_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
+            strided_y = numpy.lib.stride_tricks.as_strided(y_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
+            
+            return _PytorchDataset(strided_x, strided_y, labels_dtype=torch.float32)
+            
+    def denormalize(self, data: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
+        """Applies inverse transformation using the stored scaler."""
+        if self.scaler is None:
+            raise RuntimeError("Data was not normalized. Cannot denormalize.")
+        
+        if isinstance(data, torch.Tensor):
+            data_np = data.cpu().detach().numpy()
+        else:
+            data_np = data
+            
+        return self.scaler.inverse_transform(data_np.reshape(-1, 1)).flatten()
+
+    def plot(self, predictions: Optional[numpy.ndarray] = None):
+        """Plots the original training and testing data, with optional predictions."""
+        if not self._is_split:
+            raise RuntimeError("Cannot plot before splitting data. Call .split_data() first.")
+        
+        plt.figure(figsize=(15, 6))
+        plt.title("Time Series Data")
+        plt.grid(True)
+        plt.xlabel("Time")
+        plt.ylabel("Value")
+        
+        plt.plot(self.train_time_axis, self.scaler.inverse_transform(self.train_sequence.reshape(-1, 1)), label='Train Data') # type: ignore
+        plt.plot(self.test_time_axis, self.scaler.inverse_transform(self.test_sequence[self.sequence_length-1:].reshape(-1, 1)), label='Test Data') # type: ignore
+
+        if predictions is not None:
+            pred_time_axis = self.test_time_axis[:len(predictions)]
+            plt.plot(pred_time_axis, predictions, label='Predictions', c='red')
+
+        plt.legend()
+        plt.show()
+
+    def get_datasets(self) -> Tuple[_PytorchDataset, _PytorchDataset]:
+        """Returns the final train and test datasets."""
+        if not self._are_windows_generated:
+            raise RuntimeError("Windows have not been generated. Call .generate_windows() first.")
+        return self._train_dataset, self._test_dataset
 
 
 def info():

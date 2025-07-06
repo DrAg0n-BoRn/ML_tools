@@ -20,6 +20,7 @@ from sklearn.metrics import accuracy_score, classification_report, ConfusionMatr
 import shap
 
 from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath
+from .logger import _LOGGER
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -438,16 +439,16 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Task
     '''
     #DEBUG
     if debug:
-        print(f"Split Dataframes Shapes - Features DF: {df_features.shape}, Target DF: {df_target.shape}")
+        _LOGGER.info(f"Split Dataframes Shapes - Features DF: {df_features.shape}, Target DF: {df_target.shape}")
         unique_values = df_target.unique()  # Get unique values for the target column
-        print(f"\tUnique values for '{df_target.name}': {unique_values}")
+        _LOGGER.info(f"\tUnique values for '{df_target.name}': {unique_values}")
     
     #Train test split
     X_train, X_test, y_train, y_test = _split_data(features=df_features, target=df_target, test_size=test_size, random_state=random_state, task=task)
     
     #DEBUG
     if debug:
-        print(f"Shapes after train test split - X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
+        _LOGGER.info(f"Shapes after train test split - X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
  
     # Resample
@@ -458,7 +459,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Task
     
     #DEBUG
     if debug:
-        print(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
+        _LOGGER.info(f"Shapes after resampling - X_train: {X_train_oversampled.shape}, y_train: {y_train_oversampled.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
     
     return X_train_oversampled, y_train_oversampled, X_test, y_test
 
@@ -864,7 +865,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
     print(f"\tTraining model: {model_name} for Target: {target_name}...")
     trained_model = _train_model(model=model, train_features=train_features, train_target=train_target)
     if debug:
-        print(f"Trained model object: {type(trained_model)}")
+        _LOGGER.info(f"Trained model object: {type(trained_model)}")
     local_save_directory = _local_directories(model_name=model_name, dataset_id=dataset_id, save_dir=save_dir)
     
     if save_model:
@@ -885,11 +886,11 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
     else:
         raise ValueError(f"Unrecognized task '{task}' for model training,")
     if debug:
-        print(f"Predicted vector: {type(y_pred)} with shape: {y_pred.shape}")
+        _LOGGER.info(f"Predicted vector: {type(y_pred)} with shape: {y_pred.shape}")
     
     get_shap_values(model=trained_model, model_name=model_name, save_dir=local_save_directory,
                     features_to_explain=train_features, feature_names=feature_names, target_name=target_name, task=task)
-    # print("\t...done.")
+    
     return trained_model, y_pred
 
 ###### 5. Execution ######
@@ -902,7 +903,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
     elif isinstance(model_object, ClassificationTreeModels):
         task = "classification"
         if handle_classification_imbalance is None:
-            print("⚠️ No method to handle classification class imbalance has been selected. Datasets are assumed to be balanced.")
+            _LOGGER.warning("⚠️ No method to handle classification class imbalance has been selected. Datasets are assumed to be balanced.")
         elif handle_classification_imbalance == "by_model":
             model_object.use_model_balance = True
         else:
@@ -914,6 +915,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
     datasets_path = make_fullpath(datasets_dir)
     save_path = make_fullpath(save_dir, make=True)
     
+    _LOGGER.info("Training starting...")
     #Yield imputed dataset
     for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_path):
         #Yield features dataframe and target dataframe
@@ -931,7 +933,8 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_name=target_name,
                                     debug=debug, save_dir=save_path, save_model=save_model)
-    print("\n✅ Training and evaluation complete.")
+    print("")
+    _LOGGER.info("✅ Training and evaluation complete.")
 
 
 def info():
