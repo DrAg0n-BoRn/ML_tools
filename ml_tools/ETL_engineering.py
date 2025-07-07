@@ -1,6 +1,6 @@
 import polars as pl
 import re
-from typing import Literal, Union, Optional, Any, Callable, List, Dict
+from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
 from .utilities import _script_info
 import pandas as pd
 from .logger import _LOGGER
@@ -11,6 +11,7 @@ __all__ = [
     "DataFrameCleaner",
     "TransformationRecipe",
     "DataProcessor",
+    "BinaryTransformer",
     "KeywordDummifier",
     "NumberExtractor",
     "MultiNumberExtractor",
@@ -144,7 +145,7 @@ class DataFrameCleaner:
         return df_cleaned
 
 
-############ TRANSFORM ####################
+############ TRANSFORM MAIN ####################
 
 # Magic word for rename-only transformation
 _RENAME = "rename"
@@ -329,6 +330,75 @@ class DataProcessor:
         """
         print(self)
 
+############ TRANSFORMERS ####################
+
+class BinaryTransformer:
+    """
+    A transformer that maps string values to a binary 1 or 0 based on keyword matching.
+
+    Must supply a list of keywords for either the 'true' case (1) or the 'false' case (0), but not both.
+
+    Args:
+        true_keywords (List[str] | None):
+            If a string contains any of these keywords, the output is 1, otherwise 0.
+        false_keywords (List[str] | None):
+            If a string contains any of these keywords, the output is 0, otherwise 1.
+    """
+    def __init__(
+        self,
+        true_keywords: Optional[List[str]] = None,
+        false_keywords: Optional[List[str]] = None,
+        case_insensitive: bool = True,
+    ):
+        # --- Validation: Enforce one and only one option ---
+        if true_keywords is not None and false_keywords is not None:
+            raise ValueError(
+                "Provide either 'true_keywords' or 'false_keywords', but not both."
+            )
+        if true_keywords is None and false_keywords is None:
+            raise ValueError(
+                "You must provide either 'true_keywords' or 'false_keywords'."
+            )
+
+        # --- Configuration ---
+        self.keywords: List[str] = true_keywords if true_keywords is not None else false_keywords # type: ignore
+        if not self.keywords:
+            raise ValueError("Keyword list cannot be empty.")
+
+        self.mode: str = "true_mode" if true_keywords is not None else "false_mode"
+        
+        # --- Create the regex string pattern ---
+        # Escape keywords to treat them as literals
+        base_pattern = "|".join(re.escape(k) for k in self.keywords)
+
+        # For polars, add case-insensitivity flag `(?i)` to the pattern string itself
+        if case_insensitive:
+            self.pattern = f"(?i){base_pattern}"
+        else:
+            self.pattern = base_pattern
+        
+
+    def __call__(self, column: pl.Series) -> pl.Series:
+        """
+        Applies the binary mapping logic to the input column.
+
+        Args:
+            column (pl.Series): The input Polars Series of string data.
+
+        Returns:
+            pl.Series: A new Series of type UInt8 containing 1s and 0s.
+        """
+        # Create a boolean Series: True if any keyword is found, else False
+        contains_keyword = column.str.contains(self.pattern)
+
+        # Apply logic and cast directly to integer type
+        if self.mode == "true_mode":
+            # True -> 1, False -> 0
+            return contains_keyword.cast(pl.UInt8)
+        else: # false_mode
+            # We want the inverse: True -> 0, False -> 1
+            return (~contains_keyword).cast(pl.UInt8)
+
 
 class KeywordDummifier:
     """
@@ -345,13 +415,16 @@ class KeywordDummifier:
         group_keywords (List[List[str]]): 
             A list of lists of strings. Each inner list corresponds to a 
             `group_name` at the same index and contains the keywords to search for.
+        case_insensitive (bool):
+            If True, keyword matching ignores case.
     """
-    def __init__(self, group_names: List[str], group_keywords: List[List[str]]):
+    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True):
         if len(group_names) != len(group_keywords):
             raise ValueError("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
         
         self.group_names = group_names
         self.group_keywords = group_keywords
+        self.case_insensitive = case_insensitive
 
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
@@ -365,9 +438,18 @@ class KeywordDummifier:
         """
         column = column.cast(pl.Utf8)
         
-        categorize_expr = pl.when(pl.lit(False)).then(pl.lit(None))
+        categorize_expr = pl.when(pl.lit(False)).then(pl.lit(None, dtype=pl.Utf8))
+        
         for name, keywords in zip(self.group_names, self.group_keywords):
-            pattern = "|".join(re.escape(k) for k in keywords)
+            # Create the base regex pattern by escaping and joining keywords
+            base_pattern = "|".join(re.escape(k) for k in keywords)
+            
+            # Add the case-insensitive flag `(?i)` to the pattern string
+            if self.case_insensitive:
+                pattern = f"(?i){base_pattern}"
+            else:
+                pattern = base_pattern
+            
             categorize_expr = categorize_expr.when(
                 column.str.contains(pattern)
             ).then(pl.lit(name))
@@ -386,6 +468,7 @@ class KeywordDummifier:
                     df_with_dummies.get_column(dummy_col_name).alias(name)
                 )
             else:
+                # If a group had no matches, create a column of zeros
                 final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(name))
 
         return pl.DataFrame(final_columns)
@@ -661,33 +744,42 @@ class RegexMapper:
     "first match wins" logic makes the order of the mapping important.
 
     Args:
-        mapping (Dict[str, Union[int, float]]):
+        mapping (Dict[str, [int | float]]):
             An ordered dictionary where keys are regex patterns and values are
             the numbers to map to if the pattern is found.
-        unseen_value (Optional[Union[int, float]], optional):
+        unseen_value (int | float | None):
             The numerical value to use for strings that do not match any
-            of the regex patterns. If None (default), unseen values are
-            mapped to null.
+            of the regex patterns. If None, unseen values are mapped to null.
+        case_insensitive (bool):
+            If True , the regex matching for all patterns will ignore case.
     """
     def __init__(
         self,
         mapping: Dict[str, Union[int, float]],
         unseen_value: Optional[Union[int, float]] = None,
+        case_insensitive: bool = True,
     ):
         # --- Validation ---
         if not isinstance(mapping, dict):
             raise TypeError("The 'mapping' argument must be a dictionary.")
+
+        self.unseen_value = unseen_value
         
+        # --- Process and validate patterns ---
+        # Process patterns here to be more efficient, avoiding reprocessing on every __call__.
+        self.processed_mapping: List[Tuple[str, Union[int, float]]] = []
         for pattern, value in mapping.items():
+            final_pattern = f"(?i){pattern}" if case_insensitive else pattern
+
+            # Validate the final pattern that will actually be used by Polars
             try:
-                re.compile(pattern)
+                re.compile(final_pattern)
             except re.error as e:
-                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
+                raise ValueError(f"Invalid regex pattern '{final_pattern}': {e}") from e
             if not isinstance(value, (int, float)):
                 raise TypeError(f"Mapping values must be int or float, but got {type(value)} for pattern '{pattern}'.")
-
-        self.mapping = mapping
-        self.unseen_value = unseen_value
+            
+            self.processed_mapping.append((final_pattern, value))
 
     def __call__(self, column: pl.Series) -> pl.Series:
         """
@@ -700,22 +792,20 @@ class RegexMapper:
             pl.Series: A new Series with strings mapped to numbers based on
                        the first matching regex pattern.
         """
-        # Ensure the column is treated as a string for matching
-        str_column = column.cast(pl.Utf8)
+        # pl.String is the modern alias for pl.Utf8
+        str_column = column.cast(pl.String)
 
-        # Build the when/then/otherwise chain from the inside out.
-        # Start with the final fallback value for non-matches.
+        # Start with the fallback value for non-matches.
         mapping_expr = pl.lit(self.unseen_value)
 
-        # Iterate through the mapping in reverse to construct the nested expression
-        for pattern, value in reversed(list(self.mapping.items())):
+        # Iterate through the processed mapping in reverse to construct the nested expression
+        for pattern, value in reversed(self.processed_mapping):
             mapping_expr = (
                 pl.when(str_column.str.contains(pattern))
                 .then(pl.lit(value))
                 .otherwise(mapping_expr)
             )
         
-        # Execute the complete expression chain and return the resulting Series
         return pl.select(mapping_expr).to_series()
 
 
