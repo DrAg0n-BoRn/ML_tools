@@ -417,14 +417,17 @@ class KeywordDummifier:
             `group_name` at the same index and contains the keywords to search for.
         case_insensitive (bool):
             If True, keyword matching ignores case.
+        drop_empty (bool):
+            If True, columns that contain no positive matches (all zeros) will be dropped from the final output.
     """
-    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True):
+    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True, drop_empty: bool = True):
         if len(group_names) != len(group_keywords):
             raise ValueError("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
         
         self.group_names = group_names
         self.group_keywords = group_keywords
         self.case_insensitive = case_insensitive
+        self.drop_empty = drop_empty
 
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
@@ -471,7 +474,16 @@ class KeywordDummifier:
                 # If a group had no matches, create a column of zeros
                 final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(name))
 
-        return pl.DataFrame(final_columns)
+        # First, create a full DataFrame with all potential columns
+        result_df = pl.DataFrame(final_columns)
+
+        # If drop_empty is True, filter out all-zero columns
+        if self.drop_empty:
+            # A column is kept if its sum is greater than 0
+            cols_to_keep = [col for col in result_df if col.sum() > 0]
+            return result_df.select(cols_to_keep)
+        
+        return result_df
 
 
 class NumberExtractor:
