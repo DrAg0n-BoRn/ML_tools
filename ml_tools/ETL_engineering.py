@@ -12,6 +12,7 @@ __all__ = [
     "TransformationRecipe",
     "DataProcessor",
     "BinaryTransformer",
+    "MultiBinaryDummifier",
     "KeywordDummifier",
     "NumberExtractor",
     "MultiNumberExtractor",
@@ -400,12 +401,72 @@ class BinaryTransformer:
             return (~contains_keyword).cast(pl.UInt8)
 
 
+class MultiBinaryDummifier:
+    """
+    A one-to-many transformer that creates multiple binary columns from a single
+    text column based on a list of keywords.
+
+    For each keyword provided, this transformer generates a corresponding column
+    with a value of 1 if the keyword is present in the input string, and 0 otherwise.
+    It is designed to be used within the DataProcessor pipeline.
+
+    Args:
+        keywords (List[str]):
+            A list of strings, where each string is a keyword to search for. A separate
+            binary column will be created for each keyword.
+        case_insensitive (bool):
+            If True, keyword matching ignores case. Defaults to True.
+    """
+    def __init__(self, keywords: List[str], case_insensitive: bool = True):
+        if not isinstance(keywords, list) or not all(isinstance(k, str) for k in keywords):
+            raise TypeError("The 'keywords' argument must be a list of strings.")
+        if not keywords:
+            raise ValueError("The 'keywords' list cannot be empty.")
+
+        self.keywords = keywords
+        self.case_insensitive = case_insensitive
+
+    def __call__(self, column: pl.Series) -> pl.DataFrame:
+        """
+        Executes the dummification logic.
+
+        Args:
+            column (pl.Series): The input Polars Series to transform.
+
+        Returns:
+            pl.DataFrame: A DataFrame where each column corresponds to a keyword.
+        """
+        # Ensure the input is treated as a string, preserving nulls
+        str_column = column.cast(pl.Utf8)
+        
+        output_expressions = []
+        for i, keyword in enumerate(self.keywords):
+            # Escape keyword to treat it as a literal, not a regex pattern
+            base_pattern = re.escape(keyword)
+
+            # Add case-insensitivity flag `(?i)` if needed
+            pattern = f"(?i){base_pattern}" if self.case_insensitive else base_pattern
+
+            # Create the binary expression
+            expr = (
+                pl.when(str_column.is_null())
+                .then(None) # Propagate nulls from original column
+                .when(str_column.str.contains(pattern))
+                .then(pl.lit(1, dtype=pl.UInt8))
+                .otherwise(pl.lit(0, dtype=pl.UInt8))
+                .alias(f"col_{i}") # Generic name for DataProcessor
+            )
+            output_expressions.append(expr)
+
+        return pl.select(output_expressions)
+
+
 class KeywordDummifier:
     """
     A configurable transformer that creates one-hot encoded columns based on
     keyword matching in a Polars Series.
 
-    Instantiate this class with keyword configurations. The instance can be used as a 'transform' callable compatible with the `TransformationRecipe`.
+    Operates on a "first match wins" principle.
 
     Args:
         group_names (List[str]): 
@@ -417,17 +478,14 @@ class KeywordDummifier:
             `group_name` at the same index and contains the keywords to search for.
         case_insensitive (bool):
             If True, keyword matching ignores case.
-        drop_empty (bool):
-            If True, columns that contain no positive matches (all zeros) will be dropped from the final output.
     """
-    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True, drop_empty: bool = True):
+    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True):
         if len(group_names) != len(group_keywords):
             raise ValueError("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
         
         self.group_names = group_names
         self.group_keywords = group_keywords
         self.case_insensitive = case_insensitive
-        self.drop_empty = drop_empty
 
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
@@ -474,16 +532,7 @@ class KeywordDummifier:
                 # If a group had no matches, create a column of zeros
                 final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(name))
 
-        # First, create a full DataFrame with all potential columns
-        result_df = pl.DataFrame(final_columns)
-
-        # If drop_empty is True, filter out all-zero columns
-        if self.drop_empty:
-            # A column is kept if its sum is greater than 0
-            cols_to_keep = [col for col in result_df if col.sum() > 0]
-            return result_df.select(cols_to_keep)
-        
-        return result_df
+        return pl.DataFrame(final_columns)
 
 
 class NumberExtractor:

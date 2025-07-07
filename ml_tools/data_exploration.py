@@ -15,6 +15,7 @@ import re
 # Keep track of all available tools, show using `info()`
 __all__ = [
     "summarize_dataframe",
+    "drop_zero_only_columns",
     "drop_rows_with_missing_data",
     "split_features_targets", 
     "show_null_columns",
@@ -59,6 +60,47 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
 
     print(f"Shape: {df.shape}")
     return summary
+
+
+def drop_zero_only_columns(df: pd.DataFrame, verbose: bool=True) -> pd.DataFrame:
+    """
+    Removes columns from a pandas DataFrame that contain only zeros and null/NaN values.
+
+    This utility is useful for cleaning data after dummification steps that may result in empty columns.
+
+    Args:
+        df (pd.DataFrame): 
+            The pandas DataFrame to clean.
+
+    Returns:
+        pd.DataFrame: 
+            A new DataFrame with the empty columns removed.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("Input must be a pandas DataFrame.")
+    
+    original_columns = set(df.columns)
+    
+    cols_to_keep = []
+    for col_name in df.columns:
+        column = df[col_name]
+        
+        # Keep any column that is not numeric by default
+        if not is_numeric_dtype(column):
+            cols_to_keep.append(col_name)
+            continue
+
+        # For numeric columns, check if there's at least one non-zero value.
+        if (column != 0).any():
+            cols_to_keep.append(col_name)
+    
+    dropped_columns = original_columns - set(cols_to_keep)      
+    if dropped_columns and verbose:
+        print(f"Dropped {len(dropped_columns)} columns:")
+        for dropped_column in dropped_columns:
+            print(f"    {dropped_column}")
+    
+    return df[cols_to_keep]
 
 
 def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], threshold: float = 0.7) -> pd.DataFrame:

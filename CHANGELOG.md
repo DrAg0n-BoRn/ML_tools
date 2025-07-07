@@ -5,11 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2025-07-07
+
+### Added
+
+- data_exploration: `drop_zero_only_columns()` removes columns from a pandas DataFrame that contain only zeros and null/NaN values.
+- ETL_engineering: `MultiBinaryDummifier` one-to-many transformer that creates multiple binary columns from a single text column based on a list of keywords.
+
+### Fixed
+
+- ETL_engineering: `KeywordDummifier` rollback behavior, dropping columns will cause issues with the DataProcessor.
+
 ## [3.2.1] - 2025-07-07
 
 ### Added
 
-- ETL_engineering: `KeywordDummifier` can drop empty columns before returning the dataframe.
+- ~~ETL_engineering: `KeywordDummifier` can drop empty columns before returning the dataframe.~~
 
 ## [3.2.0] - 2025-07-07
 
