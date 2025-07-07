@@ -587,14 +587,14 @@ def standardize_percentages(
     Standardizes numeric columns containing mixed-format percentages.
 
     This function cleans columns where percentages might be entered as whole
-    numbers (e.g., 55) or as proportions (e.g., 0.55). It assumes values
+    numbers (55) and as proportions (0.55). It assumes values
     between 0 and 1 are proportions and multiplies them by 100.
 
     Args:
         df (pd.Dataframe): The input pandas DataFrame.
         columns (list[str]): A list of column names to standardize.
         treat_one_as_proportion (bool):
-            - If True (default): The value `1` is treated as a proportion and converted to `100`.
+            - If True (default): The value `1` is treated as a proportion and converted to `100%`.
             - If False: The value `1` is treated as `1%`.
         round_digits (int): The number of decimal places to round the final result to.
 

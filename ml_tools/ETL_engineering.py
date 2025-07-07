@@ -25,18 +25,26 @@ __all__ = [
 
 class ColumnCleaner:
     """
-    Cleans and standardizes a single pandas Series based on a dictionary of regex-to-value replacement rules.
+    Cleans and standardizes a pandas Series by applying regex-to-replacement rules.
+    Supports sub-string replacements and case-insensitivity.
+    
+    Notes:
+    - Write separate, specific rules for each case. Don't combine patterns with an "OR".
+    - Define rules from most specific to more general to create a fallback system.
+    - Beware of chain replacements (rules matching strings that have already been changed by a previous rule).
     
     Args:
         rules (Dict[str, str]):
-            A dictionary where each key is a regular expression pattern and
-            each value is the standardized string to replace matches with.
+            A dictionary of regex patterns to replacement strings. Can use
+            backreferences in the replacement statement (e.g., r'\\1 \\2 \\3 \\4 \\5') for captured groups.
+        case_insensitive (bool):
+            If True, regex matching ignores case.
     """
-    def __init__(self, rules: Dict[str, str]):
+    def __init__(self, rules: Dict[str, str], case_insensitive: bool = True):
         if not isinstance(rules, dict):
             raise TypeError("The 'rules' argument must be a dictionary.")
 
-        # Validate that all keys are valid regular expressions
+        # Validate regex patterns
         for pattern in rules.keys():
             try:
                 re.compile(pattern)
@@ -44,32 +52,52 @@ class ColumnCleaner:
                 raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
 
         self.rules = rules
+        self.case_insensitive = case_insensitive
 
     def clean(self, series: pd.Series) -> pd.Series:
         """
-        Applies the standardization rules to the provided Series (requires string data).
+        Applies the standardization rules sequentially to the provided Series.
         
-        Non-matching values are kept as they are.
-
         Args:
             series (pd.Series): The pandas Series to clean.
 
         Returns:
-            pd.Series: A new Series with the values cleaned and standardized.
+            pd.Series: A new Series with the regex replacements applied.
         """
-        return series.astype(str).replace(self.rules, regex=True)
+        cleaned_series = series.astype(str)
+        
+        # Set the regex flags based on the case_insensitive setting
+        flags = re.IGNORECASE if self.case_insensitive else 0
+        
+        # Sequentially apply each regex rule
+        for pattern, replacement in self.rules.items():
+            cleaned_series = cleaned_series.str.replace(
+                pattern, 
+                replacement, 
+                regex=True,
+                flags=flags
+            )
+            
+        return cleaned_series
 
 
 class DataFrameCleaner:
     """
     Orchestrates the cleaning of multiple columns in a pandas DataFrame using a nested dictionary of rules and `ColumnCleaner` objects.
+    
+    Chosen case-sensitivity is applied to all columns.
+    
+    Notes:
+    - Write separate, specific rules for each case. Don't combine patterns with an "OR".
+    - Define rules from most specific to more general to create a fallback system.
+    - Beware of chain replacements (rules matching strings that have already been changed by a previous rule).
 
     Args:
         rules (Dict[str, Dict[str, str]]):
             A nested dictionary where each top-level key is a column name,
             and its value is a dictionary of regex rules for that column, as expected by `ColumnCleaner`.
     """
-    def __init__(self, rules: Dict[str, Dict[str, str]]):
+    def __init__(self, rules: Dict[str, Dict[str, str]], case_insensitive: bool = True):
         if not isinstance(rules, dict):
             raise TypeError("The 'rules' argument must be a nested dictionary.")
         
@@ -81,6 +109,7 @@ class DataFrameCleaner:
                 )
         
         self.rules = rules
+        self.case_insensitive = case_insensitive
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -109,7 +138,7 @@ class DataFrameCleaner:
         
         for column_name, column_rules in self.rules.items():
             # Create and apply the specific cleaner for the column
-            cleaner = ColumnCleaner(rules=column_rules)
+            cleaner = ColumnCleaner(rules=column_rules, case_insensitive=self.case_insensitive)
             df_cleaned[column_name] = cleaner.clean(df_cleaned[column_name])
             
         return df_cleaned
