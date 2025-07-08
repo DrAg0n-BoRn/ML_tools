@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2025-07-08
+
+### Changed
+
+- utilities: `serialize_object()` now returns None.
+
+### Added
+
+- utilities: `train_dataset_orchestrator()` orchestrates the creation of single-target datasets from multiple directories each with a variable number of CSV datasets.
+
 ## [3.3.0] - 2025-07-07
 
 ### Added

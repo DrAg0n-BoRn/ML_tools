@@ -24,7 +24,8 @@ __all__ = [
     "threshold_binary_values_batch",
     "serialize_object",
     "deserialize_object",
-    "distribute_datasets_by_target"
+    "distribute_datasets_by_target",
+    "train_dataset_orchestrator"
 ]
 
 
@@ -497,7 +498,7 @@ def threshold_binary_values_batch(
     return np.hstack([cont_part, bin_part])
 
 
-def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> Optional[Path]:
+def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> None:
     """
     Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
 
@@ -505,9 +506,6 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         obj (Any) : The Python object to serialize.
         save_dir (str | Path) : Directory path where the serialized object will be saved.
         filename (str) : Name for the output file, extension will be appended if needed.
-
-    Returns:
-        (Path | None) : The full file path where the object was saved if successful; otherwise, None.
     """
     try:
         save_path = make_fullpath(save_dir, make=True)
@@ -526,7 +524,7 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
     else:
         if verbose:
             print(f"✅ Object of type '{type(obj)}' saved to '{full_path}'")
-        return full_path
+        return None
 
 
 def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
@@ -595,6 +593,54 @@ def distribute_datasets_by_target(
         if verbose:
             print(f"Target: '{target}' - Dataframe shape: {subset.shape}")
         yield target, subset
+
+
+def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]], 
+                               target_columns: list[str], 
+                               save_dir: Union[str,Path],
+                               safe_mode: bool=False):
+    """
+    Orchestrates the creation of single-target datasets from multiple directories each with a variable number of CSV datasets.
+
+    This function iterates through a list of directories, finds all CSV files,
+    and splits each dataframe based on the provided target columns. Each resulting
+    single-target dataframe is then saved to a specified directory.
+
+    Parameters
+    ----------
+    list_of_dirs : list[str | Path]
+        A list of directory paths where the source CSV files are located.
+    target_columns : list[str]
+        A list of column names to be used as targets for splitting the datasets.
+    save_dir : str | Path
+        The directory where the newly created single-target datasets will be saved.
+    safe_mode : bool
+        If True, prefixes the saved filename with the source directory name to prevent overwriting files with the same name from different sources.
+    """
+    all_dir_paths: list[Path] = list()
+    for dir in list_of_dirs:
+        dir_path = make_fullpath(dir)
+        if not dir_path.is_dir():
+            raise IOError(f"'{dir}' is not a directory.")
+        all_dir_paths.append(dir_path)
+    
+    # main loop
+    total_saved = 0
+    for df_dir in all_dir_paths:
+        for df_name, df_path in list_csv_paths(df_dir).items():
+            try:
+                for target_name, df in distribute_datasets_by_target(df_or_path=df_path, target_columns=target_columns, verbose=False):
+                    if safe_mode:
+                        filename = df_dir.name + '_' + target_name + '_' + df_name
+                    else:
+                        filename = target_name + '_' + df_name
+                    save_dataframe(df=df, save_dir=save_dir, filename=filename)
+                    total_saved += 1
+            except Exception as e:
+                print(f"⚠️ Failed to process file '{df_path}'. Reason: {e}")
+                continue 
+
+    print(f"{total_saved} single-target datasets were created.")
 
 
 class LogKeys:

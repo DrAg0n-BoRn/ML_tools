@@ -35,7 +35,7 @@ def compute_vif(
     Args:
         df (pd.DataFrame): The input DataFrame.
         use_columns (list[str] | None): Optional list of columns to include. Defaults to all numeric columns.
-        ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `target_columns` is provided.
+        ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `use_columns` is provided.
         max_features_to_plot (int): Adjust the number of features shown in the plot.
         save_dir (str | Path | None): Directory to save the plot as SVG. If None, the plot is not saved.
         filename (str | None): Optional filename for saving the plot. Defaults to "VIF_plot.svg".
@@ -194,7 +194,7 @@ def compute_vif_multi(input_directory: Union[str, Path],
         output_plot_directory (str | Path): Save plots to this directory.
         output_dataset_directory (str | Path | None): If provided, saves new CSV files to this directory.
         use_columns (list[str] | None): Optional list of columns to include. Defaults to all numeric columns.
-        ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `target_columns` is provided.
+        ignore_columns (list[str] | None): Optional list of columns to exclude from the VIF computation. Skipped if `use_columns` is provided.
         max_features_to_plot (int): Adjust the number of features shown in the plot.
         fontsize (int): Base fontsize to scale title and labels on hte plot.
         
