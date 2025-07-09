@@ -2,7 +2,6 @@ import polars as pl
 import re
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
 from .utilities import _script_info
-import pandas as pd
 from .logger import _LOGGER
 
 
@@ -24,124 +23,137 @@ __all__ = [
 ]
 
 ########## EXTRACT and CLEAN ##########
-
 class ColumnCleaner:
     """
-    Cleans and standardizes a pandas Series by applying regex-to-replacement rules.
-    Supports sub-string replacements and case-insensitivity.
+    A configuration object that defines cleaning rules for a single Polars DataFrame column.
+
+    This class holds a dictionary of regex-to-replacement rules, the target column name,
+    and the case-sensitivity setting. It is intended to be used with the DataFrameCleaner.
     
     Notes:
-    - Write separate, specific rules for each case. Don't combine patterns with an "OR".
-    - Define rules from most specific to more general to create a fallback system.
-    - Beware of chain replacements (rules matching strings that have already been changed by a previous rule).
-    
+        - Define rules from most specific to more general to create a fallback system.
+        - Beware of chain replacements (rules matching strings that have already been
+          changed by a previous rule in the same cleaner).
+
     Args:
+        column_name (str):
+            The name of the column to be cleaned.
         rules (Dict[str, str]):
             A dictionary of regex patterns to replacement strings. Can use
-            backreferences in the replacement statement (e.g., r'\\1 \\2 \\3 \\4 \\5') for captured groups.
+            backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
+            uses a '$' prefix for backreferences.
         case_insensitive (bool):
-            If True, regex matching ignores case.
+            If True (default), regex matching ignores case.
+
+    ## Usage Example
+
+    ```python
+    phone_rules = {
+        # Matches (123) 456-7890 and reformats to 123-456-7890
+        r'\((\d{3})\)\s*(\d{3})-(\d{4})': r'$1-$2-$3'
+    }
+
+    phone_cleaner = ColumnCleaner(column_name='phone_number', rules=phone_rules)
+
+    # This object would then be passed to a DataFrameCleaner.
+    ```
     """
-    def __init__(self, rules: Dict[str, str], case_insensitive: bool = True):
+    def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
+        if not isinstance(column_name, str) or not column_name:
+            raise TypeError("The 'column_name' must be a non-empty string.")
         if not isinstance(rules, dict):
             raise TypeError("The 'rules' argument must be a dictionary.")
 
-        # Validate regex patterns
+        # Validate each regex pattern for correctness
         for pattern in rules.keys():
             try:
                 re.compile(pattern)
             except re.error as e:
                 raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
 
+        self.column_name = column_name
         self.rules = rules
         self.case_insensitive = case_insensitive
-
-    def clean(self, series: pd.Series) -> pd.Series:
-        """
-        Applies the standardization rules sequentially to the provided Series.
-        
-        Args:
-            series (pd.Series): The pandas Series to clean.
-
-        Returns:
-            pd.Series: A new Series with the regex replacements applied.
-        """
-        cleaned_series = series.astype(str)
-        
-        # Set the regex flags based on the case_insensitive setting
-        flags = re.IGNORECASE if self.case_insensitive else 0
-        
-        # Sequentially apply each regex rule
-        for pattern, replacement in self.rules.items():
-            cleaned_series = cleaned_series.str.replace(
-                pattern, 
-                replacement, 
-                regex=True,
-                flags=flags
-            )
-            
-        return cleaned_series
 
 
 class DataFrameCleaner:
     """
-    Orchestrates the cleaning of multiple columns in a pandas DataFrame using a nested dictionary of rules and `ColumnCleaner` objects.
-    
-    Chosen case-sensitivity is applied to all columns.
-    
-    Notes:
-    - Write separate, specific rules for each case. Don't combine patterns with an "OR".
-    - Define rules from most specific to more general to create a fallback system.
-    - Beware of chain replacements (rules matching strings that have already been changed by a previous rule).
+    Orchestrates cleaning multiple columns in a Polars DataFrame.
+
+    This class takes a list of ColumnCleaner objects and applies their defined
+    rules to the corresponding columns of a DataFrame using high-performance
+    Polars expressions.
 
     Args:
-        rules (Dict[str, Dict[str, str]]):
-            A nested dictionary where each top-level key is a column name,
-            and its value is a dictionary of regex rules for that column, as expected by `ColumnCleaner`.
-    """
-    def __init__(self, rules: Dict[str, Dict[str, str]], case_insensitive: bool = True):
-        if not isinstance(rules, dict):
-            raise TypeError("The 'rules' argument must be a nested dictionary.")
-        
-        for col_name, col_rules in rules.items():
-            if not isinstance(col_rules, dict):
-                raise TypeError(
-                    f"The value for column '{col_name}' must be a dictionary "
-                    f"of rules, but got type {type(col_rules).__name__}."
-                )
-        
-        self.rules = rules
-        self.case_insensitive = case_insensitive
+        cleaners (List[ColumnCleaner]):
+            A list of ColumnCleaner configuration objects.
 
-    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
+    Raises:
+        TypeError: If 'cleaners' is not a list or contains non-ColumnCleaner objects.
+        ValueError: If multiple ColumnCleaner objects target the same column.
+    """
+    def __init__(self, cleaners: List[ColumnCleaner]):
+        if not isinstance(cleaners, list):
+            raise TypeError("The 'cleaners' argument must be a list of ColumnCleaner objects.")
+
+        seen_columns = set()
+        for cleaner in cleaners:
+            if not isinstance(cleaner, ColumnCleaner):
+                raise TypeError(
+                    f"All items in 'cleaners' list must be ColumnCleaner objects, "
+                    f"but found an object of type {type(cleaner).__name__}."
+                )
+            if cleaner.column_name in seen_columns:
+                raise ValueError(
+                    f"Duplicate ColumnCleaner found for column '{cleaner.column_name}'. "
+                    "Each column should only have one cleaner."
+                )
+            seen_columns.add(cleaner.column_name)
+
+        self.cleaners = cleaners
+
+    def clean(self, df: pl.DataFrame) -> pl.DataFrame:
         """
-        Applies all defined cleaning rules to the DataFrame.
+        Applies all defined cleaning rules to the Polars DataFrame.
 
         Args:
-            df (pd.DataFrame): The pandas DataFrame to clean.
+            df (pl.DataFrame): The Polars DataFrame to clean.
 
         Returns:
-            pd.DataFrame: A new, cleaned DataFrame.
+            pl.DataFrame: A new, cleaned Polars DataFrame.
+
+        Raises:
+            ValueError: If any columns specified in the cleaners are not found
+                        in the input DataFrame.
         """
-        rule_columns = set(self.rules.keys())
+        rule_columns = {c.column_name for c in self.cleaners}
         df_columns = set(df.columns)
-        
         missing_columns = rule_columns - df_columns
-        
+
         if missing_columns:
-            # Report all missing columns in a single, clear error message
             raise ValueError(
-                f"The following columns specified in the cleaning rules "
+                f"The following columns specified in cleaning rules "
                 f"were not found in the DataFrame: {sorted(list(missing_columns))}"
             )
+
+        df_cleaned = df.clone()
         
-        # Start the process
-        df_cleaned = df.copy()
-        
-        for column_name, column_rules in self.rules.items():
-            # Create and apply the specific cleaner for the column
-            cleaner = ColumnCleaner(rules=column_rules, case_insensitive=self.case_insensitive)
-            df_cleaned[column_name] = cleaner.clean(df_cleaned[column_name])
+        # Build and apply a series of expressions for each column
+        for cleaner in self.cleaners:
+            col_name = cleaner.column_name
+            
+            # Start with the column, cast to String for replacement operations
+            col_expr = pl.col(col_name).cast(pl.String)
+
+            # Sequentially chain 'replace_all' expressions for each rule
+            for pattern, replacement in cleaner.rules.items():
+                final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
+                col_expr = col_expr.str.replace_all(final_pattern, replacement)
+            
+            # Execute the expression chain for the column
+            df_cleaned = df_cleaned.with_columns(col_expr.alias(col_name))
+            
+        print(f"Cleaned {len(self.cleaners)} columns.")
             
         return df_cleaned
 

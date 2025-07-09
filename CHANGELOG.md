@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] 2025-07-09
+
+### Changed
+
+- ETL_engineering: 
+    - `ColumnCleaner` will now be a configuration object that defines cleaning rules for a single Polars DataFrame column.
+    - `DataFrameCleaner` will now orchestrate cleaning multiple columns in a Polars DataFrame by using `ColumnCleaner` objects.
+
 ## [3.4.0] - 2025-07-08
 
 ### Changed
