@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased 3.5.1] 2025-07-09
+## [3.6.0] 2025-07-09
+
+### Changed
+
+- data_exploration: `drop_zero_only_columns()` changed to `drop_constant_columns()` a more useful version useful for removing constant features that have no predictive value.
+
+## [3.5.1] 2025-07-09
 
 ### Fixed
 

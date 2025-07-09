@@ -15,7 +15,7 @@ import re
 # Keep track of all available tools, show using `info()`
 __all__ = [
     "summarize_dataframe",
-    "drop_zero_only_columns",
+    "drop_constant_columns",
     "drop_rows_with_missing_data",
     "split_features_targets", 
     "show_null_columns",
@@ -62,44 +62,49 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
     return summary
 
 
-def drop_zero_only_columns(df: pd.DataFrame, verbose: bool=True) -> pd.DataFrame:
+def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
     """
-    Removes columns from a pandas DataFrame that contain only zeros and null/NaN values.
+    Removes columns from a pandas DataFrame that contain only a single unique 
+    value or are entirely null/NaN.
 
-    This utility is useful for cleaning data after dummification steps that may result in empty columns.
+    This utility is useful for cleaning data by removing constant features that 
+    have no predictive value.
 
     Args:
         df (pd.DataFrame): 
             The pandas DataFrame to clean.
+        verbose (bool): 
+            If True, prints the names of the columns that were dropped. 
+            Defaults to True.
 
     Returns:
         pd.DataFrame: 
-            A new DataFrame with the empty columns removed.
+            A new DataFrame with the constant columns removed.
     """
     if not isinstance(df, pd.DataFrame):
         raise TypeError("Input must be a pandas DataFrame.")
-    
+
     original_columns = set(df.columns)
-    
     cols_to_keep = []
+
     for col_name in df.columns:
         column = df[col_name]
         
-        # Keep any column that is not numeric by default
-        if not is_numeric_dtype(column):
+        # We can apply this logic to all columns or only focus on numeric ones.
+        # if not is_numeric_dtype(column):
+        #     cols_to_keep.append(col_name)
+        #     continue
+        
+        # Keep a column if it has more than one unique value (nunique ignores NaNs by default)
+        if column.nunique(dropna=True) > 1:
             cols_to_keep.append(col_name)
-            continue
 
-        # For numeric columns, check if there's at least one non-zero value.
-        if (column.fillna(0) != 0).any():
-            cols_to_keep.append(col_name)
-    
-    dropped_columns = original_columns - set(cols_to_keep)      
+    dropped_columns = original_columns - set(cols_to_keep)
     if dropped_columns and verbose:
-        print(f"Dropped {len(dropped_columns)} columns:")
+        print(f"Dropped {len(dropped_columns)} constant columns:")
         for dropped_column in dropped_columns:
             print(f"    {dropped_column}")
-    
+
     return df[cols_to_keep]
 
 
