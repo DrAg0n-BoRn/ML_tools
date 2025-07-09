@@ -48,13 +48,12 @@ class ColumnCleaner:
     ## Usage Example
 
     ```python
-    phone_rules = {
-        # Matches (123) 456-7890 and reformats to 123-456-7890
-        r'\((\d{3})\)\s*(\d{3})-(\d{4})': r'$1-$2-$3'
+    id_rules = {
+        # Matches 'ID-12345' or 'ID 12345' and reformats to 'ID:12345'
+        r'ID[- ](\d+)': r'ID:$1'
     }
 
-    phone_cleaner = ColumnCleaner(column_name='phone_number', rules=phone_rules)
-
+    id_cleaner = ColumnCleaner(column_name='user_id', rules=id_rules)
     # This object would then be passed to a DataFrameCleaner.
     ```
     """
@@ -529,7 +528,7 @@ class KeywordDummifier:
         
         categorize_expr = categorize_expr.otherwise(None).alias("category")
 
-        temp_df = pl.DataFrame(categorize_expr)
+        temp_df = pl.select(categorize_expr)
         df_with_dummies = temp_df.to_dummies(columns=["category"])
         
         final_columns = []

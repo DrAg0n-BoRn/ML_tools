@@ -91,7 +91,7 @@ def drop_zero_only_columns(df: pd.DataFrame, verbose: bool=True) -> pd.DataFrame
             continue
 
         # For numeric columns, check if there's at least one non-zero value.
-        if (column != 0).any():
+        if (column.fillna(0) != 0).any():
             cols_to_keep.append(col_name)
     
     dropped_columns = original_columns - set(cols_to_keep)      
