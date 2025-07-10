@@ -640,7 +640,7 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                 print(f"⚠️ Failed to process file '{df_path}'. Reason: {e}")
                 continue 
 
-    print(f"{total_saved} single-target datasets were created.")
+    print(f"\n✅ {total_saved} single-target datasets were created.")
 
 
 class LogKeys:

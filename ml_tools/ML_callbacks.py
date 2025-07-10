@@ -178,7 +178,6 @@ class EarlyStopping(Callback):
                 self.stopped_epoch = epoch
                 self.trainer.stop_training = True # type: ignore
                 if self.verbose > 0:
-                    print("")
                     _LOGGER.info(f"Epoch {epoch+1}: early stopping after {self.wait} epochs with no improvement.")
 
 
@@ -256,7 +255,6 @@ class ModelCheckpoint(Callback):
             new_filepath = self.save_dir / filename
             
             if self.verbose > 0:
-                print("")
                 _LOGGER.info(f"Epoch {epoch}: {self.monitor} improved from {old_best_str} to {current:.4f}, saving model to {new_filepath}")
             
             # Save the new best model
@@ -276,7 +274,6 @@ class ModelCheckpoint(Callback):
         filepath = self.save_dir / filename
         
         if self.verbose > 0:
-            print("")
             _LOGGER.info(f'Epoch {epoch}: saving model to {filepath}')
         torch.save(self.trainer.model.state_dict(), filepath) # type: ignore
 
@@ -325,7 +322,6 @@ class LRScheduler(Callback):
             if metric_val is not None:
                 self.scheduler.step(metric_val)
             else:
-                print("")
                 _LOGGER.warning(f"LRScheduler could not find metric '{self.monitor}' in logs.")
         
         # For all other schedulers
@@ -335,7 +331,6 @@ class LRScheduler(Callback):
         # Log the change if the LR was updated
         current_lr = self.trainer.optimizer.param_groups[0]['lr'] # type: ignore
         if current_lr != self.previous_lr:
-            print("")
             _LOGGER.info(f"Epoch {epoch}: Learning rate changed to {current_lr:.6f}")
             self.previous_lr = current_lr
             

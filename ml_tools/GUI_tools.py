@@ -148,7 +148,7 @@ class ConfigManager:
         """
         path = Path(file_path)
         if path.exists() and not force_overwrite:
-            _LOGGER.warning(f"Configuration file already exists at {path}. Aborting.")
+            _LOGGER.warning(f"⚠️ Configuration file already exists at {path}. Aborting.")
             return
 
         config = configparser.ConfigParser()
@@ -206,7 +206,7 @@ class ConfigManager:
 
         with open(path, 'w') as configfile:
             config.write(configfile)
-        _LOGGER.info(f"Successfully generated config template at: '{path}'")
+        _LOGGER.info(f"📝 Successfully generated config template at: '{path}'")
 
 
 # --- GUI Factory ---
@@ -482,13 +482,12 @@ def update_target_fields(window: sg.Window, results_dict: Dict[str, Any]):
 
     Args:
         window (sg.Window): The application's window object.
-        results_dict (dict): A dictionary where keys are target names (without the
-                             'TARGET_' prefix) and values are the predicted results.
+        results_dict (dict): A dictionary where keys are target key names (including 'TARGET_' prefix if necessary) and values are the predicted results.
     """
     for target_name, result in results_dict.items():
         # Format numbers to 2 decimal places, leave other types as-is
         display_value = f"{result:.2f}" if isinstance(result, (int, float)) else result
-        window[f'TARGET_{target_name}'].update(display_value)
+        window[target_name].update(display_value)
 
 
 def info():

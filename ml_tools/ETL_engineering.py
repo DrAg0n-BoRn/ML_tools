@@ -294,7 +294,7 @@ class DataProcessor:
                 raise TypeError(f"Invalid 'transform' action for '{input_col_name}': {transform_action}")
 
         if not processed_columns:
-            _LOGGER.warning("The transformation resulted in an empty DataFrame.")
+            _LOGGER.warning("⚠️ The transformation resulted in an empty DataFrame.")
             return pl.DataFrame()
             
         return pl.DataFrame(processed_columns)
@@ -588,7 +588,7 @@ class NumberExtractor:
             if not isinstance(round_digits, int):
                 raise TypeError("round_digits must be an integer.")
             if dtype == "int":
-                _LOGGER.warning(f"'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
+                _LOGGER.warning(f"⚠️ 'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
 
         self.regex_pattern = regex_pattern
         self.dtype = dtype

@@ -10,7 +10,6 @@ import logging
 import sys
 
 
-
 __all__ = [
     "custom_logger"
 ]
@@ -85,10 +84,10 @@ def custom_logger(
         else:
             raise ValueError("Unsupported data type. Must be list, dict, DataFrame, str, or BaseException.")
 
-        _LOGGER.info(f"Log saved to: '{base_path}'")
+        _LOGGER.info(f"🗄️ Log saved to: '{base_path}'")
 
     except Exception as e:
-        _LOGGER.error(f"Log not saved: {e}")
+        _LOGGER.error(f"❌ Log not saved: {e}")
 
 
 def _log_list_to_txt(data: List[Any], path: Path) -> None:
@@ -176,7 +175,7 @@ def _get_logger(name: str = "ml_tools", level: int = logging.INFO):
         handler = logging.StreamHandler(sys.stdout)
         
         # Define the format string and the date format separately
-        log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        log_format = '\n🐉%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         date_format = '%Y-%m-%d %H:%M' # Format: Year-Month-Day Hour:Minute
         
         # Pass both the format and the date format to the Formatter

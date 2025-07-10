@@ -72,10 +72,10 @@ class MyTrainer:
         """Validates the selected device and returns a torch.device object."""
         device_lower = device.lower()
         if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("CUDA not available, switching to CPU.")
+            _LOGGER.warning("⚠️ CUDA not available, switching to CPU.")
             device = "cpu"
         elif device_lower == "mps" and not torch.backends.mps.is_available():
-            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
+            _LOGGER.warning("⚠️ Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device = "cpu"
         return torch.device(device)
 

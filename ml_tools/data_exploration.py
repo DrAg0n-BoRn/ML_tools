@@ -100,10 +100,11 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
             cols_to_keep.append(col_name)
 
     dropped_columns = original_columns - set(cols_to_keep)
-    if dropped_columns and verbose:
-        print(f"Dropped {len(dropped_columns)} constant columns:")
-        for dropped_column in dropped_columns:
-            print(f"    {dropped_column}")
+    if verbose:
+        print(f"🧹 Dropped {len(dropped_columns)} constant columns.")
+        if dropped_columns:
+            for dropped_column in dropped_columns:
+                print(f"    {dropped_column}")
 
     return df[cols_to_keep]
 

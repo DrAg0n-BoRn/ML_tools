@@ -65,7 +65,7 @@ def plot_losses(history: dict, save_dir: Optional[Union[str, Path]] = None):
         save_dir_path = make_fullpath(save_dir, make=True)
         save_path = save_dir_path / "loss_plot.svg"
         plt.savefig(save_path)
-        _LOGGER.info(f"Loss plot saved as '{save_path.name}'")
+        _LOGGER.info(f"📉 Loss plot saved as '{save_path.name}'")
     else:
         plt.show()
     plt.close(fig)
@@ -92,7 +92,7 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optio
         # Save text report
         report_path = save_dir_path / "classification_report.txt"
         report_path.write_text(report, encoding="utf-8")
-        _LOGGER.info(f"Classification report saved as '{report_path.name}'")
+        _LOGGER.info(f"📝 Classification report saved as '{report_path.name}'")
 
         # Save Confusion Matrix
         fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=100)
@@ -100,7 +100,7 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optio
         ax_cm.set_title("Confusion Matrix")
         cm_path = save_dir_path / "confusion_matrix.svg"
         plt.savefig(cm_path)
-        _LOGGER.info(f"Confusion matrix saved as '{cm_path.name}'")
+        _LOGGER.info(f"❇️ Confusion matrix saved as '{cm_path.name}'")
         plt.close(fig_cm)
 
         # Save ROC Curve
@@ -117,7 +117,7 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optio
             ax_roc.grid(True)
             roc_path = save_dir_path / "roc_curve.svg"
             plt.savefig(roc_path)
-            _LOGGER.info(f"ROC curve saved as '{roc_path.name}'")
+            _LOGGER.info(f"📈 ROC curve saved as '{roc_path.name}'")
             plt.close(fig_roc)
     else:
         # Show plots if not saving
@@ -162,7 +162,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Optiona
         # Save text report
         report_path = save_dir_path / "regression_report.txt"
         report_path.write_text(report_string)
-        _LOGGER.info(f"Regression report saved as '{report_path.name}'")
+        _LOGGER.info(f"📝 Regression report saved as '{report_path.name}'")
 
         # Save residual plot
         residuals = y_true - y_pred
@@ -176,7 +176,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Optiona
         plt.tight_layout()
         res_path = save_dir_path / "residual_plot.svg"
         plt.savefig(res_path)
-        _LOGGER.info(f"Residual plot saved as '{res_path.name}'")
+        _LOGGER.info(f"📈 Residual plot saved as '{res_path.name}'")
         plt.close(fig_res)
 
         # Save true vs predicted plot
@@ -190,7 +190,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Optiona
         plt.tight_layout()
         tvp_path = save_dir_path / "true_vs_predicted_plot.svg"
         plt.savefig(tvp_path)
-        _LOGGER.info(f"True vs. Predicted plot saved as '{tvp_path.name}'")
+        _LOGGER.info(f"📉 True vs. Predicted plot saved as '{tvp_path.name}'")
         plt.close(fig_tvp)
 
 
@@ -227,7 +227,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(bar_path)
-        _LOGGER.info(f"SHAP bar plot saved as '{bar_path.name}'")
+        _LOGGER.info(f"📊 SHAP bar plot saved as '{bar_path.name}'")
         plt.close()
 
         # Save Dot Plot
@@ -236,7 +236,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(dot_path)
-        _LOGGER.info(f"SHAP dot plot saved as '{dot_path.name}'")
+        _LOGGER.info(f"📊 SHAP dot plot saved as '{dot_path.name}'")
         plt.close()
 
         # Save Summary Data to CSV
@@ -249,7 +249,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
             'mean_abs_shap_value': mean_abs_shap
         }).sort_values('mean_abs_shap_value', ascending=False)
         summary_df.to_csv(summary_path, index=False)
-        _LOGGER.info(f"SHAP summary data saved as '{summary_path.name}'")
+        _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
     else:
         _LOGGER.info("No save directory provided. Displaying SHAP dot plot.")
         shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="dot")

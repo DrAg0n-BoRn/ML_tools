@@ -13,7 +13,7 @@ from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from pathlib import Path
-from .utilities import _script_info
+from .utilities import _script_info, make_fullpath
 from .logger import _LOGGER
 
 
@@ -204,7 +204,7 @@ class DatasetMaker(_BaseMaker):
         if not self._is_split:
             raise RuntimeError("Continuous features must be normalized AFTER splitting data. Call .split_data() first.")
         if self._is_normalized:
-            _LOGGER.warning("Data has already been normalized.")
+            _LOGGER.warning("⚠️ Data has already been normalized.")
             return self
 
         # Use continuous features columns
@@ -232,7 +232,7 @@ class DatasetMaker(_BaseMaker):
     def split_data(self, test_size: float = 0.2, stratify: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
         """Splits the data into training and testing sets."""
         if self._is_split:
-            _LOGGER.warning("Data has already been split.")
+            _LOGGER.warning("⚠️ Data has already been split.")
             return self
 
         if self.labels.dtype == 'object' or self.labels.dtype.name == 'category':
@@ -260,9 +260,9 @@ class DatasetMaker(_BaseMaker):
         Defaults to `SMOTETomek`.
         """
         if not self._is_split:
-            raise RuntimeError("Cannot balance data before it has been split. Call .split_data() first.")
+            raise RuntimeError("❌ Cannot balance data before it has been split. Call .split_data() first.")
         if self._is_balanced:
-            _LOGGER.warning("Training data has already been balanced.")
+            _LOGGER.warning("⚠️ Training data has already been balanced.")
             return self
 
         if resampler is None:
@@ -278,13 +278,13 @@ class DatasetMaker(_BaseMaker):
     def process(self, test_size: float = 0.2, cat_method: Literal["one-hot", "embed"] = "one-hot", normalize_method: Literal["standard", "minmax"] = "standard", 
                 balance: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
         """Runs a standard, fully automated preprocessing pipeline."""
-        _LOGGER.info("--- Running Automated Processing Pipeline ---")
+        _LOGGER.info("--- 🤖 Running Automated Processing Pipeline ---")
         self.process_categoricals(method=cat_method)
         self.split_data(test_size=test_size, stratify=True, random_state=random_state)
         self.normalize_continuous(method=normalize_method)
         if balance:
             self.balance_data()
-        _LOGGER.info("--- Automated Processing Complete ---")
+        _LOGGER.info("--- 🤖 Automated Processing Complete ---")
         return self
         
     def denormalize(self, data: Union[torch.Tensor, numpy.ndarray, pandas.DataFrame]) -> Union[numpy.ndarray, pandas.DataFrame]:
@@ -400,10 +400,7 @@ class VisionDatasetMaker(_BaseMaker):
         Logs a report of the types, sizes, and channels of image files
         found in the directory and its subdirectories.
         """
-        path_obj = Path(path)
-        if not path_obj.is_dir():
-            _LOGGER.error(f"Path is not a valid directory: {path_obj}")
-            return
+        path_obj = make_fullpath(path)
 
         non_image_files = set()
         img_types = set()
@@ -505,7 +502,7 @@ class VisionDatasetMaker(_BaseMaker):
         if not self._is_split:
             raise RuntimeError("Data has not been split. Call .split_data() first.")
         if not self._are_transforms_configured:
-            _LOGGER.warning("Transforms have not been configured. Using default ToTensor only.")
+            _LOGGER.warning("⚠️ Transforms have not been configured. Using default ToTensor only.")
 
         if self._test_dataset:
             return self._train_dataset, self._val_dataset, self._test_dataset
@@ -555,7 +552,7 @@ class SequenceMaker(_BaseMaker):
             raise RuntimeError("Data must be split BEFORE normalizing. Call .split_data() first.")
         
         if self.scaler:
-            _LOGGER.warning("Data has already been normalized.")
+            _LOGGER.warning("⚠️ Data has already been normalized.")
             return self
             
         if method == "standard":
@@ -579,7 +576,7 @@ class SequenceMaker(_BaseMaker):
     def split_data(self, test_size: float = 0.2) -> 'SequenceMaker':
         """Splits the sequence into training and testing portions."""
         if self._is_split:
-            _LOGGER.warning("Data has already been split.")
+            _LOGGER.warning("⚠️ Data has already been split.")
             return self
 
         split_idx = int(len(self.sequence) * (1 - test_size))

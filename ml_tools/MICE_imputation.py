@@ -128,7 +128,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-        _LOGGER.info(f"{dataset_file_dir} completed.")
+        _LOGGER.info(f"✅ {dataset_file_dir} process completed.")
 
 
 # Imputed distributions
@@ -213,7 +213,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    _LOGGER.info(f"{local_dir_name} completed.")
+    _LOGGER.info(f"✅ {local_dir_name} completed.")
 
 
 def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str], 

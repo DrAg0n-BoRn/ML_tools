@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] 2025-07-10
+
+### Fixed
+
+- data_exploration: `drop_constant_columns()` verbose will correctly work even if no columns were processed.
+- PSO_optimization: `plot_optimal_feature_distributions()` revamped due to many problems found in the previous implementation. 
+- Quality of life enhancements when printing messages.
+
+### Changed
+
+- GUI_tools: `update_target_fields()` now expects the complete target key string, to avoid issues when using custom keys.
+
 ## [3.6.0] 2025-07-09
 
 ### Changed

@@ -168,12 +168,12 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     
     # Identify features to drop
     to_drop = vif_df[vif_df["VIF"] > threshold]["feature"].tolist()
-    _LOGGER.info(f"\tDropping {len(to_drop)} column(s) with VIF > {threshold}: {to_drop}")
+    _LOGGER.info(f"🗑️ Dropping {len(to_drop)} column(s) with VIF > {threshold}: {to_drop}")
     
     result_df = df.drop(columns=to_drop)
     
     if result_df.empty:
-        _LOGGER.warning(f"\t⚠️ All columns were dropped.")
+        _LOGGER.warning(f"⚠️ All columns were dropped.")
 
     return result_df, to_drop
 

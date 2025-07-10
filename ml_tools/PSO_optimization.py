@@ -22,7 +22,6 @@ import torch
 from tqdm import trange
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import defaultdict
 from .logger import _LOGGER
 
 
@@ -307,7 +306,7 @@ def run_pso(lower_boundaries: list[float],
     else:
         device = torch.device("cpu")
     
-    _LOGGER.info(f"Using device: '{device}'")
+    _LOGGER.info(f"👾 Using device: '{device}'")
     
     # set local deep copies to prevent in place list modification
     local_lower_boundaries = deepcopy(lower_boundaries)
@@ -511,13 +510,13 @@ def _pso(func: ObjectiveFunction,
         return best_position, best_score
 
 
-def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: Union[str, Path], color_by_target: bool = True):
+def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: Union[str, Path]):
     """
     Analyzes optimization results and plots the distribution of optimal values for each feature.
 
-    This function can operate in two modes based on the `color_by_target` parameter:
-    1.  Aggregates all values for a feature into a single group and plots one overall distribution (histogram + KDE).
-    2.  Color-coded: Plots a separate, color-coded Kernel Density Estimate (KDE) for each source target, allowing for direct comparison on a single chart.
+    For features with more than two unique values, this function generates a color-coded 
+    Kernel Density Estimate (KDE) plot. For binary or constant features, it generates a bar plot
+    showing relative frequency.
 
     Parameters
     ----------
@@ -525,76 +524,69 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
         The path to the directory containing the optimization result CSV files.
     save_dir : str or Path
         The directory where the output plots will be saved.
-    color_by_target : bool, optional
-        If True, generates comparative plots with distributions colored by their source target.
     """
-    mode = "Comparative (color-coded)" if color_by_target else "Aggregate"
-    _LOGGER.info(f"Starting analysis in '{mode}' mode from results in: '{results_dir}'")
-    
-    # Check results_dir
+    # Check results_dir and create output path
     results_path = make_fullpath(results_dir)
-    # make output path
     output_path = make_fullpath(save_dir, make=True)
     
     all_csvs = list_csv_paths(results_path)
-
     if not all_csvs:
-        _LOGGER.warning("No data found. No plots will be generated.")
+        _LOGGER.warning("⚠️ No data found. No plots will be generated.")
         return
 
-    # --- MODE 1: Color-coded plots by target ---
-    if color_by_target:
-        data_to_plot = []
-        for df, df_name in yield_dataframes_from_dir(results_path):
-            # Assumes last col is target, rest are features
-            melted_df = df.iloc[:, :-1].melt(var_name='feature', value_name='value')
-            # Sanitize target name for cleaner legend labels
-            melted_df['target'] = df_name.replace("Optimization_", "")
-            data_to_plot.append(melted_df)
+    # --- Data Loading and Preparation ---
+    _LOGGER.info(f"📁 Starting analysis from results in: '{results_dir}'")
+    data_to_plot = []
+    for df, df_name in yield_dataframes_from_dir(results_path):
+        melted_df = df.iloc[:, :-1].melt(var_name='feature', value_name='value')
+        melted_df['target'] = df_name.replace("Optimization_", "")
+        data_to_plot.append(melted_df)
+    
+    long_df = pd.concat(data_to_plot, ignore_index=True)
+    features = long_df['feature'].unique()
+    _LOGGER.info(f"📂 Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
+
+    # --- Plotting Loop ---
+    for feature_name in features:
+        plt.figure(figsize=(12, 7))
+        feature_df = long_df[long_df['feature'] == feature_name]
+
+        # Check if the feature is binary or constant
+        if feature_df['value'].nunique() <= 2:
+            # PLOT 1: For discrete values, calculate percentages and use a true bar plot.
+            # This ensures the X-axis is clean (e.g., just 0 and 1).
+            norm_df = (feature_df.groupby('target')['value']
+                       .value_counts(normalize=True)
+                       .mul(100)
+                       .rename('percent')
+                       .reset_index())
+            
+            ax = sns.barplot(data=norm_df, x='value', y='percent', hue='target')
+            
+            plt.title(f"Optimal Value Distribution for '{feature_name}'", fontsize=16)
+            plt.ylabel("Frequency (%)", fontsize=12)
+            ax.set_ylim(0, 100) # Set Y-axis from 0 to 100
+
+        else:
+            # PLOT 2: KDE plot for continuous values.
+            ax = sns.kdeplot(data=feature_df, x='value', hue='target',
+                             fill=True, alpha=0.1, warn_singular=False)
+
+            plt.title(f"Optimal Value Distribution for '{feature_name}'", fontsize=16)
+            plt.ylabel("Density", fontsize=12) # Y-axis is "Density" for KDE plots
+
+        # --- Common settings for both plot types ---
+        plt.xlabel("Feature Value", fontsize=12)
+        plt.grid(axis='y', alpha=0.5, linestyle='--')
         
-        long_df = pd.concat(data_to_plot, ignore_index=True)
-        features = long_df['feature'].unique()
-        _LOGGER.info(f"Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
+        legend = ax.get_legend()
+        if legend:
+            legend.set_title('Target')
 
-        for feature_name in features:
-            plt.figure(figsize=(12, 7))
-            feature_df = long_df[long_df['feature'] == feature_name]
-            
-            sns.kdeplot(data=feature_df, x='value', hue='target', fill=True, alpha=0.1)
-            
-            plt.title(f"Comparative Distribution for '{feature_name}'", fontsize=16)
-            plt.xlabel("Feature Value", fontsize=12)
-            plt.ylabel("Density", fontsize=12)
-            plt.grid(axis='y', alpha=0.5, linestyle='--')
-            plt.legend(title='Target')
-
-            sanitized_feature_name = sanitize_filename(feature_name)
-            plot_filename = output_path / f"Comparative_{sanitized_feature_name}.svg"
-            plt.savefig(plot_filename, bbox_inches='tight')
-            plt.close()
-
-    # --- MODE 2: Aggregate plot ---
-    else:
-        feature_distributions = defaultdict(list)
-        for df, _ in yield_dataframes_from_dir(results_path):
-            feature_columns = df.iloc[:, :-1]
-            for feature_name in feature_columns:
-                feature_distributions[feature_name].extend(df[feature_name].tolist())
-        
-        _LOGGER.info(f"Found data for {len(feature_distributions)} features. Generating plots...")
-        for feature_name, values in feature_distributions.items():
-            plt.figure(figsize=(12, 7))
-            sns.histplot(x=values, kde=True, bins='auto', stat="density")
-            
-            plt.title(f"Aggregate Distribution for '{feature_name}'", fontsize=16)
-            plt.xlabel("Feature Value", fontsize=12)
-            plt.ylabel("Density", fontsize=12)
-            plt.grid(axis='y', alpha=0.5, linestyle='--')
-
-            sanitized_feature_name = sanitize_filename(feature_name)
-            plot_filename = output_path / f"Aggregate_{sanitized_feature_name}.svg"
-            plt.savefig(plot_filename, bbox_inches='tight')
-            plt.close()
+        sanitized_feature_name = sanitize_filename(feature_name)
+        plot_filename = output_path / f"Distribution_{sanitized_feature_name}.svg"
+        plt.savefig(plot_filename, bbox_inches='tight')
+        plt.close()
 
     _LOGGER.info(f"✅ All plots saved successfully to: '{output_path}'")
 

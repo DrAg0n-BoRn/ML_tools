@@ -915,7 +915,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
     datasets_path = make_fullpath(datasets_dir)
     save_path = make_fullpath(save_dir, make=True)
     
-    _LOGGER.info("Training starting...")
+    _LOGGER.info("🏁 Training starting...")
     #Yield imputed dataset
     for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_path):
         #Yield features dataframe and target dataframe
@@ -933,7 +933,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_name=target_name,
                                     debug=debug, save_dir=save_path, save_model=save_model)
-    print("")
+
     _LOGGER.info("✅ Training and evaluation complete.")
 
 
