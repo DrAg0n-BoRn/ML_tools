@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] 2025-07-11
+
+### Fixed
+
+- GUI_tools: Fix parameter names and docstrings to better explain how each class and function works.
+
+### Changed
+
+- GUI_tools: `PathManager` moved to "utilities".
+- utilities: `PathManager` Manages and stores a project's file paths, acting as a centralized path database. Supports dictionary-like syntax.
+
 ## [3.7.0] 2025-07-10
 
 ### Fixed

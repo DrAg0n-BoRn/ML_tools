@@ -4,82 +4,19 @@ from typing import Optional, Callable, Any
 import traceback
 import FreeSimpleGUI as sg
 from functools import wraps
-from typing import Any, Dict, Tuple, List
+from typing import Any, Dict, Tuple, List, Literal
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
 
 
 __all__ = [
-    "PathManager", 
     "ConfigManager", 
     "GUIFactory",
     "catch_exceptions", 
     "prepare_feature_vector", 
     "update_target_fields"
 ]
-
-
-# --- Path Management ---
-class PathManager:
-    """
-    Manages paths for a Python application, supporting both development mode and bundled mode via Briefcase.
-    """
-    def __init__(self, anchor_file: str):
-        """
-        Initializes the PathManager. The package name is automatically inferred
-        from the parent directory of the anchor file.
-
-        Args:
-            anchor_file (str): The absolute path to a file within the project's
-                               package, typically `__file__` from a module inside
-                               that package (paths.py).
-
-        Note:
-            This inference assumes that the anchor file's parent directory
-            has the same name as the package (e.g., `.../src/my_app/paths.py`).
-            This is a standard and recommended project structure.
-        """
-        resolved_anchor_path = Path(anchor_file).resolve()
-        self.package_name = resolved_anchor_path.parent.name
-        self._is_bundled, self._resource_path_func = self._check_bundle_status()
-
-        if self._is_bundled:
-            # In a Briefcase bundle, resource_path gives an absolute path
-            # to the resource directory.
-            self.package_root = self._resource_path_func(self.package_name, "") # type: ignore
-        else:
-            # In development mode, the package root is the directory
-            # containing the anchor file.
-            self.package_root = resolved_anchor_path.parent
-
-    def _check_bundle_status(self) -> tuple[bool, Optional[Callable]]:
-        """Checks if the app is running in a bundled environment."""
-        try:
-            # This is the function Briefcase provides in a bundled app
-            from briefcase.platforms.base import resource_path # type: ignore
-            return True, resource_path
-        except ImportError:
-            return False, None
-
-    def get_path(self, relative_path: str | Path) -> Path:
-        """
-        Gets the absolute path for a given resource file or directory
-        relative to the package root.
-
-        Args:
-            relative_path (str | Path): The path relative to the package root (e.g., 'helpers/icon.png').
-
-        Returns:
-            Path: The absolute path to the resource.
-        """
-        if self._is_bundled:
-            # Briefcase's resource_path handles resolving the path within the app bundle 
-            return self._resource_path_func(self.package_name, str(relative_path)) # type: ignore
-        else:
-            # In dev mode, join package root with the relative path.
-            return self.package_root / relative_path
-
 
 # --- Configuration Management ---
 class _SectionProxy:
@@ -273,8 +210,8 @@ class GUIFactory:
         self,
         data_dict: Dict[str, Tuple[float, float]],
         is_target: bool = False,
-        layout_mode: str = 'grid',
-        columns_per_row: int = 4
+        layout_mode: Literal["grid", "row"] = 'grid',
+        features_per_column: int = 4
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for continuous features or targets.
@@ -283,7 +220,7 @@ class GUIFactory:
             data_dict (dict): Keys are feature names, values are (min, max) tuples.
             is_target (bool): If True, creates disabled inputs for displaying results.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
-            columns_per_row (int): Number of feature columns per row when layout_mode is 'grid'.
+            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -294,7 +231,7 @@ class GUIFactory:
         
         columns = []
         for name, (val_min, val_max) in data_dict.items():
-            key = f"TARGET_{name}" if is_target else name
+            key = name
             default_text = "" if is_target else str(val_max)
             
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
@@ -313,6 +250,7 @@ class GUIFactory:
                 range_text = sg.Text(f"Range: {int(val_min)}-{int(val_max)}", font=range_font, background_color=bg_color)
                 layout = [[label], [element], [range_text]]
             
+            # each feature is wrapped as a column element
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
             columns.append(sg.Column(layout, background_color=bg_color))
 
@@ -320,13 +258,13 @@ class GUIFactory:
             return [columns] # A single row containing all columns
         
         # Default to 'grid' layout
-        return [columns[i:i + columns_per_row] for i in range(0, len(columns), columns_per_row)]
+        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
 
     def generate_combo_layout(
         self,
         data_dict: Dict[str, List[Any]],
-        layout_mode: str = 'grid',
-        columns_per_row: int = 4
+        layout_mode: Literal["grid", "row"] = 'grid',
+        features_per_column: int = 4
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for categorical or binary features using Combo boxes.
@@ -334,7 +272,7 @@ class GUIFactory:
         Args:
             data_dict (dict): Keys are feature names, values are lists of options.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
-            columns_per_row (int): Number of feature columns per row when layout_mode is 'grid'.
+            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -352,13 +290,14 @@ class GUIFactory:
             )
             layout = [[label], [element]]
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
+            # each feature is wrapped in a Column element
             columns.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
             return [columns] # A single row containing all columns
             
         # Default to 'grid' layout
-        return [columns[i:i + columns_per_row] for i in range(0, len(columns), columns_per_row)]
+        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
 
     # --- Window Creation ---
     def create_window(self, title: str, layout: List[List[sg.Element]], **kwargs) -> sg.Window:
@@ -421,8 +360,8 @@ def _default_categorical_processor(feature_name: str, chosen_value: Any) -> List
     return [1.0] if str(chosen_value) == 'True' else [0.0]
 
 def prepare_feature_vector(
-    values: Dict[str, Any],
-    feature_order: List[str],
+    window_values: Dict[str, Any],
+    gui_feature_order: List[str],
     continuous_features: List[str],
     categorical_features: List[str],
     categorical_processor: Optional[Callable[[str, Any], List[float]]] = None
@@ -432,8 +371,8 @@ def prepare_feature_vector(
     This function supports label encoding and one-hot encoding via the processor.
 
     Args:
-        values (dict): The values dictionary from a `window.read()` call.
-        feature_order (list): A list of all feature names that have a GUI element.
+        window_values (dict): The values dictionary from a `window.read()` call.
+        gui_feature_order (list): A list of all feature names that have a GUI element.
                               For one-hot encoding, this should be the name of the
                               single GUI element (e.g., 'material_type'), not the
                               expanded feature names (e.g., 'material_is_steel').
@@ -456,8 +395,8 @@ def prepare_feature_vector(
     cont_set = set(continuous_features)
     cat_set = set(categorical_features)
 
-    for name in feature_order:
-        chosen_value = values.get(name)
+    for name in gui_feature_order:
+        chosen_value = window_values.get(name)
         
         if chosen_value is None or chosen_value == '':
             raise ValueError(f"Feature '{name}' is missing a value.")
@@ -482,12 +421,12 @@ def update_target_fields(window: sg.Window, results_dict: Dict[str, Any]):
 
     Args:
         window (sg.Window): The application's window object.
-        results_dict (dict): A dictionary where keys are target key names (including 'TARGET_' prefix if necessary) and values are the predicted results.
+        results_dict (dict): A dictionary where keys are target element-keys and values are the predicted results to update.
     """
     for target_name, result in results_dict.items():
         # Format numbers to 2 decimal places, leave other types as-is
         display_value = f"{result:.2f}" if isinstance(result, (int, float)) else result
-        window[target_name].update(display_value)
+        window[target_name].update(display_value) # type: ignore
 
 
 def info():
