@@ -1,10 +1,9 @@
 import configparser
 from pathlib import Path
-from typing import Optional, Callable, Any
 import traceback
 import FreeSimpleGUI as sg
 from functools import wraps
-from typing import Any, Dict, Tuple, List, Literal
+from typing import Any, Dict, Tuple, List, Literal, Union, Any, Optional
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
@@ -185,7 +184,7 @@ class GUIFactory:
         }
         return sg.Button(text.title(), key=key, **style_args)
 
-    def make_frame(self, title: str, layout: List[List[sg.Element]], **kwargs) -> sg.Frame:
+    def make_frame(self, title: str, layout: List[List[Union[sg.Element, sg.Column]]], **kwargs) -> sg.Frame:
         """
         Creates a styled frame around a given layout.
 
@@ -209,7 +208,7 @@ class GUIFactory:
     # --- General-Purpose Layout Generators ---
     def generate_continuous_layout(
         self,
-        data_dict: Dict[str, Tuple[float, float]],
+        data_dict: Dict[str, Optional[Tuple[Union[int,float], Union[int,float]]]],
         is_target: bool = False,
         layout_mode: Literal["grid", "row"] = 'grid',
         features_per_column: int = 4
@@ -231,7 +230,13 @@ class GUIFactory:
         label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
         
         columns = []
-        for name, (val_min, val_max) in data_dict.items():
+        for name, value in data_dict.items():
+            if value is None:
+                val_min, val_max = None, None
+                if not is_target:
+                    raise ValueError(f"Feature '{name}' was assigned a 'None' value. It is not defined as a target.")
+            else:
+                val_min, val_max = value
             key = name
             default_text = "" if is_target else str(val_max)
             
@@ -248,7 +253,7 @@ class GUIFactory:
                 layout = [[label], [element]]
             else:
                 range_font = (cfg.fonts.font_family, cfg.fonts.range_size) # type: ignore
-                range_text = sg.Text(f"Range: {int(val_min)}-{int(val_max)}", font=range_font, background_color=bg_color)
+                range_text = sg.Text(f"Range: {int(val_min)}-{int(val_max)}", font=range_font, background_color=bg_color) # type: ignore
                 layout = [[label], [element], [range_text]]
             
             # each feature is wrapped as a column element
