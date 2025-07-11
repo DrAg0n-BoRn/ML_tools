@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "3.8.0"
+version = "3.9.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -16,8 +16,8 @@ dependencies = [
     "numpy<2.0",
     "scikit-learn",
     "openpyxl", 
-    "miceforest>=6.0.0,<7.0.0",
-    "plotnine>=0.12,<0.13",
+    "miceforest>=6.0.0",
+    "plotnine>=0.12",
     "matplotlib",
     "seaborn",
     "pandas",

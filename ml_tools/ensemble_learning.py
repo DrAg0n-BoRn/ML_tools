@@ -6,7 +6,7 @@ from matplotlib.colors import Colormap
 from matplotlib import rcdefaults
 
 from pathlib import Path
-from typing import Literal, Union, Optional, Iterator, Tuple
+from typing import Literal, Union, Optional, Iterator, Tuple, Dict, Any, List
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
@@ -19,7 +19,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath
+from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath, list_files_by_extension, deserialize_object
 from .logger import _LOGGER
 
 import warnings # Ignore warnings 
@@ -38,7 +38,8 @@ __all__ = [
     "evaluate_model_regression",
     "get_shap_values",
     "train_test_pipeline",
-    "run_ensemble_pipeline"
+    "run_ensemble_pipeline",
+    "InferenceHandler"
 ]
 
 ## Type aliases
@@ -935,6 +936,125 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     debug=debug, save_dir=save_path, save_model=save_model)
 
     _LOGGER.info("✅ Training and evaluation complete.")
+
+
+###### 6. Inference ######
+class InferenceHandler:
+    """
+    Handles loading ensemble models and performing inference for either regression or classification tasks.
+    """
+    def __init__(self, 
+                 models_dir: Union[str,Path], 
+                 task: TaskType,
+                 verbose: bool=True) -> None:
+        """
+        Initializes the handler by loading all models from a directory.
+
+        Args:
+            models_dir (Path): The directory containing the saved .joblib model files.
+            task ("regression" | "classification"): The type of task the models perform.
+        """
+        self.models: Dict[str, Any] = dict()
+        self.task: str = task
+        self.verbose = verbose
+        self._feature_names: Optional[List[str]] = None
+        
+        model_files = list_files_by_extension(directory=models_dir, extension="joblib")
+        
+        for fname, fpath in model_files.items():
+            try:
+                full_object: dict
+                full_object = deserialize_object(filepath=fpath, 
+                                                 verbose=self.verbose, 
+                                                 raise_on_error=True) # type: ignore
+                
+                model: Any = full_object["model"]
+                target_name: str = full_object["target_name"]
+                feature_names_list: List[str] = full_object["feature_names"]
+                
+                # Check that feature names match
+                if self._feature_names is None:
+                    # Store the feature names from the first model loaded.
+                    self._feature_names = feature_names_list
+                elif self._feature_names != feature_names_list:
+                    # Add a warning if subsequent models have different feature names.
+                    _LOGGER.warning(f"⚠️ Mismatched feature names in {fname}. Using feature order from the first model loaded.")
+                
+                self.models[target_name] = model
+                if self.verbose:
+                    _LOGGER.info(f"✅ Loaded model for target: {target_name}")
+
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Failed to load or parse {fname}: {e}")
+                
+    @property
+    def feature_names(self) -> List[str]:
+        """
+        Getter for the list of feature names the models expect.
+        Returns an empty list if no models were loaded.
+        """
+        return self._feature_names if self._feature_names is not None else []
+    
+    def predict(self, features: np.ndarray) -> Dict[str, Any]:
+        """
+        Predicts on a single feature vector.
+
+        Args:
+            features (np.ndarray): A 1D or 2D NumPy array for a single sample.
+
+        Returns:
+            Dict[str, Any]: A dictionary where keys are target names.
+                - For regression: The value is the single predicted float.
+                - For classification: The value is another dictionary {'label': ..., 'probabilities': ...}.
+        """
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+        
+        if features.shape[0] != 1:
+            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+
+        results: Dict[str, Any] = dict()
+        for target_name, model in self.models.items():
+            if self.task == "regression":
+                prediction = model.predict(features)
+                results[target_name] = prediction.item()
+            else: # Classification
+                label = model.predict(features)[0]
+                probabilities = model.predict_proba(features)[0]
+                results[target_name] = {"label": label, "probabilities": probabilities}
+        
+        if self.verbose:
+            _LOGGER.info("✅ Inference process complete.")
+        return results
+
+    def predict_batch(self, features: np.ndarray) -> Dict[str, Any]:
+        """
+        Predicts on a batch of feature vectors.
+
+        Args:
+            features (np.ndarray): A 2D NumPy array where each row is a sample.
+
+        Returns:
+            Dict[str, Any]: A dictionary where keys are target names.
+                - For regression: The value is a NumPy array of predictions.
+                - For classification: The value is another dictionary {'labels': ..., 'probabilities': ...}.
+        """
+        if features.ndim != 2:
+            raise ValueError("Input for batch prediction must be a 2D array.")
+
+        results: Dict[str, Any] = dict()
+        for target_name, model in self.models.items():
+            if self.task == "regression":
+                results[target_name] = model.predict(features)
+            else: # Classification
+                labels = model.predict(features)
+                probabilities = model.predict_proba(features)
+                results[target_name] = {"labels": labels, "probabilities": probabilities}
+                
+        if self.verbose:
+            _LOGGER.info("✅ Inference process complete.")
+
+        return results
 
 
 def info():

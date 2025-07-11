@@ -86,6 +86,7 @@ ML_callbacks
 ML_evaluation
 ML_trainer
 ML_tutorial
+path_manager
 PSO_optimization
 RNN_forecast
 utilities

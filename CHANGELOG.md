@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.0] 2025-07-11
+
+### Added
+
+- ensemble_learning: `InferenceHandler` Handles loading ensemble models and performing inference for either regression or classification tasks.
+- GUI_tools: `BaseFeatureHandler` An abstract base class that defines the template for preparing a model input feature vector to perform inference, from GUI inputs.
+- New Module: "path_manager" with the class `PathManager` Manages and stores a project's file paths, acting as a centralized path database. Supports dictionary-like syntax.
+
+### Changed
+
+- GUI_tools: `prepare_feature_vector()` deleted in favor of the new class `BaseFeatureHandler`.
+- utilities: `PathManager` moved to its own module.
+
 ## [3.8.0] 2025-07-11
 
 ### Fixed

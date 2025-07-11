@@ -8,13 +8,14 @@ from typing import Any, Dict, Tuple, List, Literal
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
+from abc import ABC, abstractmethod
 
 
 __all__ = [
     "ConfigManager", 
     "GUIFactory",
     "catch_exceptions", 
-    "prepare_feature_vector", 
+    "BaseFeatureHandler", 
     "update_target_fields"
 ]
 
@@ -351,68 +352,93 @@ def catch_exceptions(show_popup: bool = True):
     return decorator
 
 
-# --- Inference Helpers ---
-def _default_categorical_processor(feature_name: str, chosen_value: Any) -> List[float]:
+# --- Inference Helper ---
+class BaseFeatureHandler(ABC):
     """
-    Default processor for binary 'True'/'False' strings.
-    Returns a list containing a single float.
+    An abstract base class that defines the template for preparing a model input feature vector to perform inference, from GUI inputs.
+
+    A subclass must implement the `gui_input_map` property and the `process_categorical` method.
     """
-    return [1.0] if str(chosen_value) == 'True' else [0.0]
-
-def prepare_feature_vector(
-    window_values: Dict[str, Any],
-    gui_feature_order: List[str],
-    continuous_features: List[str],
-    categorical_features: List[str],
-    categorical_processor: Optional[Callable[[str, Any], List[float]]] = None
-) -> np.ndarray:
-    """
-    Validates and converts GUI values into a numpy array for a model.
-    This function supports label encoding and one-hot encoding via the processor.
-
-    Args:
-        window_values (dict): The values dictionary from a `window.read()` call.
-        gui_feature_order (list): A list of all feature names that have a GUI element.
-                              For one-hot encoding, this should be the name of the
-                              single GUI element (e.g., 'material_type'), not the
-                              expanded feature names (e.g., 'material_is_steel').
-        continuous_features (list): A list of names for continuous features.
-        categorical_features (list): A list of names for categorical features.
-        categorical_processor (callable, optional): A function to process categorical
-            values. It should accept (feature_name, chosen_value) and return a
-            list of floats (e.g., [1.0] for label encoding, [0.0, 1.0, 0.0] for one-hot).
-            If None, a default 'True'/'False' processor is used.
-
-    Returns:
-        A 1D numpy array ready for model inference.
-    """
-    processed_values: List[float] = []
-    
-    # Use the provided processor or the default one
-    processor = categorical_processor or _default_categorical_processor
-    
-    # Create sets for faster lookups
-    cont_set = set(continuous_features)
-    cat_set = set(categorical_features)
-
-    for name in gui_feature_order:
-        chosen_value = window_values.get(name)
+    def __init__(self, expected_columns_in_order: list[str]):
+        """
+        Validates and stores the feature names in the order the model expects.
         
-        if chosen_value is None or chosen_value == '':
-            raise ValueError(f"Feature '{name}' is missing a value.")
-
-        if name in cont_set:
-            try:
-                processed_values.append(float(chosen_value))
-            except (ValueError, TypeError):
-                raise ValueError(f"Invalid input for '{name}'. Please enter a valid number.")
-        
-        elif name in cat_set:
-            # The processor returns a list of values (one for label, multiple for one-hot)
-            numeric_values = processor(name, chosen_value)
-            processed_values.extend(numeric_values)
+        Args:
+            expected_columns_in_order (List[str]): A list of strings with the feature names in the correct order.
+        """
+        # --- Validation Logic ---
+        if not isinstance(expected_columns_in_order, list):
+            raise TypeError("Input 'expected_columns_in_order' must be a list.")
             
-    return np.array(processed_values, dtype=np.float32)
+        if not all(isinstance(col, str) for col in expected_columns_in_order):
+            raise TypeError("All elements in the 'expected_columns_in_order' list must be strings.")
+        # -----------------------
+        
+        self._model_feature_order = expected_columns_in_order
+        
+    @property
+    @abstractmethod
+    def gui_input_map(self) -> Dict[str, Literal["continuous","categorical"]]:
+        """
+        Must be implemented by the subclass.
+
+        Should return a dictionary mapping each GUI input name to its type ('continuous' or 'categorical').
+        
+        ```python
+        #Example: 
+        {'temperature': 'continuous', 'material_type': 'categorical'}
+        ```
+        """
+        pass
+
+    @abstractmethod
+    def process_categorical(self, feature_name: str, chosen_value: Any) -> Dict[str, float]:
+        """
+        Must be implemented by the subclass.
+
+        Should take a GUI categorical feature name and its chosen value, and return a dictionary mapping the one-hot-encoded feature names to their
+        float values (as expected by the inference model).
+        """
+        pass
+
+    def __call__(self, window_values: Dict[str, Any]) -> np.ndarray:
+        """
+        Performs the full vector preparation, returning a 1D numpy array.
+        
+        Should not be overridden by subclasses.
+        """
+        # Stage 1: Process GUI inputs into a dictionary
+        processed_features: Dict[str, float] = {}
+        for gui_name, feature_type in self.gui_input_map.items():
+            chosen_value = window_values.get(gui_name)
+
+            if chosen_value is None or str(chosen_value) == '':
+                raise ValueError(f"GUI input '{gui_name}' is missing a value.")
+
+            if feature_type == 'continuous':
+                try:
+                    processed_features[gui_name] = float(chosen_value)
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid number '{chosen_value}' for '{gui_name}'.")
+
+            elif feature_type == 'categorical':
+                feature_dict = self.process_categorical(gui_name, chosen_value)
+                processed_features.update(feature_dict)
+
+        # Stage 2: Assemble the final vector using the model's required order
+        final_vector: List[float] = []
+        
+        try:
+            for feature_name in self._model_feature_order:
+                final_vector.append(processed_features[feature_name])
+        except KeyError as e:
+            raise RuntimeError(
+                f"Configuration Error: Implemented methods failed to generate "
+                f"the required model feature: '{e}'"
+                f"Check the gui_input_map and process_categorical logic."
+            )
+            
+        return np.array(final_vector, dtype=np.float32)
 
 
 def update_target_fields(window: sg.Window, results_dict: Dict[str, Any]):
