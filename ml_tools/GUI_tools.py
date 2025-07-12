@@ -497,18 +497,34 @@ class BaseFeatureHandler(ABC):
         return np.array(final_vector, dtype=np.float32)
 
 
-def update_target_fields(window: sg.Window, results_dict: Dict[str, Any]):
+def update_target_fields(window: sg.Window, results_dict: Dict[str, Any], map_model_to_gui: Optional[Dict[str,str]]):
     """
     Updates the GUI's target fields with inference results.
 
     Args:
         window (sg.Window): The application's window object.
-        results_dict (dict): A dictionary where keys are target element-keys and values are the predicted results to update.
+        results_dict (dict): A dictionary where keys are target names (as expected by the GUI) and values are the predicted results to update.
+        map_model_to_gui (dict | None): Map `results_dict.keys()` from model target names to GUI target names, if gui names were customized.
     """
-    for target_name, result in results_dict.items():
+    if map_model_to_gui is not None:
+        # Validation
+        if len(map_model_to_gui) != len(results_dict):
+            _LOGGER.error(f"Expected a mapping for {len(results_dict)} targets, but received {len(map_model_to_gui)} target map names.")
+            raise ValueError
+        
+        # new dictionary with GUI keys and corresponding result values
+        display_dict = {
+            gui_key: results_dict[model_key]
+            for model_key, gui_key in map_model_to_gui.items()
+        }
+    else:
+        # If no map is provided, use given result keys
+        display_dict = results_dict
+
+    for key, result in display_dict.items():
         # Format numbers to 2 decimal places, leave other types as-is
         display_value = f"{result:.2f}" if isinstance(result, (int, float)) else result
-        window[target_name].update(display_value) # type: ignore
+        window[key].update(display_value) # type: ignore
 
 
 def info():

@@ -973,9 +973,9 @@ class InferenceHandler:
                                                  verbose=self.verbose, 
                                                  raise_on_error=True) # type: ignore
                 
-                model: Any = full_object["model"]
-                target_name: str = full_object["target_name"]
-                feature_names_list: List[str] = full_object["feature_names"]
+                model: Any = full_object[ModelSaveKeys.MODEL]
+                target_name: str = full_object[ModelSaveKeys.TARGET]
+                feature_names_list: List[str] = full_object[ModelSaveKeys.FEATURES]
                 
                 # Check that feature names match
                 if self._feature_names is None:
