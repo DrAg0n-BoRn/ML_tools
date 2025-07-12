@@ -389,23 +389,73 @@ class BaseFeatureHandler(ABC):
 
         Should return a dictionary mapping each GUI input name to its type ('continuous' or 'categorical').
         
+        _Example:_
         ```python
-        #Example: 
-        {'temperature': 'continuous', 'material_type': 'categorical'}
+        {
+            'Temperature': 'continuous', 
+            'Material Type': 'categorical'
+        }
+        ```
+        """
+        pass
+    
+    @property
+    @abstractmethod
+    def map_gui_to_real(self) -> Dict[str,str]:
+        """
+        Must be implemented by the subclass.
+
+        Should return a dictionary mapping each GUI continuous feature name to its expected model feature name.
+        
+        _Example:_
+        ```python
+        {
+            'Temperature (K)': 'temperature_k', 
+            'Pressure (Pa)': 'pressure_pa'
+        }
         ```
         """
         pass
 
     @abstractmethod
-    def process_categorical(self, feature_name: str, chosen_value: Any) -> Dict[str, float]:
+    def process_categorical(self, gui_feature_name: str, chosen_value: Any) -> Dict[str, float]:
         """
         Must be implemented by the subclass.
 
-        Should take a GUI categorical feature name and its chosen value, and return a dictionary mapping the one-hot-encoded feature names to their
+        Should take a GUI categorical feature name and its chosen value, and return a dictionary mapping the one-hot-encoded/binary real feature names to their
         float values (as expected by the inference model).
+        
+        _Example:_
+        ```python        
+        # GUI input: "Material Type"
+        # GUI values: "Steel", "Aluminum", "Titanium"
+        {
+            "is_steel": 0, 
+            "is_aluminum": 1,
+            "is_titanium": 0,
+        }
+        ```
         """
         pass
-
+    
+    def _process_continuous(self, gui_feature_name: str, chosen_value: Any) -> Tuple[str, float]:
+        """
+        Maps GUI names to model expected names and casts the value to float.
+        
+        Should not be overridden by subclasses.
+        """
+        try:
+            real_name = self.map_gui_to_real[gui_feature_name]
+            float_value = float(chosen_value)
+        except KeyError as e:
+            _LOGGER.error(f"No matching name for '{gui_feature_name}'. Check the 'map_gui_to_real' implementation.")
+            raise e
+        except (ValueError, TypeError) as e2:
+            _LOGGER.error(f"Invalid number conversion for '{chosen_value}' of '{gui_feature_name}'.")
+            raise e2
+        else:
+            return real_name, float_value
+    
     def __call__(self, window_values: Dict[str, Any]) -> np.ndarray:
         """
         Performs the full vector preparation, returning a 1D numpy array.
@@ -416,16 +466,17 @@ class BaseFeatureHandler(ABC):
         processed_features: Dict[str, float] = {}
         for gui_name, feature_type in self.gui_input_map.items():
             chosen_value = window_values.get(gui_name)
-
+            
+            # value validation
             if chosen_value is None or str(chosen_value) == '':
                 raise ValueError(f"GUI input '{gui_name}' is missing a value.")
 
+            # process continuous
             if feature_type == 'continuous':
-                try:
-                    processed_features[gui_name] = float(chosen_value)
-                except (ValueError, TypeError):
-                    raise ValueError(f"Invalid number '{chosen_value}' for '{gui_name}'.")
-
+                mapped_name, float_value = self._process_continuous(gui_name, chosen_value)
+                processed_features[mapped_name] = float_value
+            
+            # process categorical
             elif feature_type == 'categorical':
                 feature_dict = self.process_categorical(gui_name, chosen_value)
                 processed_features.update(feature_dict)
