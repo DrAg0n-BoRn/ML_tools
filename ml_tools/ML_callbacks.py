@@ -1,7 +1,8 @@
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from .utilities import make_fullpath, LogKeys
+from .utilities import make_fullpath
+from .keys import LogKeys
 from .logger import _LOGGER
 from typing import Optional
 

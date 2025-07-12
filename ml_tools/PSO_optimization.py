@@ -23,6 +23,7 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .logger import _LOGGER
+from .keys import ModelSaveKeys
 
 
 __all__ = [
@@ -55,9 +56,9 @@ class ObjectiveFunction():
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
         self._artifact = deserialize_object(trained_model_path, verbose=False, raise_on_error=True)
-        self.model = self._get_from_artifact('model')
-        self.feature_names: Optional[list[str]] = self._get_from_artifact('feature_names') # type: ignore
-        self.target_name: Optional[str] = self._get_from_artifact('target_name') # type: ignore
+        self.model = self._get_from_artifact(ModelSaveKeys.MODEL)
+        self.feature_names: Optional[list[str]] = self._get_from_artifact(ModelSaveKeys.FEATURES) # type: ignore
+        self.target_name: Optional[str] = self._get_from_artifact(ModelSaveKeys.TARGET) # type: ignore
         self.task = task
         self.check_model() # check for classification models and None values
         
@@ -133,7 +134,7 @@ class ObjectiveFunction():
         if self._artifact is None:
             raise TypeError("Load model error")
         val = self._artifact.get(key)
-        if key == "feature_names":
+        if key == ModelSaveKeys.FEATURES:
             result = val if isinstance(val, list) and val else None
         else:
             result = val if val else None

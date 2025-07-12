@@ -643,22 +643,6 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
     print(f"\n✅ {total_saved} single-target datasets were created.")
 
 
-class LogKeys:
-    """
-    Used internally for ML scripts.
-    
-    Centralized keys for logging and history.
-    """
-    # --- Epoch Level ---
-    TRAIN_LOSS = 'train_loss'
-    VAL_LOSS = 'val_loss'
-
-    # --- Batch Level ---
-    BATCH_LOSS = 'loss'
-    BATCH_INDEX = 'batch'
-    BATCH_SIZE = 'size'
-
-
 def _script_info(all_data: list[str]):
     """
     List available names.

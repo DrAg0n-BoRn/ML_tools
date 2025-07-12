@@ -25,5 +25,4 @@ This project depends on the following third-party packages. Each is governed by 
 - [miceforest](https://github.com/AnotherSamWilson/miceforest/blob/main/LICENSE)
 - [polars](https://github.com/pola-rs/polars/blob/main/LICENSE)
 - [plotnine](https://github.com/has2k1/plotnine/blob/main/LICENSE)
-- [pyswarm](https://pythonhosted.org/pyswarm/#license)
 - [tqdm](https://github.com/tqdm/tqdm/blob/master/LICENSE)

@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import json
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap
@@ -20,6 +21,7 @@ from sklearn.metrics import accuracy_score, classification_report, ConfusionMatr
 import shap
 
 from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath, list_files_by_extension, deserialize_object
+from .keys import ModelSaveKeys
 from .logger import _LOGGER
 
 import warnings # Ignore warnings 
@@ -39,7 +41,8 @@ __all__ = [
     "get_shap_values",
     "train_test_pipeline",
     "run_ensemble_pipeline",
-    "InferenceHandler"
+    "InferenceHandler",
+    "model_report"
 ]
 
 ## Type aliases
@@ -487,8 +490,10 @@ def _save_model(trained_model, model_name: str, target_name:str, feature_names: 
     #Sanitize filenames to save
     sanitized_target_name = sanitize_filename(target_name)
     filename = f"{model_name}_{sanitized_target_name}"
-    to_save = {'model': trained_model, 'feature_names': feature_names, 'target_name':target_name}
-    
+    to_save = {ModelSaveKeys.MODEL: trained_model, 
+               ModelSaveKeys.FEATURES: feature_names,
+               ModelSaveKeys.TARGET: target_name}
+
     serialize_object(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
 
 # function to evaluate the model and save metrics (Classification)
@@ -1055,6 +1060,85 @@ class InferenceHandler:
             _LOGGER.info("✅ Inference process complete.")
 
         return results
+
+
+###### 7. Save Model info report ######
+def model_report(
+        model_path: Union[str,Path],
+        output_dir: Optional[Union[str,Path]] = None,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+    """
+    Deserializes a model and generates a summary report.
+
+    This function loads a serialized model object (joblib), prints a summary to the
+    console (if verbose), and saves a detailed JSON report.
+
+    Args:
+        model_path (str): The path to the serialized model file.
+        output_dir (str, optional): Directory to save the JSON report.
+            If None, it defaults to the same directory as the model file.
+        verbose (bool, optional): If True, prints summary information
+            to the console. Defaults to True.
+
+    Returns:
+        (Dict[str, Any]): A dictionary containing the model metadata.
+
+    Raises:
+        FileNotFoundError: If the model_path does not exist.
+        KeyError: If the deserialized object is missing required keys from `ModelSaveKeys`.
+    """
+    # 1. Convert to Path object
+    model_p = make_fullpath(model_path)
+
+    # --- 2. Deserialize and Extract Info ---
+    try:
+        full_object: dict = deserialize_object(model_p) # type: ignore
+        model = full_object[ModelSaveKeys.MODEL]
+        target = full_object[ModelSaveKeys.TARGET]
+        features = full_object[ModelSaveKeys.FEATURES]
+    except FileNotFoundError:
+        _LOGGER.error(f"❌ Model file not found at '{model_p}'")
+        raise
+    except (KeyError, TypeError) as e:
+        _LOGGER.error(
+            f"❌ The serialized object is missing required keys '{ModelSaveKeys.MODEL}', '{ModelSaveKeys.TARGET}', '{ModelSaveKeys.FEATURES}'"
+        )
+        raise e
+
+    # --- 3. Print Summary to Console (if verbose) ---
+    if verbose:
+        print("\n--- 📝 Model Summary ---")
+        print(f"Source File:    {model_p.name}")
+        print(f"Model Type:     {type(model).__name__}")
+        print(f"Target:         {target}")
+        print(f"Feature Count:  {len(features)}")
+        print("-----------------------")
+
+    # --- 4. Generate JSON Report ---
+    report_data = {
+        "source_file": model_p.name,
+        "model_type": str(type(model)),
+        "target_name": target,
+        "feature_count": len(features),
+        "feature_names": features
+    }
+
+    # Determine output path
+    output_p = make_fullpath(output_dir, make=True) if output_dir else model_p.parent
+    json_filename = model_p.stem + "_info.json"
+    json_filepath = output_p / json_filename    
+
+    try:
+        with open(json_filepath, 'w') as f:
+            json.dump(report_data, f, indent=4)
+        if verbose:
+            _LOGGER.info(f"✅ JSON report saved to: '{json_filepath}'")
+    except PermissionError:
+        _LOGGER.error(f"❌ Permission denied to write JSON report at '{json_filepath}'")
+
+    # --- 5. Return the extracted data ---
+    return report_data
 
 
 def info():

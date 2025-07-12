@@ -7,7 +7,8 @@ import numpy as np
 
 from .ML_callbacks import Callback, History, TqdmProgressBar
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot
-from .utilities import _script_info, LogKeys
+from .utilities import _script_info
+from .keys import LogKeys
 from .logger import _LOGGER
 
 

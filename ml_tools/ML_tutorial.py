@@ -25,7 +25,7 @@ def _get_notebook_content(kind: str):
             "# Import from dragon_ml_toolbox\n",
             "from ml_tools.ML_trainer import MyTrainer\n",
             "from ml_tools.ML_callbacks import EarlyStopping, ModelCheckpoint"
-            "from ml_tools.utilities import LogKeys"
+            "from ml_tools.keys import LogKeys"
         ]
     }
     
