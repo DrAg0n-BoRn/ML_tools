@@ -1026,7 +1026,8 @@ class InferenceHandler:
             else: # Classification
                 label = model.predict(features)[0]
                 probabilities = model.predict_proba(features)[0]
-                results[target_name] = {"label": label, "probabilities": probabilities}
+                results[target_name] = {ModelSaveKeys.CLASSIFICATION_LABEL: label, 
+                                        ModelSaveKeys.CLASSIFICATION_PROBABILITIES: probabilities}
         
         if self.verbose:
             _LOGGER.info("✅ Inference process complete.")

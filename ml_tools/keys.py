@@ -17,9 +17,12 @@ class LogKeys:
 class ModelSaveKeys:
     """
     Used internally for ensemble_learning module.
-    
-    Keys used for serializing a trained model metadata.
     """
+    # Serializing a trained model metadata.
     MODEL = "model"
     FEATURES = "feature_names"
     TARGET = "target_name"
+    
+    # Classification keys
+    CLASSIFICATION_LABEL = "label"
+    CLASSIFICATION_PROBABILITIES = "probabilities"

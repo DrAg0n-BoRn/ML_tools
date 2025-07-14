@@ -3,19 +3,18 @@ from pathlib import Path
 import traceback
 import FreeSimpleGUI as sg
 from functools import wraps
-from typing import Any, Dict, Tuple, List, Literal, Union, Any, Optional
+from typing import Any, Dict, Tuple, List, Literal, Union, Any, Optional, Callable
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
-from abc import ABC, abstractmethod
 
 
 __all__ = [
     "ConfigManager", 
     "GUIFactory",
     "catch_exceptions", 
-    "BaseFeatureHandler", 
-    "update_target_fields"
+    "FeatureMaster",
+    "GUIHandler" 
 ]
 
 # --- Configuration Management ---
@@ -208,7 +207,7 @@ class GUIFactory:
     # --- General-Purpose Layout Generators ---
     def generate_continuous_layout(
         self,
-        data_dict: Dict[str, Optional[Tuple[Union[int,float], Union[int,float]]]],
+        data_dict: Dict[str, Union[Tuple[Union[int,float,None], Union[int,float,None]],List[Union[int,float,None]]]],
         is_target: bool = False,
         layout_mode: Literal["grid", "row"] = 'grid',
         features_per_column: int = 4
@@ -232,9 +231,9 @@ class GUIFactory:
         columns = []
         for name, value in data_dict.items():
             if value is None:
-                val_min, val_max = None, None
-                if not is_target:
-                    raise ValueError(f"Feature '{name}' was assigned a 'None' value. It is not defined as a target.")
+                raise ValueError(f"Feature '{name}' was assigned a 'None' value.")
+            elif len(value) != 2:
+                raise ValueError(f"Feature '{name}' must provide exactly 2 values.")
             else:
                 val_min, val_max = value
             key = name
@@ -268,7 +267,7 @@ class GUIFactory:
 
     def generate_combo_layout(
         self,
-        data_dict: Dict[str, List[Any]],
+        data_dict: Dict[str, Union[List[Any],Tuple[Any,...]]],
         layout_mode: Literal["grid", "row"] = 'grid',
         features_per_column: int = 4
     ) -> List[List[sg.Column]]:
@@ -357,175 +356,487 @@ def catch_exceptions(show_popup: bool = True):
     return decorator
 
 
-# --- Inference Helper ---
-class BaseFeatureHandler(ABC):
+# --- Feature Handler ---
+class FeatureMaster:
     """
-    An abstract base class that defines the template for preparing a model input feature vector to perform inference, from GUI inputs.
+    Manages and organizes feature definitions for a machine learning model.
 
-    A subclass must implement the `gui_input_map` property and the `process_categorical` method.
+    This class serves as a centralized registry for all features and targets 
+    used by a model. It is designed to bridge the gap between a user-facing 
+    application (like a GUI) and the underlying model's data representation.
+
+    It takes various types of features (continuous, binary, one-hot encoded, 
+    categorical) and targets, processing them into two key formats:
+    1.  A mapping from a user-friendly "GUI name" to the corresponding "model name" 
+        used in the dataset or model training.
+    2.  A structure containing the acceptable values or ranges for each feature, 
+        suitable for populating GUI elements like sliders, dropdowns, or checkboxes.
+
+    By separating the GUI representation from the model's internal logic, this 
+    class simplifies the process of building user interfaces for model interaction 
+    and ensures that user input is correctly formatted. At least one type of 
+    feature must be provided upon initialization.
+
+    Properties are available to access the processed mappings and GUI-ready values 
+    for each feature type.
     """
-    def __init__(self, expected_columns_in_order: list[str]):
+    def __init__(self,
+                 targets: Dict[str, str],
+                 continuous_features: Optional[Dict[str, Tuple[str, float, float]]] = None,
+                 binary_features: Optional[Dict[str, str]] = None,
+                 one_hot_features: Optional[Dict[str, Dict[str, str]]] = None,
+                 categorical_features: Optional[List[Tuple[str, str, Dict[str, int]]]] = None) -> None:
         """
-        Validates and stores the feature names in the order the model expects.
-        
+        Initializes the FeatureMaster instance by processing feature and target definitions.
+
+        This constructor creates internal mappings to translate between GUI-friendly names and model-specific feature names. It also
+        prepares data structures needed to populate UI components.
+
         Args:
-            expected_columns_in_order (List[str]): A list of strings with the feature names in the correct order.
-        """
-        # --- Validation Logic ---
-        if not isinstance(expected_columns_in_order, list):
-            raise TypeError("Input 'expected_columns_in_order' must be a list.")
+            targets (Dict[str, str]):
+                A dictionary defining the model's target variables.
+                -   **key** (str): The name to be displayed in the GUI.
+                -   **value** (str): The corresponding column name in the model's dataset.
             
-        if not all(isinstance(col, str) for col in expected_columns_in_order):
-            raise TypeError("All elements in the 'expected_columns_in_order' list must be strings.")
-        # -----------------------
-        
-        self._model_feature_order = expected_columns_in_order
-        
-    @property
-    @abstractmethod
-    def gui_input_map(self) -> Dict[str, Literal["continuous","categorical"]]:
-        """
-        Must be implemented by the subclass.
+            continuous_features (Dict[str, Tuple[str, float, float]]):
+                A dictionary for continuous numerical features.
+                -   **key** (str): The name to be displayed in the GUI (e.g., for a slider).
+                -   **value** (Tuple[str, float, float]): A tuple containing:
+                    -   `[0]` (str): The model's internal feature name.
+                    -   `[1]` (float): The minimum allowed value (inclusive).
+                    -   `[2]` (float): The maximum allowed value (inclusive).
+            
+            binary_features (Dict[str, str]):
+                A dictionary for binary (True/False) features.
+                -   **key** (str): The name to be displayed in the GUI (e.g., for a checkbox).
+                -   **value** (str): The model's internal feature name.
 
-        Should return a dictionary mapping each GUI input name to its type ('continuous' or 'categorical').
-        
-        _Example:_
-        ```python
-        {
-            'Temperature': 'continuous', 
-            'Material Type': 'categorical'
-        }
-        ```
+            one_hot_features (Dict[str, Dict[str, str]]):
+                A dictionary for features that will be one-hot encoded from a single
+                categorical input.
+                -   **key** (str): The name for the group to be displayed in the GUI (e.g., 
+                    for a dropdown menu).
+                -   **value** (Dict[str, str]): A nested dictionary where:
+                    -   key (str): The user-selectable option (e.g., 'Category A').
+                    -   value (str): The corresponding model column name that will be 
+                        set to 1.
+
+            categorical_features (List[Tuple[str, str, Dict[str, int]]]):
+                A list for ordinal or label-encoded categorical features.
+                -   **Each element is a tuple** containing:
+                    -   `[0]` (str): The name to be displayed in the GUI (e.g., for a 
+                        dropdown menu).
+                    -   `[1]` (str): The model's internal feature name.
+                    -   `[2]` (Dict[str, int]): A dictionary mapping the user-selectable 
+                        options to their corresponding integer values.
         """
-        pass
+        # Validation
+        if continuous_features is None and binary_features is None and one_hot_features is None and categorical_features is None:
+            raise ValueError("No features provided.")
+        
+        # Targets
+        self._targets_values = self._handle_targets(targets)
+        self._targets_mapping = targets
+        
+        # continuous features
+        if continuous_features is not None:
+            self._continuous_values, self._continuous_mapping = self._handle_continuous_features(continuous_features)
+            self.has_continuous = True
+        else:
+            self._continuous_values, self._continuous_mapping = None, None
+            self.has_continuous = False
+            
+        # binary features
+        if binary_features is not None:
+            self._binary_values = self._handle_binary_features(binary_features)
+            self._binary_mapping = binary_features
+            self.has_binary = True
+        else:
+            self._binary_values, self._binary_mapping = None, None
+            self.has_binary = False
+        
+        # one-hot features
+        if one_hot_features is not None:
+            self._one_hot_values = self._handle_one_hot_features(one_hot_features)
+            self._one_hot_mapping = one_hot_features
+            self.has_one_hot = True
+        else:
+            self._one_hot_values, self._one_hot_mapping = None, None
+            self.has_one_hot = False
+        
+        # categorical features
+        if categorical_features is not None:
+            self._categorical_values, self._categorical_mapping = self._handle_categorical_features(categorical_features)
+            self.has_categorical = True
+        else:
+            self._categorical_values, self._categorical_mapping = None, None
+            self.has_categorical = False
+            
+        # all features attribute
+        self._all_features = self._get_all_gui_features()
+        
+    def _handle_targets(self, targets: Dict[str, str]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[None,None]] = {gui_key: (None, None) for gui_key in targets.keys()}
+        # Map GUI name to Model name (same as input)
+        return gui_values
+        
+    def _handle_continuous_features(self, continuous_features: Dict[str, Tuple[str, float, float]]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[float,float]] = {gui_key: (tuple_values[1], tuple_values[2]) for gui_key, tuple_values in continuous_features.items()}
+        # Map GUI name to Model name
+        gui_to_model: dict[str,str] = {gui_key: tuple_values[0] for gui_key, tuple_values in continuous_features.items()}
+        return gui_values, gui_to_model
+    
+    def _handle_binary_features(self, binary_features: Dict[str, str]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[Literal["False"],Literal["True"]]] = {gui_key: ("False", "True") for gui_key in binary_features.keys()}
+        # Map GUI name to Model name (same as input)
+        return gui_values
+
+    def _handle_one_hot_features(self, one_hot_features: Dict[str, Dict[str,str]]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[str,...]] = {gui_key: tuple(nested_dict.keys()) for gui_key, nested_dict in one_hot_features.items()}
+        # Map GUI name to Model name and preserve internal mapping (same as input)
+        return gui_values
+        
+    def _handle_categorical_features(self, categorical_features: List[Tuple[str, str, Dict[str, int]]]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[str,...]] = {gui_key: tuple(gui_options.keys()) for gui_key, _, gui_options in categorical_features}
+        # Map GUI name to Model name and preserve internal mapping
+        gui_to_model: dict[str, tuple[str, dict[str, int]]] = {gui_key: (model_key, gui_options) for gui_key, model_key, gui_options in categorical_features}
+        return gui_values, gui_to_model
+    
+    def _get_all_gui_features(self) -> dict[str,Any]:
+        all_dict: dict[str,Any] = dict()
+        # Add all feature GUI keys
+        if self._continuous_mapping is not None:
+            all_dict.update(self._continuous_mapping)
+        if self._binary_mapping is not None:
+            all_dict.update(self._binary_mapping)
+        if self._one_hot_mapping is not None:
+            all_dict.update(self._one_hot_mapping)
+        if self._categorical_mapping is not None:
+            all_dict.update(self._categorical_mapping)
+        return all_dict
     
     @property
-    @abstractmethod
-    def map_gui_to_real(self) -> Dict[str,str]:
+    def all_features(self):
         """
-        Must be implemented by the subclass.
-
-        Should return a dictionary mapping each GUI continuous feature name to its expected model feature name.
+        A merged dictionary of all feature mappings.
         
-        _Example:_
-        ```python
-        {
-            'Temperature (K)': 'temperature_k', 
-            'Pressure (Pa)': 'pressure_pa'
-        }
-        ```
-        """
-        pass
-
-    @abstractmethod
-    def process_categorical(self, gui_feature_name: str, chosen_value: Any) -> Dict[str, float]:
-        """
-        Must be implemented by the subclass.
-
-        Should take a GUI categorical feature name and its chosen value, and return a dictionary mapping the one-hot-encoded/binary real feature names to their
-        float values (as expected by the inference model).
+        The value type varies based on the feature type (str, dict, or tuple).
         
-        _Example:_
-        ```python        
-        # GUI input: "Material Type"
-        # GUI values: "Steel", "Aluminum", "Titanium"
-        {
-            "is_steel": 0, 
-            "is_aluminum": 1,
-            "is_titanium": 0,
-        }
-        ```
+        Structure:
+            Dict[str, Any]
         """
-        pass
+        return self._all_features
     
-    def _process_continuous(self, gui_feature_name: str, chosen_value: Any) -> Tuple[str, float]:
+    @property
+    def targets(self):
         """
-        Maps GUI names to model expected names and casts the value to float.
+        The mapping for target variables from GUI name to model name.
         
-        Should not be overridden by subclasses.
+        Structure: 
+            Dict[str, str]
+        """
+        return self._targets_mapping
+    
+    @property
+    def targets_gui(self):
+        """
+        The GUI value structure for targets.
+        
+        Structure: 
+            Dict[str, Tuple[None, None]]
+        """
+        return self._targets_values
+    
+    @property
+    def continuous(self):
+        """
+        The mapping for continuous features from GUI name to model name.
+        
+        Structure: 
+            Dict[str, str]
+        """
+        if self._continuous_mapping is not None:
+            return self._continuous_mapping
+    
+    @property
+    def continuous_gui(self):
+        """
+        The GUI value ranges (min, max) for continuous features.
+        
+        Structure: 
+            Dict[str, Tuple[float, float]]
+        """
+        if self._continuous_values is not None:
+            return self._continuous_values
+    
+    @property
+    def binary(self):
+        """
+        The mapping for binary features from GUI name to model name.
+        
+        Structure: 
+            Dict[str, str]
+        """
+        if self._binary_mapping is not None:
+            return self._binary_mapping
+        
+    @property
+    def binary_gui(self):
+        """
+        The GUI options ('False', 'True') for binary features.
+        
+        Structure: 
+            Dict[str, Tuple['False', 'True']]
+        """
+        if self._binary_values is not None:
+            return self._binary_values
+
+    @property
+    def one_hot(self):
+        """
+        The mapping for one-hot encoded features.
+        
+        {"GUI NAME": {"GUI OPTION 1": "model_column"}}
+        
+        Structure: 
+            Dict[str, Dict[str, str]]
+        """
+        if self._one_hot_mapping is not None:
+            return self._one_hot_mapping
+        
+    @property
+    def one_hot_gui(self):
+        """
+        The GUI options for one-hot encoded feature groups.
+        
+        Structure: 
+            Dict[str, Tuple[str, ...]]
+        """
+        if self._one_hot_values is not None:
+            return self._one_hot_values
+
+    @property
+    def categorical(self):
+        """
+        The mapping for categorical features.
+        
+        {"GUI NAME": ("model_column", {"GUI OPTION 1": column_value})}
+        
+        Structure: 
+            Dict[str, Tuple[str, Dict[str, int]]]
+        """
+        if self._categorical_mapping is not None:
+            return self._categorical_mapping
+        
+    @property
+    def categorical_gui(self):
+        """
+        The GUI options for categorical features.
+        
+        Structure: 
+            Dict[str, Tuple[str, ...]]
+        """
+        if self._categorical_values is not None:
+            return self._categorical_values
+
+
+# --- GUI-Model API ---
+class GUIHandler:
+    """
+    Translates data between a GUI and a machine learning model.
+    
+    This class acts as the primary interface between a user-facing application
+    (FreeSimpleGUI) and the model's expected data format. It uses a `FeatureMaster` instance to correctly process
+    and encode user inputs.
+
+    Its main responsibilities are:
+    1.  To take raw values from GUI elements and, using the definitions from
+        `FeatureMaster`, convert them into a single, ordered `numpy.ndarray`
+        that can be fed directly into a model for inference.
+    2.  To take the results of a model's inference and update the
+        corresponding target fields in the GUI to display the prediction.
+
+    This handler ensures a clean separation of concerns, where the GUI is
+    only responsible for presentation, and the model sees correctly formatted numerical data.
+    """
+    def __init__(self, feature_handler: FeatureMaster, model_expected_features: list[str]) -> None:
+        """
+        Initializes the GUIHandler.
+
+        Args:
+            feature_handler (FeatureMaster):
+                An initialized instance of the `FeatureMaster` class. This object
+                contains all the necessary mappings and definitions for the model's
+                features and targets.
+            model_expected_features (list[str]):
+                A list of strings specifying the exact names of the features the
+                machine learning model expects in its input vector. The **order**
+                of features in this list is critical, as it dictates the final
+                column order of the output numpy array.
+
+        Raises:
+            TypeError: If `model_expected_features` is not a list or if any of its elements are not strings.
+        """
+        if not isinstance(model_expected_features, list):
+            raise TypeError("Input 'model_expected_features' must be a list.")
+        if not all(isinstance(col, str) for col in model_expected_features):
+            raise TypeError("All elements in the 'model_expected_features' must be strings.")
+        
+        # Model expected features
+        self.model_expected_features = tuple(model_expected_features)
+        # Feature master instance
+        self.master = feature_handler
+
+    def _process_continuous(self, gui_feature: str, chosen_value: Any) -> Tuple[str,float]:
+        """
+        Maps GUI name to model expected name and casts the value to float.
         """
         try:
-            real_name = self.map_gui_to_real[gui_feature_name]
+            model_name = self.master.continuous[gui_feature]
             float_value = float(chosen_value)
         except KeyError as e:
-            _LOGGER.error(f"No matching name for '{gui_feature_name}'. Check the 'map_gui_to_real' implementation.")
+            _LOGGER.error(f"No matching name for '{gui_feature}' defined as continuous.")
             raise e
         except (ValueError, TypeError) as e2:
-            _LOGGER.error(f"Invalid number conversion for '{chosen_value}' of '{gui_feature_name}'.")
+            _LOGGER.error(f"Invalid number conversion for '{chosen_value}' of '{gui_feature}'.")
             raise e2
         else:
-            return real_name, float_value
-    
-    def __call__(self, window_values: Dict[str, Any]) -> np.ndarray:
-        """
-        Performs the full vector preparation, returning a 1D numpy array.
+            return model_name, float_value
         
-        Should not be overridden by subclasses.
+    def _process_binary(self, gui_feature: str, chosen_value: str) -> Tuple[str,int]:
         """
-        # Stage 1: Process GUI inputs into a dictionary
-        processed_features: Dict[str, float] = {}
-        for gui_name, feature_type in self.gui_input_map.items():
-            chosen_value = window_values.get(gui_name)
+        Maps GUI name to model expected name and casts the value to binary (0,1).
+        """
+        try:
+            model_name = self.master.binary[gui_feature]
+            binary_mapping_keys = self.master.binary_gui[gui_feature]
+        except KeyError as e:
+            _LOGGER.error(f"No matching name for '{gui_feature}' defined as binary.")
+            raise e
+        else:
+            mapping_dict = {
+                binary_mapping_keys[0]: 0,
+                binary_mapping_keys[1]: 1
+            }
+            result = mapping_dict[chosen_value]
+            return model_name, result
+        
+    def _process_one_hot(self, gui_feature: str, chosen_value: str) -> Dict[str,int]:
+        """
+        Maps GUI names to model expected names and casts values to one-hot encoding.
+        """
+        try:
+            one_hot_mapping = self.master.one_hot[gui_feature]
+        except KeyError as e:
+            _LOGGER.error(f"No matching name for '{gui_feature}' defined as one-hot.")
+            raise e
+        else:
+            mapped_chosen_value = one_hot_mapping[chosen_value]
+            # base results mapped to 0
+            results = {model_key: 0 for model_key in one_hot_mapping.values()}
+            # update chosen value
+            results[mapped_chosen_value] = 1
+            return results
+        
+    def _process_categorical(self, gui_feature: str, chosen_value: str) -> Tuple[str,int]:
+        """
+        Maps GUI name to model expected name and casts the value to a categorical number.
+        """
+        try:
+            categorical_tuple = self.master.categorical[gui_feature]
+        except KeyError as e:
+            _LOGGER.error(f"No matching name for '{gui_feature}' defined as categorical.")
+            raise e
+        else:
+            model_name = categorical_tuple[0]
+            categorical_mapping = categorical_tuple[1]
+            result = categorical_mapping[chosen_value]
+            return model_name, result
+        
+    def update_target_fields(self, window: sg.Window, inference_results: Dict[str, Any]):
+        """
+        Updates the GUI's target fields with inference results.
+
+        Args:
+            window (sg.Window): The application's window object.
+            inference_results (dict): A dictionary where keys are target names (as used by the model) and values are the predicted results to update.
+        """
+        # Target values to update
+        gui_targets_values = {gui_key: inference_results[model_key] for gui_key, model_key in self.master.targets.items()}
+        
+        # Update window
+        for gui_key, result in gui_targets_values.items():
+            # Format numbers to 2 decimal places, leave other types as-is
+            display_value = f"{result:.2f}" if isinstance(result, (int, float)) else result
+            window[gui_key].update(display_value) # type: ignore
             
+    def _call_subprocess(self, window_values: Dict[str,Any], master_feature: Dict[str,str], processor: Callable) -> Dict[str, Union[float,int]]:
+        processed_features_subset: Dict[str, Union[float,int]] = dict()
+        
+        for gui_name in master_feature.keys():
+            chosen_value = window_values.get(gui_name)
             # value validation
             if chosen_value is None or str(chosen_value) == '':
                 raise ValueError(f"GUI input '{gui_name}' is missing a value.")
+            # process value
+            raw_result = processor(gui_name, chosen_value)
+            if isinstance(raw_result, tuple):
+                model_name, result = raw_result
+                processed_features_subset[model_name] = result
+            elif isinstance(raw_result, dict):
+                processed_features_subset.update(raw_result)
+            else:
+                raise TypeError(f"Processor returned an unrecognized type: {type(raw_result)}")
+        
+        return processed_features_subset
 
-            # process continuous
-            if feature_type == 'continuous':
-                mapped_name, float_value = self._process_continuous(gui_name, chosen_value)
-                processed_features[mapped_name] = float_value
+    def process_features(self,  window_values: Dict[str, Any]) -> np.ndarray:
+        """
+        Translates GUI values to a model-expected input array, returning a 1D numpy array.
+        """
+        # Stage 1: Process GUI inputs into a dictionary
+        processed_features: Dict[str, Union[float,int]] = {}
+        
+        if self.master.has_continuous:
+            processed_subset = self._call_subprocess(window_values=window_values,
+                                                     master_feature=self.master.continuous,
+                                                     processor=self._process_continuous)
+            processed_features.update(processed_subset)
+        
+        if self.master.has_binary:
+            processed_subset = self._call_subprocess(window_values=window_values,
+                                                     master_feature=self.master.binary,
+                                                     processor=self._process_binary)
+            processed_features.update(processed_subset)
+        
+        if self.master.has_one_hot:
+            processed_subset = self._call_subprocess(window_values=window_values,
+                                                     master_feature=self.master.one_hot,
+                                                     processor=self._process_one_hot)
+            processed_features.update(processed_subset)
             
-            # process categorical
-            elif feature_type == 'categorical':
-                feature_dict = self.process_categorical(gui_name, chosen_value)
-                processed_features.update(feature_dict)
+        if self.master.has_categorical:
+            processed_subset = self._call_subprocess(window_values=window_values,
+                                                     master_feature=self.master.categorical,
+                                                     processor=self._process_categorical)
+            processed_features.update(processed_subset)
 
         # Stage 2: Assemble the final vector using the model's required order
-        final_vector: List[float] = []
+        final_vector: List[float] = list()
         
         try:
-            for feature_name in self._model_feature_order:
+            for feature_name in self.model_expected_features:
                 final_vector.append(processed_features[feature_name])
         except KeyError as e:
-            raise RuntimeError(
-                f"Configuration Error: Implemented methods failed to generate "
-                f"the required model feature: '{e}'"
-                f"Check the gui_input_map and process_categorical logic."
-            )
-            
-        return np.array(final_vector, dtype=np.float32)
-
-
-def update_target_fields(window: sg.Window, results_dict: Dict[str, Any], map_model_to_gui: Optional[Dict[str,str]]):
-    """
-    Updates the GUI's target fields with inference results.
-
-    Args:
-        window (sg.Window): The application's window object.
-        results_dict (dict): A dictionary where keys are target names (as expected by the GUI) and values are the predicted results to update.
-        map_model_to_gui (dict | None): Map `results_dict.keys()` from model target names to GUI target names, if gui names were customized.
-    """
-    if map_model_to_gui is not None:
-        # Validation
-        if len(map_model_to_gui) != len(results_dict):
-            _LOGGER.error(f"Expected a mapping for {len(results_dict)} targets, but received {len(map_model_to_gui)} target map names.")
-            raise ValueError
+            raise RuntimeError(f"Configuration Error: Implemented methods failed to generate the required model feature: '{e}'")
         
-        # new dictionary with GUI keys and corresponding result values
-        display_dict = {
-            gui_key: results_dict[model_key]
-            for model_key, gui_key in map_model_to_gui.items()
-        }
-    else:
-        # If no map is provided, use given result keys
-        display_dict = results_dict
-
-    for key, result in display_dict.items():
-        # Format numbers to 2 decimal places, leave other types as-is
-        display_value = f"{result:.2f}" if isinstance(result, (int, float)) else result
-        window[key].update(display_value) # type: ignore
-
+        return np.array(final_vector, dtype=np.float32)
+    
 
 def info():
     _script_info(__all__)
