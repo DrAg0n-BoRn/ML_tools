@@ -3,7 +3,7 @@ from pathlib import Path
 import traceback
 import FreeSimpleGUI as sg
 from functools import wraps
-from typing import Any, Dict, Tuple, List, Literal, Union, Any, Optional, Callable
+from typing import Any, Dict, Tuple, List, Literal, Union, Optional, Callable
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
@@ -104,11 +104,13 @@ class ConfigManager:
             'max_size': ''
         }
         config['Layout'] = {
-            '; Default size for continuous input boxes (width,height in characters).': '',
+            '; Default size for continuous input boxes (width,height in characters/rows).': '',
             'input_size_cont': '16,1',
-            '; Default size for combo/binary boxes (width,height in characters).': '',
+            '; Default size for combo/binary boxes (width,height in characters/rows).': '',
             'input_size_binary': '14,1',
-            '; Default size for buttons (width,height in characters).': '',
+            '; Size for multiselect listboxes (width,height in characters/rows).': '',
+            'input_size_multi': '14,4',
+            '; Default size for buttons (width,height in characters/rows).': '',
             'button_size': '15,2'
         }
         config['Fonts'] = {
@@ -303,6 +305,57 @@ class GUIFactory:
             
         # Default to 'grid' layout
         return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
+    
+    def generate_multiselect_layout(
+        self,
+        data_dict: Dict[str, Union[List[Any], Tuple[Any, ...]]],
+        layout_mode: Literal["grid", "row"] = 'grid',
+        features_per_column: int = 4
+    ) -> List[List[sg.Column]]:
+        """
+        Generates a layout for features using Listbox elements for multiple selections.
+
+        This allows the user to select zero or more options from a list without
+        being able to input custom text.
+
+        Args:
+            data_dict (dict): Keys are feature names, values are lists of options.
+            layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
+            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
+
+        Returns:
+            A list of lists of sg.Column elements, ready to be used in a window layout.
+        """
+        cfg = self.config
+        bg_color = sg.theme_background_color()
+        label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
+
+        columns = []
+        for name, values in data_dict.items():
+            label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
+
+            # Use sg.Listbox for multiple selections.
+            element = sg.Listbox(
+                values,
+                key=name,
+                select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE,
+                size=cfg.layout.input_size_multi, # type: ignore
+                no_scrollbar=False
+            )
+            # -------------------
+
+            layout = [[label], [element]]
+            # Add a small spacer for consistent vertical alignment.
+            layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
+
+            # Each feature is wrapped in a Column element for proper alignment.
+            columns.append(sg.Column(layout, background_color=bg_color))
+
+        if layout_mode == 'row':
+            return [columns]  # A single row containing all columns
+
+        # Default to 'grid' layout
+        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
 
     # --- Window Creation ---
     def create_window(self, title: str, layout: List[List[sg.Element]], **kwargs) -> sg.Window:
@@ -384,6 +437,7 @@ class FeatureMaster:
                  targets: Dict[str, str],
                  continuous_features: Optional[Dict[str, Tuple[str, float, float]]] = None,
                  binary_features: Optional[Dict[str, str]] = None,
+                 multi_binary_features: Optional[Dict[str, Dict[str, str]]] = None,
                  one_hot_features: Optional[Dict[str, Dict[str, str]]] = None,
                  categorical_features: Optional[List[Tuple[str, str, Dict[str, int]]]] = None) -> None:
         """
@@ -410,6 +464,14 @@ class FeatureMaster:
                 A dictionary for binary (True/False) features.
                 -   **key** (str): The name to be displayed in the GUI (e.g., for a checkbox).
                 -   **value** (str): The model's internal feature name.
+                
+            multi_binary_features (Dict[str, Dict[str, str]]):
+                A dictionary for features where multiple binary-like options can be
+                selected at once (e.g., from a multi-select listbox).
+                -   **key** (str): The name for the group to be displayed in the GUI.
+                -   **value** (Dict[str, str]): A nested dictionary where:
+                    -   key (str): The user-selectable option.
+                    -   value (str): The corresponding model's internal feature name.
 
             one_hot_features (Dict[str, Dict[str, str]]):
                 A dictionary for features that will be one-hot encoded from a single
@@ -418,8 +480,7 @@ class FeatureMaster:
                     for a dropdown menu).
                 -   **value** (Dict[str, str]): A nested dictionary where:
                     -   key (str): The user-selectable option (e.g., 'Category A').
-                    -   value (str): The corresponding model column name that will be 
-                        set to 1.
+                    -   value (str): The corresponding model column name.
 
             categorical_features (List[Tuple[str, str, Dict[str, int]]]):
                 A list for ordinal or label-encoded categorical features.
@@ -431,7 +492,7 @@ class FeatureMaster:
                         options to their corresponding integer values.
         """
         # Validation
-        if continuous_features is None and binary_features is None and one_hot_features is None and categorical_features is None:
+        if continuous_features is None and binary_features is None and one_hot_features is None and categorical_features is None and multi_binary_features is None:
             raise ValueError("No features provided.")
         
         # Targets
@@ -454,6 +515,15 @@ class FeatureMaster:
         else:
             self._binary_values, self._binary_mapping = None, None
             self.has_binary = False
+            
+        # multi-binary features
+        if multi_binary_features is not None:
+            self._multi_binary_values = self._handle_multi_binary_features(multi_binary_features)
+            self._multi_binary_mapping = multi_binary_features
+            self.has_multi_binary = True
+        else:
+            self._multi_binary_values, self._multi_binary_mapping = None, None
+            self.has_multi_binary = False
         
         # one-hot features
         if one_hot_features is not None:
@@ -493,6 +563,14 @@ class FeatureMaster:
         gui_values: dict[str, tuple[Literal["False"],Literal["True"]]] = {gui_key: ("False", "True") for gui_key in binary_features.keys()}
         # Map GUI name to Model name (same as input)
         return gui_values
+    
+    def _handle_multi_binary_features(self, multi_binary_features: Dict[str, Dict[str, str]]):
+        # Make dictionary GUI name: range values
+        gui_values: dict[str, tuple[str,...]] = {
+            gui_key: tuple(nested_dict.keys()) 
+            for gui_key, nested_dict in multi_binary_features.items()}
+        # Map GUI name to Model name and preserve internal mapping (same as input)
+        return gui_values
 
     def _handle_one_hot_features(self, one_hot_features: Dict[str, Dict[str,str]]):
         # Make dictionary GUI name: range values
@@ -514,6 +592,8 @@ class FeatureMaster:
             all_dict.update(self._continuous_mapping)
         if self._binary_mapping is not None:
             all_dict.update(self._binary_mapping)
+        if self._multi_binary_mapping is not None:
+            all_dict.update(self._multi_binary_mapping)
         if self._one_hot_mapping is not None:
             all_dict.update(self._one_hot_mapping)
         if self._categorical_mapping is not None:
@@ -595,6 +675,28 @@ class FeatureMaster:
         """
         if self._binary_values is not None:
             return self._binary_values
+        
+    @property
+    def multi_binary(self):
+        """
+        The mapping for multi-binary features.
+        
+        Structure: 
+            {"GUI NAME": {"GUI OPTION 1": "model_column"}}
+        """
+        if self._multi_binary_mapping is not None:
+            return self._multi_binary_mapping
+        
+    @property
+    def multi_binary_gui(self):
+        """
+        The GUI options for multi-binary feature groups.
+        
+        Structure: 
+            Dict[str, Tuple[str, ...]]
+        """
+        if self._multi_binary_values is not None:
+            return self._multi_binary_values
 
     @property
     def one_hot(self):
@@ -697,7 +799,7 @@ class GUIHandler:
         Maps GUI name to model expected name and casts the value to float.
         """
         try:
-            model_name = self.master.continuous[gui_feature]
+            model_name = self.master.continuous[gui_feature] # type: ignore
             float_value = float(chosen_value)
         except KeyError as e:
             _LOGGER.error(f"No matching name for '{gui_feature}' defined as continuous.")
@@ -713,8 +815,8 @@ class GUIHandler:
         Maps GUI name to model expected name and casts the value to binary (0,1).
         """
         try:
-            model_name = self.master.binary[gui_feature]
-            binary_mapping_keys = self.master.binary_gui[gui_feature]
+            model_name = self.master.binary[gui_feature] # type: ignore
+            binary_mapping_keys = self.master.binary_gui[gui_feature] # type: ignore
         except KeyError as e:
             _LOGGER.error(f"No matching name for '{gui_feature}' defined as binary.")
             raise e
@@ -725,13 +827,36 @@ class GUIHandler:
             }
             result = mapping_dict[chosen_value]
             return model_name, result
+    
+    def _process_multi_binary(self, gui_feature: str, chosen_values: list[str]) -> dict[str, int]:
+        """
+        Maps GUI names to model expected names and casts values to multi-binary encoding.
+
+        For a given feature group, this sets all selected options to 1 and all
+        unselected options to 0.
+        """
+        try:
+            # Get the mapping for the group
+            multi_binary_mapping = self.master.multi_binary[gui_feature] # type: ignore
+        except KeyError as e:
+            _LOGGER.error(f"No matching name for '{gui_feature}' defined as multi-binary.")
+            raise e
+        else:
+            # Start with all possible features for this group set to 0 (unselected)
+            results = {model_key: 0 for model_key in multi_binary_mapping.values()}
+            # Set the features for the chosen options to 1
+            for chosen_option in chosen_values:
+                model_name = multi_binary_mapping[chosen_option]
+                results[model_name] = 1
+
+            return results
         
     def _process_one_hot(self, gui_feature: str, chosen_value: str) -> Dict[str,int]:
         """
         Maps GUI names to model expected names and casts values to one-hot encoding.
         """
         try:
-            one_hot_mapping = self.master.one_hot[gui_feature]
+            one_hot_mapping = self.master.one_hot[gui_feature] # type: ignore
         except KeyError as e:
             _LOGGER.error(f"No matching name for '{gui_feature}' defined as one-hot.")
             raise e
@@ -748,7 +873,7 @@ class GUIHandler:
         Maps GUI name to model expected name and casts the value to a categorical number.
         """
         try:
-            categorical_tuple = self.master.categorical[gui_feature]
+            categorical_tuple = self.master.categorical[gui_feature] # type: ignore
         except KeyError as e:
             _LOGGER.error(f"No matching name for '{gui_feature}' defined as categorical.")
             raise e
@@ -804,25 +929,31 @@ class GUIHandler:
         
         if self.master.has_continuous:
             processed_subset = self._call_subprocess(window_values=window_values,
-                                                     master_feature=self.master.continuous,
+                                                     master_feature=self.master.continuous, # type: ignore
                                                      processor=self._process_continuous)
             processed_features.update(processed_subset)
         
         if self.master.has_binary:
             processed_subset = self._call_subprocess(window_values=window_values,
-                                                     master_feature=self.master.binary,
+                                                     master_feature=self.master.binary, # type: ignore
                                                      processor=self._process_binary)
+            processed_features.update(processed_subset)
+            
+        if self.master.has_multi_binary:
+            processed_subset = self._call_subprocess(window_values=window_values,
+                                                     master_feature=self.master.multi_binary, # type: ignore
+                                                     processor=self._process_multi_binary)
             processed_features.update(processed_subset)
         
         if self.master.has_one_hot:
             processed_subset = self._call_subprocess(window_values=window_values,
-                                                     master_feature=self.master.one_hot,
+                                                     master_feature=self.master.one_hot, # type: ignore
                                                      processor=self._process_one_hot)
             processed_features.update(processed_subset)
             
         if self.master.has_categorical:
             processed_subset = self._call_subprocess(window_values=window_values,
-                                                     master_feature=self.master.categorical,
+                                                     master_feature=self.master.categorical, # type: ignore
                                                      processor=self._process_categorical)
             processed_features.update(processed_subset)
 
@@ -836,7 +967,6 @@ class GUIHandler:
             raise RuntimeError(f"Configuration Error: Implemented methods failed to generate the required model feature: '{e}'")
         
         return np.array(final_vector, dtype=np.float32)
-    
 
 def info():
     _script_info(__all__)
