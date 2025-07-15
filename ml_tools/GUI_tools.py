@@ -218,7 +218,7 @@ class GUIFactory:
         data_dict: Dict[str, Union[Tuple[Union[int,float,None], Union[int,float,None]],List[Union[int,float,None]]]],
         is_target: bool = False,
         layout_mode: Literal["grid", "row"] = 'grid',
-        features_per_column: int = 4
+        number_columns: int = 5
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for continuous features or targets.
@@ -227,7 +227,7 @@ class GUIFactory:
             data_dict (dict): Keys are feature names, values are (min, max) tuples.
             is_target (bool): If True, creates disabled inputs for displaying results.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
-            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
+            number_columns (int): Number of columns when `layout_mode` is 'grid'.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -236,7 +236,7 @@ class GUIFactory:
         bg_color = sg.theme_background_color()
         label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
         
-        columns = []
+        all_feature_layouts = []
         for name, value in data_dict.items():
             if value is None:
                 raise ValueError(f"Feature '{name}' was assigned a 'None' value.")
@@ -269,19 +269,19 @@ class GUIFactory:
             
             # each feature is wrapped as a column element
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
-            columns.append(sg.Column(layout, background_color=bg_color))
+            all_feature_layouts.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
-            return [columns] # A single row containing all columns
+            return [all_feature_layouts] # A single row containing all features
         
-        # Default to 'grid' layout
-        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
+        # Default to 'grid' layout: delegate to the helper method
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
 
     def generate_combo_layout(
         self,
         data_dict: Dict[str, Union[List[Any],Tuple[Any,...]]],
         layout_mode: Literal["grid", "row"] = 'grid',
-        features_per_column: int = 4
+        number_columns: int = 5
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for categorical or binary features using Combo boxes.
@@ -289,7 +289,7 @@ class GUIFactory:
         Args:
             data_dict (dict): Keys are feature names, values are lists of options.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
-            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
+            number_columns (int): Number of columns when `layout_mode` is 'grid'.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -298,7 +298,7 @@ class GUIFactory:
         bg_color = sg.theme_background_color()
         label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
 
-        columns = []
+        all_feature_layouts = []
         for name, values in data_dict.items():
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
             element = sg.Combo(
@@ -309,19 +309,19 @@ class GUIFactory:
             layout = [[label], [element]]
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
             # each feature is wrapped in a Column element
-            columns.append(sg.Column(layout, background_color=bg_color))
+            all_feature_layouts.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
-            return [columns] # A single row containing all columns
+            return [all_feature_layouts] # A single row containing all features
             
-        # Default to 'grid' layout
-        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
+        # Default to 'grid' layout: delegate to the helper method
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
     
     def generate_multiselect_layout(
         self,
         data_dict: Dict[str, Union[List[Any], Tuple[Any, ...]]],
         layout_mode: Literal["grid", "row"] = 'grid',
-        features_per_column: int = 4
+        number_columns: int = 5
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for features using Listbox elements for multiple selections.
@@ -332,7 +332,7 @@ class GUIFactory:
         Args:
             data_dict (dict): Keys are feature names, values are lists of options.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
-            features_per_column (int): Number of features per column when `layout_mode` is 'grid'.
+            number_columns (int): Number of columns when `layout_mode` is 'grid'.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -341,7 +341,7 @@ class GUIFactory:
         bg_color = sg.theme_background_color()
         label_font = (cfg.fonts.font_family, cfg.fonts.label_size, cfg.fonts.label_style) # type: ignore
 
-        columns = []
+        all_feature_layouts = []
         for name, values in data_dict.items():
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
 
@@ -360,13 +360,13 @@ class GUIFactory:
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
 
             # Each feature is wrapped in a Column element for proper alignment.
-            columns.append(sg.Column(layout, background_color=bg_color))
+            all_feature_layouts.append(sg.Column(layout, background_color=bg_color))
 
         if layout_mode == 'row':
-            return [columns]  # A single row containing all columns
+            return [all_feature_layouts]  # A single row containing all features
 
-        # Default to 'grid' layout
-        return [columns[i:i + features_per_column] for i in range(0, len(columns), features_per_column)]
+        # Default to 'grid' layout: delegate to the helper method
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
 
     # --- Window Creation ---
     def create_window(self, title: str, layout: List[List[sg.Element]], **kwargs) -> sg.Window:
@@ -395,6 +395,24 @@ class GUIFactory:
         if cfg.max_size: window.TKroot.maxsize(*cfg.max_size)
         
         return window
+    
+    def _build_grid_layout(self, all_feature_layouts: List[sg.Column], num_columns: int, bg_color: str) -> List[List[sg.Column]]:
+        """
+        Private helper to distribute feature layouts vertically into a grid of columns.
+        """
+        # Distribute features vertically into the specified number of columns
+        final_columns = [[] for _ in range(num_columns)]
+        for i, feature_layout in enumerate(all_feature_layouts):
+            # Use modulo to distribute features in a round-robin fashion
+            target_column_index = i % num_columns
+            final_columns[target_column_index].append(feature_layout)
+
+        # Wrap each list of features in its own sg.Column element, ensuring the
+        # inner layout is a list of rows [[c] for c in col].
+        gui_columns = [sg.Column([[c] for c in col], background_color=bg_color) for col in final_columns]
+
+        # Return a single row containing all the generated vertical columns
+        return [gui_columns]
 
 
 # --- Exception Handling Decorator ---
