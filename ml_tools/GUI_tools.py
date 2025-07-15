@@ -191,13 +191,14 @@ class GUIFactory:
         }
         return sg.Button(text.title(), key=key, **style_args)
 
-    def make_frame(self, title: str, layout: List[List[Union[sg.Element, sg.Column]]], **kwargs) -> sg.Frame:
+    def make_frame(self, title: str, layout: List[List[Union[sg.Element, sg.Column]]], center_layout: bool = False, **kwargs) -> sg.Frame:
         """
         Creates a styled frame around a given layout.
 
         Args:
             title (str): The title displayed on the frame's border.
             layout (list): The layout to enclose within the frame.
+            center_layout (bool): If True, the content within the frame will be horizontally centered.
             **kwargs: Override default styles or add other sg.Frame parameters
                       (e.g., `title_color='red'`, `relief=sg.RELIEF_SUNKEN`).
         """
@@ -210,6 +211,10 @@ class GUIFactory:
             "background_color": sg.theme_background_color(),
             **kwargs
         }
+        
+        if center_layout:
+            style_args["element_justification"] = 'center'
+        
         return sg.Frame(title, layout, **style_args)
 
     # --- General-Purpose Layout Generators ---
@@ -218,7 +223,8 @@ class GUIFactory:
         data_dict: Dict[str, Union[Tuple[Union[int,float,None], Union[int,float,None]],List[Union[int,float,None]]]],
         is_target: bool = False,
         layout_mode: Literal["grid", "row"] = 'grid',
-        number_columns: int = 5
+        number_columns: int = 5,
+        center_layout: bool = True
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for continuous features or targets.
@@ -228,6 +234,7 @@ class GUIFactory:
             is_target (bool): If True, creates disabled inputs for displaying results.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
             number_columns (int): Number of columns when `layout_mode` is 'grid'.
+            center_layout (bool): If True, the entire grid will be horizontally centered.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -264,7 +271,7 @@ class GUIFactory:
                 layout = [[label], [element]]
             else:
                 range_font = (cfg.fonts.font_family, cfg.fonts.range_size) # type: ignore
-                range_text = sg.Text(f"Range: {val_min}-{val_max}", font=range_font, background_color=bg_color) # type: ignore
+                range_text = sg.Text(f"Range: {val_min} - {val_max}", font=range_font, background_color=bg_color) # type: ignore
                 layout = [[label], [element], [range_text]]
             
             # each feature is wrapped as a column element
@@ -275,13 +282,14 @@ class GUIFactory:
             return [all_feature_layouts] # A single row containing all features
         
         # Default to 'grid' layout: delegate to the helper method
-        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color, center_layout) # type: ignore
 
     def generate_combo_layout(
         self,
         data_dict: Dict[str, Union[List[Any],Tuple[Any,...]]],
         layout_mode: Literal["grid", "row"] = 'grid',
-        number_columns: int = 5
+        number_columns: int = 5,
+        center_layout: bool = True
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for categorical or binary features using Combo boxes.
@@ -290,6 +298,7 @@ class GUIFactory:
             data_dict (dict): Keys are feature names, values are lists of options.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
             number_columns (int): Number of columns when `layout_mode` is 'grid'.
+            center_layout (bool): If True, the entire grid will be horizontally centered.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -315,13 +324,14 @@ class GUIFactory:
             return [all_feature_layouts] # A single row containing all features
             
         # Default to 'grid' layout: delegate to the helper method
-        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color, center_layout) # type: ignore
     
     def generate_multiselect_layout(
         self,
         data_dict: Dict[str, Union[List[Any], Tuple[Any, ...]]],
         layout_mode: Literal["grid", "row"] = 'grid',
-        number_columns: int = 5
+        number_columns: int = 5,
+        center_layout: bool = True
     ) -> List[List[sg.Column]]:
         """
         Generates a layout for features using Listbox elements for multiple selections.
@@ -333,6 +343,7 @@ class GUIFactory:
             data_dict (dict): Keys are feature names, values are lists of options.
             layout_mode (str): 'grid' for a multi-row grid layout, or 'row' for a single horizontal row.
             number_columns (int): Number of columns when `layout_mode` is 'grid'.
+            center_layout (bool): If True, the entire grid will be horizontally centered.
 
         Returns:
             A list of lists of sg.Column elements, ready to be used in a window layout.
@@ -366,7 +377,7 @@ class GUIFactory:
             return [all_feature_layouts]  # A single row containing all features
 
         # Default to 'grid' layout: delegate to the helper method
-        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color) # type: ignore
+        return self._build_grid_layout(all_feature_layouts, number_columns, bg_color, center_layout) # type: ignore
 
     # --- Window Creation ---
     def create_window(self, title: str, layout: List[List[sg.Element]], **kwargs) -> sg.Window:
@@ -396,7 +407,7 @@ class GUIFactory:
         
         return window
     
-    def _build_grid_layout(self, all_feature_layouts: List[sg.Column], num_columns: int, bg_color: str) -> List[List[sg.Column]]:
+    def _build_grid_layout(self, all_feature_layouts: List[sg.Column], num_columns: int, bg_color: str, center_layout: bool = True) -> List[List[sg.Column]]:
         """
         Private helper to distribute feature layouts vertically into a grid of columns.
         """
@@ -412,7 +423,12 @@ class GUIFactory:
         gui_columns = [sg.Column([[c] for c in col], background_color=bg_color) for col in final_columns]
 
         # Return a single row containing all the generated vertical columns
-        return [gui_columns]
+        if center_layout:
+            # Return a single row containing the columns, centered with Push elements.
+            return [[sg.Push()] + gui_columns + [sg.Push()]] # type: ignore
+        else:
+            # Return a single row containing just the columns.
+            return [gui_columns]
 
 
 # --- Exception Handling Decorator ---
