@@ -75,34 +75,35 @@ class ConfigManager:
             setattr(self, section.lower(), _SectionProxy(parser, section))
 
     @staticmethod
-    def generate_template(file_path: str | Path, force_overwrite: bool = False):
+    def generate_template(file_path: str | Path):
         """
         Generates a complete, commented .ini template file that works with the GUIFactory.
 
         Args:
             file_path (str | Path): The path where the .ini file will be saved.
-            force_overwrite (bool): If True, overwrites the file if it already exists.
         """
+        if isinstance(file_path, str):
+            if not file_path.endswith(".ini"):
+                file_path = file_path + ".ini"
+        
         path = Path(file_path)
-        if path.exists() and not force_overwrite:
-            _LOGGER.warning(f"⚠️ Configuration file already exists at {path}. Aborting.")
+        if path.exists():
+            _LOGGER.warning(f"⚠️ Configuration file already exists at {path}, or wrong path provided. Aborting.")
             return
 
         config = configparser.ConfigParser()
 
         config['General'] = {
-            '; The overall theme for the GUI. Find more at https://www.pysimplegui.org/en/latest/call%20reference/#themes-automatic-coloring-of-elements': '',
+            '; The overall theme for the GUI.': '',
             'theme': 'LightGreen6',
-            '; Default font for the application.': '',
-            'font_family': 'Helvetica',
             '; Title of the main window.': '',
             'window_title': 'My Application',
             '; Can the user resize the window? (true/false)': '',
             'resizable_window': 'false',
             '; Optional minimum window size (width,height). Leave blank for no minimum.': '',
-            'min_size': '800,600',
+            'min_size': '1280,720',
             '; Optional maximum window size (width,height). Leave blank for no maximum.': '',
-            'max_size': ''
+            'max_size': '2048,1152'
         }
         config['Layout'] = {
             '; Default size for continuous input boxes (width,height in characters/rows).': '',
@@ -115,15 +116,17 @@ class ConfigManager:
             'button_size': '15,2'
         }
         config['Fonts'] = {
+            '; Default font for the application.': '',
+            'font_family': 'Helvetica',
             '; Font settings. Style can be "bold", "italic", "underline", or a combination.': '',
             'label_size': '11',
             'label_style': 'bold',
             'range_size': '9',
-            'range_style': '',
+            'range_style': '""',
             'button_size': '14',
             'button_style': 'bold',
             'frame_size': '14',
-            'frame_style': ''
+            'frame_style': '""'
         }
         config['Colors'] = {
             '; Use standard hex codes (e.g., #FFFFFF) or color names (e.g., white).': '',
@@ -160,7 +163,7 @@ class GUIFactory:
         """
         self.config = config
         sg.theme(self.config.general.theme) # type: ignore
-        sg.set_options(font=(self.config.general.font_family, 12)) # type: ignore
+        sg.set_options(font=(self.config.fonts.font_family, 12)) # type: ignore
 
     # --- Atomic Element Generators ---
     def make_button(self, text: str, key: str, **kwargs) -> sg.Button:
@@ -255,7 +258,7 @@ class GUIFactory:
                 layout = [[label], [element]]
             else:
                 range_font = (cfg.fonts.font_family, cfg.fonts.range_size) # type: ignore
-                range_text = sg.Text(f"Range: {int(val_min)}-{int(val_max)}", font=range_font, background_color=bg_color) # type: ignore
+                range_text = sg.Text(f"Range: {val_min}-{val_max}", font=range_font, background_color=bg_color) # type: ignore
                 layout = [[label], [element], [range_text]]
             
             # each feature is wrapped as a column element
