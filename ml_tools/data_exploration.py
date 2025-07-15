@@ -143,7 +143,7 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
         feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
         rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
         if len(rows_to_drop) > 0:
-            print(f"📉 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
+            print(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
             df_clean = df_clean.drop(index=rows_to_drop)
         else:
             print(f"✅ No rows exceed the {threshold*100:.0f}% missing feature data threshold.")

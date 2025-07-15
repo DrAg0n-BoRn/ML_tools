@@ -35,7 +35,7 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
     imputed_datasets = [kernel.complete_data(dataset=i) for i in range(resulting_datasets)]
     
     if imputed_datasets is None or len(imputed_datasets) == 0:
-        raise ValueError("No imputed datasets were generated. Check the MICE process.")
+        raise ValueError("❌ No imputed datasets were generated. Check the MICE process.")
     
     # threshold binary columns
     if binary_columns is not None:
@@ -56,8 +56,8 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
     
     # Ensure indexes match
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
-        assert imputed_df.shape[0] == df.shape[0], f"Row count mismatch in dataset {subname}" # type: ignore
-        assert all(imputed_df.index == df.index), f"Index mismatch in dataset {subname}" # type: ignore
+        assert imputed_df.shape[0] == df.shape[0], f"❌ Row count mismatch in dataset {subname}" # type: ignore
+        assert all(imputed_df.index == df.index), f"❌ Index mismatch in dataset {subname}" # type: ignore
     # print("✅ All imputed datasets match the original DataFrame indexes.")
     
     return kernel, imputed_datasets, imputed_dataset_names
@@ -90,7 +90,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
     dataset_count = kernel.num_datasets
     
     if dataset_count != len(imputed_dataset_names):
-        raise ValueError(f"Expected {dataset_count} names in imputed_dataset_names, got {len(imputed_dataset_names)}")
+        raise ValueError(f"❌ Expected {dataset_count} names in imputed_dataset_names, got {len(imputed_dataset_names)}")
     
     # Check path
     root_path = make_fullpath(root_dir, make=True)
@@ -152,7 +152,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         """Helper function to add labels and legends to a figure"""
         
         if not isinstance(fig, ggplot):
-            raise TypeError("Expected a plotnine.ggplot object")
+            raise TypeError("❌ Expected a plotnine.ggplot object")
         
         # Edit labels and title
         fig = fig + theme(
@@ -166,7 +166,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         fig = fig.draw()
         
         if not hasattr(fig, 'axes') or len(fig.axes) == 0:
-            raise RuntimeError("Rendered figure has no axes to modify")
+            raise RuntimeError("❌ Rendered figure has no axes to modify")
         
         if filename == "Combined_Distributions":
             custom_xlabel = "Feature Values"

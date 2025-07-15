@@ -32,28 +32,42 @@ __all__ = [
 def make_fullpath(
         input_path: Union[str, Path],
         make: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        enforce: Optional[Literal["directory", "file"]] = None
     ) -> Path:
     """
-    Resolves a string or Path into an absolute Path.
+    Resolves a string or Path into an absolute Path, optionally creating it.
 
     - If the path exists, it is returned.
     - If the path does not exist and `make=True`, it will:
-        - Create the file if the path has a suffix (i.e., is treated as a file)
+        - Create the file if the path has a suffix
         - Create the directory if it has no suffix
     - If `make=False` and the path does not exist, an error is raised.
+    - If `enforce`, raises an error if the resolved path is not what was enforced.
     - Optionally prints whether the resolved path is a file or directory.
 
     Parameters:
-        input_path (str | Path): Path to resolve.
-        make (bool): If True, attempt to create file or directory.
-        verbose (bool): Print classification after resolution.
+        input_path (str | Path): 
+            Path to resolve.
+        make (bool): 
+            If True, attempt to create file or directory.
+        verbose (bool): 
+            Print classification after resolution.
+        enforce ("directory" | "file" | None):
+            Raises an error if the resolved path is not what was enforced.
 
     Returns:
         Path: Resolved absolute path.
 
     Raises:
         ValueError: If the path doesn't exist and can't be created.
+        TypeError: If the final path does not match the `enforce` parameter.
+        
+    ## 🗒️ Note:
+    
+    Directories with dots will be treated as files.
+    
+    Files without extension will be treated as directories.
     """
     path = Path(input_path).expanduser()
 
@@ -75,6 +89,12 @@ def make_fullpath(
             resolved = path.resolve(strict=True)
         except Exception as e:
             raise ValueError(f"❌ Failed to create {'file' if is_file else 'directory'} '{path}': {e}")
+    
+    if enforce == "file" and not resolved.is_file():
+        raise TypeError(f"❌ Path was enforced as a file, but it is not: '{resolved}'")
+    
+    if enforce == "directory" and not resolved.is_dir():
+        raise TypeError(f"❌ Path was enforced as a directory, but it is not: '{resolved}'")
 
     if verbose:
         if resolved.is_file():
@@ -87,7 +107,7 @@ def make_fullpath(
     return resolved
 
 
-def list_csv_paths(directory: Union[str,Path]) -> dict[str, Path]:
+def list_csv_paths(directory: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
     """
     Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
 
@@ -101,19 +121,20 @@ def list_csv_paths(directory: Union[str,Path]) -> dict[str, Path]:
 
     csv_paths = list(dir_path.glob("*.csv"))
     if not csv_paths:
-        raise IOError(f"No CSV files found in directory: {dir_path.name}")
+        raise IOError(f"❌ No CSV files found in directory: {dir_path.name}")
     
     # make a dictionary of paths and names
     name_path_dict = {p.stem: p for p in csv_paths}
     
-    print("\n🗂️ CSV files found:")
-    for name in name_path_dict.keys():
-        print(f"\t{name}")
+    if verbose:
+        print("\n🗂️ CSV files found:")
+        for name in name_path_dict.keys():
+            print(f"\t{name}")
 
     return name_path_dict
 
 
-def list_files_by_extension(directory: Union[str,Path], extension: str) -> dict[str, Path]:
+def list_files_by_extension(directory: Union[str,Path], extension: str, verbose: bool=True) -> dict[str, Path]:
     """
     Lists all files with the specified extension in the given directory and returns a mapping: 
     filenames (without extensions) to their absolute paths.
@@ -133,13 +154,14 @@ def list_files_by_extension(directory: Union[str,Path], extension: str) -> dict[
     
     matched_paths = list(dir_path.glob(pattern))
     if not matched_paths:
-        raise IOError(f"No '.{normalized_ext}' files found in directory: {dir_path}")
+        raise IOError(f"❌ No '.{normalized_ext}' files found in directory: {dir_path}")
 
     name_path_dict = {p.stem: p for p in matched_paths}
     
-    print(f"\n📂 '{normalized_ext.upper()}' files found:")
-    for name in name_path_dict:
-        print(f"\t{name}")
+    if verbose:
+        print(f"\n📂 '{normalized_ext.upper()}' files found:")
+        for name in name_path_dict:
+            print(f"\t{name}")
     
     return name_path_dict
 
@@ -147,7 +169,8 @@ def list_files_by_extension(directory: Union[str,Path], extension: str) -> dict[
 def load_dataframe(
     df_path: Union[str, Path], 
     kind: Literal["pandas", "polars"] = "pandas",
-    all_strings: bool = False
+    all_strings: bool = False,
+    verbose: bool = True
 ) -> Tuple[Union[pd.DataFrame, pl.DataFrame], str]:
     """
     Load a CSV file into a DataFrame and extract its base name.
@@ -191,20 +214,21 @@ def load_dataframe(
             df = pl.read_csv(path, infer_schema_length=1000)
             
     else:
-        raise ValueError(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
+        raise ValueError(f"❌ Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
 
     # This check works for both pandas and polars DataFrames
     if df.shape[0] == 0:
-        raise ValueError(f"DataFrame '{df_name}' loaded from '{path}' is empty.")
+        raise ValueError(f"❌ DataFrame '{df_name}' loaded from '{path}' is empty.")
 
-    print(f"\n💿 Loaded {kind} dataset: '{df_name}' with shape: {df.shape}")
+    if verbose:
+        print(f"\n💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
     return df, df_name
 
 
-def yield_dataframes_from_dir(datasets_dir: Union[str,Path]):
+def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
     """
-    Iterates over all CSV files in a given directory, loading each into a pandas DataFrame.
+    Iterates over all CSV files in a given directory, loading each into a Pandas DataFrame.
 
     Parameters:
         datasets_dir (str | Path):
@@ -221,9 +245,10 @@ def yield_dataframes_from_dir(datasets_dir: Union[str,Path]):
     - Output is streamed via a generator to support lazy loading of multiple datasets.
     """
     datasets_path = make_fullpath(datasets_dir)
-    for df_name, df_path in list_csv_paths(datasets_path).items():
+    files_dict = list_csv_paths(datasets_path, verbose=verbose)
+    for df_name, df_path in files_dict.items():
         df: pd.DataFrame
-        df, _ = load_dataframe(df_path, kind="pandas") # type: ignore
+        df, _ = load_dataframe(df_path, kind="pandas", verbose=verbose) # type: ignore
         yield df, df_name
 
 
@@ -253,35 +278,35 @@ def merge_dataframes(
             - If column names or order differ for vertical merge.
     """
     if len(dfs) < 2:
-        raise ValueError("At least 2 DataFrames must be provided.")
+        raise ValueError("❌ At least 2 DataFrames must be provided.")
     
     if verbose:
         for i, df in enumerate(dfs, start=1):
-            print(f"DataFrame {i} shape: {df.shape}")
+            print(f"➡️ DataFrame {i} shape: {df.shape}")
     
 
     if direction == "horizontal":
         reference_index = dfs[0].index
         for i, df in enumerate(dfs, start=1):
             if not df.index.equals(reference_index):
-                raise ValueError(f"Indexes do not match: Dataset 1 and Dataset {i}.")
+                raise ValueError(f"❌ Indexes do not match: Dataset 1 and Dataset {i}.")
         merged_df = pd.concat(dfs, axis=1)
 
     elif direction == "vertical":
         reference_columns = dfs[0].columns
         for i, df in enumerate(dfs, start=1):
             if not df.columns.equals(reference_columns):
-                raise ValueError(f"Column names/order do not match: Dataset 1 and Dataset {i}.")
+                raise ValueError(f"❌ Column names/order do not match: Dataset 1 and Dataset {i}.")
         merged_df = pd.concat(dfs, axis=0)
 
     else:
-        raise ValueError(f"Invalid merge direction: {direction}")
+        raise ValueError(f"❌ Invalid merge direction: {direction}")
 
     if reset_index:
         merged_df = merged_df.reset_index(drop=True)
     
     if verbose:
-        print(f"Merged DataFrame shape: {merged_df.shape}")
+        print(f"\n✅ Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
 
@@ -320,9 +345,9 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
         df.write_csv(output_path) # Polars defaults to utf8 and no index
     else:
         # This error handles cases where an unsupported type is passed
-        raise TypeError(f"Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
+        raise TypeError(f"❌ Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
     
-    print(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
+    print(f"\n✅ Saved dataset: '{filename}' with shape: {df.shape}")
 
 
 def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
@@ -356,7 +381,7 @@ def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
     
     # Raise for negative values
     if any(x < 0 for x in float_list):
-        raise ValueError("Negative values are not allowed in the input list.")
+        raise ValueError("❌ Negative values are not allowed in the input list.")
     
     # Step 2: Compute log10 of non-zero values
     nonzero = [x for x in float_list if x > 0]
@@ -395,7 +420,7 @@ def sanitize_filename(filename: str) -> str:
     - Removing or replacing characters invalid in filenames.
 
     Args:
-        name (str): Base filename.
+        filename (str): Base filename.
 
     Returns:
         str: A sanitized string suitable to use as a filename.
@@ -408,6 +433,10 @@ def sanitize_filename(filename: str) -> str:
 
     # Conservative filter to keep filenames safe across platforms
     sanitized = re.sub(r'[^\w\-.]', '', sanitized)
+    
+    # Check for empty string after sanitization
+    if not sanitized:
+        raise ValueError("The sanitized filename is empty. The original input may have contained only invalid characters.")
 
     return sanitized
 
@@ -418,6 +447,8 @@ def threshold_binary_values(
 ) -> Union[np.ndarray, pd.Series, pl.Series, list[float], tuple[float]]:
     """
     Thresholds binary features in a 1D input. The number of binary features are counted starting from the end.
+    
+    Binary elements are converted to 0 or 1 using a 0.5 threshold.
 
     Parameters:
         input_array: 1D sequence, NumPy array, pandas Series, or polars Series.
@@ -426,7 +457,8 @@ def threshold_binary_values(
             - If `int`, only this many last `binary_values` are thresholded.
 
     Returns:
-        Same type as input, with binary elements binarized to 0 or 1 using a 0.5 threshold.
+        Any:
+        Same type as input
     """
     original_type = type(input_array)
 
@@ -437,14 +469,14 @@ def threshold_binary_values(
     elif isinstance(input_array, (list, tuple)):
         array = np.array(input_array)
     else:
-        raise TypeError("Unsupported input type")
+        raise TypeError("❌ Unsupported input type")
 
     array = array.flatten()
     total = array.shape[0]
 
     bin_count = total if binary_values is None else binary_values
     if not (0 <= bin_count <= total):
-        raise ValueError("binary_values must be between 0 and the total number of elements")
+        raise ValueError("❌ binary_values must be between 0 and the total number of elements")
 
     if bin_count == 0:
         result = array
@@ -484,9 +516,9 @@ def threshold_binary_values_batch(
     np.ndarray
         Thresholded array, same shape as input.
     """
-    assert input_array.ndim == 2, f"Expected 2D array, got {input_array.ndim}D"
+    assert input_array.ndim == 2, f"❌ Expected 2D array, got {input_array.ndim}D"
     batch_size, total_features = input_array.shape
-    assert 0 <= binary_values <= total_features, "binary_values out of valid range"
+    assert 0 <= binary_values <= total_features, "❌ binary_values out of valid range"
 
     if binary_values == 0:
         return input_array.copy()
@@ -523,7 +555,7 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         return None
     else:
         if verbose:
-            print(f"✅ Object of type '{type(obj)}' saved to '{full_path}'")
+            print(f"\n✅ Object of type '{type(obj)}' saved to '{full_path}'")
         return None
 
 
@@ -550,7 +582,7 @@ def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_e
         return None
     else:
         if verbose:
-            print(f"✅ Loaded object of type '{type(obj)}'")
+            print(f"\n✅ Loaded object of type '{type(obj)}'")
         return obj
 
 

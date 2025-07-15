@@ -36,7 +36,7 @@ def find_excel_files(
     input_path = make_fullpath(directory)
 
     if not input_path.is_dir():
-        raise NotADirectoryError(f"Directory not found: {input_path}")
+        raise NotADirectoryError(f"❌ Directory not found: {input_path}")
 
     excel_files = [
         f for f in input_path.iterdir()
@@ -46,7 +46,7 @@ def find_excel_files(
     ]
     
     if not excel_files:
-        raise FileNotFoundError(f"No valid Excel files found in directory: {input_path}")
+        raise FileNotFoundError(f"❌ No valid Excel files found in directory: {input_path}")
 
     return excel_files
 
@@ -198,7 +198,7 @@ def validate_excel_schema(
                     invalid_files.append(file)
 
         except Exception as e:
-            _LOGGER.error(f"Error processing '{file}': {e}")
+            _LOGGER.error(f"❌ Error processing '{file}': {e}")
             invalid_files.append(file)
     
     valid_excel_number = len(excel_paths) - len(invalid_files)
@@ -251,7 +251,7 @@ def vertical_merge_transform_excel(
         if target_columns is not None:
             missing = [col for col in target_columns if col not in df.columns]
             if missing:
-                raise ValueError(f"Invalid columns in {file.name}: {missing}")
+                raise ValueError(f"❌ Invalid columns in {file.name}: {missing}")
             df = df[target_columns]
 
         dataframes.append(df)
@@ -261,7 +261,7 @@ def vertical_merge_transform_excel(
     if rename_columns is not None:
         expected_len = len(target_columns if target_columns is not None else merged_df.columns)
         if len(rename_columns) != expected_len:
-            raise ValueError("Length of 'rename_columns' must match the selected columns")
+            raise ValueError("❌ Length of 'rename_columns' must match the selected columns")
         merged_df.columns = rename_columns
 
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
@@ -324,6 +324,9 @@ def horizontal_merge_transform_excel(
     merged_df = pd.concat(padded_dataframes, axis=1)
 
     duplicate_columns = merged_df.columns[merged_df.columns.duplicated()].tolist()
+    
+    if duplicate_columns:
+        _LOGGER.warning(f"⚠️ Duplicate columns: {duplicate_columns}")
 
     if skip_duplicates:
         merged_df = merged_df.loc[:, ~merged_df.columns.duplicated()]
@@ -344,9 +347,7 @@ def horizontal_merge_transform_excel(
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
 
     _LOGGER.info(f"✅ Merged {len(excel_files)} Excel files into '{csv_filename}'.")
-    if duplicate_columns:
-        _LOGGER.warning(f"⚠️ Duplicate columns: {duplicate_columns}")
-
+    
 
 def info():
     _script_info(__all__)

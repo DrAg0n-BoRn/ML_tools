@@ -26,8 +26,7 @@ def compute_vif(
     save_dir: Optional[Union[str,Path]] = None,
     filename: Optional[str] = None,
     fontsize: int = 14,
-    show_plot: bool = True,
-    verbose: bool = True
+    show_plot: bool = True
 ) -> pd.DataFrame:
     """
     Computes Variance Inflation Factors (VIF) for numeric columns in a DataFrame. Optionally, generates a bar plot of VIF values.
@@ -54,21 +53,20 @@ def compute_vif(
     if use_columns is None:
         sanitized_columns = df.select_dtypes(include='number').columns.tolist()
         missing_features = set(ground_truth_cols) - set(sanitized_columns)
-        if missing_features and verbose:
+        if missing_features:
             _LOGGER.warning(f"⚠️ These columns are not Numeric:\n{missing_features}")
     else:
         sanitized_columns = list()
         for feature in use_columns:
             if feature not in ground_truth_cols:
-                if verbose:
-                    _LOGGER.warning(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
+                _LOGGER.warning(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
             else:
                 sanitized_columns.append(feature)
     
     if ignore_columns is not None and use_columns is None:
         missing_ignore = set(ignore_columns) - set(ground_truth_cols)
-        if missing_ignore and verbose:
-            _LOGGER.warning(f"⚠️ Warning: The following 'columns to ignore' are not in the Dataframe:\n{missing_ignore}")
+        if missing_ignore:
+            _LOGGER.warning(f"⚠️ Warning: The following 'columns to ignore' are not found in the Dataframe:\n{missing_ignore}")
         sanitized_columns = [f for f in sanitized_columns if f not in ignore_columns]
 
     X = df[sanitized_columns].copy()
@@ -139,7 +137,7 @@ def compute_vif(
                         filename += ".svg"
                 full_save_path = save_path / filename
                 plt.savefig(full_save_path, format='svg', bbox_inches='tight')
-                print(f"\tSaved VIF plot: '{filename}'")
+                _LOGGER.info(f"✅ Saved VIF plot: '{filename}'")
             
             if show_plot:
                 plt.show()
@@ -164,11 +162,16 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     """
     # Ensure expected structure
     if 'feature' not in vif_df.columns or 'VIF' not in vif_df.columns:
-        raise ValueError("`vif_df` must contain 'feature' and 'VIF' columns.")
+        raise ValueError("'vif_df' must contain 'feature' and 'VIF' columns.")
     
     # Identify features to drop
     to_drop = vif_df[vif_df["VIF"] > threshold]["feature"].tolist()
-    _LOGGER.info(f"🗑️ Dropping {len(to_drop)} column(s) with VIF > {threshold}: {to_drop}")
+    if len(to_drop) > 0:
+        _LOGGER.info(f"🗑️ Dropping {len(to_drop)} column(s) with VIF > {threshold}:")
+        for dropped_column in to_drop:
+            print(f"\t{dropped_column}")
+    else:
+        _LOGGER.info(f"No columns exceed the VIF threshold of '{threshold}'.")
     
     result_df = df.drop(columns=to_drop)
     
@@ -186,7 +189,7 @@ def compute_vif_multi(input_directory: Union[str, Path],
                       max_features_to_plot: int = 20,
                       fontsize: int = 14):
     """
-    Computes Variance Inflation Factors (VIF) for numeric columns in a directory with CSV files (loaded as pandas DataFrames). No plots or warnings will be displayed inline.
+    Computes Variance Inflation Factors (VIF) for numeric columns in a directory with CSV files (loaded as pandas DataFrames). No plots will be displayed inline.
     Generates a bar plot of VIF values. Optionally drops columns with VIF >= 10 and saves as a new CSV file.
 
     Args:
@@ -216,8 +219,7 @@ def compute_vif_multi(input_directory: Union[str, Path],
                             fontsize=fontsize,
                             save_dir=output_plot_directory,
                             filename=df_name,
-                            show_plot=False,
-                            verbose=False)
+                            show_plot=False)
         
         if output_dataset_path is not None:
             new_filename = df_name + '_VIF'

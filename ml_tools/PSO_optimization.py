@@ -530,10 +530,8 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: 
     results_path = make_fullpath(results_dir)
     output_path = make_fullpath(save_dir, make=True)
     
-    all_csvs = list_csv_paths(results_path)
-    if not all_csvs:
-        _LOGGER.warning("⚠️ No data found. No plots will be generated.")
-        return
+    # Check that the directory contains csv files
+    list_csv_paths(results_path, verbose=False)
 
     # --- Data Loading and Preparation ---
     _LOGGER.info(f"📁 Starting analysis from results in: '{results_dir}'")

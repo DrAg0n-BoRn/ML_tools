@@ -102,7 +102,7 @@ class PathManager:
             for key in new_paths:
                 if key in self._paths:
                     raise KeyError(
-                        f"Path key '{key}' already exists in the manager. To replace it, call update() with overwrite=True."
+                        f"❌ Path key '{key}' already exists in the manager. To replace it, call update() with overwrite=True."
                     )
 
         # Resolve any string paths to Path objects before storing
