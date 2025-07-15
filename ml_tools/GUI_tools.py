@@ -7,6 +7,7 @@ from typing import Any, Dict, Tuple, List, Literal, Union, Optional, Callable
 from .utilities import _script_info
 import numpy as np
 from .logger import _LOGGER
+from .keys import _OneHotOtherPlaceholder
 
 
 __all__ = [
@@ -416,7 +417,7 @@ class FeatureMaster:
 
     This class serves as a centralized registry for all features and targets 
     used by a model. It is designed to bridge the gap between a user-facing 
-    application (like a GUI) and the underlying model's data representation.
+    application (GUI) and the underlying model's data representation.
 
     It takes various types of features (continuous, binary, one-hot encoded, 
     categorical) and targets, processing them into two key formats:
@@ -439,7 +440,8 @@ class FeatureMaster:
                  binary_features: Optional[Dict[str, str]] = None,
                  multi_binary_features: Optional[Dict[str, Dict[str, str]]] = None,
                  one_hot_features: Optional[Dict[str, Dict[str, str]]] = None,
-                 categorical_features: Optional[List[Tuple[str, str, Dict[str, int]]]] = None) -> None:
+                 categorical_features: Optional[List[Tuple[str, str, Dict[str, int]]]] = None,
+                 add_one_hot_other_placeholder: bool = True) -> None:
         """
         Initializes the FeatureMaster instance by processing feature and target definitions.
 
@@ -490,6 +492,9 @@ class FeatureMaster:
                     -   `[1]` (str): The model's internal feature name.
                     -   `[2]` (Dict[str, int]): A dictionary mapping the user-selectable 
                         options to their corresponding integer values.
+                
+            add_one_hot_other_placeholder (bool):
+                Add a placeholder for the "Other" option. Used if `drop_first` was used when making the one-hot-encoding to prevent multicollinearity.
         """
         # Validation
         if continuous_features is None and binary_features is None and one_hot_features is None and categorical_features is None and multi_binary_features is None:
@@ -526,7 +531,15 @@ class FeatureMaster:
             self.has_multi_binary = False
         
         # one-hot features
+        self._has_one_hot_other = False
         if one_hot_features is not None:
+            # Check for add_other
+            if add_one_hot_other_placeholder:
+                self._has_one_hot_other = True
+                # update OTHER value in-place
+                for _gui_name, one_hot_dict in one_hot_features.items():
+                    one_hot_dict.update(_OneHotOtherPlaceholder.OTHER_DICT)
+
             self._one_hot_values = self._handle_one_hot_features(one_hot_features)
             self._one_hot_mapping = one_hot_features
             self.has_one_hot = True
@@ -861,11 +874,17 @@ class GUIHandler:
             _LOGGER.error(f"No matching name for '{gui_feature}' defined as one-hot.")
             raise e
         else:
-            mapped_chosen_value = one_hot_mapping[chosen_value]
             # base results mapped to 0
             results = {model_key: 0 for model_key in one_hot_mapping.values()}
+            # get mapped key
+            mapped_chosen_value = one_hot_mapping[chosen_value]
             # update chosen value
             results[mapped_chosen_value] = 1
+            
+            # check if OTHER was added
+            if self.master._has_one_hot_other:
+                results.pop(_OneHotOtherPlaceholder.OTHER_MODEL)
+            
             return results
         
     def _process_categorical(self, gui_feature: str, chosen_value: str) -> Tuple[str,int]:

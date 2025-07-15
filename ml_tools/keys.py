@@ -26,3 +26,9 @@ class ModelSaveKeys:
     # Classification keys
     CLASSIFICATION_LABEL = "label"
     CLASSIFICATION_PROBABILITIES = "probabilities"
+
+
+class _OneHotOtherPlaceholder:
+    OTHER_GUI = "OTHER"
+    OTHER_MODEL = "one hot OTHER placeholder"
+    OTHER_DICT = {OTHER_GUI: OTHER_MODEL}
