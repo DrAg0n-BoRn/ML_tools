@@ -68,7 +68,7 @@ class ConfigManager:
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file not found at: {config_path}")
         
-        parser = configparser.ConfigParser(comment_prefixes=('#', ';'), inline_comment_prefixes=('#', ';'))
+        parser = configparser.ConfigParser(comment_prefixes=';', inline_comment_prefixes=';')
         parser.read(config_path)
 
         for section in parser.sections():
@@ -130,6 +130,8 @@ class ConfigManager:
         }
         config['Colors'] = {
             '; Use standard hex codes (e.g., #FFFFFF) or color names (e.g., white).': '',
+            '; Color for the text inside a standard input box.': '',
+            'input_text': '#000000', 
             '; Color for the text inside a disabled target/output box.': '',
             'target_text': '#0000D0',
             '; Background color for a disabled target/output box.': '',
@@ -247,7 +249,11 @@ class GUIFactory:
             
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
             
-            input_style = {"size": cfg.layout.input_size_cont, "justification": "center"} # type: ignore
+            input_style = {
+                "size": cfg.layout.input_size_cont,  # type: ignore
+                "justification": "center",
+                "text_color": cfg.colors.input_text # type: ignore
+            }
             if is_target:
                 input_style["text_color"] = cfg.colors.target_text # type: ignore
                 input_style["disabled_readonly_background_color"] = cfg.colors.target_background # type: ignore
@@ -297,7 +303,8 @@ class GUIFactory:
             label = sg.Text(name, font=label_font, background_color=bg_color, key=f"_text_{name}")
             element = sg.Combo(
                 values, default_value=values[0], key=name,
-                size=cfg.layout.input_size_binary, readonly=True # type: ignore
+                size=cfg.layout.input_size_binary, readonly=True, # type: ignore
+                text_color=cfg.colors.input_text # type: ignore
             )
             layout = [[label], [element]]
             layout.append([sg.Text(" ", font=(cfg.fonts.font_family, 2), background_color=bg_color)]) # type: ignore
@@ -344,9 +351,9 @@ class GUIFactory:
                 key=name,
                 select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE,
                 size=cfg.layout.input_size_multi, # type: ignore
-                no_scrollbar=False
+                no_scrollbar=False,
+                text_color=cfg.colors.input_text # type: ignore
             )
-            # -------------------
 
             layout = [[label], [element]]
             # Add a small spacer for consistent vertical alignment.
