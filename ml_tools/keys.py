@@ -16,7 +16,7 @@ class LogKeys:
 
 class ModelSaveKeys:
     """
-    Used internally for ensemble_learning module.
+    Used internally by ensemble_learning.
     """
     # Serializing a trained model metadata.
     MODEL = "model"
@@ -24,11 +24,22 @@ class ModelSaveKeys:
     TARGET = "target_name"
     
     # Classification keys
-    CLASSIFICATION_LABEL = "label"
+    CLASSIFICATION_LABEL = "labels"
     CLASSIFICATION_PROBABILITIES = "probabilities"
 
 
+class PyTorchInferenceKeys:
+    """Keys for the output dictionaries of PyTorchInferenceHandler."""
+    # For regression tasks
+    PREDICTIONS = "predictions"
+    
+    # For classification tasks
+    LABELS = "labels"
+    PROBABILITIES = "probabilities"
+
+
 class _OneHotOtherPlaceholder:
+    """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"
     OTHER_MODEL = "one hot OTHER placeholder"
     OTHER_DICT = {OTHER_GUI: OTHER_MODEL}

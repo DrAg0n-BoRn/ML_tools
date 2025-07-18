@@ -1,10 +1,11 @@
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from .utilities import make_fullpath
+from .path_manager import make_fullpath
 from .keys import LogKeys
-from .logger import _LOGGER
+from ._logger import _LOGGER
 from typing import Optional
+from ._script_info import _script_info
 
 
 __all__ = [
@@ -270,7 +271,7 @@ class ModelCheckpoint(Callback):
             self.last_best_filepath = new_filepath
 
     def _save_rolling_checkpoints(self, epoch, logs):
-        """Saves the latest model and keeps only the last 5."""
+        """Saves the latest model and keeps only the most recent ones."""
         filename = f"epoch_{epoch}.pth"
         filepath = self.save_dir / filename
         
@@ -334,4 +335,7 @@ class LRScheduler(Callback):
         if current_lr != self.previous_lr:
             _LOGGER.info(f"Epoch {epoch}: Learning rate changed to {current_lr:.6f}")
             self.previous_lr = current_lr
-            
+
+
+def info():
+    _script_info(__all__)

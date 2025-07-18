@@ -1,18 +1,16 @@
 import pandas as pd
 import numpy as np
-import json
-import seaborn as sns
+import seaborn # Use plot styling
 import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap
 from matplotlib import rcdefaults
 
 from pathlib import Path
-from typing import Literal, Union, Optional, Iterator, Tuple, Dict, Any, List
+from typing import Literal, Union, Optional, Iterator, Tuple
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 
-from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 import xgboost as xgb
 import lightgbm as lgb
 
@@ -20,9 +18,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
 import shap
 
-from .utilities import yield_dataframes_from_dir, sanitize_filename, _script_info, serialize_object, make_fullpath, list_files_by_extension, deserialize_object
+from .utilities import yield_dataframes_from_dir, serialize_object
+from .path_manager import sanitize_filename, make_fullpath
+from ._script_info import _script_info
 from .keys import ModelSaveKeys
-from .logger import _LOGGER
+from ._logger import _LOGGER
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -41,8 +41,6 @@ __all__ = [
     "get_shap_values",
     "train_test_pipeline",
     "run_ensemble_pipeline",
-    "InferenceHandler",
-    "model_report"
 ]
 
 ## Type aliases
@@ -81,7 +79,7 @@ def dataset_yielder(
 class RegressionTreeModels:
     """
     A factory class for creating and configuring multiple gradient boosting regression models
-    with unified hyperparameters. This includes XGBoost, LightGBM, and HistGradientBoostingRegressor.
+    with unified hyperparameters. This includes XGBoost and LightGBM.
     
     Use the `__call__`, `()` method.
 
@@ -111,12 +109,6 @@ class RegressionTreeModels:
     colsample_bytree : float [0.3 - 1.0]
         Fraction of features per tree; useful for regularization (used by XGBoost and LightGBM).
 
-    min_samples_leaf : int [10 - 100]
-        Minimum samples per leaf; higher = less overfitting (used in HistGB).
-
-    max_iter : int [100 - 2000]
-        Maximum number of iterations (used in HistGB).
-
     min_child_weight : float [0.1 - 10.0]
         Minimum sum of instance weight (hessian) needed in a child; larger values make the algorithm more conservative (used in XGBoost).
 
@@ -130,20 +122,19 @@ class RegressionTreeModels:
         Minimum number of data points in a leaf; increasing may prevent overfitting (used in LightGBM).
     """
     def __init__(self, 
-                 random_state: int = 101,
-                 learning_rate: float = 0.005,
-                 L1_regularization: float = 1.0,
-                 L2_regularization: float = 1.0,
-                 n_estimators: int = 1000,
-                 max_depth: int = 8,
-                 subsample: float = 0.8,
-                 colsample_bytree: float = 0.8,
-                 min_samples_leaf: int = 50,
-                 max_iter: int = 1000,
-                 min_child_weight: float = 3.0,
-                 gamma: float = 1.0,
-                 num_leaves: int = 31,
-                 min_data_in_leaf: int = 40):
+             random_state: int = 101,
+             learning_rate: float = 0.005,
+             L1_regularization: float = 1.0,
+             L2_regularization: float = 1.0,
+             n_estimators: int = 1000,
+             max_depth: int = 8,
+             subsample: float = 0.8,
+             colsample_bytree: float = 0.8,
+             min_child_weight: float = 3.0,
+             gamma: float = 1.0,
+             num_leaves: int = 31,
+             min_data_in_leaf: int = 40):
+        
         # General config
         self.random_state = random_state
         self.lr = learning_rate
@@ -165,16 +156,11 @@ class RegressionTreeModels:
         self.num_leaves = num_leaves
         self.min_data_in_leaf = min_data_in_leaf
 
-        # HistGB specific
-        self.max_iter = max_iter
-        self.min_samples_leaf = min_samples_leaf
-
     def __call__(self) -> dict[str, object]:
         """
         Returns a dictionary with new instances of:
             - "XGBoost": XGBRegressor
             - "LightGBM": LGBMRegressor
-            - "HistGB": HistGradientBoostingRegressor
         """
         # XGBoost Regressor
         xgb_model = xgb.XGBRegressor(
@@ -209,23 +195,9 @@ class RegressionTreeModels:
             min_data_in_leaf=self.min_data_in_leaf
         )
 
-        # HistGradientBoosting Regressor
-        hist_model = HistGradientBoostingRegressor(
-            max_iter=self.max_iter,
-            learning_rate=self.lr,
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
-            random_state=self.random_state,
-            l2_regularization=self.L2,
-            scoring='neg_mean_squared_error',
-            early_stopping=True,
-            validation_fraction=0.1
-        )
-
         return {
             "XGBoost": xgb_model,
-            "LightGBM": lgb_model,
-            "HistGB": hist_model
+            "LightGBM": lgb_model
         }
     
     def __str__(self):
@@ -235,7 +207,7 @@ class RegressionTreeModels:
 class ClassificationTreeModels:
     """
     A factory class for creating and configuring multiple gradient boosting classification models
-    with unified hyperparameters. This includes: XGBoost, LightGBM, and HistGradientBoostingClassifier.
+    with unified hyperparameters. This includes XGBoost and LightGBM.
     
     Use the `__call__`, `()` method.
 
@@ -265,12 +237,6 @@ class ClassificationTreeModels:
     colsample_bytree : float [0.3 - 1.0]
         Fraction of features per tree; useful for regularization (used by XGBoost and LightGBM).
 
-    min_samples_leaf : int [10 - 100]
-        Minimum number of samples required to be at a leaf node; higher = less overfitting (used in HistGB).
-
-    max_iter : int [100 - 2000]
-        Maximum number of boosting iteration (used in HistGB).
-
     min_child_weight : float [0.1 - 10.0]
         Minimum sum of instance weight (Hessian) in a child node; larger values make the algorithm more conservative (used in XGBoost).
 
@@ -289,20 +255,19 @@ class ClassificationTreeModels:
         Indicates whether to apply class balancing strategies internally. Can be overridden at runtime via the `__call__` method.
     """
     def __init__(self,
-                 random_state: int = 101,
-                 learning_rate: float = 0.005,
-                 L1_regularization: float = 1.0,
-                 L2_regularization: float = 1.0,
-                 n_estimators: int = 1000,
-                 max_depth: int = 8,
-                 subsample: float = 0.8,
-                 colsample_bytree: float = 0.8,
-                 min_samples_leaf: int = 50,
-                 max_iter: int = 1000,
-                 min_child_weight: float = 3.0,
-                 gamma: float = 1.0,
-                 num_leaves: int = 31,
-                 min_data_in_leaf: int = 40):
+             random_state: int = 101,
+             learning_rate: float = 0.005,
+             L1_regularization: float = 1.0,
+             L2_regularization: float = 1.0,
+             n_estimators: int = 1000,
+             max_depth: int = 8,
+             subsample: float = 0.8,
+             colsample_bytree: float = 0.8,
+             min_child_weight: float = 3.0,
+             gamma: float = 1.0,
+             num_leaves: int = 31,
+             min_data_in_leaf: int = 40):
+        
         # General config
         self.random_state = random_state
         self.lr = learning_rate
@@ -327,16 +292,11 @@ class ClassificationTreeModels:
         self.num_leaves = num_leaves
         self.min_data_in_leaf = min_data_in_leaf
 
-        # HistGB specific
-        self.max_iter = max_iter
-        self.min_samples_leaf = min_samples_leaf
-
     def __call__(self, use_model_balance: Optional[bool]=None) -> dict[str, object]:
         """
         Returns a dictionary with new instances of:
             - "XGBoost": XGBClassifier
             - "LightGBM": LGBMClassifier
-            - "HistGB": HistGradientBoostingClassifier
         """
         if use_model_balance is not None:
             self.use_model_balance = use_model_balance
@@ -376,24 +336,9 @@ class ClassificationTreeModels:
             class_weight='balanced' if self.use_model_balance else None
         )
 
-        # HistGradientBoosting Classifier
-        hist_model = HistGradientBoostingClassifier(
-            max_iter=self.max_iter,
-            learning_rate=self.lr,
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
-            random_state=self.random_state,
-            l2_regularization=self.L2,
-            early_stopping=True,
-            validation_fraction=0.1,
-            class_weight='balanced' if self.use_model_balance else None,
-            scoring='balanced_accuracy' if self.use_model_balance else 'loss'
-        )
-
         return {
             "XGBoost": xgb_model,
-            "LightGBM": lgb_model,
-            "HistGB": hist_model
+            "LightGBM": lgb_model
         }
         
     def __str__(self):
@@ -577,7 +522,7 @@ def evaluate_model_classification(
 
     fig.tight_layout()
     fig_path = save_path / f"Confusion_Matrix_{sanitized_target_name}.svg"
-    fig.savefig(fig_path, format="svg", bbox_inches="tight")
+    fig.savefig(fig_path, format="svg", bbox_inches="tight") # type: ignore
     plt.close(fig)
 
     return y_pred
@@ -621,8 +566,8 @@ def plot_roc_curve(
     # Determine predicted probabilities
     if isinstance(probabilities_or_model, np.ndarray):
         # Input is already probabilities
-        if probabilities_or_model.ndim == 2:
-            y_score = probabilities_or_model[:, 1]
+        if probabilities_or_model.ndim == 2: # type: ignore
+            y_score = probabilities_or_model[:, 1] # type: ignore
         else:
             y_score = probabilities_or_model
             
@@ -661,7 +606,7 @@ def plot_roc_curve(
     save_path = make_fullpath(save_directory, make=True)
     sanitized_target_name = sanitize_filename(target_name)
     full_save_path = save_path / f"ROC_{sanitized_target_name}.svg"
-    fig.savefig(full_save_path, bbox_inches="tight", format="svg")
+    fig.savefig(full_save_path, bbox_inches="tight", format="svg") # type: ignore
 
     return fig
 
@@ -941,205 +886,6 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     debug=debug, save_dir=save_path, save_model=save_model)
 
     _LOGGER.info("✅ Training and evaluation complete.")
-
-
-###### 6. Inference ######
-class InferenceHandler:
-    """
-    Handles loading ensemble models and performing inference for either regression or classification tasks.
-    """
-    def __init__(self, 
-                 models_dir: Union[str,Path], 
-                 task: TaskType,
-                 verbose: bool=True) -> None:
-        """
-        Initializes the handler by loading all models from a directory.
-
-        Args:
-            models_dir (Path): The directory containing the saved .joblib model files.
-            task ("regression" | "classification"): The type of task the models perform.
-        """
-        self.models: Dict[str, Any] = dict()
-        self.task: str = task
-        self.verbose = verbose
-        self._feature_names: Optional[List[str]] = None
-        
-        model_files = list_files_by_extension(directory=models_dir, extension="joblib")
-        
-        for fname, fpath in model_files.items():
-            try:
-                full_object: dict
-                full_object = deserialize_object(filepath=fpath, 
-                                                 verbose=self.verbose, 
-                                                 raise_on_error=True) # type: ignore
-                
-                model: Any = full_object[ModelSaveKeys.MODEL]
-                target_name: str = full_object[ModelSaveKeys.TARGET]
-                feature_names_list: List[str] = full_object[ModelSaveKeys.FEATURES]
-                
-                # Check that feature names match
-                if self._feature_names is None:
-                    # Store the feature names from the first model loaded.
-                    self._feature_names = feature_names_list
-                elif self._feature_names != feature_names_list:
-                    # Add a warning if subsequent models have different feature names.
-                    _LOGGER.warning(f"⚠️ Mismatched feature names in {fname}. Using feature order from the first model loaded.")
-                
-                self.models[target_name] = model
-                if self.verbose:
-                    _LOGGER.info(f"✅ Loaded model for target: {target_name}")
-
-            except Exception as e:
-                _LOGGER.warning(f"⚠️ Failed to load or parse {fname}: {e}")
-                
-    @property
-    def feature_names(self) -> List[str]:
-        """
-        Getter for the list of feature names the models expect.
-        Returns an empty list if no models were loaded.
-        """
-        return self._feature_names if self._feature_names is not None else []
-    
-    def predict(self, features: np.ndarray) -> Dict[str, Any]:
-        """
-        Predicts on a single feature vector.
-
-        Args:
-            features (np.ndarray): A 1D or 2D NumPy array for a single sample.
-
-        Returns:
-            Dict[str, Any]: A dictionary where keys are target names.
-                - For regression: The value is the single predicted float.
-                - For classification: The value is another dictionary {'label': ..., 'probabilities': ...}.
-        """
-        if features.ndim == 1:
-            features = features.reshape(1, -1)
-        
-        if features.shape[0] != 1:
-            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
-
-        results: Dict[str, Any] = dict()
-        for target_name, model in self.models.items():
-            if self.task == "regression":
-                prediction = model.predict(features)
-                results[target_name] = prediction.item()
-            else: # Classification
-                label = model.predict(features)[0]
-                probabilities = model.predict_proba(features)[0]
-                results[target_name] = {ModelSaveKeys.CLASSIFICATION_LABEL: label, 
-                                        ModelSaveKeys.CLASSIFICATION_PROBABILITIES: probabilities}
-        
-        if self.verbose:
-            _LOGGER.info("✅ Inference process complete.")
-        return results
-
-    def predict_batch(self, features: np.ndarray) -> Dict[str, Any]:
-        """
-        Predicts on a batch of feature vectors.
-
-        Args:
-            features (np.ndarray): A 2D NumPy array where each row is a sample.
-
-        Returns:
-            Dict[str, Any]: A dictionary where keys are target names.
-                - For regression: The value is a NumPy array of predictions.
-                - For classification: The value is another dictionary {'labels': ..., 'probabilities': ...}.
-        """
-        if features.ndim != 2:
-            raise ValueError("Input for batch prediction must be a 2D array.")
-
-        results: Dict[str, Any] = dict()
-        for target_name, model in self.models.items():
-            if self.task == "regression":
-                results[target_name] = model.predict(features)
-            else: # Classification
-                labels = model.predict(features)
-                probabilities = model.predict_proba(features)
-                results[target_name] = {"labels": labels, "probabilities": probabilities}
-                
-        if self.verbose:
-            _LOGGER.info("✅ Inference process complete.")
-
-        return results
-
-
-###### 7. Save Model info report ######
-def model_report(
-        model_path: Union[str,Path],
-        output_dir: Optional[Union[str,Path]] = None,
-        verbose: bool = True
-    ) -> Dict[str, Any]:
-    """
-    Deserializes a model and generates a summary report.
-
-    This function loads a serialized model object (joblib), prints a summary to the
-    console (if verbose), and saves a detailed JSON report.
-
-    Args:
-        model_path (str): The path to the serialized model file.
-        output_dir (str, optional): Directory to save the JSON report.
-            If None, it defaults to the same directory as the model file.
-        verbose (bool, optional): If True, prints summary information
-            to the console. Defaults to True.
-
-    Returns:
-        (Dict[str, Any]): A dictionary containing the model metadata.
-
-    Raises:
-        FileNotFoundError: If the model_path does not exist.
-        KeyError: If the deserialized object is missing required keys from `ModelSaveKeys`.
-    """
-    # 1. Convert to Path object
-    model_p = make_fullpath(model_path)
-
-    # --- 2. Deserialize and Extract Info ---
-    try:
-        full_object: dict = deserialize_object(model_p) # type: ignore
-        model = full_object[ModelSaveKeys.MODEL]
-        target = full_object[ModelSaveKeys.TARGET]
-        features = full_object[ModelSaveKeys.FEATURES]
-    except FileNotFoundError:
-        _LOGGER.error(f"❌ Model file not found at '{model_p}'")
-        raise
-    except (KeyError, TypeError) as e:
-        _LOGGER.error(
-            f"❌ The serialized object is missing required keys '{ModelSaveKeys.MODEL}', '{ModelSaveKeys.TARGET}', '{ModelSaveKeys.FEATURES}'"
-        )
-        raise e
-
-    # --- 3. Print Summary to Console (if verbose) ---
-    if verbose:
-        print("\n--- 📝 Model Summary ---")
-        print(f"Source File:    {model_p.name}")
-        print(f"Model Type:     {type(model).__name__}")
-        print(f"Target:         {target}")
-        print(f"Feature Count:  {len(features)}")
-        print("-----------------------")
-
-    # --- 4. Generate JSON Report ---
-    report_data = {
-        "source_file": model_p.name,
-        "model_type": str(type(model)),
-        "target_name": target,
-        "feature_count": len(features),
-        "feature_names": features
-    }
-
-    # Determine output path
-    output_p = make_fullpath(output_dir, make=True) if output_dir else model_p.parent
-    json_filename = model_p.stem + "_info.json"
-    json_filepath = output_p / json_filename    
-
-    try:
-        with open(json_filepath, 'w') as f:
-            json.dump(report_data, f, indent=4)
-        if verbose:
-            _LOGGER.info(f"✅ JSON report saved to: '{json_filepath}'")
-    except PermissionError:
-        _LOGGER.error(f"❌ Permission denied to write JSON report at '{json_filepath}'")
-
-    # --- 5. Return the extracted data ---
-    return report_data
 
 
 def info():

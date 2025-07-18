@@ -1,12 +1,18 @@
 from pprint import pprint
-from typing import Optional, List, Dict, Callable, Union
+from typing import Optional, List, Dict, Union, Literal
 from pathlib import Path
-from .utilities import _script_info
-from .logger import _LOGGER
+import re
+from ._script_info import _script_info
+from ._logger import _LOGGER
+import sys
 
 
 __all__ = [
-    "PathManager"
+    "PathManager",
+    "make_fullpath",
+    "sanitize_filename",
+    "list_csv_paths",
+    "list_files_by_extension",
 ]
 
 
@@ -14,7 +20,7 @@ class PathManager:
     """
     Manages and stores a project's file paths, acting as a centralized
     "path database". It supports both development mode and applications
-    bundled with Briefcase.
+    bundled with Pyinstaller.
     
     Supports python dictionary syntax.
     """
@@ -23,23 +29,14 @@ class PathManager:
         anchor_file: str,
         base_directories: Optional[List[str]] = None
     ):
-        """
-        The initializer determines the project's root directory and can pre-register
-        a list of base directories relative to that root.
-
-        Args:
-            anchor_file (str): The absolute path to a file whose parent directory will be considered the package root and name. Typically, `__file__`.
-            base_directories (Optional[List[str]]): A list of directory names located at the same level as the anchor file to be registered immediately.
-        """
         resolved_anchor_path = Path(anchor_file).resolve()
         self._package_name = resolved_anchor_path.parent.name
-        self._is_bundled, self._resource_path_func = self._check_bundle_status()
+        self._is_bundled, bundle_root = self._get_bundle_root()
         self._paths: Dict[str, Path] = {}
 
         if self._is_bundled:
-            # In a bundle, resource_path gives the absolute path to the 'app_packages' dir
-            # when given the package name.
-            package_root = self._resource_path_func(self._package_name) # type: ignore
+            # In a PyInstaller bundle, the package is inside the temp _MEIPASS dir
+            package_root = Path(bundle_root) / self._package_name # type: ignore
         else:
             # In dev mode, the package root is the directory containing the anchor file.
             package_root = resolved_anchor_path.parent
@@ -50,21 +47,21 @@ class PathManager:
         # Register all the base directories
         if base_directories:
             for dir_name in base_directories:
-                # In dev mode, this is simple. In a bundle, we must resolve
-                # each path from the package root.
-                if self._is_bundled:
-                     self._paths[dir_name] = self._resource_path_func(self._package_name, dir_name) # type: ignore
-                else:
-                     self._paths[dir_name] = package_root / dir_name
+                # This logic works for both dev mode and bundled mode
+                self._paths[dir_name] = package_root / dir_name
                      
-    # A helper function to find the briefcase-injected resource function
-    def _check_bundle_status(self) -> tuple[bool, Optional[Callable]]:
-        """Checks if the app is running in a Briefcase bundle."""
-        try:
-            # This function is injected by Briefcase into the global scope
-            from briefcase.platforms.base import resource_path # type: ignore
-            return True, resource_path
-        except (ImportError, NameError):
+    def _get_bundle_root(self) -> tuple[bool, Optional[str]]:
+        """
+        Checks if the app is running in a PyInstaller bundle and returns the root path.
+        
+        Returns:
+            A tuple (is_bundled, bundle_root_path). `bundle_root_path` is the
+            path to the temporary directory `_MEIPASS` if bundled, otherwise None.
+        """
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # This is the standard way to check for a PyInstaller bundle
+            return True, sys._MEIPASS # type: ignore
+        else:
             return False, None
 
     def get(self, key: str) -> Path:
@@ -206,6 +203,172 @@ class PathManager:
     def items(self):
         """Returns all registered (key, Path) pairs."""
         return self._paths.items()
+
+
+def make_fullpath(
+        input_path: Union[str, Path],
+        make: bool = False,
+        verbose: bool = False,
+        enforce: Optional[Literal["directory", "file"]] = None
+    ) -> Path:
+    """
+    Resolves a string or Path into an absolute Path, optionally creating it.
+
+    - If the path exists, it is returned.
+    - If the path does not exist and `make=True`, it will:
+        - Create the file if the path has a suffix
+        - Create the directory if it has no suffix
+    - If `make=False` and the path does not exist, an error is raised.
+    - If `enforce`, raises an error if the resolved path is not what was enforced.
+    - Optionally prints whether the resolved path is a file or directory.
+
+    Parameters:
+        input_path (str | Path): 
+            Path to resolve.
+        make (bool): 
+            If True, attempt to create file or directory.
+        verbose (bool): 
+            Print classification after resolution.
+        enforce ("directory" | "file" | None):
+            Raises an error if the resolved path is not what was enforced.
+
+    Returns:
+        Path: Resolved absolute path.
+
+    Raises:
+        ValueError: If the path doesn't exist and can't be created.
+        TypeError: If the final path does not match the `enforce` parameter.
+        
+    ## 🗒️ Note:
+    
+    Directories with dots will be treated as files.
+    
+    Files without extension will be treated as directories.
+    """
+    path = Path(input_path).expanduser()
+
+    is_file = path.suffix != ""
+
+    try:
+        resolved = path.resolve(strict=True)
+    except FileNotFoundError:
+        if not make:
+            raise ValueError(f"❌ Path does not exist: '{path}'")
+
+        try:
+            if is_file:
+                # Create parent directories first
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch(exist_ok=False)
+            else:
+                path.mkdir(parents=True, exist_ok=True)
+            resolved = path.resolve(strict=True)
+        except Exception as e:
+            raise ValueError(f"❌ Failed to create {'file' if is_file else 'directory'} '{path}': {e}")
+    
+    if enforce == "file" and not resolved.is_file():
+        raise TypeError(f"❌ Path was enforced as a file, but it is not: '{resolved}'")
+    
+    if enforce == "directory" and not resolved.is_dir():
+        raise TypeError(f"❌ Path was enforced as a directory, but it is not: '{resolved}'")
+
+    if verbose:
+        if resolved.is_file():
+            print("📄 Path is a File")
+        elif resolved.is_dir():
+            print("📁 Path is a Directory")
+        else:
+            print("❓ Path exists but is neither file nor directory")
+
+    return resolved
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitizes the name by:
+    - Stripping leading/trailing whitespace.
+    - Replacing all internal whitespace characters with underscores.
+    - Removing or replacing characters invalid in filenames.
+
+    Args:
+        filename (str): Base filename.
+
+    Returns:
+        str: A sanitized string suitable to use as a filename.
+    """
+    # Strip leading/trailing whitespace
+    sanitized = filename.strip()
+    
+    # Replace all whitespace sequences (space, tab, etc.) with underscores
+    sanitized = re.sub(r'\s+', '_', sanitized)
+
+    # Conservative filter to keep filenames safe across platforms
+    sanitized = re.sub(r'[^\w\-.]', '', sanitized)
+    
+    # Check for empty string after sanitization
+    if not sanitized:
+        raise ValueError("The sanitized filename is empty. The original input may have contained only invalid characters.")
+
+    return sanitized
+
+
+def list_csv_paths(directory: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
+    """
+    Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
+
+    Parameters:
+        directory (str | Path): Path to the directory containing `.csv` files.
+
+    Returns:
+        (dict[str, Path]): Dictionary mapping {filename: filepath}.
+    """
+    dir_path = make_fullpath(directory)
+
+    csv_paths = list(dir_path.glob("*.csv"))
+    if not csv_paths:
+        raise IOError(f"❌ No CSV files found in directory: {dir_path.name}")
+    
+    # make a dictionary of paths and names
+    name_path_dict = {p.stem: p for p in csv_paths}
+    
+    if verbose:
+        _LOGGER.info("🗂️ CSV files found:")
+        for name in name_path_dict.keys():
+            print(f"\t{name}")
+
+    return name_path_dict
+
+
+def list_files_by_extension(directory: Union[str,Path], extension: str, verbose: bool=True) -> dict[str, Path]:
+    """
+    Lists all files with the specified extension in the given directory and returns a mapping: 
+    filenames (without extensions) to their absolute paths.
+
+    Parameters:
+        directory (str | Path): Path to the directory to search in.
+        extension (str): File extension to search for (e.g., 'json', 'txt').
+
+    Returns:
+        (dict[str, Path]): Dictionary mapping {filename: filepath}.
+    """
+    dir_path = make_fullpath(directory)
+    
+    # Normalize the extension (remove leading dot if present)
+    normalized_ext = extension.lstrip(".").lower()
+    pattern = f"*.{normalized_ext}"
+    
+    matched_paths = list(dir_path.glob(pattern))
+    if not matched_paths:
+        raise IOError(f"❌ No '.{normalized_ext}' files found in directory: {dir_path}")
+
+    name_path_dict = {p.stem: p for p in matched_paths}
+    
+    if verbose:
+        _LOGGER.info(f"\n📂 '{normalized_ext.upper()}' files found:")
+        for name in name_path_dict:
+            print(f"\t{name}")
+    
+    return name_path_dict
 
 
 def info():

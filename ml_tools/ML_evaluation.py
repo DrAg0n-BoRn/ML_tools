@@ -14,9 +14,10 @@ from sklearn.metrics import (
 import torch
 import shap
 from pathlib import Path
-from .utilities import make_fullpath
-from .logger import _LOGGER
+from .path_manager import make_fullpath
+from ._logger import _LOGGER
 from typing import Union, Optional
+from ._script_info import _script_info
 
 
 __all__ = [
@@ -62,7 +63,7 @@ def plot_losses(history: dict, save_dir: Optional[Union[str, Path]] = None):
     plt.tight_layout()
     
     if save_dir:
-        save_dir_path = make_fullpath(save_dir, make=True)
+        save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
         save_path = save_dir_path / "loss_plot.svg"
         plt.savefig(save_path)
         _LOGGER.info(f"📉 Loss plot saved as '{save_path.name}'")
@@ -88,7 +89,7 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optio
     print(report)
     
     if save_dir:
-        save_dir_path = make_fullpath(save_dir, make=True)
+        save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
         # Save text report
         report_path = save_dir_path / "classification_report.txt"
         report_path.write_text(report, encoding="utf-8")
@@ -158,7 +159,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Optiona
     print(report_string)
 
     if save_dir:
-        save_dir_path = make_fullpath(save_dir, make=True)
+        save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
         # Save text report
         report_path = save_dir_path / "regression_report.txt"
         report_path.write_text(report_string)
@@ -220,7 +221,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
         _LOGGER.info("Using SHAP values for the positive class (class 1) for plots.")
 
     if save_dir:
-        save_dir_path = make_fullpath(save_dir, make=True)
+        save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
         # Save Bar Plot
         bar_path = save_dir_path / "shap_bar_plot.svg"
         shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="bar", show=False)
@@ -253,3 +254,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
     else:
         _LOGGER.info("No save directory provided. Displaying SHAP dot plot.")
         shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="dot")
+
+
+def info():
+    _script_info(__all__)

@@ -2,28 +2,23 @@ import numpy as np
 from pathlib import Path
 import xgboost as xgb
 import lightgbm as lgb
-from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.base import ClassifierMixin
 from typing import Literal, Union, Tuple, Dict, Optional
 import pandas as pd
 from copy import deepcopy
 from .utilities import (
-    _script_info, 
-    list_csv_paths,
     threshold_binary_values, 
     threshold_binary_values_batch, 
-    deserialize_object, 
-    list_files_by_extension, 
-    save_dataframe, 
-    make_fullpath, 
-    yield_dataframes_from_dir, 
-    sanitize_filename)
+    deserialize_object,
+    save_dataframe,
+    yield_dataframes_from_dir)
+from .path_manager import sanitize_filename, make_fullpath, list_files_by_extension, list_csv_paths
 import torch
 from tqdm import trange
 import matplotlib.pyplot as plt
 import seaborn as sns
-from .logger import _LOGGER
+from ._logger import _LOGGER
 from .keys import ModelSaveKeys
+from ._script_info import _script_info
 
 
 __all__ = [
@@ -125,7 +120,7 @@ class ObjectiveFunction():
             return features_array * noise
     
     def check_model(self):
-        if isinstance(self.model, ClassifierMixin) or isinstance(self.model, xgb.XGBClassifier) or isinstance(self.model, lgb.LGBMClassifier):
+        if isinstance(self.model, xgb.XGBClassifier) or isinstance(self.model, lgb.LGBMClassifier):
             raise ValueError(f"[Model Check Failed] ❌\nThe loaded model ({type(self.model).__name__}) is a Classifier.\nOptimization is not suitable for standard classification tasks.")
         if self.model is None:
             raise ValueError("Loaded model is None")

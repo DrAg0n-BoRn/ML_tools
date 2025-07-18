@@ -3,23 +3,20 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from pathlib import Path
-import re
 from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple
 import joblib
 from joblib.externals.loky.process_executor import TerminatedWorkerError
+from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
+from ._script_info import _script_info
 
 
 # Keep track of available tools
 __all__ = [
-    "make_fullpath",
-    "list_csv_paths",
-    "list_files_by_extension",
     "load_dataframe",
     "yield_dataframes_from_dir",
     "merge_dataframes",
     "save_dataframe",
     "normalize_mixed_list",
-    "sanitize_filename",
     "threshold_binary_values",
     "threshold_binary_values_batch",
     "serialize_object",
@@ -27,143 +24,6 @@ __all__ = [
     "distribute_datasets_by_target",
     "train_dataset_orchestrator",
 ]
-
-
-def make_fullpath(
-        input_path: Union[str, Path],
-        make: bool = False,
-        verbose: bool = False,
-        enforce: Optional[Literal["directory", "file"]] = None
-    ) -> Path:
-    """
-    Resolves a string or Path into an absolute Path, optionally creating it.
-
-    - If the path exists, it is returned.
-    - If the path does not exist and `make=True`, it will:
-        - Create the file if the path has a suffix
-        - Create the directory if it has no suffix
-    - If `make=False` and the path does not exist, an error is raised.
-    - If `enforce`, raises an error if the resolved path is not what was enforced.
-    - Optionally prints whether the resolved path is a file or directory.
-
-    Parameters:
-        input_path (str | Path): 
-            Path to resolve.
-        make (bool): 
-            If True, attempt to create file or directory.
-        verbose (bool): 
-            Print classification after resolution.
-        enforce ("directory" | "file" | None):
-            Raises an error if the resolved path is not what was enforced.
-
-    Returns:
-        Path: Resolved absolute path.
-
-    Raises:
-        ValueError: If the path doesn't exist and can't be created.
-        TypeError: If the final path does not match the `enforce` parameter.
-        
-    ## 🗒️ Note:
-    
-    Directories with dots will be treated as files.
-    
-    Files without extension will be treated as directories.
-    """
-    path = Path(input_path).expanduser()
-
-    is_file = path.suffix != ""
-
-    try:
-        resolved = path.resolve(strict=True)
-    except FileNotFoundError:
-        if not make:
-            raise ValueError(f"❌ Path does not exist: '{path}'")
-
-        try:
-            if is_file:
-                # Create parent directories first
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.touch(exist_ok=False)
-            else:
-                path.mkdir(parents=True, exist_ok=True)
-            resolved = path.resolve(strict=True)
-        except Exception as e:
-            raise ValueError(f"❌ Failed to create {'file' if is_file else 'directory'} '{path}': {e}")
-    
-    if enforce == "file" and not resolved.is_file():
-        raise TypeError(f"❌ Path was enforced as a file, but it is not: '{resolved}'")
-    
-    if enforce == "directory" and not resolved.is_dir():
-        raise TypeError(f"❌ Path was enforced as a directory, but it is not: '{resolved}'")
-
-    if verbose:
-        if resolved.is_file():
-            print("📄 Path is a File")
-        elif resolved.is_dir():
-            print("📁 Path is a Directory")
-        else:
-            print("❓ Path exists but is neither file nor directory")
-
-    return resolved
-
-
-def list_csv_paths(directory: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
-    """
-    Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
-
-    Parameters:
-        directory (str | Path): Path to the directory containing `.csv` files.
-
-    Returns:
-        (dict[str, Path]): Dictionary mapping {filename: filepath}.
-    """
-    dir_path = make_fullpath(directory)
-
-    csv_paths = list(dir_path.glob("*.csv"))
-    if not csv_paths:
-        raise IOError(f"❌ No CSV files found in directory: {dir_path.name}")
-    
-    # make a dictionary of paths and names
-    name_path_dict = {p.stem: p for p in csv_paths}
-    
-    if verbose:
-        print("\n🗂️ CSV files found:")
-        for name in name_path_dict.keys():
-            print(f"\t{name}")
-
-    return name_path_dict
-
-
-def list_files_by_extension(directory: Union[str,Path], extension: str, verbose: bool=True) -> dict[str, Path]:
-    """
-    Lists all files with the specified extension in the given directory and returns a mapping: 
-    filenames (without extensions) to their absolute paths.
-
-    Parameters:
-        directory (str | Path): Path to the directory to search in.
-        extension (str): File extension to search for (e.g., 'json', 'txt').
-
-    Returns:
-        (dict[str, Path]): Dictionary mapping {filename: filepath}.
-    """
-    dir_path = make_fullpath(directory)
-    
-    # Normalize the extension (remove leading dot if present)
-    normalized_ext = extension.lstrip(".").lower()
-    pattern = f"*.{normalized_ext}"
-    
-    matched_paths = list(dir_path.glob(pattern))
-    if not matched_paths:
-        raise IOError(f"❌ No '.{normalized_ext}' files found in directory: {dir_path}")
-
-    name_path_dict = {p.stem: p for p in matched_paths}
-    
-    if verbose:
-        print(f"\n📂 '{normalized_ext.upper()}' files found:")
-        for name in name_path_dict:
-            print(f"\t{name}")
-    
-    return name_path_dict
 
 
 def load_dataframe(
@@ -412,35 +272,6 @@ def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
     return [x / total for x in adjusted]
 
 
-def sanitize_filename(filename: str) -> str:
-    """
-    Sanitizes the name by:
-    - Stripping leading/trailing whitespace.
-    - Replacing all internal whitespace characters with underscores.
-    - Removing or replacing characters invalid in filenames.
-
-    Args:
-        filename (str): Base filename.
-
-    Returns:
-        str: A sanitized string suitable to use as a filename.
-    """
-    # Strip leading/trailing whitespace
-    sanitized = filename.strip()
-    
-    # Replace all whitespace sequences (space, tab, etc.) with underscores
-    sanitized = re.sub(r'\s+', '_', sanitized)
-
-    # Conservative filter to keep filenames safe across platforms
-    sanitized = re.sub(r'[^\w\-.]', '', sanitized)
-    
-    # Check for empty string after sanitization
-    if not sanitized:
-        raise ValueError("The sanitized filename is empty. The original input may have contained only invalid characters.")
-
-    return sanitized
-
-
 def threshold_binary_values(
     input_array: Union[Sequence[float], np.ndarray, pd.Series, pl.Series],
     binary_values: Optional[int] = None
@@ -673,15 +504,6 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                 continue 
 
     print(f"\n✅ {total_saved} single-target datasets were created.")
-
-
-def _script_info(all_data: list[str]):
-    """
-    List available names.
-    """
-    print("Available functions and objects:")
-    for i, name in enumerate(all_data, start=1):
-            print(f"{i} - {name}")
 
 
 def info():

@@ -1,8 +1,8 @@
 import polars as pl
 import re
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
-from .utilities import _script_info
-from .logger import _LOGGER
+from ._script_info import _script_info
+from ._logger import _LOGGER
 
 
 __all__ = [

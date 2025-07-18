@@ -13,8 +13,9 @@ from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from pathlib import Path
-from .utilities import _script_info, make_fullpath
-from .logger import _LOGGER
+from .path_manager import make_fullpath
+from ._logger import _LOGGER
+from ._script_info import _script_info
 
 
 # --- public-facing API ---

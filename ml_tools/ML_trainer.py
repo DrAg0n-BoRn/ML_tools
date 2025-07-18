@@ -7,9 +7,9 @@ import numpy as np
 
 from .ML_callbacks import Callback, History, TqdmProgressBar
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot
-from .utilities import _script_info
+from ._script_info import _script_info
 from .keys import LogKeys
-from .logger import _LOGGER
+from ._logger import _LOGGER
 
 
 __all__ = [
@@ -105,7 +105,7 @@ class MyTrainer:
             pin_memory=(self.device.type == "cuda")
         )
 
-    def fit(self, epochs: int = 10, batch_size: int = 32, shuffle: bool = True):
+    def fit(self, epochs: int = 10, batch_size: int = 10, shuffle: bool = True):
         """
         Starts the training-validation process of the model.
 
@@ -113,6 +113,13 @@ class MyTrainer:
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
+            
+        Note:
+            For regression tasks using `nn.MSELoss` or `nn.L1Loss`, the trainer
+            automatically aligns the model's output tensor with the target tensor's
+            shape using `output.view_as(target)`. This handles the common case
+            where a model outputs a shape of `[batch_size, 1]` and the target has a
+            shape of `[batch_size]`.
         """
         self.epochs = epochs
         self._create_dataloaders(batch_size, shuffle)
@@ -189,9 +196,10 @@ class MyTrainer:
         logs = {LogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
         return logs
     
-    def predict(self, dataloader: DataLoader):
+    def _predict_for_eval(self, dataloader: DataLoader):
         """
-        Yields model predictions batch by batch, avoids loading all predictions into memory at once.
+        Private method to yield model predictions batch by batch for evaluation.
+        This is used internally by the `evaluate` method.
 
         Args:
             dataloader (DataLoader): The dataloader to predict on.
@@ -213,13 +221,14 @@ class MyTrainer:
                     preds = torch.argmax(probs, dim=1)
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
+                # regression
                 else:
                     y_pred_batch = output.numpy()
                     y_prob_batch = None
                 
                 yield y_pred_batch, y_prob_batch, y_true_batch
     
-    def evaluate(self, data: Optional[Union[DataLoader, Dataset]] = None, save_dir: Optional[Union[str,Path]] = None):
+    def evaluate(self, save_dir: Optional[Union[str,Path]], data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model on the given data.
 
@@ -251,7 +260,7 @@ class MyTrainer:
 
         # Collect results from the predict generator
         all_preds, all_probs, all_true = [], [], []
-        for y_pred_b, y_prob_b, y_true_b in self.predict(eval_loader):
+        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
             all_preds.append(y_pred_b)
             if y_prob_b is not None:
                 all_probs.append(y_prob_b)
@@ -270,7 +279,7 @@ class MyTrainer:
         plot_losses(self.history, save_dir=save_dir)
     
     def explain(self, explain_dataset: Optional[Dataset] = None, n_samples: int = 100, 
-                feature_names: Optional[List[str]] = None, save_dir: Optional[str] = None):
+                feature_names: Optional[List[str]] = None, save_dir: Optional[Union[str,Path]] = None):
         """
         Explains model predictions using SHAP and saves all artifacts.
 

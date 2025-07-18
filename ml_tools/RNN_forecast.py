@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
+from ._script_info import _script_info
 
 __all__ = [
     "rnn_forecast"
@@ -47,3 +48,7 @@ def rnn_forecast(model: nn.Module, start_sequence: torch.Tensor, steps: int, dev
             
     # Concatenate all predictions and flatten the array for easy use
     return np.concatenate(predictions).flatten()
+
+
+def info():
+    _script_info

@@ -3,12 +3,10 @@ from pandas.api.types import is_numeric_dtype
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from IPython import get_ipython
-from IPython.display import clear_output
-import time
 from typing import Union, Literal, Dict, Tuple, List, Optional
 from pathlib import Path
-from .utilities import sanitize_filename, _script_info, make_fullpath
+from .path_manager import sanitize_filename, make_fullpath
+from ._script_info import _script_info
 import re
 
 
@@ -22,7 +20,6 @@ __all__ = [
     "drop_columns_with_missing_data",
     "split_continuous_binary", 
     "plot_correlation_heatmap", 
-    "check_value_distributions", 
     "plot_value_distributions", 
     "clip_outliers_single", 
     "clip_outliers_multi",
@@ -343,63 +340,6 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     plt.close()
 
 
-def check_value_distributions(df: pd.DataFrame, view_frequencies: bool=True, bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
-    """
-    Analyzes value counts for each column in a DataFrame, optionally plots distributions, 
-    and saves them as .png files in the specified directory.
-
-    Args:
-        df (pd.DataFrame): The dataset to analyze.
-        view_frequencies (bool): Print relative frequencies instead of value counts.
-        bin_threshold (int): Threshold of unique values to start using bins.
-        skip_cols_with_key (str | None): Skip column names containing the key. If None, don't skip any column.
-    
-    Notes:
-        - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
-    """
-    # cherry-pick columns
-    if skip_cols_with_key is not None:
-        columns = [col for col in df.columns if skip_cols_with_key not in col]
-    else:
-        columns = df.columns.to_list()
-    
-    for col in columns:
-        if _is_notebook():
-            clear_output(wait=False)
-        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
-            bins_number = 10
-            binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-            while binned.nunique() <= 2:
-                bins_number -= 1
-                binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-                if bins_number <= 2:
-                    break
-            
-            if binned.nunique() <= 2:
-                view_std = df[col].value_counts(ascending=False)
-            else:
-                view_std = binned.value_counts(sort=False)
-            
-        else:
-            view_std = df[col].value_counts(ascending=False)
-
-        view_std.name = col
-
-        # unlikely scenario where the series is empty
-        if view_std.sum() == 0:
-            view_freq = view_std
-        else:
-            view_freq = view_std / view_std.sum()
-        # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
-        view_freq.name = col
-
-        # Print value counts
-        print(view_freq if view_frequencies else view_std)
-        
-        time.sleep(1)
-        user_input_ = input("Press enter to continue")
-
-
 def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
     """
     Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
@@ -689,10 +629,6 @@ def standardize_percentages(
         df_copy[col] = df_copy[col].round(round_digits)
 
     return df_copy
-
-
-def _is_notebook():
-    return get_ipython() is not None
 
 
 def info():
