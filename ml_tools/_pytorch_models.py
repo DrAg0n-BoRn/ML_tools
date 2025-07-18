@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from .utilities import _script_info
+from ._script_info import _script_info
 
 
 __all__ = [
