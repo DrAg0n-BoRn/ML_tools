@@ -1,15 +1,15 @@
 # dragon-ml-toolbox
 
-A collection of Python utilities for data science and machine learning, structured as a modular package for easy reuse and installation.
+A collection of Python utilities for data science and machine learning, structured as a modular package for easy reuse and installation. This package has no base dependencies, allowing for lightweight and customized virtual environments.
 
-## Features
+### Features:
 
 - Modular scripts for data exploration, logging, machine learning, and more.
 - Designed for seamless integration as a Git submodule or installable Python package.
 
 ## Installation
 
-**Python 3.10+ recommended.**
+**Python 3.10+**
 
 ### Via PyPI
 
@@ -38,57 +38,122 @@ conda install -c conda-forge dragon-ml-toolbox
 ```
 **Note:** This version is outdated or broken due to dependency incompatibilities. Use PyPi instead.
 
-## Optional dependencies
+## Modular Installation
 
-### FreeSimpleGUI
+### 📦 Core Machine Learning Toolbox [ML]
 
-Wrapper library used to build powerful GUIs. Requires the tkinter backend.
+Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation. PyTorch is required.
 
-```bash
-pip install dragon-ml-toolbox[gui]
+```Bash
+pip install "dragon-ml-toolbox[ML]"
 ```
 
-### PyTorch
+To install the standard CPU-only versions of Torch and Torchvision:
 
-Different builds available depending on the **platform** and **hardware acceleration** (e.g., CUDA for NVIDIA GPUs on Linux/Windows, or MPS for Apple Silicon on macOS).
-
-Install the default CPU-only version with
-
-```bash
-pip install dragon-ml-toolbox[pytorch]
+```Bash
+pip install "dragon-ml-toolbox[pytorch]"
 ```
 
-To make use of GPU acceleration use the official PyTorch installation instructions:
+⚠️ To make use of GPU acceleration (highly recommended), follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
 
-[PyTorch Instructions](https://pytorch.org/get-started/locally/)
+#### Modules:
+
+```bash
+custom_logger
+data_exploration
+datasetmaster
+ensemble_learning
+ensemble_inference
+ETL_engineering
+ML_callbacks
+ML_evaluation
+ML_trainer
+ML_inference
+path_manager
+PSO_optimization
+RNN_forecast
+utilities
+```
+
+### 🔬 MICE Imputation and Variance Inflation Factor [mice]
+
+⚠️ Important: This group has strict version requirements. It is highly recommended to install this group in a separate virtual environment.
+
+```Bash
+pip install "dragon-ml-toolbox[mice]"
+```
+
+#### Modules:
+
+```bash
+custom_logger
+MICE_imputation
+VIF_factor
+path_manager
+utilities
+```
+
+### 📋 Excel File Handling [excel]
+
+Installs dependencies required to process and handle .xlsx or .xls files.
+
+```Bash
+pip install "dragon-ml-toolbox[excel]"
+```
+
+#### Modules:
+
+```bash
+custom_logger
+handle_excel
+path_manager
+```
+
+### 🎰 GUI for Boosting Algorithms (XGBoost, LightGBM) [gui-boost]
+
+For GUIs that include plotting functionality, you must also install the [plot] extra.
+
+```Bash
+pip install "dragon-ml-toolbox[gui-boost]"
+```
+
+```Bash
+pip install "dragon-ml-toolbox[gui-boost,plot]"
+```
+
+#### Modules:
+
+```bash
+GUI_tools
+ensemble_inference
+path_manager
+```
+
+### 🤖 GUI for PyTorch Models [gui-torch]
+
+For GUIs that include plotting functionality, you must also install the [plot] extra.
+
+```Bash
+pip install "dragon-ml-toolbox[gui-torch]"
+```
+
+```Bash
+pip install "dragon-ml-toolbox[gui-torch,plot]"
+```
+
+#### Modules:
+
+```bash
+GUI_tools
+ML_inference
+path_manager
+```
 
 ## Usage
 
 After installation, import modules like this:
 
 ```python
-from ml_tools.utilities import sanitize_filename
-from ml_tools.logger import custom_logger
-```
-
-## Available modules
-
-```bash
-data_exploration
-datasetmaster
-ensemble_learning
-ETL_engineering
-GUI_tools
-handle_excel
-logger
-MICE_imputation
-ML_callbacks
-ML_evaluation
-ML_trainer
-ML_tutorial
-path_manager
-PSO_optimization
-RNN_forecast
-utilities
-VIF_factor
+from ml_tools.utilities import serialize_object, deserialize_object
+from ml_tools.custom_logger import custom_logger
 ```

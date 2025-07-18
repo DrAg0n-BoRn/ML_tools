@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] 2025-07
+
+### Added 
+
+- ML_inference: `PyTorchInferenceHandler` handles inference of pytorch models.
+- ensemble_inference: handles inference of boosting models.
+- Example notebooks in the GitHub repository.
+
+### Changed
+
+- Package base dependencies removed. Install grouped dependencies for specific usage instead. Check README for more information.
+- path_manager: `PathManager` supports both development mode and applications bundled with Pyinstaller.
+- logger:
+    - `custom_logger()`: moved to its own module "custom_logger". No longer supports logging to excel, for dependency simplicity.
+    - renamed to "_logger", now only used internally.
+- utilities:
+    - `sanitize_filename()` moved to "path_manager".
+    - `make_fullpath()` moved to "path_manager".
+    - `list_csv_paths()` moved to "path_manager".
+    - `list_files_by_extension()` moved to "path_manager".
+- ensemble_learning:
+    - Drop support for HistGB models in the factory classes.
+    - `InferenceHandler` and `model_report()` moved to a new module: "ensemble_inference"
+
+### Removed
+
+- data_exploration: `check_value_distributions()` deleted, not useful enough to justify its extra dependencies.
+- PSO_optimization: drop support for HistGB models.
+- ML_tutorial: module deleted in favor of a direct usage examples shown in jupyter notebooks.
+
 ## [3.12.6] 2025-07-15
 
 ### Added
