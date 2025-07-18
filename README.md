@@ -36,7 +36,6 @@ Install from the conda-forge channel:
 ```bash
 conda install -c conda-forge dragon-ml-toolbox
 ```
-**Note:** This version is outdated or broken due to dependency incompatibilities. Use PyPi instead.
 
 ## Modular Installation
 
