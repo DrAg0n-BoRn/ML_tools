@@ -2,12 +2,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import Union, List, Dict, Any
 import pandas as pd
-from openpyxl.styles import Font, PatternFill
 import traceback
 import json
-from .utilities import sanitize_filename, _script_info, make_fullpath
-import logging
-import sys
+from .path_manager import sanitize_filename, make_fullpath
+from ._script_info import _script_info
+from ._logger import _LOGGER
 
 
 __all__ = [
@@ -37,9 +36,6 @@ def custom_logger(
 
     - dict[str, scalar]           → .json
         Dictionary is treated as structured data and serialized as JSON.
-
-    - pandas.DataFrame            → .xlsx
-        Written to an Excel file with styled headers.
 
     - str                         → .log
         Plain text string is written to a .log file.
@@ -71,9 +67,6 @@ def custom_logger(
                 _log_dict_to_csv(data, base_path.with_suffix(".csv"))
             else:
                 _log_dict_to_json(data, base_path.with_suffix(".json"))
-
-        elif isinstance(data, pd.DataFrame):
-            _log_dataframe_to_xlsx(data, base_path.with_suffix(".xlsx"))
 
         elif isinstance(data, str):
             _log_string_to_log(data, base_path.with_suffix(".log"))
@@ -117,27 +110,6 @@ def _log_dict_to_csv(data: Dict[Any, List[Any]], path: Path) -> None:
     df.to_csv(path, index=False)
 
 
-def _log_dataframe_to_xlsx(data: pd.DataFrame, path: Path) -> None:
-    writer = pd.ExcelWriter(path, engine='openpyxl')
-    data.to_excel(writer, index=True, sheet_name='Data')
-
-    workbook = writer.book
-    worksheet = writer.sheets['Data']
-
-    header_font = Font(bold=True)
-    header_fill = PatternFill(
-        start_color="ADD8E6",  # Light blue
-        end_color="ADD8E6",
-        fill_type="solid"
-    )
-
-    for cell in worksheet[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-
-    writer.close()
-
-
 def _log_string_to_log(data: str, path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         f.write(data.strip() + '\n')
@@ -156,37 +128,3 @@ def _log_dict_to_json(data: Dict[Any, Any], path: Path) -> None:
 
 def info():
     _script_info(__all__)
-
-
-def _get_logger(name: str = "ml_tools", level: int = logging.INFO):
-    """
-    Initializes and returns a configured logger instance.
-    
-    - `logger.info()`
-    - `logger.warning()`
-    - `logger.error()` the program can potentially recover.
-    - `logger.critical()` the program is going to crash.
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-
-    # Prevents adding handlers multiple times if the function is called again
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        
-        # Define the format string and the date format separately
-        log_format = '\n🐉%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        date_format = '%Y-%m-%d %H:%M' # Format: Year-Month-Day Hour:Minute
-        
-        # Pass both the format and the date format to the Formatter
-        formatter = logging.Formatter(log_format, datefmt=date_format)
-        
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    
-    logger.propagate = False
-    
-    return logger
-
-# Create a single logger instance to be imported by other modules
-_LOGGER = _get_logger()
