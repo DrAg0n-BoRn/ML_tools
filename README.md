@@ -85,7 +85,7 @@ pip install "dragon-ml-toolbox[mice]"
 
 #### Modules:
 
-```bash
+```Bash
 custom_logger
 MICE_imputation
 VIF_factor
@@ -103,7 +103,7 @@ pip install "dragon-ml-toolbox[excel]"
 
 #### Modules:
 
-```bash
+```Bash
 custom_logger
 handle_excel
 path_manager
@@ -123,7 +123,7 @@ pip install "dragon-ml-toolbox[gui-boost,plot]"
 
 #### Modules:
 
-```bash
+```Bash
 GUI_tools
 ensemble_inference
 path_manager
@@ -143,7 +143,7 @@ pip install "dragon-ml-toolbox[gui-torch,plot]"
 
 #### Modules:
 
-```bash
+```Bash
 GUI_tools
 ML_inference
 path_manager
@@ -159,12 +159,24 @@ pip install "dragon-ml-toolbox[base]"
 
 #### Modules:
 
-```bash
+```Bash
 ETL_Engineering
 custom_logger
 SQL
 utilities
 path_manager
+```
+
+### ⚒️ APP bundlers
+
+Choose one if needed.
+
+```Bash
+pip install "dragon-ml-toolbox[pyinstaller]"
+```
+
+```Bash
+pip install "dragon-ml-toolbox[nuitka]"
 ```
 
 ## Usage

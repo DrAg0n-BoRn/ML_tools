@@ -49,18 +49,26 @@ class PathManager:
             for dir_name in base_directories:
                 # This logic works for both dev mode and bundled mode
                 self._paths[dir_name] = package_root / dir_name
-                     
+    
     def _get_bundle_root(self) -> tuple[bool, Optional[str]]:
         """
-        Checks if the app is running in a PyInstaller bundle and returns the root path.
+        Checks if the app is running in a PyInstaller or Nuitka bundle and returns the root path.
         
         Returns:
-            A tuple (is_bundled, bundle_root_path). `bundle_root_path` is the
-            path to the temporary directory `_MEIPASS` if bundled, otherwise None.
+            A tuple (is_bundled, bundle_root_path).
         """
+        # --- PyInstaller Check ---
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            # This is the standard way to check for a PyInstaller bundle
+            # The bundle root for PyInstaller is the temporary _MEIPASS directory
             return True, sys._MEIPASS # type: ignore
+        
+        # --- Nuitka Check ---
+        elif '__nuitka_binary_dir' in sys.__dict__:
+            # For Nuitka, the root is the directory of the binary.
+            # Unlike PyInstaller's _MEIPASS, this is the final install location.
+            return True, sys.__dict__['__nuitka_binary_dir']
+            
+        # --- Not Bundled ---
         else:
             return False, None
 

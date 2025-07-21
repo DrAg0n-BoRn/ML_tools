@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "4.1.0"
+version = "4.2.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -85,22 +85,31 @@ gui-boost = [
     "numpy",
     "joblib",
     "FreeSimpleGUI>=5.2",
-    "pyinstaller", 
     "xgboost", 
-    "lightgbm"
+    "lightgbm", 
 ]
 
 # GUI for Pytorch - Additionally Requires PyTorch with CUDA / MPS support
 gui-torch = [
     "numpy",
     "FreeSimpleGUI>=5.2",
-    "pyinstaller",
 ]
 
 # For GUIs using plotting features
 plot = [
     "matplotlib", 
     "seaborn"
+]
+
+# APP Bundlers - Choose one
+pyinstaller = [ 
+    "pyinstaller"
+]
+
+nuitka = [ 
+    "nuitka", 
+    "zstandard", 
+    "ordered-set"
 ]
 
 [build-system]
