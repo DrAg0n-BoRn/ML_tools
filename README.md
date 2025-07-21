@@ -70,6 +70,7 @@ ML_trainer
 ML_inference
 path_manager
 PSO_optimization
+SQL
 RNN_forecast
 utilities
 ```
@@ -145,6 +146,24 @@ pip install "dragon-ml-toolbox[gui-torch,plot]"
 ```bash
 GUI_tools
 ML_inference
+path_manager
+```
+
+### 🎫 Base Tools [base]
+
+General purpose functions and classes.
+
+```Bash
+pip install "dragon-ml-toolbox[base]"
+```
+
+#### Modules:
+
+```bash
+ETL_Engineering
+custom_logger
+SQL
+utilities
 path_manager
 ```
 

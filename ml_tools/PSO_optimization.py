@@ -9,7 +9,6 @@ from .utilities import (
     threshold_binary_values, 
     threshold_binary_values_batch, 
     deserialize_object,
-    save_dataframe,
     yield_dataframes_from_dir)
 from .path_manager import sanitize_filename, make_fullpath, list_files_by_extension, list_csv_paths
 import torch
@@ -19,6 +18,8 @@ import seaborn as sns
 from ._logger import _LOGGER
 from .keys import ModelSaveKeys
 from ._script_info import _script_info
+from .SQL import DatabaseManager
+from contextlib import nullcontext
 
 
 __all__ = [
@@ -182,45 +183,73 @@ def _set_feature_names(size: int, names: Union[list[str], None]):
     else:
         assert len(names) == size, "List with feature names do not match the number of features"
         return names
-    
-
-def _save_results(*dicts, save_dir: Union[str,Path], target_name: str):
-    combined_dict = dict()
-    for single_dict in dicts:
-        combined_dict.update(single_dict)
-    
-    df = pd.DataFrame(combined_dict)
-    
-    save_dataframe(df=df, save_dir=save_dir, filename=f"Optimization_{target_name}")
 
 
-def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, random_state: int):
-    """Helper for a single PSO run."""
+def _save_result(result_dict: dict,
+                 save_format: Literal['csv', 'sqlite', 'both'],
+                 csv_path: Path,
+                 db_manager: Optional[DatabaseManager] = None,
+                 db_table_name: Optional[str] = None):
+    """
+    Handles saving a single result to CSV, SQLite, or both.
+    """
+    # Save to CSV
+    if save_format in ['csv', 'both']:
+        _save_or_append_to_csv(result_dict, csv_path)
+
+    # Save to SQLite
+    if save_format in ['sqlite', 'both']:
+        if db_manager and db_table_name:
+            db_manager.insert_row(db_table_name, result_dict)
+        else:
+            _LOGGER.warning("SQLite saving requested but db_manager or table_name not provided.")
+
+
+def _save_or_append_to_csv(data_dict: dict, save_path: Path):
+    """
+    Saves or appends a dictionary of data as a single row to a CSV file.
+
+    If the file doesn't exist, it creates it and writes the header.
+    If the file exists, it appends the new data without the header.
+    """
+    df_row = pd.DataFrame([data_dict])
+    
+    file_exists = save_path.exists()
+    
+    df_row.to_csv(
+        save_path, 
+        mode='a',              # 'a' for append mode
+        index=False,           # Don't write the DataFrame index
+        header=not file_exists # Write header only if file does NOT exist
+    )
+
+
+def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, random_state: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DatabaseManager], db_table_name: str):
+    """Helper for a single PSO run that also handles saving."""
     pso_args.update({"seed": random_state})
     
     best_features, best_target, *_ = _pso(**pso_args)
     
-    # Flip best_target if maximization was used
     if objective_function.task == "maximization":
         best_target = -best_target
     
-    # Threshold binary features
     binary_number = objective_function.binary_features
     best_features_threshold = threshold_binary_values(best_features, binary_number)
     
-    # Name features and target
     best_features_named = {name: value for name, value in zip(feature_names, best_features_threshold)}
     best_target_named = {target_name: best_target}
+    
+    # Save the result using the new helper
+    combined_dict = {**best_features_named, **best_target_named}
+    _save_result(combined_dict, save_format, csv_path, db_manager, db_table_name)
     
     return best_features_named, best_target_named
 
 
-def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, repetitions: int):
-    """Helper for post-hoc PSO analysis."""
-    all_best_targets = []
-    all_best_features = [[] for _ in range(len(feature_names))]
-    
-    for _ in range(repetitions):
+def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, repetitions: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DatabaseManager], db_table_name: str):
+    """Helper for post-hoc analysis that saves results incrementally."""
+    progress = trange(repetitions, desc="Post-Hoc PSO", unit="run")
+    for _ in progress:
         best_features, best_target, *_ = _pso(**pso_args)
         
         if objective_function.task == "maximization":
@@ -229,28 +258,25 @@ def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, fea
         binary_number = objective_function.binary_features
         best_features_threshold = threshold_binary_values(best_features, binary_number)
         
-        for i, best_feature in enumerate(best_features_threshold):
-            all_best_features[i].append(best_feature)
-        all_best_targets.append(best_target)
-    
-    # Name features and target
-    all_best_features_named = {name: lst for name, lst in zip(feature_names, all_best_features)}
-    all_best_targets_named = {target_name: all_best_targets}
-    
-    return all_best_features_named, all_best_targets_named
+        result_dict = {name: value for name, value in zip(feature_names, best_features_threshold)}
+        result_dict[target_name] = best_target
+        
+        # Save each result incrementally
+        _save_result(result_dict, save_format, csv_path, db_manager, db_table_name)
 
 
 def run_pso(lower_boundaries: list[float], 
             upper_boundaries: list[float], 
             objective_function: ObjectiveFunction,
             save_results_dir: Union[str,Path],
+            save_format: Literal['csv', 'sqlite', 'both'] = 'csv',
             auto_binary_boundaries: bool=True,
             target_name: Union[str, None]=None, 
             feature_names: Union[list[str], None]=None,
             swarm_size: int=200, 
             max_iterations: int=3000,
             random_state: int=101,
-            post_hoc_analysis: Optional[int]=10) -> Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]:
+            post_hoc_analysis: Optional[int]=10) -> Optional[Tuple[Dict[str, float], Dict[str, float]]]:
     """
     Executes Particle Swarm Optimization (PSO) to optimize a given objective function and saves the results as a CSV file.
 
@@ -264,6 +290,11 @@ def run_pso(lower_boundaries: list[float],
         A callable object encapsulating a tree-based regression model.
     save_results_dir : str | Path
         Directory path to save the results CSV file.
+    save_format : {'csv', 'sqlite', 'both'}, default 'csv'
+        The format for saving optimization results.
+        - 'csv': Saves results to a CSV file.
+        - 'sqlite': Saves results to an SQLite database file. ⚠️ If a database exists, new tables will be created using the target name.
+        - 'both': Saves results to both formats.
     auto_binary_boundaries : bool
         Use `ObjectiveFunction.binary_features` to append as many binary boundaries as needed to `lower_boundaries` and `upper_boundaries` automatically.
     target_name : str or None, optional
@@ -279,14 +310,11 @@ def run_pso(lower_boundaries: list[float],
 
     Returns
     -------
-    Tuple[Dict[str, float | list[float]], Dict[str, float | list[float]]]
-        If `post_hoc_analysis` is None, returns two dictionaries:
-            - feature_names: Feature values (after inverse scaling) that yield the best result.
-            - target_name: Best result obtained for the target variable.
-
-        If `post_hoc_analysis` is an integer, returns two dictionaries:
-            - feature_names: Lists of best feature values (after inverse scaling) for each repetition.
-            - target_name: List of best target values across repetitions.
+    Tuple[Dict[str, float], Dict[str, float]] or None
+        - If `post_hoc_analysis` is None, returns two dictionaries containing the
+          single best features and the corresponding target value.
+        - If `post_hoc_analysis` is active, results are streamed directly to a CSV file
+          and this function returns `None`.
 
     Notes
     -----
@@ -311,8 +339,9 @@ def run_pso(lower_boundaries: list[float],
     # Append binary boundaries
     binary_number = objective_function.binary_features
     if auto_binary_boundaries and binary_number > 0:
-        local_lower_boundaries.extend([0] * binary_number)
-        local_upper_boundaries.extend([1] * binary_number)
+        # simplify binary search by constraining range
+        local_lower_boundaries.extend([0.45] * binary_number)
+        local_upper_boundaries.extend([0.55] * binary_number)
         
     # Set the total length of features
     size_of_features = len(local_lower_boundaries)
@@ -328,7 +357,25 @@ def run_pso(lower_boundaries: list[float],
     if target_name is None and objective_function.target_name is not None:
         target_name = objective_function.target_name
     if target_name is None:
-        target_name = "Target"
+        raise ValueError(f"'target' name was not provided and was not found in the .joblib object.")
+    
+    # --- Setup: Saving Infrastructure ---
+    sanitized_target_name = sanitize_filename(target_name)
+    save_dir_path = make_fullpath(save_results_dir, make=True, enforce="directory")
+    base_filename = f"Optimization_{sanitized_target_name}"
+    csv_path = save_dir_path / f"{base_filename}.csv"
+    db_path = save_dir_path / "Optimization.db"
+    db_table_name = f"{sanitized_target_name}"
+    
+    if save_format in ['sqlite', 'both']:
+        # Dynamically create the schema for the database table
+        schema = {name: "REAL" for name in names}
+        schema[target_name] = "REAL"
+        schema = {"result_id": "INTEGER PRIMARY KEY AUTOINCREMENT", **schema}
+        
+        # Create table
+        with DatabaseManager(db_path) as db:
+            db.create_table(db_table_name, schema)
         
     pso_arguments = {
             "func":objective_function,
@@ -340,17 +387,29 @@ def run_pso(lower_boundaries: list[float],
             "particle_output": False,
     }
     
-    # Dispatcher
-    if post_hoc_analysis is None or post_hoc_analysis <= 1:
-        features, target = _run_single_pso(objective_function, pso_arguments, names, target_name, random_state)
-    else:
-        features, target = _run_post_hoc_pso(objective_function, pso_arguments, names, target_name, post_hoc_analysis)
-    
-    # --- Save Results ---
-    save_results_path = make_fullpath(save_results_dir, make=True)
-    _save_results(features, target, save_dir=save_results_path, target_name=target_name)
-    
-    return features, target # type: ignore
+    # --- Dispatcher ---
+    # Use a real or dummy context manager to handle the DB connection cleanly
+    db_context = DatabaseManager(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
+
+    with db_context as db_manager:
+        if post_hoc_analysis is None or post_hoc_analysis <= 1:
+            # --- Single Run Logic ---
+            features_dict, target_dict = _run_single_pso(
+                objective_function, pso_arguments, names, target_name, random_state,
+                save_format, csv_path, db_manager, db_table_name
+            )
+            _LOGGER.info(f"✅ Single optimization complete.")
+            return features_dict, target_dict
+        
+        else:
+            # --- Post-Hoc Analysis Logic ---
+            _LOGGER.info(f"🏁 Starting post-hoc analysis with {post_hoc_analysis} repetitions...")
+            _run_post_hoc_pso(
+                objective_function, pso_arguments, names, target_name, post_hoc_analysis,
+                save_format, csv_path, db_manager, db_table_name
+            )
+            _LOGGER.info("✅ Post-hoc analysis complete. Results saved.")
+            return None
 
 
 def _pso(func: ObjectiveFunction,
