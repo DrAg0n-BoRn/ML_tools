@@ -543,7 +543,7 @@ class KeywordDummifier:
                 # If a group had no matches, create a column of zeros
                 final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(name))
 
-        return pl.DataFrame(final_columns)
+        return pl.select(final_columns)
 
 
 class NumberExtractor:
