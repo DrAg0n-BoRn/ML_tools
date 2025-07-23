@@ -569,7 +569,7 @@ class NumberExtractor:
         self,
         regex_pattern: str = r"(\d+\.?\d*)",
         dtype: Literal["float", "int"] = "float",
-        round_digits: Optional[int] = None,
+        round_digits: Optional[int] = 2,
     ):
         # --- Validation ---
         if not isinstance(regex_pattern, str):

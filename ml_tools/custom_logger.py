@@ -1,9 +1,9 @@
 from pathlib import Path
 from datetime import datetime
 from typing import Union, List, Dict, Any
-import pandas as pd
 import traceback
 import json
+import csv
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
@@ -18,7 +18,6 @@ def custom_logger(
     data: Union[
         List[Any],
         Dict[Any, Any],
-        pd.DataFrame,
         str,
         BaseException
     ],
@@ -75,7 +74,7 @@ def custom_logger(
             _log_exception_to_log(data, base_path.with_suffix(".log"))
 
         else:
-            raise ValueError("Unsupported data type. Must be list, dict, DataFrame, str, or BaseException.")
+            raise ValueError("Unsupported data type. Must be list, dict, str, or BaseException.")
 
         _LOGGER.info(f"🗄️ Log saved to: '{base_path}'")
 
@@ -106,8 +105,19 @@ def _log_dict_to_csv(data: Dict[Any, List[Any]], path: Path) -> None:
         padded_value = value + [None] * (max_length - len(value))
         sanitized_dict[sanitized_key] = padded_value
 
-    df = pd.DataFrame(sanitized_dict)
-    df.to_csv(path, index=False)
+    # The `newline=''` argument is important to prevent extra blank rows
+    with open(path, 'w', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+
+        # 1. Write the header row from the sanitized dictionary keys
+        header = list(sanitized_dict.keys())
+        writer.writerow(header)
+
+        # 2. Transpose columns to rows and write them
+        # zip(*sanitized_dict.values()) elegantly converts the column data
+        # (lists in the dict) into row-by-row tuples.
+        rows_to_write = zip(*sanitized_dict.values())
+        writer.writerows(rows_to_write)
 
 
 def _log_string_to_log(data: str, path: Path) -> None:

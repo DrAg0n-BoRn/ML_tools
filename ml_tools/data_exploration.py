@@ -126,7 +126,7 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
     # Stage 1: Drop rows with all target columns missing
     if targets is not None:
         # validate targets
-        valid_targets = [target for target in targets if target in df_clean.columns]
+        valid_targets = _validate_columns(df_clean, targets)
         target_na = df_clean[valid_targets].isnull().all(axis=1)
         if target_na.any():
             print(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
@@ -134,10 +134,10 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
         else:
             print("✅ No rows with all targets missing.")
     else:
-        targets = []
+        valid_targets = []
 
     # Stage 2: Drop rows based on feature column missing values
-    feature_cols = [col for col in df_clean.columns if col not in targets]
+    feature_cols = [col for col in df_clean.columns if col not in valid_targets]
     if feature_cols:
         feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
         rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
@@ -238,8 +238,9 @@ def split_features_targets(df: pd.DataFrame, targets: list[str]):
         - Shape of the features dataframe.
         - Shape of the targets dataframe.
     """
-    df_targets = df[targets]
-    df_features = df.drop(columns=targets)
+    valid_targets = _validate_columns(df, targets)
+    df_targets = df[valid_targets]
+    df_features = df.drop(columns=valid_targets)
     print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
     return df_features, df_targets
 
@@ -642,6 +643,11 @@ def standardize_percentages(
         df_copy[col] = df_copy[col].round(round_digits)
 
     return df_copy
+
+
+def _validate_columns(df: pd.DataFrame, columns: list[str]):
+    valid_columns = [column for column in columns if column in df.columns]
+    return valid_columns
 
 
 def info():
