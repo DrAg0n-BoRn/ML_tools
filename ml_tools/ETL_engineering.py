@@ -3,6 +3,7 @@ import re
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
 from ._script_info import _script_info
 from ._logger import _LOGGER
+import warnings
 
 
 __all__ = [
@@ -50,7 +51,7 @@ class ColumnCleaner:
     ```python
     id_rules = {
         # Matches 'ID-12345' or 'ID 12345' and reformats to 'ID:12345'
-        r'ID[- ](\d+)': r'ID:$1'
+        r'ID[- ](\\d+)': r'ID:$1'
     }
 
     id_cleaner = ColumnCleaner(column_name='user_id', rules=id_rules)
@@ -700,25 +701,27 @@ class MultiNumberExtractor:
 
 class RatioCalculator:
     """
-    A transformer that parses a string ratio (e.g., "40:5" or "30/2") and computes the result of the division.
-
-    Args:
-        regex_pattern (str, optional):
-            The regex pattern to find the numerator and denominator. It MUST
-            contain exactly two capturing groups: the first for the
-            numerator and the second for the denominator. Defaults to a
-            pattern that handles common delimiters like ':' and '/'.
+    A transformer that parses a string ratio (e.g., "40:5" or "30/2") and
+    computes the result of the division. It gracefully handles strings that
+    do not match the pattern by returning null.
     """
     def __init__(
         self,
-        regex_pattern: str = r"(\d+\.?\d*)\s*[:/]\s*(\d+\.?\d*)"
+        # Default pattern includes the full-width colon '：'
+        regex_pattern: str = r"(\d+\.?\d*)\s*[:：/]\s*(\d+\.?\d*)"
     ):
-        # --- Validation ---
+        # --- Robust Validation ---
         try:
-            if re.compile(regex_pattern).groups != 2:
+            compiled_pattern = re.compile(regex_pattern)
+            if compiled_pattern.groups != 2:
                 raise ValueError(
-                    "regex_pattern must contain exactly two "
+                    "RatioCalculator regex_pattern must contain exactly two "
                     "capturing groups '(...)'."
+                )
+            if compiled_pattern.groupindex:
+                raise ValueError(
+                    "RatioCalculator must be initialized with unnamed capturing groups "
+                    "(e.g., '(\\d+)'), not named groups (e.g., '(?P<name>\\d+)')."
                 )
         except re.error as e:
             raise ValueError(f"Invalid regex pattern provided: {e}") from e
@@ -728,27 +731,20 @@ class RatioCalculator:
     def __call__(self, column: pl.Series) -> pl.Series:
         """
         Applies the ratio calculation logic to the input column.
-
-        Args:
-            column (pl.Series): The input Polars Series of ratio strings.
-
-        Returns:
-            pl.Series: A new Series of floats containing the division result.
-                       Returns null for invalid formats or division by zero.
+        This version uses .str.extract() for maximum stability.
         """
-        # .extract_groups returns a struct with a field for each capture group
-        # e.g., {"group_1": "40", "group_2": "5"}
-        groups = column.str.extract_groups(self.regex_pattern)
+        # Extract numerator (group 1) and denominator (group 2) separately.
+        numerator_expr = column.str.extract(self.regex_pattern, 1).cast(pl.Float64, strict=False)
+        denominator_expr = column.str.extract(self.regex_pattern, 2).cast(pl.Float64, strict=False)
 
-        # Extract numerator and denominator, casting to float
-        # strict=False ensures that non-matches become null
-        numerator = groups.struct.field("group_1").cast(pl.Float64, strict=False)
-        denominator = groups.struct.field("group_2").cast(pl.Float64, strict=False)
+        # Calculate the ratio, handling division by zero.
+        final_expr = pl.when(denominator_expr != 0).then(
+            numerator_expr / denominator_expr
+        ).otherwise(
+            None # Handles both null denominators and division by zero
+        )
 
-        # Safely perform division, returning null if denominator is 0
-        final_expr = pl.when(denominator != 0).then(numerator / denominator).otherwise(None)
-        
-        return pl.select(final_expr).to_series()
+        return pl.select(final_expr.round(4)).to_series()
 
 
 class CategoryMapper:
