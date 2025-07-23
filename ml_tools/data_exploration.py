@@ -15,9 +15,9 @@ __all__ = [
     "summarize_dataframe",
     "drop_constant_columns",
     "drop_rows_with_missing_data",
-    "split_features_targets", 
     "show_null_columns",
     "drop_columns_with_missing_data",
+    "split_features_targets", 
     "split_continuous_binary", 
     "plot_correlation_heatmap", 
     "plot_value_distributions", 
@@ -125,7 +125,9 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
 
     # Stage 1: Drop rows with all target columns missing
     if targets is not None:
-        target_na = df_clean[targets].isnull().all(axis=1)
+        # validate targets
+        valid_targets = [target for target in targets if target in df_clean.columns]
+        target_na = df_clean[valid_targets].isnull().all(axis=1)
         if target_na.any():
             print(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
             df_clean = df_clean[~target_na]
@@ -148,30 +150,6 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
         print("⚠️ No feature columns available to evaluate.")
 
     return df_clean
-
-
-def split_features_targets(df: pd.DataFrame, targets: list[str]):
-    """
-    Splits a DataFrame's columns into features and targets.
-
-    Args:
-        df (pd.DataFrame): Pandas DataFrame containing the dataset.
-        targets (list[str]): List of column names to be treated as target variables.
-
-    Returns:
-        tuple: A tuple containing:
-            - pd.DataFrame: Features dataframe.
-            - pd.DataFrame: Targets dataframe.
-
-    Prints:
-        - Shape of the original dataframe.
-        - Shape of the features dataframe.
-        - Shape of the targets dataframe.
-    """
-    df_targets = df[targets]
-    df_features = df.drop(columns=targets)
-    print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
-    return df_features, df_targets
 
 
 def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
@@ -202,7 +180,7 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     return null_summary
 
 
-def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, show_nulls_after: bool = True) -> pd.DataFrame:
+def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, show_nulls_after: bool = True, skip_columns: Optional[List[str]]=None) -> pd.DataFrame:
     """
     Drops columns with more than `threshold` fraction of missing values.
 
@@ -210,11 +188,22 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
         df (pd.DataFrame): The input DataFrame.
         threshold (float): Fraction of missing values above which columns are dropped.
         show_nulls_after (bool): Prints `show_null_columns` after dropping columns. 
+        skip_columns (list[str] | None): If given, these columns wont be included in the drop process. 
 
     Returns:
         pd.DataFrame: A new DataFrame without the dropped columns.
     """
-    missing_fraction = df.isnull().mean()
+    # If skip_columns is provided, create a list of columns to check.
+    # Otherwise, check all columns.
+    cols_to_check = df.columns
+    if skip_columns:
+        # Use set difference for efficient exclusion
+        cols_to_check = df.columns.difference(skip_columns)
+
+    # Calculate the missing fraction only on the columns to be checked
+    missing_fraction = df[cols_to_check].isnull().mean()
+    
+    
     cols_to_drop = missing_fraction[missing_fraction > threshold].index
 
     if len(cols_to_drop) > 0:
@@ -229,6 +218,30 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     else:
         print(f"No columns have more than {threshold*100:.0f}% missing data.")
         return df
+
+
+def split_features_targets(df: pd.DataFrame, targets: list[str]):
+    """
+    Splits a DataFrame's columns into features and targets.
+
+    Args:
+        df (pd.DataFrame): Pandas DataFrame containing the dataset.
+        targets (list[str]): List of column names to be treated as target variables.
+
+    Returns:
+        tuple: A tuple containing:
+            - pd.DataFrame: Features dataframe.
+            - pd.DataFrame: Targets dataframe.
+
+    Prints:
+        - Shape of the original dataframe.
+        - Shape of the features dataframe.
+        - Shape of the targets dataframe.
+    """
+    df_targets = df[targets]
+    df_features = df.drop(columns=targets)
+    print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
+    return df_features, df_targets
 
 
 def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
