@@ -124,6 +124,7 @@ pip install "dragon-ml-toolbox[gui-boost,plot]"
 #### Modules:
 
 ```Bash
+custom_logger
 GUI_tools
 ensemble_inference
 path_manager
@@ -144,6 +145,7 @@ pip install "dragon-ml-toolbox[gui-torch,plot]"
 #### Modules:
 
 ```Bash
+custom_logger
 GUI_tools
 ML_inference
 path_manager

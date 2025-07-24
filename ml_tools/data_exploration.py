@@ -348,7 +348,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         full_path = save_path / plot_title
         
         plt.savefig(full_path, bbox_inches="tight", format='svg')
-        print(f"Saved correlation heatmap: '{plot_title}.svg'")
+        print(f"Saved correlation heatmap: '{plot_title}'")
     
     plt.show()
     plt.close()

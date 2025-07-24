@@ -2,7 +2,7 @@ import numpy as np
 from pathlib import Path
 import xgboost as xgb
 import lightgbm as lgb
-from typing import Literal, Union, Tuple, Dict, Optional
+from typing import Literal, Union, Tuple, Dict, Optional, Any
 import pandas as pd
 from copy import deepcopy
 from .utilities import (
@@ -25,6 +25,7 @@ from contextlib import nullcontext
 __all__ = [
     "ObjectiveFunction",
     "multiple_objective_functions_from_dir",
+    "parse_lower_upper_bounds",
     "run_pso",
     "plot_optimal_feature_distributions"
 ]
@@ -167,6 +168,18 @@ def multiple_objective_functions_from_dir(directory: Union[str,Path], add_noise:
         objective_functions.append(current_objective)
         objective_function_names.append(file_name)
     return objective_functions, objective_function_names
+
+
+def parse_lower_upper_bounds(source: dict[str,tuple[Any,Any]]):
+    """
+    Parse lower and upper boundaries, returning 2 lists:
+    
+    `lower_bounds`, `upper_bounds`
+    """
+    lower = [low[0] for low in source.values()]
+    upper = [up[1] for up in source.values()]
+    
+    return lower, upper
 
 
 def _set_boundaries(lower_boundaries: list[float], upper_boundaries: list[float]):
