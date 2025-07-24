@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "4.5.0"
+version = "5.0.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -27,7 +27,7 @@ base = [
     "joblib"
 ]
 
-# Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support if pytorch models are used
+# Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
 ML = [
     "numpy",
     "pandas",
@@ -46,7 +46,8 @@ ML = [
     "lightgbm",
     "shap",
     "tqdm",
-    "Pillow"
+    "Pillow",
+    "evotorch"
 ]
 
 # MICE and VIF - Requires a new virtual-env due to dependency version conflicts

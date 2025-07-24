@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] 2025-07-24
+
+### Added
+
+- New dependency: Evotorch.
+- New modules:
+    - "ML_optimization"
+    - "optimization_tools"
+- ML_optimization: Optimization algorithm to be used with PyTorch models.
+    - `create_pytorch_problem()`, Creates and configures an EvoTorch Problem and Searcher.
+    - `run_optimization()`, Runs the evolutionary optimization process, with support for multiple repetitions.
+- optimization_tools:
+    - `parse_lower_upper_bounds()`,
+    - `plot_optimal_feature_distributions()`
+
+### Changed
+
+- PSO_optimization: `parse_lower_upper_bounds()`, `plot_optimal_feature_distributions()` moved to "optimization_tools".
+- datasetmaster: renamed to "ML_datasetmaster", part of the PyTorch tools environment.
+
 ## [4.5.0] 2025-07-24
 
 ### Added
