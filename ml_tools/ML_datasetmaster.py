@@ -386,23 +386,21 @@ class SimpleDatasetMaker:
                            test split.
         random_state (int): The seed for the random number generator for
                             reproducibility.
-        id (str | None): An optional object identifier.
     """
-    def __init__(self, pandas_df: pandas.DataFrame, test_size: float = 0.2, random_state: int = 42, id: Optional[str]=None):
-        """          
+    def __init__(self, pandas_df: pandas.DataFrame, test_size: float = 0.2, random_state: int = 42):
+        """
         Attributes:
             `train_dataset` -> PyTorch Dataset
             `test_dataset`  -> PyTorch Dataset
             `feature_names` -> list[str]
             `target_name`   -> str
             `id` -> str | None
+            
+        The ID can be manually set to any string if needed, it is `None` by default.
         """
         
         if not isinstance(pandas_df, pandas.DataFrame):
-            raise TypeError("Input must be a pandas.DataFrame.")
-        
-        #set id
-        self._id = id
+            raise TypeError("Input must be a pandas.DataFrame.")        
 
         # 1. Identify features and target
         features = pandas_df.iloc[:, :-1]
@@ -410,6 +408,9 @@ class SimpleDatasetMaker:
 
         self._feature_names = features.columns.tolist()
         self._target_name = target.name
+        
+        #set id
+        self._id: Optional[str] = None
 
         # 2. Split the data
         X_train, X_test, y_train, y_test = train_test_split(
@@ -449,6 +450,13 @@ class SimpleDatasetMaker:
     def id(self) -> Optional[str]:
         """Returns the object identifier if any."""
         return self._id
+    
+    @id.setter
+    def id(self, dataset_id: str):
+        """Sets the ID value"""
+        if not isinstance(dataset_id, str):
+            raise ValueError(f"Dataset ID '{type(dataset_id)}' is not a string.")
+        self._id = dataset_id
 
     def dataframes_info(self) -> None:
         """Prints the shape information of the split pandas DataFrames."""

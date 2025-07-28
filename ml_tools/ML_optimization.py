@@ -1,5 +1,5 @@
 import torch
-import numpy
+import numpy    #handling torch to numpy
 import evotorch
 from evotorch.algorithms import CMAES, SteadyStateGA
 from evotorch.logging import StdOutLogger
@@ -32,7 +32,7 @@ def create_pytorch_problem(
     algorithm: Literal["CMAES", "GA"] = "CMAES",
     verbose: bool = False,
     **searcher_kwargs
-) -> Tuple[evotorch.Problem, evotorch.Searcher]:
+) -> Tuple[evotorch.Problem, evotorch.Searcher]: # type: ignore
     """
     Creates and configures an EvoTorch Problem and Searcher for a PyTorch model.
 
@@ -62,22 +62,11 @@ def create_pytorch_problem(
     device = handler.device
 
     # Define the fitness function that EvoTorch will call.
-    @evotorch.decorators.to_tensor
+    @evotorch.decorators.to_tensor # type: ignore
     @evotorch.decorators.on_aux_device(device)
     def fitness_func(solution_tensor: torch.Tensor) -> torch.Tensor:
-        # Make a mutable copy of the solutions from the optimizer
-        processed_tensor = solution_tensor.clone()
-
-        # Apply thresholding if binary features are present
-        if binary_features > 0:
-            # Isolate the binary part of the tensor (the last n columns)
-            binary_part = processed_tensor[:, -binary_features:]
-            
-            # Apply rounding to snap values to 0.0 or 1.0
-            processed_tensor[:, -binary_features:] = torch.round(binary_part)
-
-        # Use the processed tensor (with thresholded values) for prediction
-        predictions = handler.predict_batch(processed_tensor)[PyTorchInferenceKeys.PREDICTIONS]
+        # Directly use the continuous-valued tensor from the optimizer for prediction
+        predictions = handler.predict_batch(solution_tensor)[PyTorchInferenceKeys.PREDICTIONS]
         return predictions.flatten()
 
     # Create the Problem instance.
@@ -107,7 +96,7 @@ def create_pytorch_problem(
 
 def run_optimization(
     problem: evotorch.Problem,
-    searcher: evotorch.Searcher,
+    searcher: evotorch.Searcher, # type: ignore
     num_generations: int,
     target_name: str,
     binary_features: int,
@@ -168,7 +157,7 @@ def run_optimization(
     
     # preprocess feature names
     if feature_names is None:
-        feature_names = [f"feature_{i}" for i in range(problem.solution_length)]
+        feature_names = [f"feature_{i}" for i in range(problem.solution_length)] # type: ignore
     
     # --- SINGLE RUN LOGIC ---
     if repetitions <= 1:

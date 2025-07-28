@@ -6,6 +6,8 @@ from .keys import LogKeys
 from ._logger import _LOGGER
 from typing import Optional
 from ._script_info import _script_info
+from typing import Union, Literal
+from pathlib import Path
 
 
 __all__ = [
@@ -122,7 +124,7 @@ class EarlyStopping(Callback):
                     inferred from the name of the monitored quantity.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, monitor: str=LogKeys.VAL_LOSS, min_delta=0.0, patience=3, mode='auto', verbose=1):
+    def __init__(self, monitor: str=LogKeys.VAL_LOSS, min_delta=0.0, patience=3, mode: Literal['auto', 'min', 'max']='auto', verbose: int=1):
         super().__init__()
         self.monitor = monitor
         self.patience = patience
@@ -146,13 +148,13 @@ class EarlyStopping(Callback):
             else: # Default to min mode for loss or other metrics
                 self.monitor_op = np.less
         
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
 
     def on_train_begin(self, logs=None):
         # Reset state at the beginning of training
         self.wait = 0
         self.stopped_epoch = 0
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
                     
     def on_epoch_end(self, epoch, logs=None):
         current = logs.get(self.monitor) # type: ignore
@@ -199,10 +201,10 @@ class ModelCheckpoint(Callback):
         mode (str): One of {'auto', 'min', 'max'}.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, save_dir: str, monitor: str = LogKeys.VAL_LOSS,
-                 save_best_only: bool = False, mode: str = 'auto', verbose: int = 1):
+    def __init__(self, save_dir: Union[str,Path], monitor: str = LogKeys.VAL_LOSS,
+                 save_best_only: bool = False, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 1):
         super().__init__()
-        self.save_dir = make_fullpath(save_dir, make=True)
+        self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")
         if not self.save_dir.is_dir():
             _LOGGER.error(f"{save_dir} is not a valid directory.")
             raise IOError()
@@ -226,17 +228,16 @@ class ModelCheckpoint(Callback):
         else:
             self.monitor_op = np.less if 'loss' in self.monitor else np.greater
         
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
 
     def on_train_begin(self, logs=None):
         """Reset state when training starts."""
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
         self.saved_checkpoints = []
         self.last_best_filepath = None
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        self.save_dir.mkdir(parents=True, exist_ok=True)
 
         if self.save_best_only:
             self._save_best_model(epoch, logs)
@@ -250,7 +251,7 @@ class ModelCheckpoint(Callback):
             return
 
         if self.monitor_op(current, self.best):
-            old_best_str = f"{self.best:.4f}" if self.best not in [np.Inf, -np.Inf] else "inf"
+            old_best_str = f"{self.best:.4f}" if self.best not in [np.Inf, -np.Inf] else "inf" # type: ignore
             
             # Create a descriptive filename
             filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"

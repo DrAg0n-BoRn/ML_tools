@@ -108,6 +108,8 @@ class MyTrainer:
     def fit(self, epochs: int = 10, batch_size: int = 10, shuffle: bool = True):
         """
         Starts the training-validation process of the model.
+        
+        Returns the "History" callback dictionary.
 
         Args:
             epochs (int): The total number of epochs to train for.
