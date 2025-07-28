@@ -447,7 +447,7 @@ class SimpleDatasetMaker:
     
     @property
     def id(self) -> Optional[str]:
-        """Returns teh object identifier if any."""
+        """Returns the object identifier if any."""
         return self._id
 
     def dataframes_info(self) -> None:

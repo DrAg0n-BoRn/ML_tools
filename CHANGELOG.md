@@ -5,11 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.1.0] 20025-07-28
+## [5.2.0] 2025-07-28
 
 ### Added
 
-- ML_datasetmaster: `SimpleDatasetMaker`, A streamlined PyTorch dataset maker for pre-processed, numerical pandas DataFrames.
+- New module: "ML_models"
+- ML_models:
+    - `MultilayerPerceptron`, a versatile Multilayer Perceptron (MLP) for regression or classification tasks.
+    - `SequencePredictorLSTM`, a simple LSTM-based neural network for sequence-to-sequence prediction tasks.
+
+## [5.1.0] 2025-07-28
+
+### Added
+
+- ML_datasetmaster: `SimpleDatasetMaker`, a streamlined PyTorch dataset maker for pre-processed, numerical pandas DataFrames.
 
 ## [5.0.0] 2025-07-24
 

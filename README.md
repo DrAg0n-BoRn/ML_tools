@@ -60,10 +60,11 @@ pip install "dragon-ml-toolbox[pytorch]"
 ```bash
 custom_logger
 data_exploration
-datasetmaster
 ensemble_learning
 ensemble_inference
 ETL_engineering
+ML_datasetmaster
+ML_models
 ML_callbacks
 ML_evaluation
 ML_trainer
