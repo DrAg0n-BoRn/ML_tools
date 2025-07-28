@@ -187,5 +187,5 @@ After installation, import modules like this:
 
 ```python
 from ml_tools.utilities import serialize_object, deserialize_object
-from ml_tools.custom_logger import custom_logger
+from ml_tools import custom_logger
 ```

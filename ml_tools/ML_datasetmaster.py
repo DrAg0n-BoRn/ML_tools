@@ -21,6 +21,7 @@ from ._script_info import _script_info
 # --- public-facing API ---
 __all__ = [
     "DatasetMaker",
+    "SimpleDatasetMaker",
     "VisionDatasetMaker",
     "SequenceMaker",
     "ResizeAspectFill",
@@ -328,7 +329,7 @@ class DatasetMaker(_BaseMaker):
 
         return self.scaler.inverse_transform(data_np)
 
-    def get_datasets(self) -> Tuple[_PytorchDataset, _PytorchDataset]:
+    def get_datasets(self) -> Tuple[Dataset, Dataset]:
         """Primary method to get the final PyTorch Datasets."""
         if not self._is_split:
             raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
@@ -368,6 +369,95 @@ class DatasetMaker(_BaseMaker):
         with torch.no_grad():
             full_tensor = torch.cat(embedded_tensors, dim=1)
         return pandas.DataFrame(full_tensor.numpy(), columns=new_columns, index=cat_df.index)
+
+
+# Streamlined DatasetMaker version
+class SimpleDatasetMaker:
+    """
+    A simplified dataset maker for pre-processed, numerical pandas DataFrames.
+
+    This class takes a DataFrame, automatically splits it into training and
+    testing sets, and converts them into PyTorch Datasets. It assumes the
+    target variable is the last column.
+
+    Args:
+        pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
+        test_size (float): The proportion of the dataset to allocate to the
+                           test split.
+        random_state (int): The seed for the random number generator for
+                            reproducibility.
+        id (str | None): An optional object identifier.
+    """
+    def __init__(self, pandas_df: pandas.DataFrame, test_size: float = 0.2, random_state: int = 42, id: Optional[str]=None):
+        """          
+        Attributes:
+            `train_dataset` -> PyTorch Dataset
+            `test_dataset`  -> PyTorch Dataset
+            `feature_names` -> list[str]
+            `target_name`   -> str
+            `id` -> str | None
+        """
+        
+        if not isinstance(pandas_df, pandas.DataFrame):
+            raise TypeError("Input must be a pandas.DataFrame.")
+        
+        #set id
+        self._id = id
+
+        # 1. Identify features and target
+        features = pandas_df.iloc[:, :-1]
+        target = pandas_df.iloc[:, -1]
+
+        self._feature_names = features.columns.tolist()
+        self._target_name = target.name
+
+        # 2. Split the data
+        X_train, X_test, y_train, y_test = train_test_split(
+            features, target, test_size=test_size, random_state=random_state
+        )
+
+        self._X_train_shape = X_train.shape
+        self._X_test_shape = X_test.shape
+        self._y_train_shape = y_train.shape
+        self._y_test_shape = y_test.shape
+
+        # 3. Convert to PyTorch Datasets
+        self._train_ds = _PytorchDataset(X_train.values, y_train.values)
+        self._test_ds = _PytorchDataset(X_test.values, y_test.values)
+
+    @property
+    def train_dataset(self) -> Dataset:
+        """Returns the training PyTorch dataset."""
+        return self._train_ds
+
+    @property
+    def test_dataset(self) -> Dataset:
+        """Returns the testing PyTorch dataset."""
+        return self._test_ds
+
+    @property
+    def feature_names(self) -> list[str]:
+        """Returns the list of feature column names."""
+        return self._feature_names
+
+    @property
+    def target_name(self) -> str:
+        """Returns the name of the target column."""
+        return str(self._target_name)
+    
+    @property
+    def id(self) -> Optional[str]:
+        """Returns teh object identifier if any."""
+        return self._id
+
+    def dataframes_info(self) -> None:
+        """Prints the shape information of the split pandas DataFrames."""
+        print("--- Original DataFrame Shapes After Split ---")
+        print(f"  X_train shape: {self._X_train_shape}")
+        print(f"  y_train shape: {self._y_train_shape}\n")
+        print(f"  X_test shape:  {self._X_test_shape}")
+        print(f"  y_test shape:  {self._y_test_shape}")
+        print("-------------------------------------------")
 
 
 # --- VisionDatasetMaker ---
