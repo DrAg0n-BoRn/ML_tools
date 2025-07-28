@@ -66,6 +66,21 @@ class MultilayerPerceptron(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Defines the forward pass of the model."""
         return self._layers(x)
+    
+    def __repr__(self) -> str:
+        """Returns the developer-friendly string representation of the model."""
+        # Extracts the number of neurons from each nn.Linear layer
+        layer_sizes = [layer.in_features for layer in self._layers if isinstance(layer, nn.Linear)]
+        
+        # Get the last layer and check its type before accessing the attribute
+        last_layer = self._layers[-1]
+        if isinstance(last_layer, nn.Linear):
+            layer_sizes.append(last_layer.out_features)
+        
+        # Creates a string like: 10 -> 40 -> 80 -> 40 -> 2
+        arch_str = ' -> '.join(map(str, layer_sizes))
+        
+        return f"MultilayerPerceptron(arch: {arch_str})"
 
 
 class SequencePredictorLSTM(nn.Module):
@@ -128,6 +143,14 @@ class SequencePredictorLSTM(nn.Module):
         predictions = self.linear(lstm_out)
         
         return predictions
+    
+    def __repr__(self) -> str:
+        """Returns the developer-friendly string representation of the model."""
+        return (
+            f"SequencePredictorLSTM(features={self.lstm.input_size}, "
+            f"hidden_size={self.lstm.hidden_size}, "
+            f"recurrent_layers={self.lstm.num_layers})"
+        )
 
 
 def info():
