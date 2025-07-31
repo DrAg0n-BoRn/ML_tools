@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "5.3.1"
+version = "6.0.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }

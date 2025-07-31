@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 from .path_manager import make_fullpath
-from .keys import LogKeys
+from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
 from typing import Optional
 from ._script_info import _script_info
@@ -96,14 +96,14 @@ class TqdmProgressBar(Callback):
     def on_batch_end(self, batch, logs=None):
         self.batch_bar.update(1) # type: ignore
         if logs:
-            self.batch_bar.set_postfix(loss=f"{logs.get(LogKeys.BATCH_LOSS, 0):.4f}") # type: ignore
+            self.batch_bar.set_postfix(loss=f"{logs.get(PyTorchLogKeys.BATCH_LOSS, 0):.4f}") # type: ignore
 
     def on_epoch_end(self, epoch, logs=None):
         self.batch_bar.close() # type: ignore
         self.epoch_bar.update(1) # type: ignore
         if logs:
-            train_loss_str = f"{logs.get(LogKeys.TRAIN_LOSS, 0):.4f}"
-            val_loss_str = f"{logs.get(LogKeys.VAL_LOSS, 0):.4f}"
+            train_loss_str = f"{logs.get(PyTorchLogKeys.TRAIN_LOSS, 0):.4f}"
+            val_loss_str = f"{logs.get(PyTorchLogKeys.VAL_LOSS, 0):.4f}"
             self.epoch_bar.set_postfix_str(f"Train Loss: {train_loss_str}, Val Loss: {val_loss_str}") # type: ignore
 
     def on_train_end(self, logs=None):
@@ -124,7 +124,7 @@ class EarlyStopping(Callback):
                     inferred from the name of the monitored quantity.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, monitor: str=LogKeys.VAL_LOSS, min_delta: float=0.0, patience: int=5, mode: Literal['auto', 'min', 'max']='auto', verbose: int=0):
+    def __init__(self, monitor: str=PyTorchLogKeys.VAL_LOSS, min_delta: float=0.0, patience: int=5, mode: Literal['auto', 'min', 'max']='auto', verbose: int=1):
         super().__init__()
         self.monitor = monitor
         self.patience = patience
@@ -201,7 +201,7 @@ class ModelCheckpoint(Callback):
         mode (str): One of {'auto', 'min', 'max'}.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, save_dir: Union[str,Path], monitor: str = LogKeys.VAL_LOSS,
+    def __init__(self, save_dir: Union[str,Path], monitor: str = PyTorchLogKeys.VAL_LOSS,
                  save_best_only: bool = True, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 0):
         super().__init__()
         self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")

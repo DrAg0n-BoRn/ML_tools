@@ -22,8 +22,9 @@ __all__ = [
     "threshold_binary_values_batch",
     "serialize_object",
     "deserialize_object",
-    "distribute_datasets_by_target",
+    "distribute_dataset_by_target",
     "train_dataset_orchestrator",
+    "train_dataset_yielder"
 ]
 
 
@@ -418,7 +419,7 @@ def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_e
         return obj
 
 
-def distribute_datasets_by_target(
+def distribute_dataset_by_target(
     df_or_path: Union[pd.DataFrame, str, Path],
     target_columns: list[str],
     verbose: bool = False
@@ -493,7 +494,7 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
     for df_dir in all_dir_paths:
         for df_name, df_path in list_csv_paths(df_dir).items():
             try:
-                for target_name, df in distribute_datasets_by_target(df_or_path=df_path, target_columns=target_columns, verbose=False):
+                for target_name, df in distribute_dataset_by_target(df_or_path=df_path, target_columns=target_columns, verbose=False):
                     if safe_mode:
                         filename = df_dir.name + '_' + target_name + '_' + df_name
                     else:
@@ -505,6 +506,29 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                 continue 
 
     _LOGGER.info(f"✅ {total_saved} single-target datasets were created.")
+
+
+def train_dataset_yielder(
+    df: pd.DataFrame,
+    target_cols: list[str]
+) -> Iterator[Tuple[pd.DataFrame, pd.Series, list[str], str]]:
+    """ 
+    Yields one tuple at a time:
+        (features_dataframe, target_series, feature_names, target_name)
+
+    Skips any target columns not found in the DataFrame.
+    """
+    # Determine which target columns actually exist in the DataFrame
+    valid_targets = [col for col in target_cols if col in df.columns]
+
+    # Features = all columns excluding valid target columns
+    df_features = df.drop(columns=valid_targets)
+    feature_names = df_features.columns.to_list()
+
+    for target_col in valid_targets:
+        df_target = df[target_col]
+        yield (df_features, df_target, feature_names, target_col)
+
 
 
 def info():

@@ -1,12 +1,8 @@
 import pandas as pd
 import numpy as np
-import seaborn # Use plot styling
-import matplotlib.pyplot as plt
-from matplotlib.colors import Colormap
-from matplotlib import rcdefaults
 
 from pathlib import Path
-from typing import Literal, Union, Optional, Iterator, Tuple
+from typing import Literal, Union, Optional
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
@@ -15,14 +11,20 @@ import xgboost as xgb
 import lightgbm as lgb
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score, roc_curve, roc_auc_score
-import shap
+from sklearn.base import clone
 
-from .utilities import yield_dataframes_from_dir, serialize_object
+from .utilities import yield_dataframes_from_dir, serialize_object, train_dataset_yielder
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
-from .keys import ModelSaveKeys
+from .keys import EnsembleKeys
 from ._logger import _LOGGER
+from .ensemble_evaluation import (evaluate_model_classification,
+                                  plot_roc_curve,
+                                  plot_precision_recall_curve,
+                                  plot_calibration_curve,
+                                  evaluate_model_regression,
+                                  get_shap_values,
+                                  plot_learning_curves)
 
 import warnings # Ignore warnings 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -31,14 +33,9 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 
 __all__ = [
-    "dataset_yielder",
     "RegressionTreeModels",
     "ClassificationTreeModels",
     "dataset_pipeline",
-    "evaluate_model_classification",
-    "plot_roc_curve",
-    "evaluate_model_regression",
-    "get_shap_values",
     "train_test_pipeline",
     "run_ensemble_pipeline",
 ]
@@ -48,34 +45,7 @@ HandleImbalanceStrategy = Literal[
     "ADASYN", "SMOTE", "RAND_OVERSAMPLE", "RAND_UNDERSAMPLE", "by_model", None
 ]
 
-TaskType = Literal[
-    "classification", "regression"
-]
-
-###### 1. Dataset Loader ######
-def dataset_yielder(
-    df: pd.DataFrame,
-    target_cols: list[str]
-) -> Iterator[Tuple[pd.DataFrame, pd.Series, list[str], str]]:
-    """ 
-    Yields one tuple at a time:
-        (features_dataframe, target_series, feature_names, target_name)
-
-    Skips any target columns not found in the DataFrame.
-    """
-    # Determine which target columns actually exist in the DataFrame
-    valid_targets = [col for col in target_cols if col in df.columns]
-
-    # Features = all columns excluding valid target columns
-    df_features = df.drop(columns=valid_targets)
-    feature_names = df_features.columns.to_list()
-
-    for target_col in valid_targets:
-        df_target = df[target_col]
-        yield (df_features, df_target, feature_names, target_col)
-
-
-###### 2. Initialize Models ######
+###### 1. Initialize Models ######
 class RegressionTreeModels:
     """
     A factory class for creating and configuring multiple gradient boosting regression models
@@ -345,7 +315,7 @@ class ClassificationTreeModels:
         return f"{self.__class__.__name__}(n_estimators={self.n_estimators}, max_depth={self.max_depth}, lr={self.lr}, L1={self.L1}, L2={self.L2}"
 
 
-###### 3. Process Dataset ######
+###### 2. Process Dataset ######
 # function to split data into train and test
 def _split_data(features, target, test_size, random_state, task):
     X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=test_size, random_state=random_state, 
@@ -375,7 +345,7 @@ def _resample(X_train: np.ndarray, y_train: pd.Series,
     return X_res, y_res
 
 # DATASET PIPELINE
-def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: TaskType,
+def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Literal["classification", "regression"],
                      resample_strategy: HandleImbalanceStrategy,
                      test_size: float=0.2, debug: bool=False, random_state: int=101):
     ''' 
@@ -412,7 +382,7 @@ def dataset_pipeline(df_features: pd.DataFrame, df_target: pd.Series, task: Task
     
     return X_train_oversampled, y_train_oversampled, X_test, y_test
 
-###### 4. Train and Evaluation ######
+###### 3. Train and Evaluation ######
 # Trainer function
 def _train_model(model, train_features, train_target):
     model.fit(train_features, train_target)
@@ -435,381 +405,26 @@ def _save_model(trained_model, model_name: str, target_name:str, feature_names: 
     #Sanitize filenames to save
     sanitized_target_name = sanitize_filename(target_name)
     filename = f"{model_name}_{sanitized_target_name}"
-    to_save = {ModelSaveKeys.MODEL: trained_model, 
-               ModelSaveKeys.FEATURES: feature_names,
-               ModelSaveKeys.TARGET: target_name}
+    to_save = {EnsembleKeys.MODEL: trained_model, 
+               EnsembleKeys.FEATURES: feature_names,
+               EnsembleKeys.TARGET: target_name}
 
     serialize_object(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
 
-# function to evaluate the model and save metrics (Classification)
-def evaluate_model_classification(
-    model,
-    model_name: str,
-    save_dir: Union[str,Path],
-    x_test_scaled: np.ndarray,
-    single_y_test: np.ndarray,
-    target_name: str,
-    figsize: tuple = (10, 8),
-    base_fontsize: int = 24,
-    cmap: Colormap = plt.cm.Blues # type: ignore
-) -> np.ndarray:
-    """
-    Evaluates a classification model, saves the classification report and confusion matrix plot.
 
-    Parameters:
-        model: Trained classifier with .predict() method
-        model_name: Identifier for the model
-        save_dir: Directory where results are saved
-        x_test_scaled: Feature matrix for test set
-        single_y_test: True targets
-        target_name: Target name
-        figsize: Size of the confusion matrix figure (width, height)
-        fontsize: Font size used for title, axis labels and ticks
-        cmap: Color map for the confusion matrix. Examples include:
-            - plt.cm.Blues (default)
-            - plt.cm.Greens
-            - plt.cm.Oranges
-            - plt.cm.Purples
-            - plt.cm.Reds
-            - plt.cm.cividis
-            - plt.cm.inferno
-
-    Returns:
-        y_pred: Predicted class labels
-    """
-    save_path = make_fullpath(save_dir, make=True)
-
-    y_pred = model.predict(x_test_scaled)
-    accuracy = accuracy_score(single_y_test, y_pred)
-
-    report = classification_report(
-        single_y_test,
-        y_pred,
-        target_names=["Negative", "Positive"],
-        output_dict=False
-    )
-
-    # Save text report
-    sanitized_target_name = sanitize_filename(target_name)
-    report_path = save_path / f"Classification_Report_{sanitized_target_name}.txt"
-    with open(report_path, "w") as f:
-        f.write(f"{model_name} - {target_name}\t\tAccuracy: {accuracy:.2f}\n")
-        f.write("Classification Report:\n")
-        f.write(report) # type: ignore
-
-    # Create confusion matrix
-    fig, ax = plt.subplots(figsize=figsize)
-    disp = ConfusionMatrixDisplay.from_predictions(
-        y_true=single_y_test,
-        y_pred=y_pred,
-        display_labels=["Negative", "Positive"],
-        cmap=cmap,
-        normalize="true",
-        ax=ax
-    )
-
-    ax.set_title(f"{model_name} - {target_name}", fontsize=base_fontsize)
-    ax.tick_params(axis='both', labelsize=base_fontsize)
-    ax.set_xlabel("Predicted label", fontsize=base_fontsize)
-    ax.set_ylabel("True label", fontsize=base_fontsize)
-    
-    # Turn off gridlines
-    ax.grid(False)
-    
-    # Manually update font size of cell texts
-    for text in ax.texts:
-        text.set_fontsize(base_fontsize+4)
-
-    fig.tight_layout()
-    fig_path = save_path / f"Confusion_Matrix_{sanitized_target_name}.svg"
-    fig.savefig(fig_path, format="svg", bbox_inches="tight") # type: ignore
-    plt.close(fig)
-
-    return y_pred
-
-#Function to save ROC and ROC AUC (Classification)
-def plot_roc_curve(
-    true_labels: np.ndarray,
-    probabilities_or_model: Union[np.ndarray, xgb.XGBClassifier, lgb.LGBMClassifier, object],
-    model_name: str,
-    target_name: str,
-    save_directory: Union[str,Path],
-    color: str = "darkorange",
-    figure_size: tuple = (10, 10),
-    linewidth: int = 2,
-    base_fontsize: int = 24,
-    input_features: Optional[np.ndarray] = None,
-) -> plt.Figure: # type: ignore
-    """
-    Plots the ROC curve and computes AUC for binary classification. Positive class is assumed to be in the second column of the probabilities array.
-    
-    Parameters:
-        true_labels: np.ndarray of shape (n_samples,), ground truth binary labels (0 or 1).
-        probabilities_or_model: either predicted probabilities (ndarray), or a trained model with attribute `.predict_proba()`.
-        target_name: str, Target name.
-        save_directory: str or Path, path to directory where figure is saved.
-        color: color of the ROC curve. Accepts any valid Matplotlib color specification. Examples:
-            - Named colors: "darkorange", "blue", "red", "green", "black"
-            - Hex codes: "#1f77b4", "#ff7f0e"
-            - RGB tuples: (0.2, 0.4, 0.6)
-            - Colormap value: plt.cm.viridis(0.6)
-        figure_size: Tuple for figure size (width, height).
-        linewidth: int, width of the plotted ROC line.
-        title_fontsize: int, font size of the title.
-        label_fontsize: int, font size for axes labels.
-        input_features: np.ndarray of shape (n_samples, n_features), required if a model is passed.
-
-    Returns:
-        fig: matplotlib Figure object
-    """
-
-    # Determine predicted probabilities
-    if isinstance(probabilities_or_model, np.ndarray):
-        # Input is already probabilities
-        if probabilities_or_model.ndim == 2: # type: ignore
-            y_score = probabilities_or_model[:, 1] # type: ignore
-        else:
-            y_score = probabilities_or_model
-            
-    elif hasattr(probabilities_or_model, "predict_proba"):
-        if input_features is None:
-            raise ValueError("input_features must be provided when using a classifier.")
-
-        try:
-            classes = probabilities_or_model.classes_ # type: ignore
-            positive_class_index = list(classes).index(1)
-        except (AttributeError, ValueError):
-            positive_class_index = 1
-
-        y_score = probabilities_or_model.predict_proba(input_features)[:, positive_class_index] # type: ignore
-
-    else:
-        raise TypeError("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
-
-    # ROC and AUC
-    fpr, tpr, _ = roc_curve(true_labels, y_score)
-    auc_score = roc_auc_score(true_labels, y_score)
-
-    # Plot
-    fig, ax = plt.subplots(figsize=figure_size)
-    ax.plot(fpr, tpr, color=color, lw=linewidth, label=f"AUC = {auc_score:.2f}")
-    ax.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=1)
-
-    ax.set_title(f"{model_name} - {target_name}", fontsize=base_fontsize)
-    ax.set_xlabel("False Positive Rate", fontsize=base_fontsize)
-    ax.set_ylabel("True Positive Rate", fontsize=base_fontsize)
-    ax.tick_params(axis='both', labelsize=base_fontsize)
-    ax.legend(loc="lower right", fontsize=base_fontsize)
-    ax.grid(True)
-
-    # Save figure
-    save_path = make_fullpath(save_directory, make=True)
-    sanitized_target_name = sanitize_filename(target_name)
-    full_save_path = save_path / f"ROC_{sanitized_target_name}.svg"
-    fig.savefig(full_save_path, bbox_inches="tight", format="svg") # type: ignore
-
-    return fig
-
-
-# function to evaluate the model and save metrics (Regression)
-def evaluate_model_regression(model, model_name: str, 
-                               save_dir: Union[str,Path],
-                               x_test_scaled: np.ndarray, single_y_test: np.ndarray, 
-                               target_name: str,
-                               figure_size: tuple = (12, 8),
-                               alpha_transparency: float = 0.5,
-                               base_fontsize: int = 24):
-    # Generate predictions
-    y_pred = model.predict(x_test_scaled)
-    
-    # Calculate regression metrics
-    mae = mean_absolute_error(single_y_test, y_pred)
-    mse = mean_squared_error(single_y_test, y_pred)
-    rmse = np.sqrt(mse)
-    r2 = r2_score(single_y_test, y_pred)
-    
-    # Create formatted report
-    sanitized_target_name = sanitize_filename(target_name)
-    save_path = make_fullpath(save_dir, make=True)
-    report_path = save_path / f"Regression_Report_{sanitized_target_name}.txt"
-    with open(report_path, "w") as f:
-        f.write(f"{model_name} - Regression Performance for '{target_name}'\n\n")
-        f.write(f"Mean Absolute Error (MAE): {mae:.4f}\n")
-        f.write(f"Mean Squared Error (MSE): {mse:.4f}\n")
-        f.write(f"Root Mean Squared Error (RMSE): {rmse:.4f}\n")
-        f.write(f"R² Score: {r2:.4f}\n")
-
-    # Generate and save residual plot
-    residuals = single_y_test - y_pred
-    plt.figure(figsize=figure_size)
-    plt.scatter(y_pred, residuals, alpha=alpha_transparency)
-    plt.axhline(0, color='red', linestyle='--')
-    plt.xlabel("Predicted Values", fontsize=base_fontsize)
-    plt.ylabel("Residuals", fontsize=base_fontsize)
-    plt.title(f"{model_name} - Residual Plot for {target_name}", fontsize=base_fontsize)
-    plt.grid(True)
-    plt.tight_layout()
-    residual_path = save_path / f"Residual_Plot_{sanitized_target_name}.svg"
-    plt.savefig(residual_path, bbox_inches='tight', format="svg")
-    plt.close()
-    
-    # Create true vs predicted values plot
-    plt.figure(figsize=figure_size)
-    plt.scatter(single_y_test, y_pred, alpha=alpha_transparency)
-    plt.plot([single_y_test.min(), single_y_test.max()], 
-             [single_y_test.min(), single_y_test.max()], 
-             'k--', lw=2)
-    plt.xlabel('True Values', fontsize=base_fontsize)
-    plt.ylabel('Predictions', fontsize=base_fontsize)
-    plt.title(f"{model_name} - True vs Predicted for {target_name}", fontsize=base_fontsize)
-    plt.grid(True)
-    plot_path = save_path / f"Regression_Plot_{sanitized_target_name}.svg"
-    plt.savefig(plot_path, bbox_inches='tight', format="svg")
-    plt.close()
-
-    return y_pred
-
-
-# Get SHAP values
-def get_shap_values(
-    model,
-    model_name: str,
-    save_dir: Union[str, Path],
-    features_to_explain: np.ndarray,
-    feature_names: list[str],
-    target_name: str,
-    task: Literal["classification", "regression"],
-    max_display_features: int = 10,
-    figsize: tuple = (16, 20),
-    base_fontsize: int = 38,
-):
-    """
-    Universal SHAP explainer for regression and classification.
-        * Use `X_train` (or a subsample of it) to see how the model explains the data it was trained on.
-        
-	    * Use `X_test` (or a hold-out set) to see how the model explains unseen data.
-     
-	    * Use the entire dataset to get the global view. 
- 
-    Parameters:
-        task: 'regression' or 'classification'.
-        features_to_explain: Should match the model's training data format, including scaling.
-        save_dir: Directory to save visualizations.
-    """
-    sanitized_target_name = sanitize_filename(target_name)
-    global_save_path = make_fullpath(save_dir, make=True)
-    
-    def _apply_plot_style():
-        styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
-        for style in styles:
-            if style in plt.style.available or style == 'default':
-                plt.style.use(style)
-                break
-
-    def _configure_rcparams():
-        plt.rc('font', size=base_fontsize)
-        plt.rc('axes', titlesize=base_fontsize)
-        plt.rc('axes', labelsize=base_fontsize)
-        plt.rc('xtick', labelsize=base_fontsize)
-        plt.rc('ytick', labelsize=base_fontsize + 2)
-        plt.rc('legend', fontsize=base_fontsize)
-        plt.rc('figure', titlesize=base_fontsize)
-
-    def _create_shap_plot(shap_values, features, save_path: Path, plot_type: str, title: str):
-        _apply_plot_style()
-        _configure_rcparams()
-        plt.figure(figsize=figsize)
-
-        shap.summary_plot(
-            shap_values=shap_values,
-            features=features,
-            feature_names=feature_names,
-            plot_type=plot_type,
-            show=False,
-            plot_size=figsize,
-            max_display=max_display_features,
-            alpha=0.7,
-            # color='viridis'
-        )
-
-        ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", fontsize=base_fontsize + 2, weight='bold', labelpad=20)
-        plt.title(title, fontsize=base_fontsize + 2, pad=20, weight='bold')
-
-        for tick in ax.get_xticklabels():
-            tick.set_fontsize(base_fontsize)
-            tick.set_rotation(30)
-        for tick in ax.get_yticklabels():
-            tick.set_fontsize(base_fontsize + 2)
-
-        if plot_type == "dot":
-            cb = plt.gcf().axes[-1]
-            cb.set_ylabel("", size=1)
-            cb.tick_params(labelsize=base_fontsize - 2)
-
-        plt.savefig(save_path, bbox_inches='tight', facecolor='white', format="svg")
-        plt.close()
-        rcdefaults()
-
-    def _plot_for_classification(shap_values, class_names):
-        is_multiclass = isinstance(shap_values, list) and len(shap_values) > 1
-
-        if is_multiclass:
-            for class_shap, class_name in zip(shap_values, class_names):
-                for plot_type in ["bar", "dot"]:
-                    _create_shap_plot(
-                        shap_values=class_shap,
-                        features=features_to_explain,
-                        save_path=global_save_path / f"SHAP_{sanitized_target_name}_Class{class_name}_{plot_type}.svg",
-                        plot_type=plot_type,
-                        title=f"{model_name} - {target_name} (Class {class_name})"
-                    )
-        else:
-            values = shap_values[1] if isinstance(shap_values, list) else shap_values
-            for plot_type in ["bar", "dot"]:
-                _create_shap_plot(
-                    shap_values=values,
-                    features=features_to_explain,
-                    save_path=global_save_path / f"SHAP_{sanitized_target_name}_{plot_type}.svg",
-                    plot_type=plot_type,
-                    title=f"{model_name} - {target_name}"
-                )
-
-    def _plot_for_regression(shap_values):
-        for plot_type in ["bar", "dot"]:
-            _create_shap_plot(
-                shap_values=shap_values,
-                features=features_to_explain,
-                save_path=global_save_path / f"SHAP_{sanitized_target_name}_{plot_type}.svg",
-                plot_type=plot_type,
-                title=f"{model_name} - {target_name}"
-            )
-    #START_O
-
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(features_to_explain)
-
-    if task == 'classification':
-        try:
-            class_names = model.classes_ if hasattr(model, 'classes_') else list(range(len(shap_values)))
-        except Exception:
-            class_names = list(range(len(shap_values)))
-        _plot_for_classification(shap_values, class_names)
-    else:
-        _plot_for_regression(shap_values)
-
-
-# TRAIN TEST PIPELINE
-def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
+# TRAIN EVALUATE PIPELINE
+def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["classification", "regression"],
              train_features: np.ndarray, train_target: np.ndarray,
              test_features: np.ndarray, test_target: np.ndarray,
              feature_names: list[str], target_name: str,
              save_dir: Union[str,Path],
-             debug: bool=False, save_model: bool=False):
+             debug: bool=False, save_model: bool=False,
+             generate_learning_curves: bool = False):
     ''' 
     1. Train model.
     2. Evaluate model.
     3. SHAP values.
+    4. [Optional] Plot learning curves.
     
     Returns: Tuple(Trained model, Test-set Predictions)
     '''
@@ -823,7 +438,8 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
         _save_model(trained_model=trained_model, model_name=model_name, 
                     target_name=target_name, feature_names=feature_names, 
                     save_directory=local_save_directory)
-        
+    
+    # EVALUATION
     if task == "classification":
         y_pred = evaluate_model_classification(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
                              x_test_scaled=test_features, single_y_test=test_target, target_name=target_name)
@@ -831,6 +447,14 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
                        probabilities_or_model=trained_model, model_name=model_name, 
                        target_name=target_name, save_directory=local_save_directory, 
                        input_features=test_features)
+        plot_precision_recall_curve(true_labels=test_target,
+                                    probabilities_or_model=trained_model, model_name=model_name,
+                                    target_name=target_name, save_directory=local_save_directory,
+                                    input_features=test_features)
+        plot_calibration_curve(model=trained_model, model_name=model_name,
+                               save_dir=local_save_directory,
+                               x_test=test_features, y_test=test_target,
+                               target_name=target_name)
     elif task == "regression":
         y_pred = evaluate_model_regression(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
                              x_test_scaled=test_features, single_y_test=test_target, target_name=target_name)
@@ -842,12 +466,21 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: TaskType,
     get_shap_values(model=trained_model, model_name=model_name, save_dir=local_save_directory,
                     features_to_explain=train_features, feature_names=feature_names, target_name=target_name, task=task)
     
+    if generate_learning_curves:
+        # Note: We use a *clone* of the initial model object to ensure we don't use the already trained one.
+        # The learning_curve function handles the fitting internally.
+        initial_model_instance = clone(model)
+
+        plot_learning_curves(estimator=initial_model_instance, X=train_features, y=train_target, 
+                            task=task, model_name=model_name, target_name=target_name,
+                            save_directory=local_save_directory)
+    
     return trained_model, y_pred
 
-###### 5. Execution ######
+###### 4. Execution ######
 def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Path], target_columns: list[str], model_object: Union[RegressionTreeModels, ClassificationTreeModels],
          handle_classification_imbalance: HandleImbalanceStrategy=None, save_model: bool=False,
-         test_size: float=0.2, debug:bool=False):
+         test_size: float=0.2, debug:bool=False, generate_learning_curves: bool = False):
     #Check models
     if isinstance(model_object, RegressionTreeModels):
         task = "regression"
@@ -870,7 +503,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
     #Yield imputed dataset
     for dataframe, dataframe_name in yield_dataframes_from_dir(datasets_path):
         #Yield features dataframe and target dataframe
-        for df_features, df_target, feature_names, target_name in dataset_yielder(df=dataframe, target_cols=target_columns):
+        for df_features, df_target, feature_names, target_name in train_dataset_yielder(df=dataframe, target_cols=target_columns):
             #Dataset pipeline
             X_train, y_train, X_test, y_test = dataset_pipeline(df_features=df_features, df_target=df_target, task=task,
                                                                 resample_strategy=handle_classification_imbalance,
@@ -883,7 +516,8 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     train_features=X_train, train_target=y_train, # type: ignore
                                     test_features=X_test, test_target=y_test,
                                     feature_names=feature_names,target_name=target_name,
-                                    debug=debug, save_dir=save_path, save_model=save_model)
+                                    debug=debug, save_dir=save_path, save_model=save_model,
+                                    generate_learning_curves=generate_learning_curves)
 
     _LOGGER.info("✅ Training and evaluation complete.")
 

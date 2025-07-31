@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] 2025-07-31
+
+### Added 
+
+- ensemble_evaluation: 
+    - `plot_precision_recall_curve()`, for classification models.
+    - Integrated classification report heatmap into the `evaluate_model_classification()` function.
+    - `plot_calibration_curve()`, reliability diagram for a classifier.
+    - `plot_learning_curves()`, generates and saves a plot of the learning curves for a given estimator to diagnose bias vs. variance.
+    - Integrated histogram of residuals into the `evaluate_model_regression()` function.
+
+- ML_evaluation:
+    - `classification_metrics()`
+        - Save directory no longer optional.
+        - Added precision-recall curve plot.
+        - Added classification report heatmap.
+        - Added calibration curve plot.
+    - `regression_metrics()`
+        - Save directory no longer optional.
+        - Added histogram of residuals.
+
+### Changed
+
+- ensemble_learning: 
+    - split into 2 modules: "ensemble_learning" and "ensemble_evaluation". 
+    - `dataset_yielder()` renamed to `train_dataset_yielder()` and moved to "utilities".
+- ML_trainer: 
+    - `MyTrainer` renamed to `MLTrainer`.
+    - method `explain()` has a new default of 'n_samples = 1000'.
+- keys:
+    - `LogKeys` renamed to `PyTorchLogKeys`.
+    - `ModelSaveKeys` renamed to `EnsembleKeys`.
+
 ## [5.3.1] 2025-07-31
 
 ### Fixed

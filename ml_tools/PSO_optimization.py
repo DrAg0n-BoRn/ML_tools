@@ -12,7 +12,7 @@ from .path_manager import sanitize_filename, make_fullpath, list_files_by_extens
 import torch
 from tqdm import trange
 from ._logger import _LOGGER
-from .keys import ModelSaveKeys
+from .keys import EnsembleKeys
 from ._script_info import _script_info
 from .SQL import DatabaseManager
 from contextlib import nullcontext
@@ -48,9 +48,9 @@ class ObjectiveFunction():
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
         self._artifact = deserialize_object(trained_model_path, verbose=False, raise_on_error=True)
-        self.model = self._get_from_artifact(ModelSaveKeys.MODEL)
-        self.feature_names: Optional[list[str]] = self._get_from_artifact(ModelSaveKeys.FEATURES) # type: ignore
-        self.target_name: Optional[str] = self._get_from_artifact(ModelSaveKeys.TARGET) # type: ignore
+        self.model = self._get_from_artifact(EnsembleKeys.MODEL)
+        self.feature_names: Optional[list[str]] = self._get_from_artifact(EnsembleKeys.FEATURES) # type: ignore
+        self.target_name: Optional[str] = self._get_from_artifact(EnsembleKeys.TARGET) # type: ignore
         self.task = task
         self.check_model() # check for classification models and None values
         
@@ -126,7 +126,7 @@ class ObjectiveFunction():
         if self._artifact is None:
             raise TypeError("Load model error")
         val = self._artifact.get(key)
-        if key == ModelSaveKeys.FEATURES:
+        if key == EnsembleKeys.FEATURES:
             result = val if isinstance(val, list) and val else None
         else:
             result = val if val else None

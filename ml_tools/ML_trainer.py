@@ -8,16 +8,16 @@ import numpy as np
 from .ML_callbacks import Callback, History, TqdmProgressBar
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot
 from ._script_info import _script_info
-from .keys import LogKeys
+from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
 
 
 __all__ = [
-    "MyTrainer"
+    "MLTrainer"
 ]
 
 
-class MyTrainer:
+class MLTrainer:
     def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
                  kind: Literal["regression", "classification"],
                  criterion: nn.Module, optimizer: torch.optim.Optimizer, 
@@ -161,8 +161,8 @@ class MyTrainer:
         for batch_idx, (features, target) in enumerate(self.train_loader): # type: ignore
             # Create a log dictionary for the batch
             batch_logs = {
-                LogKeys.BATCH_INDEX: batch_idx, 
-                LogKeys.BATCH_SIZE: features.size(0)
+                PyTorchLogKeys.BATCH_INDEX: batch_idx, 
+                PyTorchLogKeys.BATCH_SIZE: features.size(0)
             }
             self.callbacks_hook('on_batch_begin', batch_idx, logs=batch_logs)
 
@@ -180,11 +180,11 @@ class MyTrainer:
             running_loss += batch_loss * features.size(0)
 
             # Add the batch loss to the logs and call the end-of-batch hook
-            batch_logs[LogKeys.BATCH_LOSS] = batch_loss
+            batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss
             self.callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
 
         # Return the average loss for the entire epoch
-        return {LogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
+        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
 
     def _validation_step(self):
         self.model.eval()
@@ -197,7 +197,7 @@ class MyTrainer:
                     output = output.view_as(target)
                 loss = self.criterion(output, target)
                 running_loss += loss.item() * features.size(0)
-        logs = {LogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
         return logs
     
     def _predict_for_eval(self, dataloader: DataLoader):
@@ -232,14 +232,14 @@ class MyTrainer:
                 
                 yield y_pred_batch, y_prob_batch, y_true_batch
     
-    def evaluate(self, save_dir: Optional[Union[str,Path]], data: Optional[Union[DataLoader, Dataset]] = None):
+    def evaluate(self, save_dir: Union[str,Path], data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model on the given data.
 
         Args:
             data (DataLoader | Dataset | None ): The data to evaluate on.
                 Can be a DataLoader or a Dataset. If None, defaults to the trainer's internal test_dataset.
-            save_dir (str | Path | None): Directory to save all reports and plots. If None, metrics are shown but not saved.
+            save_dir (str | Path): Directory to save all reports and plots.
         """
         eval_loader = None
         if isinstance(data, DataLoader):
@@ -275,14 +275,14 @@ class MyTrainer:
         y_prob = np.concatenate(all_probs) if self.kind == "classification" else None
 
         if self.kind == "classification":
-            classification_metrics(y_true, y_pred, y_prob, save_dir=save_dir)
+            classification_metrics(save_dir, y_true, y_pred, y_prob)
         else:
-            regression_metrics(y_true.flatten(), y_pred.flatten(), save_dir=save_dir)
+            regression_metrics(y_true.flatten(), y_pred.flatten(), save_dir)
 
         print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
-    def explain(self, explain_dataset: Optional[Dataset] = None, n_samples: int = 100, 
+    def explain(self, explain_dataset: Optional[Dataset] = None, n_samples: int = 1000, 
                 feature_names: Optional[List[str]] = None, save_dir: Optional[Union[str,Path]] = None):
         """
         Explains model predictions using SHAP and saves all artifacts.

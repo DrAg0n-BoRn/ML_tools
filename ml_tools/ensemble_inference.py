@@ -1,7 +1,7 @@
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath, list_files_by_extension
-from .keys import ModelSaveKeys
+from .keys import EnsembleKeys
 
 from typing import Union, Literal, Dict, Any, Optional, List
 from pathlib import Path
@@ -49,9 +49,9 @@ class InferenceHandler:
                                                  verbose=self.verbose, 
                                                  raise_on_error=True) # type: ignore
                 
-                model: Any = full_object[ModelSaveKeys.MODEL]
-                target_name: str = full_object[ModelSaveKeys.TARGET]
-                feature_names_list: List[str] = full_object[ModelSaveKeys.FEATURES]
+                model: Any = full_object[EnsembleKeys.MODEL]
+                target_name: str = full_object[EnsembleKeys.TARGET]
+                feature_names_list: List[str] = full_object[EnsembleKeys.FEATURES]
                 
                 # Check that feature names match
                 if self._feature_names is None:
@@ -102,8 +102,8 @@ class InferenceHandler:
             else: # Classification
                 label = model.predict(features)[0]
                 probabilities = model.predict_proba(features)[0]
-                results[target_name] = {ModelSaveKeys.CLASSIFICATION_LABEL: label, 
-                                        ModelSaveKeys.CLASSIFICATION_PROBABILITIES: probabilities}
+                results[target_name] = {EnsembleKeys.CLASSIFICATION_LABEL: label, 
+                                        EnsembleKeys.CLASSIFICATION_PROBABILITIES: probabilities}
         
         if self.verbose:
             _LOGGER.info("✅ Inference process complete.")
@@ -170,15 +170,15 @@ def model_report(
     # --- 2. Deserialize and Extract Info ---
     try:
         full_object: dict = _deserialize_object(model_p) # type: ignore
-        model = full_object[ModelSaveKeys.MODEL]
-        target = full_object[ModelSaveKeys.TARGET]
-        features = full_object[ModelSaveKeys.FEATURES]
+        model = full_object[EnsembleKeys.MODEL]
+        target = full_object[EnsembleKeys.TARGET]
+        features = full_object[EnsembleKeys.FEATURES]
     except FileNotFoundError:
         _LOGGER.error(f"❌ Model file not found at '{model_p}'")
         raise
     except (KeyError, TypeError) as e:
         _LOGGER.error(
-            f"❌ The serialized object is missing required keys '{ModelSaveKeys.MODEL}', '{ModelSaveKeys.TARGET}', '{ModelSaveKeys.FEATURES}'"
+            f"❌ The serialized object is missing required keys '{EnsembleKeys.MODEL}', '{EnsembleKeys.TARGET}', '{EnsembleKeys.FEATURES}'"
         )
         raise e
 

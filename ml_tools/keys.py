@@ -1,4 +1,4 @@
-class LogKeys:
+class PyTorchLogKeys:
     """
     Used internally for ML scripts module.
     
@@ -14,7 +14,7 @@ class LogKeys:
     BATCH_SIZE = 'size'
 
 
-class ModelSaveKeys:
+class EnsembleKeys:
     """
     Used internally by ensemble_learning.
     """
