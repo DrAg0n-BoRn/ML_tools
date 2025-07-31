@@ -49,6 +49,7 @@ def create_pytorch_problem(
             selected search algorithm's constructor (e.g., stdev_init=0.5 for CMAES).
 
     Returns:
+        Tuple:
         A tuple containing the configured evotorch.Problem and evotorch.Searcher.
     """
     lower_bounds, upper_bounds = bounds

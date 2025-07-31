@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "5.2.2"
+version = "5.3.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -29,7 +29,7 @@ base = [
 
 # Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
 ML = [
-    "numpy",
+    "numpy>=2.0",
     "pandas",
     "polars",
     "joblib",

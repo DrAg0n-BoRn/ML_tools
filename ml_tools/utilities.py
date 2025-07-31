@@ -8,6 +8,7 @@ import joblib
 from joblib.externals.loky.process_executor import TerminatedWorkerError
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
 from ._script_info import _script_info
+from ._logger import _LOGGER
 
 
 # Keep track of available tools
@@ -81,7 +82,7 @@ def load_dataframe(
         raise ValueError(f"❌ DataFrame '{df_name}' loaded from '{path}' is empty.")
 
     if verbose:
-        print(f"\n💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
+        _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
     return df, df_name
 
@@ -166,7 +167,7 @@ def merge_dataframes(
         merged_df = merged_df.reset_index(drop=True)
     
     if verbose:
-        print(f"\n✅ Merged DataFrame shape: {merged_df.shape}")
+        _LOGGER.info(f"✅ Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
 
@@ -185,7 +186,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
     """
     # This check works for both pandas and polars
     if df.shape[0] == 0:
-        print(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
+        _LOGGER.warning(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
         return
     
     # Create the directory if it doesn't exist
@@ -207,7 +208,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
         # This error handles cases where an unsupported type is passed
         raise TypeError(f"❌ Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
     
-    print(f"\n✅ Saved dataset: '{filename}' with shape: {df.shape}")
+    _LOGGER.info(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
 
 
 def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
@@ -382,11 +383,11 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         if raise_on_error:
             raise Exception(message)
         else:
-            print(message)
+            _LOGGER.warning(message)
         return None
     else:
         if verbose:
-            print(f"\n✅ Object of type '{type(obj)}' saved to '{full_path}'")
+            _LOGGER.info(f"✅ Object of type '{type(obj)}' saved to '{full_path}'")
         return None
 
 
@@ -409,11 +410,11 @@ def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_e
         if raise_on_error:
             raise Exception(message)
         else:
-            print(message)
+            _LOGGER.warning(message)
         return None
     else:
         if verbose:
-            print(f"\n✅ Loaded object of type '{type(obj)}'")
+            _LOGGER.info(f"✅ Loaded object of type '{type(obj)}'")
         return obj
 
 
@@ -500,10 +501,10 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                     save_dataframe(df=df, save_dir=save_dir, filename=filename)
                     total_saved += 1
             except Exception as e:
-                print(f"⚠️ Failed to process file '{df_path}'. Reason: {e}")
+                _LOGGER.warning(f"⚠️ Failed to process file '{df_path}'. Reason: {e}")
                 continue 
 
-    print(f"\n✅ {total_saved} single-target datasets were created.")
+    _LOGGER.info(f"✅ {total_saved} single-target datasets were created.")
 
 
 def info():

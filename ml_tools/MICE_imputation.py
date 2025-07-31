@@ -29,6 +29,8 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
         random_state=random_state
     )
     
+    _LOGGER.info("➡️ MICE imputation running...")
+    
     # Perform MICE with n iterations per dataset
     kernel.mice(iterations)
     
@@ -60,6 +62,8 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
         assert imputed_df.shape[0] == df.shape[0], f"❌ Row count mismatch in dataset {subname}" # type: ignore
         assert all(imputed_df.index == df.index), f"❌ Index mismatch in dataset {subname}" # type: ignore
     # print("✅ All imputed datasets match the original DataFrame indexes.")
+    
+    _LOGGER.info("✅ MICE imputation complete.")
     
     return kernel, imputed_datasets, imputed_dataset_names
 

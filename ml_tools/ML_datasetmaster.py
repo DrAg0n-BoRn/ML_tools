@@ -128,17 +128,18 @@ class DatasetMaker(_BaseMaker):
     - Automated (single call):
     ```python
     maker = DatasetMaker(df, label_col='target')
-    maker.process() # uses simplified arguments
+    maker.auto_process() # uses simplified arguments
     train_ds, test_ds = maker.get_datasets()
     ```
     """
-    def __init__(self, pandas_df: pandas.DataFrame, label_col: str):
+    def __init__(self, pandas_df: pandas.DataFrame, label_col: str, kind: Literal["regression", "classification"]):
         super().__init__()
         if not isinstance(pandas_df, pandas.DataFrame):
             raise TypeError("Input must be a pandas.DataFrame.")
         if label_col not in pandas_df.columns:
             raise ValueError(f"Label column '{label_col}' not found in DataFrame.")
-
+        
+        self.kind = kind
         self.labels = pandas_df[label_col]
         self.features = pandas_df.drop(columns=label_col)
         self.labels_map = None
@@ -277,7 +278,7 @@ class DatasetMaker(_BaseMaker):
         _LOGGER.info(f"Balancing complete. New training set size: {len(self.features_train)} samples.")
         return self
 
-    def process(self, test_size: float = 0.2, cat_method: Literal["one-hot", "embed"] = "one-hot", normalize_method: Literal["standard", "minmax"] = "standard", 
+    def auto_process(self, test_size: float = 0.2, cat_method: Literal["one-hot", "embed"] = "one-hot", normalize_method: Literal["standard", "minmax"] = "standard", 
                 balance: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
         """Runs a standard, fully automated preprocessing pipeline."""
         _LOGGER.info("--- 🤖 Running Automated Processing Pipeline ---")
@@ -334,8 +335,10 @@ class DatasetMaker(_BaseMaker):
         if not self._is_split:
             raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
         
-        self._train_dataset = _PytorchDataset(self.features_train, self.labels_train) # type: ignore
-        self._test_dataset = _PytorchDataset(self.features_test, self.labels_test) # type: ignore
+        label_dtype = torch.float32 if self.kind == "regression" else torch.int64
+        
+        self._train_dataset = _PytorchDataset(self.features_train, self.labels_train, labels_dtype=label_dtype) # type: ignore
+        self._test_dataset = _PytorchDataset(self.features_test, self.labels_test, labels_dtype=label_dtype)  # type: ignore
         
         return self._train_dataset, self._test_dataset
     
@@ -382,12 +385,13 @@ class SimpleDatasetMaker:
 
     Args:
         pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
+        kind (Literal["regression", "classification"]): The type of ML task. This determines the data type of the labels.
         test_size (float): The proportion of the dataset to allocate to the
                            test split.
         random_state (int): The seed for the random number generator for
                             reproducibility.
     """
-    def __init__(self, pandas_df: pandas.DataFrame, test_size: float = 0.2, random_state: int = 42):
+    def __init__(self, pandas_df: pandas.DataFrame, kind: Literal["regression", "classification"], test_size: float = 0.2, random_state: int = 42):
         """
         Attributes:
             `train_dataset` -> PyTorch Dataset
@@ -398,9 +402,11 @@ class SimpleDatasetMaker:
             
         The ID can be manually set to any string if needed, it is `None` by default.
         """
-        
+        # Validation
         if not isinstance(pandas_df, pandas.DataFrame):
-            raise TypeError("Input must be a pandas.DataFrame.")        
+            raise TypeError("Input must be a pandas.DataFrame.")
+        if kind not in ["regression", "classification"]:
+            raise ValueError("`kind` must be 'regression' or 'classification'.")
 
         # 1. Identify features and target
         features = pandas_df.iloc[:, :-1]
@@ -422,9 +428,11 @@ class SimpleDatasetMaker:
         self._y_train_shape = y_train.shape
         self._y_test_shape = y_test.shape
 
-        # 3. Convert to PyTorch Datasets
-        self._train_ds = _PytorchDataset(X_train.values, y_train.values)
-        self._test_ds = _PytorchDataset(X_test.values, y_test.values)
+        # 3. Convert to PyTorch Datasets with the correct label dtype
+        label_dtype = torch.float32 if kind == "regression" else torch.int64
+        
+        self._train_ds = _PytorchDataset(X_train.values, y_train.values, labels_dtype=label_dtype)
+        self._test_ds = _PytorchDataset(X_test.values, y_test.values, labels_dtype=label_dtype)
 
     @property
     def train_dataset(self) -> Dataset:

@@ -148,13 +148,13 @@ class EarlyStopping(Callback):
             else: # Default to min mode for loss or other metrics
                 self.monitor_op = np.less
         
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
+        self.best = np.inf if self.monitor_op == np.less else -np.inf
 
     def on_train_begin(self, logs=None):
         # Reset state at the beginning of training
         self.wait = 0
         self.stopped_epoch = 0
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
+        self.best = np.inf if self.monitor_op == np.less else -np.inf
                     
     def on_epoch_end(self, epoch, logs=None):
         current = logs.get(self.monitor) # type: ignore
@@ -228,11 +228,11 @@ class ModelCheckpoint(Callback):
         else:
             self.monitor_op = np.less if 'loss' in self.monitor else np.greater
         
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
+        self.best = np.inf if self.monitor_op == np.less else -np.inf
 
     def on_train_begin(self, logs=None):
         """Reset state when training starts."""
-        self.best = np.Inf if self.monitor_op == np.less else -np.Inf # type: ignore
+        self.best = np.inf if self.monitor_op == np.less else -np.inf
         self.saved_checkpoints = []
         self.last_best_filepath = None
 
@@ -251,7 +251,7 @@ class ModelCheckpoint(Callback):
             return
 
         if self.monitor_op(current, self.best):
-            old_best_str = f"{self.best:.4f}" if self.best not in [np.Inf, -np.Inf] else "inf" # type: ignore
+            old_best_str = f"{self.best:.4f}" if self.best not in [np.inf, -np.inf] else "inf"
             
             # Create a descriptive filename
             filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"

@@ -7,6 +7,7 @@ from typing import Union, Literal, Dict, Tuple, List, Optional
 from pathlib import Path
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
+from ._logger import _LOGGER
 import re
 
 
@@ -55,7 +56,7 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
         ].round(round_digits)
         summary = summary.join(summary_numeric, how='left')
 
-    print(f"Shape: {df.shape}")
+    print(f"DataFrame Shape: {df.shape}")
     return summary
 
 
@@ -98,7 +99,7 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
 
     dropped_columns = original_columns - set(cols_to_keep)
     if verbose:
-        print(f"🧹 Dropped {len(dropped_columns)} constant columns.")
+        _LOGGER.info(f"🧹 Dropped {len(dropped_columns)} constant columns.")
         if dropped_columns:
             for dropped_column in dropped_columns:
                 print(f"    {dropped_column}")
@@ -129,10 +130,10 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
         valid_targets = _validate_columns(df_clean, targets)
         target_na = df_clean[valid_targets].isnull().all(axis=1)
         if target_na.any():
-            print(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
+            _LOGGER.info(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
             df_clean = df_clean[~target_na]
         else:
-            print("✅ No rows with all targets missing.")
+            _LOGGER.info("✅ No rows with all targets missing.")
     else:
         valid_targets = []
 
@@ -142,12 +143,12 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
         feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
         rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
         if len(rows_to_drop) > 0:
-            print(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
+            _LOGGER.info(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
             df_clean = df_clean.drop(index=rows_to_drop)
         else:
-            print(f"✅ No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
+            _LOGGER.info(f"✅ No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
     else:
-        print("⚠️ No feature columns available to evaluate.")
+        _LOGGER.warning("⚠️ No feature columns available to evaluate.")
 
     return df_clean
 
@@ -207,7 +208,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     cols_to_drop = missing_fraction[missing_fraction > threshold].index
 
     if len(cols_to_drop) > 0:
-        print(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
+        _LOGGER.info(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
         print(list(cols_to_drop))
         
         result_df = df.drop(columns=cols_to_drop)
@@ -216,7 +217,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
         
         return result_df
     else:
-        print(f"No columns have more than {threshold*100:.0f}% missing data.")
+        _LOGGER.info(f"No columns have more than {threshold*100:.0f}% missing data.")
         return df
 
 
@@ -311,7 +312,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     """
     numeric_df = df.select_dtypes(include='number')
     if numeric_df.empty:
-        print("No numeric columns found. Heatmap not generated.")
+        _LOGGER.warning("⚠️ No numeric columns found. Heatmap not generated.")
         return
     
     corr = numeric_df.corr(method=method)
@@ -348,7 +349,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         full_path = save_path / plot_title
         
         plt.savefig(full_path, bbox_inches="tight", format='svg')
-        print(f"Saved correlation heatmap: '{plot_title}'")
+        _LOGGER.info(f"Saved correlation heatmap: '{plot_title}'")
     
     plt.show()
     plt.close()
@@ -454,7 +455,7 @@ def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_t
     _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
     _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
 
-    print(f"Saved {saved_plots} plot(s)")
+    _LOGGER.info(f"Saved {saved_plots} value distribution plots.")
 
 
 def clip_outliers_single(
@@ -479,17 +480,17 @@ def clip_outliers_single(
         None: if a problem with the dataframe column occurred.
     """
     if column not in df.columns:
-        print(f"Column '{column}' not found in DataFrame.")
+        _LOGGER.warning(f"⚠️ Column '{column}' not found in DataFrame.")
         return None
 
     if not pd.api.types.is_numeric_dtype(df[column]):
-        print(f"Column '{column}' must be numeric.")
+        _LOGGER.warning(f"⚠️ Column '{column}' must be numeric.")
         return None
 
     new_df = df.copy(deep=True)
     new_df[column] = new_df[column].clip(lower=min_val, upper=max_val)
 
-    print(f"Column '{column}' clipped to range [{min_val}, {max_val}].")
+    _LOGGER.info(f"Column '{column}' clipped to range [{min_val}, {max_val}].")
     return new_df
 
 
@@ -539,10 +540,10 @@ def clip_outliers_multi(
             skipped_columns.append((col, str(e)))
             continue
         
-    print(f"Clipped {clipped_columns} columns.")
+    _LOGGER.info(f"Clipped {clipped_columns} columns.")
 
     if skipped_columns:
-        print("\n⚠️ Skipped columns:")
+        _LOGGER.warning("⚠️ Skipped columns:")
         for col, msg in skipped_columns:
             print(f" - {col}: {msg}")
 
@@ -574,7 +575,7 @@ def match_and_filter_columns_by_regex(
     matched_columns = df.columns[mask].to_list()
     filtered_df = df.loc[:, mask]
     
-    print(f"{len(matched_columns)} column(s) match the regex pattern '{pattern}'.")
+    _LOGGER.info(f"{len(matched_columns)} columns match the regex pattern '{pattern}'.")
 
     return filtered_df, matched_columns
 
@@ -628,11 +629,11 @@ def standardize_percentages(
     for col in columns:
         # --- Robustness Checks ---
         if col not in df_copy.columns:
-            print(f"Warning: Column '{col}' not found. Skipping.")
+            _LOGGER.warning(f"⚠️ Column '{col}' not found. Skipping.")
             continue
 
         if not is_numeric_dtype(df_copy[col]):
-            print(f"Warning: Column '{col}' is not numeric. Skipping.")
+            _LOGGER.warning(f"⚠️ Column '{col}' is not numeric. Skipping.")
             continue
 
         # --- Applying the Logic ---
