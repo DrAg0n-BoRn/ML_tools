@@ -95,14 +95,16 @@ class MyTrainer:
             batch_size=batch_size, 
             shuffle=shuffle, 
             num_workers=loader_workers, 
-            pin_memory=(self.device.type == "cuda")
+            pin_memory=("cuda" in self.device.type),
+            drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
         )
+        
         self.test_loader = DataLoader(
             dataset=self.test_dataset, 
             batch_size=batch_size, 
             shuffle=False, 
             num_workers=loader_workers, 
-            pin_memory=(self.device.type == "cuda")
+            pin_memory=("cuda" in self.device.type)
         )
 
     def fit(self, epochs: int = 10, batch_size: int = 10, shuffle: bool = True):

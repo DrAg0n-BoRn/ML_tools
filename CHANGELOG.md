@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.1] 2025-07-31
+
+### Fixed
+
+- ML_evaluation: `shap_summary_plot()` now works properly using a KernelExplainer for robustness.
+- ML_trainer: Train set dataloader now drops the last batch if it is incomplete to prevent errors in certain situations when the last batch has only 1 sample.
+
 ## [5.3.0] 2025-07-30
 
 ### Changed

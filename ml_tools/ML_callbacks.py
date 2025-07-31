@@ -124,7 +124,7 @@ class EarlyStopping(Callback):
                     inferred from the name of the monitored quantity.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, monitor: str=LogKeys.VAL_LOSS, min_delta=0.0, patience=3, mode: Literal['auto', 'min', 'max']='auto', verbose: int=1):
+    def __init__(self, monitor: str=LogKeys.VAL_LOSS, min_delta: float=0.0, patience: int=5, mode: Literal['auto', 'min', 'max']='auto', verbose: int=0):
         super().__init__()
         self.monitor = monitor
         self.patience = patience
@@ -202,7 +202,7 @@ class ModelCheckpoint(Callback):
         verbose (int): Verbosity mode.
     """
     def __init__(self, save_dir: Union[str,Path], monitor: str = LogKeys.VAL_LOSS,
-                 save_best_only: bool = False, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 1):
+                 save_best_only: bool = True, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 0):
         super().__init__()
         self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")
         if not self.save_dir.is_dir():

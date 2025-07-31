@@ -195,7 +195,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Optiona
         plt.close(fig_tvp)
 
 
-def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain: torch.Tensor, 
+def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], instances_to_explain: Union[torch.Tensor,np.ndarray], 
                       feature_names: Optional[list[str]]=None, save_dir: Optional[Union[str, Path]] = None):
     """
     Calculates SHAP values and saves summary plots and data.
@@ -207,24 +207,54 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
         feature_names (list of str | None): Names of the features for plot labeling.
         save_dir (str | Path | None): Directory to save SHAP artifacts. If None, dot plot is shown.
     """
+    # everything to numpy
+    if isinstance(background_data, np.ndarray):
+        background_data_np = background_data
+    else:
+        background_data_np = background_data.numpy()
+        
+    if isinstance(instances_to_explain, np.ndarray):
+        instances_to_explain_np = instances_to_explain
+    else:
+        instances_to_explain_np = instances_to_explain.numpy()
+    
+    # --- Data Validation Step ---
+    if np.isnan(background_data_np).any() or np.isnan(instances_to_explain_np).any():
+        _LOGGER.error("❌ Input data for SHAP contains NaN values. Aborting explanation.")
+        return
+    
     print("\n--- SHAP Value Explanation ---")
-    print("Calculating SHAP values... ")
     
     model.eval()
     model.cpu()
     
-    explainer = shap.DeepExplainer(model, background_data)
-    shap_values = explainer.shap_values(instances_to_explain)
+    # 1. Summarize the background data.
+    # Summarize the background data using k-means. 10-50 clusters is a good starting point.
+    background_summary = shap.kmeans(background_data_np, 30) 
+    
+    # 2. Define a prediction function wrapper that SHAP can use. It must take a numpy array and return a numpy array.
+    def prediction_wrapper(x_np: np.ndarray) -> np.ndarray:
+        # Convert numpy data to torch tensor
+        x_torch = torch.from_numpy(x_np).float()
+        with torch.no_grad():
+            # Get model output
+            output = model(x_torch)
+        # Return as numpy array
+        return output.cpu().numpy().flatten()
 
-    shap_values_for_plot = shap_values[1] if isinstance(shap_values, list) else shap_values
-    if isinstance(shap_values, list):
-        _LOGGER.info("Using SHAP values for the positive class (class 1) for plots.")
-
+    # 3. Create the KernelExplainer
+    explainer = shap.KernelExplainer(prediction_wrapper, background_summary)
+    
+    print("Calculating SHAP values with KernelExplainer...")
+    shap_values = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
+    
     if save_dir:
         save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+        plt.ioff()
+        
         # Save Bar Plot
         bar_path = save_dir_path / "shap_bar_plot.svg"
-        shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="bar", show=False)
+        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(bar_path)
@@ -233,7 +263,7 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
 
         # Save Dot Plot
         dot_path = save_dir_path / "shap_dot_plot.svg"
-        shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="dot", show=False)
+        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(dot_path)
@@ -242,18 +272,25 @@ def shap_summary_plot(model, background_data: torch.Tensor, instances_to_explain
 
         # Save Summary Data to CSV
         summary_path = save_dir_path / "shap_summary.csv"
-        mean_abs_shap = np.abs(shap_values_for_plot).mean(axis=0)
+        # Ensure the array is 1D before creating the DataFrame
+        mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
+        
         if feature_names is None:
             feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
+            
         summary_df = pd.DataFrame({
             'feature': feature_names,
             'mean_abs_shap_value': mean_abs_shap
         }).sort_values('mean_abs_shap_value', ascending=False)
+        
         summary_df.to_csv(summary_path, index=False)
+        
         _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
+        plt.ion()
+        
     else:
         _LOGGER.info("No save directory provided. Displaying SHAP dot plot.")
-        shap.summary_plot(shap_values_for_plot, instances_to_explain, feature_names=feature_names, plot_type="dot")
+        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot")
 
 
 def info():
