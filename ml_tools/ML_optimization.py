@@ -56,7 +56,9 @@ def create_pytorch_problem(
         Tuple:
         A tuple containing the configured Problem and Searcher.
     """
-    lower_bounds, upper_bounds = bounds
+    # Create copies to avoid modifying the original lists passed in the `bounds` tuple
+    lower_bounds = list(bounds[0])
+    upper_bounds = list(bounds[1])
     
     # add binary bounds
     if binary_features > 0:
