@@ -163,7 +163,7 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
             fig_cal, ax_cal = plt.subplots(figsize=(8, 8), dpi=100)
             CalibrationDisplay.from_predictions(y_true, y_score, n_bins=15, ax=ax_cal)
             
-            ax_cal.set_title('Calibration Plot (Reliability Curve)')
+            ax_cal.set_title('Reliability Curve')
             ax_cal.set_xlabel('Mean Predicted Probability')
             ax_cal.set_ylabel('Fraction of Positives')
             ax_cal.grid(True)
@@ -197,7 +197,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
         f"  Coefficient of Determination (R²): {r2:.4f}"
     ]
     report_string = "\n".join(report_lines)
-    print(report_string)
+    # print(report_string)
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     # Save text report
@@ -308,6 +308,8 @@ def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], in
         # Save Bar Plot
         bar_path = save_dir_path / "shap_bar_plot.svg"
         shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
+        ax = plt.gca()
+        ax.set_xlabel("SHAP Value Impact", labelpad=10)
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(bar_path)
@@ -317,6 +319,10 @@ def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], in
         # Save Dot Plot
         dot_path = save_dir_path / "shap_dot_plot.svg"
         shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
+        ax = plt.gca()
+        ax.set_xlabel("SHAP Value Impact", labelpad=10)
+        cb = plt.gcf().axes[-1]
+        cb.set_ylabel("", size=1)
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig(dot_path)

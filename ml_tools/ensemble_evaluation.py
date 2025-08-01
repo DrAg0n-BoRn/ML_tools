@@ -351,7 +351,7 @@ def plot_calibration_curve(
         ax=ax
     )
 
-    ax.set_title(f"{model_name} - Calibration Plot for {target_name}", fontsize=base_fontsize)
+    ax.set_title(f"{model_name} - Reliability Curve for {target_name}", fontsize=base_fontsize)
     ax.tick_params(axis='both', labelsize=base_fontsize - 2)
     ax.set_xlabel("Mean Predicted Probability", fontsize=base_fontsize)
     ax.set_ylabel("Fraction of Positives", fontsize=base_fontsize)
