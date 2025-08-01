@@ -1,12 +1,15 @@
+import pandas # logger
 import torch
 import numpy    #handling torch to numpy
 import evotorch
-from evotorch.algorithms import CMAES, SteadyStateGA
-from evotorch.logging import StdOutLogger
-from typing import Literal, Union, Tuple, List, Optional
+from evotorch.algorithms import SNES, CEM, GeneticAlgorithm
+from evotorch.logging import PandasLogger
+from evotorch.operators import SimulatedBinaryCrossOver, GaussianMutation
+from typing import Literal, Union, Tuple, List, Optional, Any, Callable
 from pathlib import Path
 from tqdm.auto import trange
 from contextlib import nullcontext
+from functools import partial
 
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
@@ -15,8 +18,7 @@ from .ML_inference import PyTorchInferenceHandler
 from .keys import PyTorchInferenceKeys
 from .SQL import DatabaseManager
 from .optimization_tools import _save_result
-from .utilities import threshold_binary_values
-
+from .utilities import threshold_binary_values, save_dataframe
 
 __all__ = [
     "create_pytorch_problem",
@@ -25,32 +27,34 @@ __all__ = [
 
 
 def create_pytorch_problem(
-    handler: PyTorchInferenceHandler,
+    inference_handler: PyTorchInferenceHandler,
     bounds: Tuple[List[float], List[float]],
     binary_features: int,
-    task: Literal["minimize", "maximize"],
-    algorithm: Literal["CMAES", "GA"] = "CMAES",
-    verbose: bool = False,
+    task: Literal["min", "max"],
+    algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
+    population_size: int = 200,
     **searcher_kwargs
-) -> Tuple[evotorch.Problem, evotorch.Searcher]: # type: ignore
+) -> Tuple[evotorch.Problem, Callable[[], Any]]:
     """
-    Creates and configures an EvoTorch Problem and Searcher for a PyTorch model.
-
+    Creates and configures an EvoTorch Problem and a Searcher factory class for a PyTorch model.
+    
+    SNES and CEM do not accept bounds, the given bounds will be used as initial bounds only.
+    
+    The Genetic Algorithm works directly with the bounds, and operators such as SimulatedBinaryCrossOver and GaussianMutation.
+    
     Args:
-        handler (PyTorchInferenceHandler): An initialized inference handler
-            containing the model and weights.
-        bounds (tuple[list[float], list[float]]): A tuple containing the lower
-            and upper bounds for the solution features.
+        inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
+        bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for the solution features.
         binary_features (int): Number of binary features located at the END of the feature vector. Will be automatically added to the bounds.
         task (str): The optimization goal, either "minimize" or "maximize".
-        algorithm (str): The search algorithm to use, "CMAES" or "GA" (SteadyStateGA).
-        verbose (bool): Add an Evotorch logger for real-time console updates.
+        algorithm (str): The search algorithm to use.
+        population_size (int): Used for CEM and GeneticAlgorithm.
         **searcher_kwargs: Additional keyword arguments to pass to the
             selected search algorithm's constructor (e.g., stdev_init=0.5 for CMAES).
 
     Returns:
         Tuple:
-        A tuple containing the configured evotorch.Problem and evotorch.Searcher.
+        A tuple containing the configured Problem and Searcher.
     """
     lower_bounds, upper_bounds = bounds
     
@@ -60,51 +64,86 @@ def create_pytorch_problem(
         upper_bounds.extend([0.55] * binary_features)
     
     solution_length = len(lower_bounds)
-    device = handler.device
+    device = inference_handler.device
 
     # Define the fitness function that EvoTorch will call.
-    @evotorch.decorators.to_tensor # type: ignore
-    @evotorch.decorators.on_aux_device(device)
     def fitness_func(solution_tensor: torch.Tensor) -> torch.Tensor:
         # Directly use the continuous-valued tensor from the optimizer for prediction
-        predictions = handler.predict_batch(solution_tensor)[PyTorchInferenceKeys.PREDICTIONS]
+        predictions = inference_handler.predict_batch(solution_tensor)[PyTorchInferenceKeys.PREDICTIONS]
         return predictions.flatten()
-
+    
+    
     # Create the Problem instance.
-    problem = evotorch.Problem(
-        objective_sense=task,
-        objective_func=fitness_func,
-        solution_length=solution_length,
-        initial_bounds=(lower_bounds, upper_bounds),
-        device=device,
-    )
+    if algorithm == "CEM" or algorithm == "SNES":
+        problem = evotorch.Problem(
+            objective_sense=task,
+            objective_func=fitness_func,
+            solution_length=solution_length,
+            initial_bounds=(lower_bounds, upper_bounds),
+            device=device,
+            vectorized=True #Use batches
+        )
+        
+        # If stdev_init is not provided, calculate it based on the bounds (used for SNES and CEM)
+        if 'stdev_init' not in searcher_kwargs:
+            # Calculate stdev for each parameter as 25% of its search range
+            stdevs = [abs(up - low) * 0.25 for low, up in zip(lower_bounds, upper_bounds)]
+            searcher_kwargs['stdev_init'] = torch.tensor(stdevs, dtype=torch.float32, requires_grad=False)
+        
+        if algorithm == "SNES":
+            SearcherClass = SNES
+        elif algorithm == "CEM":
+            SearcherClass = CEM
+            # Set a defaults for CEM if not provided
+            if 'popsize' not in searcher_kwargs:
+                searcher_kwargs['popsize'] = population_size
+            if 'parenthood_ratio' not in searcher_kwargs:
+                searcher_kwargs['parenthood_ratio'] = 0.2   #float 0.0 - 1.0
+        
+    elif algorithm == "Genetic":
+        problem = evotorch.Problem(
+            objective_sense=task,
+            objective_func=fitness_func,
+            solution_length=solution_length,
+            bounds=(lower_bounds, upper_bounds),
+            device=device,
+            vectorized=True #Use batches
+        )
 
-    # Create the selected searcher instance.
-    if algorithm == "CMAES":
-        searcher = CMAES(problem, **searcher_kwargs)
-    elif algorithm == "GA":
-        searcher = SteadyStateGA(problem, **searcher_kwargs)
+        operators = [
+            SimulatedBinaryCrossOver(problem,
+                                    tournament_size=4,
+                                    eta=0.8),
+            GaussianMutation(problem,
+                            stdev=0.1)
+        ]
+        
+        searcher_kwargs["operators"] = operators
+        if 'popsize' not in searcher_kwargs:
+            searcher_kwargs['popsize'] = population_size
+        
+        SearcherClass = GeneticAlgorithm
+        
     else:
-        raise ValueError(f"Unknown algorithm '{algorithm}'. Choose 'CMAES' or 'GA'.")
+        raise ValueError(f"Unknown algorithm '{algorithm}'.")
+    
+    # Create a factory function with all arguments pre-filled
+    searcher_factory = partial(SearcherClass, problem, **searcher_kwargs)
 
-    # Add a logger for real-time console updates.
-    # This gives the user immediate feedback on the optimization progress.
-    if verbose:
-        _ = StdOutLogger(searcher)
-
-    return problem, searcher
+    return problem, searcher_factory
 
 
 def run_optimization(
     problem: evotorch.Problem,
-    searcher: evotorch.Searcher, # type: ignore
+    searcher_factory: Callable[[],Any],
     num_generations: int,
     target_name: str,
     binary_features: int,
     save_dir: Union[str, Path],
     save_format: Literal['csv', 'sqlite', 'both'],
     feature_names: Optional[List[str]],
-    repetitions: int = 1
+    repetitions: int = 1,
+    verbose: bool = True
 ) -> Optional[dict]:
     """
     Runs the evolutionary optimization process, with support for multiple repetitions.
@@ -124,20 +163,19 @@ def run_optimization(
     Args:
         problem (evotorch.Problem): The configured problem instance, which defines
             the objective function, solution space, and optimization sense.
-        searcher (evotorch.Searcher): The configured searcher instance, which
-            contains the evolutionary algorithm (e.g., CMAES, GA).
-        num_generations (int): The total number of generations to run the
-            search algorithm for in each repetition.
+        searcher_factory (Callable): The searcher factory to generate fresh evolutionary algorithms.
+        num_generations (int): The total number of generations to run the search algorithm for in each repetition.
         target_name (str): Target name that will also be used for the CSV filename and SQL table.
         binary_features (int): Number of binary features located at the END of the feature vector.
         save_dir (str | Path): The directory where the result file(s) will be saved.
         save_format (Literal['csv', 'sqlite', 'both'], optional): The format for
-            saving results during iterative analysis. Defaults to 'both'.
+            saving results during iterative analysis.
         feature_names (List[str], optional): Names of the solution features for
             labeling the output files. If None, generic names like 'feature_0',
-            'feature_1', etc., will be created. Defaults to None.
+            'feature_1', etc., will be created.
         repetitions (int, optional): The number of independent times to run the
-            entire optimization process. Defaults to 1.
+            entire optimization process.
+        verbose (bool): Add an Evotorch Pandas logger saved as a csv. Only for the first repetition.
 
     Returns:
         Optional[dict]: A dictionary containing the best feature values and the
@@ -162,11 +200,29 @@ def run_optimization(
     
     # --- SINGLE RUN LOGIC ---
     if repetitions <= 1:
-        _LOGGER.info(f"🤖 Starting optimization with {searcher.__class__.__name__} for {num_generations} generations...")
-        for _ in trange(num_generations, desc="Optimizing"):
-            searcher.step()
+        searcher = searcher_factory()
+        _LOGGER.info(f"🤖 Starting optimization with {searcher.__class__.__name__} Algorithm for {num_generations} generations...")
+        # for _ in trange(num_generations, desc="Optimizing"):
+        #     searcher.step()
+        
+        # Attach logger if requested
+        if verbose:
+            pandas_logger = PandasLogger(searcher)
+            
+        searcher.run(num_generations) # Use the built-in run method for simplicity
+            
+        # # DEBUG new searcher objects
+        # for status_key in searcher.iter_status_keys():
+        #     print("===", status_key, "===")
+        #     print(searcher.status[status_key])
+        #     print()
+        
+        # Get results from the .status dictionary 
+        # SNES and CEM use the key 'center' to get mean values if needed    best_solution_tensor = searcher.status["center"]
+        best_solution_container = searcher.status["pop_best"]
+        best_solution_tensor = best_solution_container.values
+        best_fitness = best_solution_container.evals
 
-        best_solution_tensor, best_fitness = searcher.best
         best_solution_np = best_solution_tensor.cpu().numpy()
         
         # threshold binary features
@@ -179,6 +235,11 @@ def run_optimization(
         result_dict[target_name] = best_fitness.item()
         
         _save_result(result_dict, 'csv', csv_path) # Single run defaults to CSV
+        
+        # Process logger
+        if verbose:
+            _handle_pandas_log(pandas_logger, save_path=save_path)
+        
         _LOGGER.info(f"✅ Optimization complete. Best solution saved to '{csv_path.name}'")
         return result_dict
 
@@ -193,17 +254,26 @@ def run_optimization(
                 schema = {name: "REAL" for name in feature_names}
                 schema[target_name] = "REAL"
                 db_manager.create_table(db_table_name, schema)
-
+            
+            print("")
+            # Repetitions loop
+            pandas_logger = None
             for i in trange(repetitions, desc="Repetitions"):
-                _LOGGER.info(f"--- Starting Repetition {i+1}/{repetitions} ---")
+                # CRITICAL: Create a fresh searcher for each run using the factory
+                searcher = searcher_factory()
                 
-                # CRITICAL: Re-initialize the searcher to ensure each run is independent
-                searcher.reset()
-
-                for _ in range(num_generations): # Inner loop does not need a progress bar
-                    searcher.step()
-
-                best_solution_tensor, best_fitness = searcher.best
+                # Attach logger if requested
+                if verbose and i==0:
+                    pandas_logger = PandasLogger(searcher)
+                
+                searcher.run(num_generations) # Use the built-in run method for simplicity
+                
+                # Get results from the .status dictionary 
+                # SNES and CEM use the key 'center' to get mean values if needed    best_solution_tensor = searcher.status["center"]
+                best_solution_container = searcher.status["pop_best"]
+                best_solution_tensor = best_solution_container.values
+                best_fitness = best_solution_container.evals
+             
                 best_solution_np = best_solution_tensor.cpu().numpy()
                 
                 # threshold binary features
@@ -212,14 +282,24 @@ def run_optimization(
                 else:
                     best_solution_thresholded = best_solution_np
                 
+                # make results dictionary
                 result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
                 result_dict[target_name] = best_fitness.item()
                 
                 # Save each result incrementally
                 _save_result(result_dict, save_format, csv_path, db_manager, db_table_name)
+            
+        # Process logger
+        if pandas_logger is not None:
+            _handle_pandas_log(pandas_logger, save_path=save_path)      
         
         _LOGGER.info(f"✅ Optimal solution space complete. Results saved to '{save_path}'")
         return None
+
+
+def _handle_pandas_log(logger: PandasLogger, save_path: Path):
+    log_dataframe = logger.to_dataframe()
+    save_dataframe(df=log_dataframe, save_dir=save_path / "EvolutionLog", filename="evolution")
 
 
 def info():

@@ -66,47 +66,10 @@ class PyTorchInferenceHandler:
         
         # Ensure tensor is on the correct device
         return features.to(self.device)
-
-    def predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
+    
+    def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Predicts on a single feature vector.
-
-        Args:
-            features (np.ndarray | torch.Tensor): A 1D or 2D array/tensor for a single sample.
-
-        Returns:
-            Dict[str, Any]: A dictionary containing the prediction.
-                - For regression: {'predictions': float}
-                - For classification: {'labels': int, 'probabilities': np.ndarray}
-        """
-        if features.ndim == 1:
-            features = features.reshape(1, -1)
-        
-        if features.shape[0] != 1:
-            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
-
-        results_batch = self.predict_batch(features)
-
-        # Extract the single result from the batch
-        if self.task == "regression":
-            return {PyTorchInferenceKeys.PREDICTIONS: results_batch[PyTorchInferenceKeys.PREDICTIONS].item()}
-        else: # classification
-            return {
-                PyTorchInferenceKeys.LABELS: results_batch[PyTorchInferenceKeys.LABELS].item(),
-                PyTorchInferenceKeys.PROBABILITIES: results_batch[PyTorchInferenceKeys.PROBABILITIES][0]
-            }
-
-    def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
-        """
-        Predicts on a batch of feature vectors.
-
-        Args:
-            features (np.ndarray | torch.Tensor): A 2D array/tensor where each row is a sample.
-
-        Returns:
-            Dict[str, Any]: A dictionary containing the predictions.
-                - For regression: {'predictions': np.ndarray}
-                - For classification: {'labels': np.ndarray, 'probabilities': np.ndarray}
+        Core batch prediction method. Returns results as PyTorch tensors on the model's device.
         """
         if features.ndim != 2:
             raise ValueError("Input for batch prediction must be a 2D array or tensor.")
@@ -114,18 +77,61 @@ class PyTorchInferenceHandler:
         input_tensor = self._preprocess_input(features)
         
         with torch.no_grad():
-            output = self.model(input_tensor).cpu()
+            # Output tensor remains on the model's device (e.g., 'mps' or 'cuda')
+            output = self.model(input_tensor)
 
             if self.task == "classification":
                 probs = nn.functional.softmax(output, dim=1)
                 labels = torch.argmax(probs, dim=1)
                 return {
-                    PyTorchInferenceKeys.LABELS: labels.numpy(),
-                    PyTorchInferenceKeys.PROBABILITIES: probs.numpy()
+                    PyTorchInferenceKeys.LABELS: labels,
+                    PyTorchInferenceKeys.PROBABILITIES: probs
                 }
             else:  # regression
-                return {PyTorchInferenceKeys.PREDICTIONS: output.numpy()}
+                return {PyTorchInferenceKeys.PREDICTIONS: output}
 
+    def predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Core single-sample prediction. Returns results as PyTorch tensors on the model's device.
+        """
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+        
+        if features.shape[0] != 1:
+            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+
+        batch_results = self.predict_batch(features)
+        
+        single_results = {key: value[0] for key, value in batch_results.items()}
+        return single_results
+
+    # --- NumPy Convenience Wrappers (on CPU) ---
+
+    def predict_batch_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, np.ndarray]:
+        """
+        Convenience wrapper for predict_batch that returns NumPy arrays.
+        """
+        tensor_results = self.predict_batch(features)
+        # Move tensor to CPU before converting to NumPy
+        numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
+        return numpy_results
+
+    def predict_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
+        """
+        Convenience wrapper for predict that returns NumPy arrays or scalars.
+        """
+        tensor_results = self.predict(features)
+        
+        if self.task == "regression":
+            # .item() implicitly moves to CPU
+            return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
+        else: # classification
+            return {
+                PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].item(),
+                # ✅ Move tensor to CPU before converting to NumPy
+                PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
+            }
+     
 
 def info():
     _script_info(__all__)
