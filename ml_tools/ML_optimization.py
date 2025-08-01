@@ -114,10 +114,10 @@ def create_pytorch_problem(
 
         operators = [
             SimulatedBinaryCrossOver(problem,
-                                    tournament_size=4,
-                                    eta=0.8),
+                                    tournament_size=3,
+                                    eta=0.6),
             GaussianMutation(problem,
-                            stdev=0.1)
+                            stdev=0.4)
         ]
         
         searcher_kwargs["operators"] = operators

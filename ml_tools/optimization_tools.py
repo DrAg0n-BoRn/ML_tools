@@ -29,24 +29,24 @@ def parse_lower_upper_bounds(source: dict[str,tuple[Any,Any]]):
     return lower, upper
 
 
-def plot_optimal_feature_distributions(results_dir: Union[str, Path], save_dir: Union[str, Path]):
+def plot_optimal_feature_distributions(results_dir: Union[str, Path]):
     """
     Analyzes optimization results and plots the distribution of optimal values for each feature.
 
     For features with more than two unique values, this function generates a color-coded 
     Kernel Density Estimate (KDE) plot. For binary or constant features, it generates a bar plot
     showing relative frequency.
+    
+    Plots are saved in a subdirectory inside the source directory.
 
     Parameters
     ----------
     results_dir : str or Path
         The path to the directory containing the optimization result CSV files.
-    save_dir : str or Path
-        The directory where the output plots will be saved.
     """
     # Check results_dir and create output path
-    results_path = make_fullpath(results_dir)
-    output_path = make_fullpath(save_dir, make=True)
+    results_path = make_fullpath(results_dir, enforce="directory")
+    output_path = make_fullpath(results_path / "DistributionPlots", make=True)
     
     # Check that the directory contains csv files
     list_csv_paths(results_path, verbose=False)

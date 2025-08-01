@@ -201,7 +201,7 @@ class ModelCheckpoint(Callback):
         mode (str): One of {'auto', 'min', 'max'}.
         verbose (int): Verbosity mode.
     """
-    def __init__(self, save_dir: Union[str,Path], monitor: str = PyTorchLogKeys.VAL_LOSS,
+    def __init__(self, save_dir: Union[str,Path], checkpoint_name: Optional[str]=None, monitor: str = PyTorchLogKeys.VAL_LOSS,
                  save_best_only: bool = True, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 0):
         super().__init__()
         self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")
@@ -212,6 +212,7 @@ class ModelCheckpoint(Callback):
         self.monitor = monitor
         self.save_best_only = save_best_only
         self.verbose = verbose
+        self.checkpoint_name = checkpoint_name
 
         # State variables to be managed during training
         self.saved_checkpoints = []
@@ -254,7 +255,10 @@ class ModelCheckpoint(Callback):
             old_best_str = f"{self.best:.4f}" if self.best not in [np.inf, -np.inf] else "inf"
             
             # Create a descriptive filename
-            filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"
+            if self.checkpoint_name is None:
+                filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"
+            else:
+                filename = f"epoch{epoch}_{self.checkpoint_name}.pth"
             new_filepath = self.save_dir / filename
             
             if self.verbose > 0:
@@ -273,7 +277,11 @@ class ModelCheckpoint(Callback):
 
     def _save_rolling_checkpoints(self, epoch, logs):
         """Saves the latest model and keeps only the most recent ones."""
-        filename = f"epoch_{epoch}.pth"
+        current = logs.get(self.monitor)
+        if self.checkpoint_name is None:
+            filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"
+        else:
+            filename = f"epoch{epoch}_{self.checkpoint_name}.pth"
         filepath = self.save_dir / filename
         
         if self.verbose > 0:

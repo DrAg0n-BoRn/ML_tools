@@ -59,7 +59,7 @@ class DatabaseManager:
         try:
             self.conn = sqlite3.connect(self.db_path)
             self.cursor = self.conn.cursor()
-            _LOGGER.info(f"✅ Successfully connected to database: {self.db_path}")
+            _LOGGER.info(f"❇️ Successfully connected to database: {self.db_path}")
             return self
         except sqlite3.Error as e:
             _LOGGER.error(f"❌ Database connection failed: {e}")
@@ -99,7 +99,7 @@ class DatabaseManager:
         
         query = f"CREATE TABLE {exists_clause} {table_name} ({columns_def})"
         
-        _LOGGER.info(f"🗂️ Executing: {query}")
+        _LOGGER.info(f"➡️ Executing: {query}")
         self.cursor.execute(query)
 
     def insert_row(self, table_name: str, data: Dict[str, Any]):
@@ -192,7 +192,7 @@ class DatabaseManager:
         query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
         
         self.cursor.executemany(query, values_to_insert)
-        _LOGGER.info(f"✅ Bulk inserted {len(values_to_insert)} rows into '{table_name}'.")
+        _LOGGER.info(f"➡️ Bulk inserted {len(values_to_insert)} rows into '{table_name}'.")
         
     def insert_from_dataframe(self, table_name: str, df: pd.DataFrame, if_exists: Literal['fail', 'replace', 'append'] = 'append'):
         """
@@ -219,7 +219,7 @@ class DatabaseManager:
             if_exists=if_exists,
             index=False  # Typically, we don't want to save the DataFrame index
         )
-        _LOGGER.info(f"✅ Wrote {len(df)} rows from DataFrame to table '{table_name}' using mode '{if_exists}'.")
+        _LOGGER.info(f"➡️ Wrote {len(df)} rows from DataFrame to table '{table_name}' using mode '{if_exists}'.")
         
     def list_tables(self) -> List[str]:
         """Returns a list of all table names in the database."""
@@ -264,7 +264,7 @@ class DatabaseManager:
         
         query = f"CREATE {unique_clause} INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_name})"
         
-        _LOGGER.info(f"🗂️ Executing: {query}")
+        _LOGGER.info(f"➡️ Executing: {query}")
         self.cursor.execute(query)
 
 
