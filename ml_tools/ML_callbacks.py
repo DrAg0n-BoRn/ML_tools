@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from .path_manager import make_fullpath
+from .path_manager import make_fullpath, sanitize_filename
 from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
 from typing import Optional
@@ -212,6 +212,8 @@ class ModelCheckpoint(Callback):
         self.monitor = monitor
         self.save_best_only = save_best_only
         self.verbose = verbose
+        if checkpoint_name:
+            checkpoint_name = sanitize_filename(checkpoint_name)
         self.checkpoint_name = checkpoint_name
 
         # State variables to be managed during training
