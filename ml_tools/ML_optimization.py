@@ -240,7 +240,7 @@ def run_optimization(
         
         # Process logger
         if verbose:
-            _handle_pandas_log(pandas_logger, save_path=save_path)
+            _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)
         
         _LOGGER.info(f"✅ Optimization complete. Best solution saved to '{csv_path.name}'")
         return result_dict
@@ -293,15 +293,15 @@ def run_optimization(
             
         # Process logger
         if pandas_logger is not None:
-            _handle_pandas_log(pandas_logger, save_path=save_path)      
+            _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)      
         
         _LOGGER.info(f"✅ Optimal solution space complete. Results saved to '{save_path}'")
         return None
 
 
-def _handle_pandas_log(logger: PandasLogger, save_path: Path):
+def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str):
     log_dataframe = logger.to_dataframe()
-    save_dataframe(df=log_dataframe, save_dir=save_path / "EvolutionLog", filename="evolution")
+    save_dataframe(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name)
 
 
 def info():
