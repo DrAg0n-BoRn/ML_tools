@@ -16,6 +16,7 @@ from pathlib import Path
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
+from .custom_logger import save_list_strings
 
 
 # --- public-facing API ---
@@ -144,6 +145,9 @@ class DatasetMaker(_BaseMaker):
         self.features = pandas_df.drop(columns=label_col)
         self.labels_map = None
         self.scaler = None
+        
+        self._feature_names = self.features.columns.tolist()
+        self._target_name = str(self.labels.name)
 
         self._is_split = False
         self._is_balanced = False
@@ -347,6 +351,23 @@ class DatasetMaker(_BaseMaker):
         if not self._is_split:
              raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
         return self.features_train, self.features_test, self.labels_train, self.labels_test # type: ignore
+    
+    @property
+    def feature_names(self) -> list[str]:
+        """Returns the list of feature column names."""
+        return self._feature_names
+
+    @property
+    def target_name(self) -> str:
+        """Returns the name of the target column."""
+        return self._target_name
+    
+    def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """Saves a list of feature names as a text file"""
+        save_list_strings(list_strings=self._feature_names,
+                          directory=directory,
+                          filename="feature_names",
+                          verbose=verbose)
 
     @staticmethod
     def _embed_categorical(cat_df: pandas.DataFrame, random_state: Optional[int] = None, **kwargs) -> pandas.DataFrame:
@@ -413,7 +434,7 @@ class SimpleDatasetMaker:
         target = pandas_df.iloc[:, -1]
 
         self._feature_names = features.columns.tolist()
-        self._target_name = target.name
+        self._target_name = str(target.name)
         
         #set id
         self._id: Optional[str] = None
@@ -452,7 +473,7 @@ class SimpleDatasetMaker:
     @property
     def target_name(self) -> str:
         """Returns the name of the target column."""
-        return str(self._target_name)
+        return self._target_name
     
     @property
     def id(self) -> Optional[str]:
@@ -474,6 +495,13 @@ class SimpleDatasetMaker:
         print(f"  X_test shape:  {self._X_test_shape}")
         print(f"  y_test shape:  {self._y_test_shape}")
         print("-------------------------------------------")
+        
+    def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """Saves a list of feature names as a text file"""
+        save_list_strings(list_strings=self._feature_names,
+                          directory=directory,
+                          filename="feature_names",
+                          verbose=verbose)
 
 
 # --- VisionDatasetMaker ---

@@ -10,7 +10,9 @@ from ._logger import _LOGGER
 
 
 __all__ = [
-    "custom_logger"
+    "custom_logger",
+    "save_list_strings",
+    "load_list_strings"
 ]
 
 
@@ -134,6 +136,40 @@ def _log_exception_to_log(exc: BaseException, path: Path) -> None:
 def _log_dict_to_json(data: Dict[Any, Any], path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def save_list_strings(list_strings: list[str], directory: Union[str,Path], filename: str, verbose: bool=True):
+    """Saves a list of strings as a text file."""
+    target_dir = make_fullpath(directory, make=True, enforce="directory")
+    sanitized_name = sanitize_filename(filename)
+    
+    if not sanitized_name.endswith(".txt"):
+        sanitized_name = sanitized_name + ".txt"
+    
+    full_path = target_dir / sanitized_name
+    with open(full_path, 'w') as f:
+        for string_data in list_strings:
+            f.write(f"{string_data}\n")
+    
+    if verbose:
+        _LOGGER.info(f"✅ Text file saved as '{full_path.name}'.")
+
+
+def load_list_strings(text_file: Union[str,Path], verbose: bool=True) -> list[str]:
+    """Loads a text file as a list of strings."""
+    target_path = make_fullpath(text_file, enforce="file")
+    loaded_strings = []
+
+    with open(target_path, 'r') as f:
+        loaded_strings = [line.strip() for line in f]
+    
+    if len(loaded_strings) == 0:
+        raise ValueError("❌ The text file is empty.")
+    
+    if verbose:
+        _LOGGER.info(f"✅ Text file loaded as list of strings.")
+        
+    return loaded_strings
 
 
 def info():

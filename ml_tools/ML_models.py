@@ -1,12 +1,18 @@
 import torch
 from torch import nn
 from ._script_info import _script_info
-from typing import List
+from typing import List, Union
+from pathlib import Path
+import json
+from ._logger import _LOGGER
+from .path_manager import make_fullpath
 
 
 __all__ = [
     "MultilayerPerceptron",
-    "SequencePredictorLSTM"
+    "SequencePredictorLSTM",
+    "save_architecture",
+    "load_architecture"
 ]
 
 
@@ -45,6 +51,12 @@ class MultilayerPerceptron(nn.Module):
             raise TypeError("hidden_layers must be a list of integers.")
         if not (0.0 <= drop_out < 1.0):
             raise ValueError("drop_out must be a float between 0.0 and 1.0.")
+        
+        # --- Save configuration ---
+        self.in_features = in_features
+        self.out_targets = out_targets
+        self.hidden_layers = hidden_layers
+        self.drop_out = drop_out
 
         # --- Build network layers ---
         layers = []
@@ -66,6 +78,15 @@ class MultilayerPerceptron(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Defines the forward pass of the model."""
         return self._layers(x)
+    
+    def get_config(self) -> dict:
+        """Returns the configuration of the model."""
+        return {
+            'in_features': self.in_features,
+            'out_targets': self.out_targets,
+            'hidden_layers': self.hidden_layers,
+            'drop_out': self.drop_out
+        }
     
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
@@ -114,7 +135,14 @@ class SequencePredictorLSTM(nn.Module):
             raise ValueError("recurrent_layers must be a positive integer.")
         if not (0.0 <= dropout < 1.0):
             raise ValueError("dropout must be a float between 0.0 and 1.0.")
-
+        
+        # --- Save configuration ---
+        self.features = features
+        self.hidden_size = hidden_size
+        self.recurrent_layers = recurrent_layers
+        self.dropout = dropout
+        
+        # Build model
         self.lstm = nn.LSTM(
             input_size=features,
             hidden_size=hidden_size,
@@ -144,6 +172,15 @@ class SequencePredictorLSTM(nn.Module):
         
         return predictions
     
+    def get_config(self) -> dict:
+        """Returns the configuration of the model."""
+        return {
+            'features': self.features,
+            'hidden_size': self.hidden_size,
+            'recurrent_layers': self.recurrent_layers,
+            'dropout': self.dropout
+        }
+    
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
         return (
@@ -151,6 +188,81 @@ class SequencePredictorLSTM(nn.Module):
             f"hidden_size={self.lstm.hidden_size}, "
             f"recurrent_layers={self.lstm.num_layers})"
         )
+
+
+def save_architecture(model: nn.Module, directory: Union[str, Path], verbose: bool=True):
+    """
+    Saves a model's architecture to a 'architecture.json' file.
+
+    This function relies on the model having a `get_config()` method that
+    returns a dictionary of the arguments needed to initialize it.
+
+    Args:
+        model (nn.Module): The PyTorch model instance to save.
+        directory (str | Path): The directory to save the JSON file.
+
+    Raises:
+        AttributeError: If the model does not have a `get_config()` method.
+    """
+    if not hasattr(model, 'get_config'):
+        raise AttributeError(
+            f"Model '{model.__class__.__name__}' does not have a 'get_config()' method. "
+            "Please implement it to return the model's constructor arguments."
+        ) 
+
+    # Ensure the target directory exists
+    path_dir = make_fullpath(directory, make=True, enforce="directory")
+    full_path = path_dir / "architecture.json"
+
+    config = {
+        'model_class': model.__class__.__name__,
+        'config': model.get_config() # type: ignore
+    }
+
+    with open(full_path, 'w') as f:
+        json.dump(config, f, indent=4)
+    
+    if verbose:
+        _LOGGER.info(f"✅ Architecture for '{model.__class__.__name__}' saved to '{path_dir}'")
+
+
+def load_architecture(filepath: Union[str, Path], expected_model_class: type, verbose: bool=True) -> nn.Module:
+    """
+    Loads a model architecture from a JSON file.
+
+    This function instantiates a model by providing an explicit class to use
+    and checking that it matches the class name specified in the file.
+
+    Args:
+        filepath (Union[str, Path]): The path of the JSON architecture file.
+        expected_model_class (type): The model class expected to load (e.g., MultilayerPerceptron).
+
+    Returns:
+        nn.Module: An instance of the model with a freshly initialized state.
+
+    Raises:
+        FileNotFoundError: If the filepath does not exist.
+        ValueError: If the class name in the file does not match the `expected_model_class`.
+    """
+    path_obj = make_fullpath(filepath, enforce="file")
+
+    with open(path_obj, 'r') as f:
+        saved_data = json.load(f)
+
+    saved_class_name = saved_data['model_class']
+    config = saved_data['config']
+
+    if saved_class_name != expected_model_class.__name__:
+        raise ValueError(
+            f"Model class mismatch. File specifies '{saved_class_name}', "
+            f"but you expected '{expected_model_class.__name__}'."
+        )
+
+    # Create an instance of the model using the provided class and config
+    model = expected_model_class(**config)
+    if verbose:
+        _LOGGER.info(f"✅ Successfully loaded architecture for '{saved_class_name}'")
+    return model
 
 
 def info():

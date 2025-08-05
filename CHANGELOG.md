@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] 2025-08-05
+
+### Added
+
+- ML_inference: `PyTorchInferenceHandler`, optional "target_id" attribute.
+- ML_models: `save_architecture()` and `load_architecture()` for pytorch models implementing the method `get_config()`.
+- custom_logger: `save_list_strings()` and `load_list_strings()` save and load a list of strings to and from a text file.
+- ML_datasetmaster: `DatasetMaker` and `SimpleDatasetMaker` can save feature names as text files using the `save_feature_names()` method.
+
 ## [6.2.1] 2025-08-01
 
 ### Fixed 

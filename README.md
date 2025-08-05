@@ -79,6 +79,8 @@ SQL
 utilities
 ```
 
+---
+
 ### 🔬 MICE Imputation and Variance Inflation Factor [mice]
 
 ⚠️ Important: This group has strict version requirements. It is highly recommended to install this group in a separate virtual environment.
@@ -97,6 +99,8 @@ path_manager
 utilities
 ```
 
+---
+
 ### 📋 Excel File Handling [excel]
 
 Installs dependencies required to process and handle .xlsx or .xls files.
@@ -112,6 +116,8 @@ custom_logger
 handle_excel
 path_manager
 ```
+
+---
 
 ### 🎰 GUI for Boosting Algorithms (XGBoost, LightGBM) [gui-boost]
 
@@ -134,6 +140,8 @@ ensemble_inference
 path_manager
 ```
 
+---
+
 ### 🤖 GUI for PyTorch Models [gui-torch]
 
 For GUIs that include plotting functionality, you must also install the [plot] extra.
@@ -155,6 +163,8 @@ ML_inference
 path_manager
 ```
 
+---
+
 ### 🎫 Base Tools [base]
 
 General purpose functions and classes.
@@ -172,6 +182,8 @@ SQL
 utilities
 path_manager
 ```
+
+---
 
 ### ⚒️ APP bundlers
 

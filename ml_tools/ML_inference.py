@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from typing import Union, Literal, Dict, Any
+from typing import Union, Literal, Dict, Any, Optional
 
 from ._script_info import _script_info
 from ._logger import _LOGGER
@@ -22,7 +22,8 @@ class PyTorchInferenceHandler:
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  task: Literal["classification", "regression"],
-                 device: str = 'cpu'):
+                 device: str = 'cpu',
+                 target_id: Optional[str]=None):
         """
         Initializes the handler by loading a model's state_dict.
 
@@ -31,10 +32,12 @@ class PyTorchInferenceHandler:
             state_dict (str | Path): The path to the saved .pth model state_dict file.
             task (str): The type of task, 'regression' or 'classification'.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
+            target_id (str | None): Target name as used in the training set.
         """
         self.model = model
         self.task = task
         self.device = self._validate_device(device)
+        self.target_id = target_id
 
         model_p = make_fullpath(state_dict, enforce="file")
 
