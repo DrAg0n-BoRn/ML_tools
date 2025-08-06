@@ -223,7 +223,7 @@ def save_architecture(model: nn.Module, directory: Union[str, Path], verbose: bo
         json.dump(config, f, indent=4)
     
     if verbose:
-        _LOGGER.info(f"✅ Architecture for '{model.__class__.__name__}' saved to '{path_dir}'")
+        _LOGGER.info(f"✅ Architecture for '{model.__class__.__name__}' saved to '{path_dir.name}'")
 
 
 def load_architecture(filepath: Union[str, Path], expected_model_class: type, verbose: bool=True) -> nn.Module:

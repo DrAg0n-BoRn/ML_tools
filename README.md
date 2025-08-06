@@ -159,6 +159,7 @@ pip install "dragon-ml-toolbox[gui-torch,plot]"
 ```Bash
 custom_logger
 GUI_tools
+ML_models
 ML_inference
 path_manager
 ```

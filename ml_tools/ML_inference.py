@@ -10,7 +10,9 @@ from .path_manager import make_fullpath
 from .keys import PyTorchInferenceKeys
 
 __all__ = [
-    "PyTorchInferenceHandler"
+    "PyTorchInferenceHandler",
+    "multi_inference_regression",
+    "multi_inference_classification"
 ]
 
 class PyTorchInferenceHandler:
@@ -131,10 +133,155 @@ class PyTorchInferenceHandler:
         else: # classification
             return {
                 PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].item(),
-                # ✅ Move tensor to CPU before converting to NumPy
+                # Move tensor to CPU before converting to NumPy
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
-     
+
+
+def multi_inference_regression(handlers: list[PyTorchInferenceHandler], 
+                               feature_vector: Union[np.ndarray, torch.Tensor], 
+                               output: Literal["numpy","torch"]="numpy") -> dict[str,Any]:
+    """
+    Performs regression inference using multiple models on a single feature vector.
+
+    This function iterates through a list of PyTorchInferenceHandler objects,
+    each configured for a different regression target. It runs a prediction for
+    each handler using the same input feature vector and returns the results
+    in a dictionary.
+    
+    The function adapts its behavior based on the input dimensions:
+    - 1D input: Returns a dictionary mapping target ID to a single value.
+    - 2D input: Returns a dictionary mapping target ID to a list of values.
+
+    Args:
+        handlers (list[PyTorchInferenceHandler]): A list of initialized inference
+            handlers. Each handler must have a unique `target_id` and be configured with `task="regression"`.
+        feature_vector (Union[np.ndarray, torch.Tensor]): An input sample (1D) or a batch of samples (2D) to be fed into each regression model.
+        output (Literal["numpy", "torch"], optional): The desired format for the output predictions.
+            - "numpy": Returns predictions as Python scalars or NumPy arrays.
+            - "torch": Returns predictions as PyTorch tensors.
+
+    Returns:
+        (dict[str, Any]): A dictionary mapping each handler's `target_id` to its
+        predicted regression values. 
+
+    Raises:
+        AttributeError: If any handler in the list is missing a `target_id`.
+        ValueError: If any handler's `task` is not 'regression' or if the input `feature_vector` is not 1D or 2D.
+    """
+    # check batch dimension
+    is_single_sample = feature_vector.ndim == 1
+    
+    # Reshape a 1D vector to a 2D batch of one for uniform processing.
+    if is_single_sample:
+        feature_vector = feature_vector.reshape(1, -1)
+    
+    # Validate that the input is a 2D tensor.
+    if feature_vector.ndim != 2:
+        raise ValueError("Input feature_vector must be a 1D or 2D array/tensor.")
+    
+    results: dict[str,Any] = dict()
+    for handler in handlers:
+        # validation
+        if handler.target_id is None:
+            raise AttributeError("All inference handlers must have a 'target_id' attribute.")
+        if handler.task != "regression":
+            raise ValueError(
+                f"Invalid task type: The handler for target_id '{handler.target_id}' "
+                f"is for '{handler.task}', but only 'regression' tasks are supported."
+            )
+        # inference
+        if output == "numpy":
+            result = handler.predict_batch_numpy(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
+        else: # torch
+            result = handler.predict_batch(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
+        
+        # Unpack single results and update result dictionary
+        # If the original input was 1D, extract the single prediction from the array.
+        if is_single_sample:
+            results[handler.target_id] = result[0]
+        else:
+            results[handler.target_id] = result
+
+    return results
+
+
+def multi_inference_classification(
+    handlers: list[PyTorchInferenceHandler], 
+    feature_vector: Union[np.ndarray, torch.Tensor], 
+    output: Literal["numpy","torch"]="numpy"
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    Performs classification inference on a single sample or a batch.
+
+    This function iterates through a list of PyTorchInferenceHandler objects,
+    each configured for a different classification target. It returns two
+    dictionaries: one for the predicted labels and one for the probabilities.
+
+    The function adapts its behavior based on the input dimensions:
+    - 1D input: The dictionaries map target ID to a single label and a single probability array.
+    - 2D input: The dictionaries map target ID to an array of labels and an array of probability arrays.
+
+    Args:
+        handlers (list[PyTorchInferenceHandler]): A list of initialized inference handlers. Each must have a unique `target_id` and be configured
+            with `task="classification"`.
+        feature_vector (Union[np.ndarray, torch.Tensor]): An input sample (1D)
+            or a batch of samples (2D) for prediction.
+        output (Literal["numpy", "torch"], optional): The desired format for the
+            output predictions.
+
+    Returns:
+        (tuple[dict[str, Any], dict[str, Any]]): A tuple containing two dictionaries:
+        1.  A dictionary mapping `target_id` to the predicted label(s).
+        2.  A dictionary mapping `target_id` to the prediction probabilities.
+
+    Raises:
+        AttributeError: If any handler in the list is missing a `target_id`.
+        ValueError: If any handler's `task` is not 'classification' or if the input `feature_vector` is not 1D or 2D.
+    """
+    # Store if the original input was a single sample
+    is_single_sample = feature_vector.ndim == 1
+    
+    # Reshape a 1D vector to a 2D batch of one for uniform processing
+    if is_single_sample:
+        feature_vector = feature_vector.reshape(1, -1)
+    
+    if feature_vector.ndim != 2:
+        raise ValueError("Input feature_vector must be a 1D or 2D array/tensor.")
+
+    # Initialize two dictionaries for results
+    labels_results: dict[str, Any] = dict()
+    probs_results: dict[str, Any] = dict()
+
+    for handler in handlers:
+        # Validation
+        if handler.target_id is None:
+            raise AttributeError("All inference handlers must have a 'target_id' attribute.")
+        if handler.task != "classification":
+            raise ValueError(
+                f"Invalid task type: The handler for target_id '{handler.target_id}' "
+                f"is for '{handler.task}', but this function only supports 'classification'."
+            )
+            
+        # Always use the batch method to get both labels and probabilities
+        if output == "numpy":
+            result = handler.predict_batch_numpy(feature_vector)
+        else: # torch
+            result = handler.predict_batch(feature_vector)
+        
+        labels = result[PyTorchInferenceKeys.LABELS]
+        probabilities = result[PyTorchInferenceKeys.PROBABILITIES]
+        
+        # If the original input was 1D, unpack the single result from the batch array
+        if is_single_sample:
+            labels_results[handler.target_id] = labels[0]
+            probs_results[handler.target_id] = probabilities[0]
+        else:
+            labels_results[handler.target_id] = labels
+            probs_results[handler.target_id] = probabilities
+            
+    return labels_results, probs_results
+
 
 def info():
     _script_info(__all__)
