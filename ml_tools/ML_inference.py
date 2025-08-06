@@ -190,18 +190,27 @@ def multi_inference_regression(handlers: list[PyTorchInferenceHandler],
                 f"Invalid task type: The handler for target_id '{handler.target_id}' "
                 f"is for '{handler.task}', but only 'regression' tasks are supported."
             )
+            
         # inference
         if output == "numpy":
-            result = handler.predict_batch_numpy(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
-        else: # torch
-            result = handler.predict_batch(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
-        
-        # Unpack single results and update result dictionary
-        # If the original input was 1D, extract the single prediction from the array.
-        if is_single_sample:
-            results[handler.target_id] = result[0]
-        else:
-            results[handler.target_id] = result
+            # This path returns NumPy arrays or standard Python scalars
+            numpy_result = handler.predict_batch_numpy(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
+            if is_single_sample:
+                # For a single sample, convert the 1-element array to a Python scalar
+                results[handler.target_id] = numpy_result.item()
+            else:
+                # For a batch, return the full NumPy array of predictions
+                results[handler.target_id] = numpy_result
+
+        else:  # output == "torch"
+            # This path returns PyTorch tensors on the model's device
+            torch_result = handler.predict_batch(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
+            if is_single_sample:
+                # For a single sample, return the 0-dim tensor
+                results[handler.target_id] = torch_result[0]
+            else:
+                # For a batch, return the full tensor of predictions
+                results[handler.target_id] = torch_result
 
     return results
 
@@ -263,18 +272,26 @@ def multi_inference_classification(
                 f"is for '{handler.task}', but this function only supports 'classification'."
             )
             
-        # Always use the batch method to get both labels and probabilities
+        # Inference
         if output == "numpy":
+            # predict_batch_numpy returns a dict of NumPy arrays
             result = handler.predict_batch_numpy(feature_vector)
         else: # torch
+            # predict_batch returns a dict of Torch tensors
             result = handler.predict_batch(feature_vector)
         
         labels = result[PyTorchInferenceKeys.LABELS]
         probabilities = result[PyTorchInferenceKeys.PROBABILITIES]
         
-        # If the original input was 1D, unpack the single result from the batch array
         if is_single_sample:
-            labels_results[handler.target_id] = labels[0]
+            # For "numpy", convert the single label to a Python int scalar.
+            # For "torch", get the 0-dim tensor label.
+            if output == "numpy":
+                labels_results[handler.target_id] = labels.item()
+            else: # torch
+                labels_results[handler.target_id] = labels[0]
+            
+            # The probabilities are an array/tensor of values
             probs_results[handler.target_id] = probabilities[0]
         else:
             labels_results[handler.target_id] = labels
