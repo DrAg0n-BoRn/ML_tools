@@ -1,66 +1,27 @@
 import torch
 from torch.utils.data import Dataset, Subset
-from torch import nn
 import pandas
 import numpy
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from typing import Literal, Union, Tuple, List, Optional
-from imblearn.combine import SMOTETomek
 from abc import ABC, abstractmethod
 from PIL import Image, ImageOps
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from pathlib import Path
-from .path_manager import make_fullpath
+from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .custom_logger import save_list_strings
+from .ML_scaler import PytorchScaler
 
-
-# --- public-facing API ---
 __all__ = [
     "DatasetMaker",
-    "SimpleDatasetMaker",
     "VisionDatasetMaker",
     "SequenceMaker",
     "ResizeAspectFill",
 ]
-
-
-# --- Custom Vision Transform Class ---
-class ResizeAspectFill:
-    """
-    Custom transformation to make an image square by padding it to match the
-    longest side, preserving the aspect ratio. The image is finally centered.
-
-    Args:
-        pad_color (Union[str, int]): Color to use for the padding.
-                                     Defaults to "black".
-    """
-    def __init__(self, pad_color: Union[str, int] = "black") -> None:
-        self.pad_color = pad_color
-
-    def __call__(self, image: Image.Image) -> Image.Image:
-        if not isinstance(image, Image.Image):
-            raise TypeError(f"Expected PIL.Image.Image, got {type(image).__name__}")
-
-        w, h = image.size
-        if w == h:
-            return image
-
-        # Determine padding to center the image
-        if w > h:
-            top_padding = (w - h) // 2
-            bottom_padding = w - h - top_padding
-            padding = (0, top_padding, 0, bottom_padding)
-        else: # h > w
-            left_padding = (h - w) // 2
-            right_padding = h - w - left_padding
-            padding = (left_padding, 0, right_padding, 0)
-
-        return ImageOps.expand(image, padding, fill=self.pad_color)
 
 
 # --- Internal Helper Class ---
@@ -71,8 +32,13 @@ class _PytorchDataset(Dataset):
     """
     def __init__(self, features: Union[numpy.ndarray, pandas.DataFrame], 
                  labels: Union[numpy.ndarray, pandas.Series],
-                 features_dtype: torch.dtype = torch.float32, 
-                 labels_dtype: torch.dtype = torch.int64):
+                 labels_dtype: torch.dtype,
+                 features_dtype: torch.dtype = torch.float32):
+        """
+        integer labels for classification.
+        
+        float labels for regression.
+        """
         
         if isinstance(features, numpy.ndarray):
             self.features = torch.tensor(features, dtype=features_dtype)
@@ -91,337 +57,41 @@ class _PytorchDataset(Dataset):
         return self.features[index], self.labels[index]
 
 
-# --- Private Base Class ---
-class _BaseMaker(ABC):
-    """
-    Abstract Base Class for all dataset makers.
-    Ensures a consistent API across the library.
-    """
-    def __init__(self):
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
-
-    @abstractmethod
-    def get_datasets(self) -> Tuple[Dataset, ...]:
-        """
-        The primary method to retrieve the final, processed PyTorch datasets.
-        Must be implemented by all subclasses.
-        """
-        pass
-
-
-# --- Refactored DatasetMaker ---
-class DatasetMaker(_BaseMaker):
-    """
-    Creates processed PyTorch datasets from a Pandas DataFrame using a fluent, step-by-step interface.
-    
-    Recommended pipeline:
-    
-    - Full Control (step-by-step):
-        1. Process categorical features `.process_categoricals()`
-        2. Split train-test datasets `.split_data()`
-        3. Normalize continuous features `.normalize_continuous()`; `.denormalize()` becomes available.
-        4. [Optional][Classification only] Balance classes `.balance_data()`
-        5. Get PyTorch datasets: `train, test = .get_datasets()`
-        6. [Optional] Inspect the processed data as DataFrames `X_train, X_test, y_train, y_test = .inspect_dataframes()`
-
-    - Automated (single call):
-    ```python
-    maker = DatasetMaker(df, label_col='target')
-    maker.auto_process() # uses simplified arguments
-    train_ds, test_ds = maker.get_datasets()
-    ```
-    """
-    def __init__(self, pandas_df: pandas.DataFrame, label_col: str, kind: Literal["regression", "classification"]):
-        super().__init__()
-        if not isinstance(pandas_df, pandas.DataFrame):
-            raise TypeError("Input must be a pandas.DataFrame.")
-        if label_col not in pandas_df.columns:
-            raise ValueError(f"Label column '{label_col}' not found in DataFrame.")
-        
-        self.kind = kind
-        self.labels = pandas_df[label_col]
-        self.features = pandas_df.drop(columns=label_col)
-        self.labels_map = None
-        self.scaler = None
-        
-        self._feature_names = self.features.columns.tolist()
-        self._target_name = str(self.labels.name)
-
-        self._is_split = False
-        self._is_balanced = False
-        self._is_normalized = False
-        self._is_categoricals_processed = False
-        
-        self.features_train = None
-        self.features_test = None
-        self.labels_train = None
-        self.labels_test = None
-        
-        self.continuous_columns = None 
-
-    def process_categoricals(self, method: Literal["one-hot", "embed"] = "one-hot", 
-                             cat_features: Union[list[str], None] = None, **kwargs) -> 'DatasetMaker':
-        """
-        Encodes categorical features using the specified method.
-
-        Args:
-            method (str, optional): 'one-hot' (default) or 'embed'.
-            cat_features (list, optional): A list of categorical column names. 
-                If None, they will be inferred from the DataFrame's dtypes.
-            **kwargs: Additional keyword arguments to pass to the underlying
-                pandas.get_dummies() or torch.nn.Embedding() functions.
-                For 'one-hot' encoding, it is often recommended to add
-                `drop_first=True` to help reduce multicollinearity.
-        """
-        if self._is_split:
-            raise RuntimeError("Categoricals must be processed before splitting data to avoid data leakage.")
-        
-        if cat_features is None:
-            cat_columns = self.features.select_dtypes(include=['object', 'category', 'string']).columns.tolist()
-        else:
-            cat_columns = cat_features
-
-        if not cat_columns:
-            _LOGGER.info("No categorical features to process.")
-            self._is_categoricals_processed = True
-            return self
-
-        continuous_df = self.features.drop(columns=cat_columns)
-        # store continuous column names
-        self.continuous_columns = continuous_df.columns.tolist()
-        
-        categorical_df = self.features[cat_columns].copy()
-
-        if method == "one-hot":
-            processed_cats = pandas.get_dummies(categorical_df, dtype=numpy.int32, **kwargs)
-        elif method == "embed":
-            processed_cats = self._embed_categorical(categorical_df, **kwargs)
-        else:
-            raise ValueError("`method` must be 'one-hot' or 'embed'.")
-
-        self.features = pandas.concat([continuous_df, processed_cats], axis=1)
-        self._is_categoricals_processed = True
-        _LOGGER.info("Categorical features processed.")
-        return self
-
-    def normalize_continuous(self, method: Literal["standard", "minmax"] = "standard") -> 'DatasetMaker':
-        """Normalizes all numeric features and saves the scaler."""
-        if not self._is_split:
-            raise RuntimeError("Continuous features must be normalized AFTER splitting data. Call .split_data() first.")
-        if self._is_normalized:
-            _LOGGER.warning("⚠️ Data has already been normalized.")
-            return self
-
-        # Use continuous features columns
-        self.scaler_columns = self.continuous_columns
-        if not self.scaler_columns:
-            _LOGGER.info("No continuous features to normalize.")
-            self._is_normalized = True
-            return self
-
-        if method == "standard":
-            self.scaler = StandardScaler()
-        elif method == "minmax":
-            self.scaler = MinMaxScaler()
-        else:
-            raise ValueError("Normalization `method` must be 'standard' or 'minmax'.")
-
-        # Fit on training data only, then transform both
-        self.features_train[self.scaler_columns] = self.scaler.fit_transform(self.features_train[self.scaler_columns]) # type: ignore
-        self.features_test[self.scaler_columns] = self.scaler.transform(self.features_test[self.scaler_columns]) # type: ignore
-        
-        self._is_normalized = True
-        _LOGGER.info(f"Continuous features normalized using {self.scaler.__class__.__name__}. Scaler stored in `self.scaler`.")
-        return self
-
-    def split_data(self, test_size: float = 0.2, stratify: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
-        """Splits the data into training and testing sets."""
-        if self._is_split:
-            _LOGGER.warning("⚠️ Data has already been split.")
-            return self
-
-        if self.labels.dtype == 'object' or self.labels.dtype.name == 'category':
-            labels_numeric = self.labels.astype("category")
-            self.labels_map = {code: val for code, val in enumerate(labels_numeric.cat.categories)}
-            self.labels = pandas.Series(labels_numeric.cat.codes, index=self.labels.index)
-            _LOGGER.info("Labels have been encoded. Mapping stored in `self.labels_map`.")
-
-        stratify_array = self.labels if stratify else None
-        
-        self.features_train, self.features_test, self.labels_train, self.labels_test = train_test_split(
-            self.features, self.labels, test_size=test_size, random_state=random_state, stratify=stratify_array
-        )
-        
-        self._is_split = True
-        _LOGGER.info(f"Data split into training ({len(self.features_train)} samples) and testing ({len(self.features_test)} samples).")
-        return self
-
-    def balance_data(self, resampler=None, **kwargs) -> 'DatasetMaker':
-        """
-        Only useful for classification tasks.
-        
-        Balances the training data using a specified resampler. 
-        
-        Defaults to `SMOTETomek`.
-        """
-        if not self._is_split:
-            raise RuntimeError("❌ Cannot balance data before it has been split. Call .split_data() first.")
-        if self._is_balanced:
-            _LOGGER.warning("⚠️ Training data has already been balanced.")
-            return self
-
-        if resampler is None:
-            resampler = SMOTETomek(**kwargs)
-
-        _LOGGER.info(f"Balancing training data with {resampler.__class__.__name__}...")
-        self.features_train, self.labels_train = resampler.fit_resample(self.features_train, self.labels_train) # type: ignore
-        
-        self._is_balanced = True
-        _LOGGER.info(f"Balancing complete. New training set size: {len(self.features_train)} samples.")
-        return self
-
-    def auto_process(self, test_size: float = 0.2, cat_method: Literal["one-hot", "embed"] = "one-hot", normalize_method: Literal["standard", "minmax"] = "standard", 
-                balance: bool = False, random_state: Optional[int] = None) -> 'DatasetMaker':
-        """Runs a standard, fully automated preprocessing pipeline."""
-        _LOGGER.info("--- 🤖 Running Automated Processing Pipeline ---")
-        self.process_categoricals(method=cat_method)
-        self.split_data(test_size=test_size, stratify=True, random_state=random_state)
-        self.normalize_continuous(method=normalize_method)
-        if balance:
-            self.balance_data()
-        _LOGGER.info("--- 🤖 Automated Processing Complete ---")
-        return self
-        
-    def denormalize(self, data: Union[torch.Tensor, numpy.ndarray, pandas.DataFrame]) -> Union[numpy.ndarray, pandas.DataFrame]:
-        """
-        Applies inverse transformation to denormalize data, preserving DataFrame
-        structure if provided.
-
-        Args:
-            data: The normalized data to be transformed back to its original scale.
-                Can be a PyTorch Tensor, NumPy array, or Pandas DataFrame.
-                If a DataFrame, it must contain the columns that were originally scaled.
-
-        Returns:
-            The denormalized data. Returns a Pandas DataFrame if the input was a
-            DataFrame, otherwise returns a NumPy array.
-        """
-        if self.scaler is None:
-            raise RuntimeError("Data was not normalized. Cannot denormalize.")
-
-        if isinstance(data, pandas.DataFrame):
-            # If input is a DataFrame, denormalize in place and return a copy
-            if not all(col in data.columns for col in self.scaler_columns): # type: ignore
-                raise ValueError(f"Input DataFrame is missing one or more required columns for denormalization. Required: {self.scaler_columns}")
-            
-            output_df = data.copy()
-            output_df[self.scaler_columns] = self.scaler.inverse_transform(data[self.scaler_columns]) # type: ignore
-            return output_df
-        
-        # Handle tensor or numpy array input
-        if isinstance(data, torch.Tensor):
-            data_np = data.cpu().numpy()
-        else: # It's already a numpy array
-            data_np = data
-
-        if data_np.ndim == 1:
-            data_np = data_np.reshape(-1, 1)
-
-        if data_np.shape[1] != len(self.scaler_columns): # type: ignore
-            raise ValueError(f"Input array has {data_np.shape[1]} columns, but scaler was fitted on {len(self.scaler_columns)} columns.") # type: ignore
-
-        return self.scaler.inverse_transform(data_np)
-
-    def get_datasets(self) -> Tuple[Dataset, Dataset]:
-        """Primary method to get the final PyTorch Datasets."""
-        if not self._is_split:
-            raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
-        
-        label_dtype = torch.float32 if self.kind == "regression" else torch.int64
-        
-        self._train_dataset = _PytorchDataset(self.features_train, self.labels_train, labels_dtype=label_dtype) # type: ignore
-        self._test_dataset = _PytorchDataset(self.features_test, self.labels_test, labels_dtype=label_dtype)  # type: ignore
-        
-        return self._train_dataset, self._test_dataset
-    
-    def inspect_dataframes(self) -> Tuple[pandas.DataFrame, pandas.DataFrame, pandas.Series, pandas.Series]:
-        """Utility method to inspect the processed data as Pandas DataFrames."""
-        if not self._is_split:
-             raise RuntimeError("Data has not been split yet. Call .split_data() or .process() first.")
-        return self.features_train, self.features_test, self.labels_train, self.labels_test # type: ignore
-    
-    @property
-    def feature_names(self) -> list[str]:
-        """Returns the list of feature column names."""
-        return self._feature_names
-
-    @property
-    def target_name(self) -> str:
-        """Returns the name of the target column."""
-        return self._target_name
-    
-    def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
-        """Saves a list of feature names as a text file"""
-        save_list_strings(list_strings=self._feature_names,
-                          directory=directory,
-                          filename="feature_names",
-                          verbose=verbose)
-
-    @staticmethod
-    def _embed_categorical(cat_df: pandas.DataFrame, random_state: Optional[int] = None, **kwargs) -> pandas.DataFrame:
-        """Internal helper to perform embedding on categorical features."""
-        embedded_tensors = []
-        new_columns = []
-        for col in cat_df.columns:
-            cat_series = cat_df[col].astype("category")
-            num_categories = len(cat_series.cat.categories)
-            embedding_dim = min(50, (num_categories + 1) // 2)
-            
-            if random_state:
-                torch.manual_seed(random_state)
-            
-            embedder = nn.Embedding(num_embeddings=num_categories, embedding_dim=embedding_dim, **kwargs)
-            
-            with torch.no_grad():
-                codes = torch.LongTensor(cat_series.cat.codes.values)
-                embedded_tensors.append(embedder(codes))
-            
-            new_columns.extend([f"{col}_{i+1}" for i in range(embedding_dim)])
-        
-        with torch.no_grad():
-            full_tensor = torch.cat(embedded_tensors, dim=1)
-        return pandas.DataFrame(full_tensor.numpy(), columns=new_columns, index=cat_df.index)
-
-
 # Streamlined DatasetMaker version
-class SimpleDatasetMaker:
+class DatasetMaker:
     """
     A simplified dataset maker for pre-processed, numerical pandas DataFrames.
 
     This class takes a DataFrame, automatically splits it into training and
     testing sets, and converts them into PyTorch Datasets. It assumes the
-    target variable is the last column.
-
-    Args:
-        pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
-        kind (Literal["regression", "classification"]): The type of ML task. This determines the data type of the labels.
-        test_size (float): The proportion of the dataset to allocate to the
-                           test split.
-        random_state (int): The seed for the random number generator for
-                            reproducibility.
+    target variable is the last column. It can also create, apply, and
+    save a PytorchScaler for standardizing continuous features.
+    
+    Attributes:
+        `scaler` -> PytorchScaler | None
+        `train_dataset` -> PyTorch Dataset
+        `test_dataset`  -> PyTorch Dataset
+        `feature_names` -> list[str]
+        `target_name`   -> str
+        `id` -> str | None
+        
+    The ID can be manually set to any string if needed, it is `None` by default.
     """
-    def __init__(self, pandas_df: pandas.DataFrame, kind: Literal["regression", "classification"], test_size: float = 0.2, random_state: int = 42):
+    def __init__(self, 
+                 pandas_df: pandas.DataFrame, 
+                 kind: Literal["regression", "classification"], 
+                 test_size: float = 0.2, 
+                 random_state: int = 42,
+                 scaler: Optional[PytorchScaler] = None,
+                 continuous_feature_columns: Optional[Union[List[int], List[str]]] = None):
         """
-        Attributes:
-            `train_dataset` -> PyTorch Dataset
-            `test_dataset`  -> PyTorch Dataset
-            `feature_names` -> list[str]
-            `target_name`   -> str
-            `id` -> str | None
-            
-        The ID can be manually set to any string if needed, it is `None` by default.
+        Args:
+            pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
+            kind (Literal["regression", "classification"]): The type of ML task. This determines the data type of the labels.
+            test_size (float): The proportion of the dataset to allocate to the test split.
+            random_state (int): The seed for the random number generator for reproducibility.
+            scaler (PytorchScaler | None): A pre-fitted PytorchScaler instance.
+            continuous_feature_columns (List[int] | List[str] | None): Column indices or names of continuous features to scale. If provided creates a new PytorchScaler.
         """
         # Validation
         if not isinstance(pandas_df, pandas.DataFrame):
@@ -438,6 +108,8 @@ class SimpleDatasetMaker:
         
         #set id
         self._id: Optional[str] = None
+        # set scaler
+        self.scaler = scaler
 
         # 2. Split the data
         X_train, X_test, y_train, y_test = train_test_split(
@@ -448,12 +120,47 @@ class SimpleDatasetMaker:
         self._X_test_shape = X_test.shape
         self._y_train_shape = y_train.shape
         self._y_test_shape = y_test.shape
-
-        # 3. Convert to PyTorch Datasets with the correct label dtype
-        label_dtype = torch.float32 if kind == "regression" else torch.int64
         
-        self._train_ds = _PytorchDataset(X_train.values, y_train.values, labels_dtype=label_dtype)
-        self._test_ds = _PytorchDataset(X_test.values, y_test.values, labels_dtype=label_dtype)
+        # 3. Handle Column to Index Conversion
+        continuous_feature_indices: Optional[List[int]] = None
+        if continuous_feature_columns:
+            if all(isinstance(c, str) for c in continuous_feature_columns):
+                name_to_idx = {name: i for i, name in enumerate(self._feature_names)}
+                try:
+                    continuous_feature_indices = [name_to_idx[name] for name in continuous_feature_columns] # type: ignore
+                except KeyError as e:
+                    raise ValueError(f"Feature column '{e.args[0]}' not found in DataFrame.")
+            elif all(isinstance(c, int) for c in continuous_feature_columns):
+                continuous_feature_indices = continuous_feature_columns # type: ignore
+            else:
+                raise TypeError("`continuous_feature_columns` must be a list of all strings or all integers.")
+        
+        # 4. Handle Scaling
+        X_train_values = X_train.values
+        X_test_values = X_test.values
+        
+        # If no scaler is provided, fit a new one from the training data
+        if self.scaler is None:
+            if continuous_feature_indices:
+                _LOGGER.info("Feature indices provided. Fitting a new PytorchScaler on training data.")
+                # A temporary dataset is needed for the PytorchScaler.fit method
+                temp_label_dtype = torch.float32 if kind == "regression" else torch.int64
+                temp_train_ds = _PytorchDataset(X_train_values, y_train.values, labels_dtype=temp_label_dtype)
+                self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices)
+        
+        # If a scaler exists (either passed in or just fitted), apply it
+        if self.scaler and self.scaler.mean_ is not None:
+            _LOGGER.info("Applying scaler transformation to train and test feature sets.")
+            X_train_tensor = self.scaler.transform(torch.tensor(X_train_values, dtype=torch.float32))
+            X_test_tensor = self.scaler.transform(torch.tensor(X_test_values, dtype=torch.float32))
+            # Convert back to numpy for the _PytorchDataset class
+            X_train_values = X_train_tensor.numpy()
+            X_test_values = X_test_tensor.numpy()
+
+        # 5. Convert to final PyTorch Datasets
+        label_dtype = torch.float32 if kind == "regression" else torch.int64
+        self._train_ds = _PytorchDataset(X_train_values, y_train.values, labels_dtype=label_dtype)
+        self._test_ds = _PytorchDataset(X_test_values, y_test.values, labels_dtype=label_dtype)
 
     @property
     def train_dataset(self) -> Dataset:
@@ -502,6 +209,47 @@ class SimpleDatasetMaker:
                           directory=directory,
                           filename="feature_names",
                           verbose=verbose)
+        
+    def save_scaler(self, save_dir: Union[str, Path]):
+        """
+        Saves the fitted PytorchScaler's state to a .pth file.
+
+        The filename is automatically generated based on the target name.
+        
+        Args:
+            save_dir (str | Path): The directory where the scaler will be saved.
+        """
+        if not self.scaler:
+            _LOGGER.error("❌ No scaler was fitted or provided.")
+            return
+
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        # Sanitize the target name for use in a filename
+        sanitized_target = sanitize_filename(self.target_name)
+        filename = f"scaler_{sanitized_target}.pth"
+        
+        filepath = save_path / filename
+        self.scaler.save(filepath)
+
+
+# --- Private Base Class ---
+class _BaseMaker(ABC):
+    """
+    Abstract Base Class for extra dataset makers.
+    """
+    def __init__(self):
+        self._train_dataset = None
+        self._test_dataset = None
+        self._val_dataset = None
+
+    @abstractmethod
+    def get_datasets(self) -> Tuple[Dataset, ...]:
+        """
+        The primary method to retrieve the final, processed PyTorch datasets.
+        Must be implemented by all subclasses.
+        """
+        pass
 
 
 # --- VisionDatasetMaker ---
@@ -654,6 +402,7 @@ class SequenceMaker(_BaseMaker):
     1. `.split_data()`: Separate time series into training and testing portions.
     2. `.normalize_data()`: Normalize the data. The scaler will be fitted on the training portion.
     3. `.generate_windows()`: Create the windowed sequences from the split and normalized data.
+    4. `.get_datasets()`: Return Pytorch train and test datasets.
     """
     def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_length: int):
         super().__init__()
@@ -679,33 +428,41 @@ class SequenceMaker(_BaseMaker):
         self._is_normalized = False
         self._are_windows_generated = False
 
-    def normalize_data(self, method: Literal["standard", "minmax"] = "minmax") -> 'SequenceMaker':
+    def normalize_data(self) -> 'SequenceMaker':
         """
-        Normalizes the sequence data. Must be called AFTER splitting to prevent data leakage from the test set.
+        Normalizes the sequence data using PytorchScaler. Must be called AFTER 
+        splitting to prevent data leakage from the test set.
         """
         if not self._is_split:
             raise RuntimeError("Data must be split BEFORE normalizing. Call .split_data() first.")
-        
+
         if self.scaler:
             _LOGGER.warning("⚠️ Data has already been normalized.")
             return self
-            
-        if method == "standard":
-            self.scaler = StandardScaler()
-        elif method == "minmax":
-            self.scaler = MinMaxScaler(feature_range=(-1, 1))
-        else:
-            raise ValueError("Normalization `method` must be 'standard' or 'minmax'.")
 
-        # Fit scaler ONLY on the training data
-        self.scaler.fit(self.train_sequence.reshape(-1, 1)) # type: ignore
-        
-        # Transform both train and test data using the fitted scaler
-        self.train_sequence = self.scaler.transform(self.train_sequence.reshape(-1, 1)).flatten() # type: ignore
-        self.test_sequence = self.scaler.transform(self.test_sequence.reshape(-1, 1)).flatten() # type: ignore
-        
+        # 1. PytorchScaler requires a Dataset to fit. Create a temporary one.
+        # The scaler expects 2D data [n_samples, n_features].
+        train_features = self.train_sequence.reshape(-1, 1) # type: ignore
+
+        # _PytorchDataset needs labels, so we create dummy ones.
+        dummy_labels = numpy.zeros(len(train_features))
+        temp_train_ds = _PytorchDataset(train_features, dummy_labels, labels_dtype=torch.float32)
+
+        # 2. Fit the PytorchScaler on the temporary training dataset.
+        # The sequence is a single feature, so its index is [0].
+        _LOGGER.info("Fitting PytorchScaler on the training data...")
+        self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices=[0])
+
+        # 3. Transform sequences using the fitted scaler.
+        # The transform method requires a tensor, so we convert, transform, and convert back.
+        train_tensor = torch.tensor(self.train_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
+        test_tensor = torch.tensor(self.test_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
+
+        self.train_sequence = self.scaler.transform(train_tensor).numpy().flatten()
+        self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
+
         self._is_normalized = True
-        _LOGGER.info(f"Sequence data normalized using {self.scaler.__class__.__name__}. Scaler was fit on the training set only.")
+        _LOGGER.info("✅ Sequence data normalized using PytorchScaler.")
         return self
 
     def split_data(self, test_size: float = 0.2) -> 'SequenceMaker':
@@ -741,7 +498,7 @@ class SequenceMaker(_BaseMaker):
         _LOGGER.info("Feature and label windows generated for train and test sets.")
         return self
 
-    def _create_windowed_dataset(self, data: numpy.ndarray, use_sequence_labels: bool) -> _PytorchDataset:
+    def _create_windowed_dataset(self, data: numpy.ndarray, use_sequence_labels: bool) -> Dataset:
         """Efficiently creates windowed features and labels using numpy."""
         if len(data) <= self.sequence_length:
             raise ValueError("Data length must be greater than the sequence_length to create at least one window.")
@@ -768,18 +525,25 @@ class SequenceMaker(_BaseMaker):
             strided_y = numpy.lib.stride_tricks.as_strided(y_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
             
             return _PytorchDataset(strided_x, strided_y, labels_dtype=torch.float32)
-            
+
     def denormalize(self, data: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
-        """Applies inverse transformation using the stored scaler."""
+        """Applies inverse transformation using the stored PytorchScaler."""
         if self.scaler is None:
             raise RuntimeError("Data was not normalized. Cannot denormalize.")
-        
-        if isinstance(data, torch.Tensor):
-            data_np = data.cpu().detach().numpy()
+
+        # Ensure data is a torch.Tensor
+        if isinstance(data, numpy.ndarray):
+            tensor_data = torch.tensor(data, dtype=torch.float32)
         else:
-            data_np = data
-            
-        return self.scaler.inverse_transform(data_np.reshape(-1, 1)).flatten()
+            tensor_data = data
+
+        # Reshape for the scaler [n_samples, n_features]
+        if tensor_data.ndim == 1:
+            tensor_data = tensor_data.view(-1, 1)
+
+        # Apply inverse transform and convert back to a flat numpy array
+        original_scale_tensor = self.scaler.inverse_transform(tensor_data)
+        return original_scale_tensor.cpu().numpy().flatten()
 
     def plot(self, predictions: Optional[numpy.ndarray] = None):
         """Plots the original training and testing data, with optional predictions."""
@@ -802,11 +566,45 @@ class SequenceMaker(_BaseMaker):
         plt.legend()
         plt.show()
 
-    def get_datasets(self) -> Tuple[_PytorchDataset, _PytorchDataset]:
+    def get_datasets(self) -> Tuple[Dataset, Dataset]:
         """Returns the final train and test datasets."""
         if not self._are_windows_generated:
             raise RuntimeError("Windows have not been generated. Call .generate_windows() first.")
         return self._train_dataset, self._test_dataset
+
+
+# --- Custom Vision Transform Class ---
+class ResizeAspectFill:
+    """
+    Custom transformation to make an image square by padding it to match the
+    longest side, preserving the aspect ratio. The image is finally centered.
+
+    Args:
+        pad_color (Union[str, int]): Color to use for the padding.
+                                     Defaults to "black".
+    """
+    def __init__(self, pad_color: Union[str, int] = "black") -> None:
+        self.pad_color = pad_color
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"Expected PIL.Image.Image, got {type(image).__name__}")
+
+        w, h = image.size
+        if w == h:
+            return image
+
+        # Determine padding to center the image
+        if w > h:
+            top_padding = (w - h) // 2
+            bottom_padding = w - h - top_padding
+            padding = (0, top_padding, 0, bottom_padding)
+        else: # h > w
+            left_padding = (h - w) // 2
+            right_padding = h - w - left_padding
+            padding = (left_padding, 0, right_padding, 0)
+
+        return ImageOps.expand(image, padding, fill=self.pad_color)
 
 
 def info():

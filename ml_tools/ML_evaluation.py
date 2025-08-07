@@ -20,7 +20,7 @@ import shap
 from pathlib import Path
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
-from typing import Union, Optional
+from typing import Union, Optional, List
 from ._script_info import _script_info
 
 
@@ -28,7 +28,8 @@ __all__ = [
     "plot_losses", 
     "classification_metrics", 
     "regression_metrics",
-    "shap_summary_plot"
+    "shap_summary_plot",
+    "plot_attention_importance"
 ]
 
 
@@ -249,7 +250,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
 
 
 def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], instances_to_explain: Union[torch.Tensor,np.ndarray], 
-                      feature_names: Optional[list[str]]=None, save_dir: Optional[Union[str, Path]] = None):
+                      feature_names: Optional[list[str]], save_dir: Union[str, Path]):
     """
     Calculates SHAP values and saves summary plots and data.
 
@@ -258,7 +259,7 @@ def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], in
         background_data (torch.Tensor): A sample of data for the explainer background.
         instances_to_explain (torch.Tensor): The specific data instances to explain.
         feature_names (list of str | None): Names of the features for plot labeling.
-        save_dir (str | Path | None): Directory to save SHAP artifacts. If None, dot plot is shown.
+        save_dir (str | Path): Directory to save SHAP artifacts.
     """
     # everything to numpy
     if isinstance(background_data, np.ndarray):
@@ -301,55 +302,119 @@ def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], in
     print("Calculating SHAP values with KernelExplainer...")
     shap_values = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
     
-    if save_dir:
-        save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        plt.ioff()
-        
-        # Save Bar Plot
-        bar_path = save_dir_path / "shap_bar_plot.svg"
-        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
-        ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", labelpad=10)
-        plt.title("SHAP Feature Importance")
-        plt.tight_layout()
-        plt.savefig(bar_path)
-        _LOGGER.info(f"📊 SHAP bar plot saved as '{bar_path.name}'")
-        plt.close()
+    save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+    plt.ioff()
+    
+    # Save Bar Plot
+    bar_path = save_dir_path / "shap_bar_plot.svg"
+    shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
+    ax = plt.gca()
+    ax.set_xlabel("SHAP Value Impact", labelpad=10)
+    plt.title("SHAP Feature Importance")
+    plt.tight_layout()
+    plt.savefig(bar_path)
+    _LOGGER.info(f"📊 SHAP bar plot saved as '{bar_path.name}'")
+    plt.close()
 
-        # Save Dot Plot
-        dot_path = save_dir_path / "shap_dot_plot.svg"
-        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
-        ax = plt.gca()
-        ax.set_xlabel("SHAP Value Impact", labelpad=10)
-        cb = plt.gcf().axes[-1]
-        cb.set_ylabel("", size=1)
-        plt.title("SHAP Feature Importance")
-        plt.tight_layout()
-        plt.savefig(dot_path)
-        _LOGGER.info(f"📊 SHAP dot plot saved as '{dot_path.name}'")
-        plt.close()
+    # Save Dot Plot
+    dot_path = save_dir_path / "shap_dot_plot.svg"
+    shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
+    ax = plt.gca()
+    ax.set_xlabel("SHAP Value Impact", labelpad=10)
+    cb = plt.gcf().axes[-1]
+    cb.set_ylabel("", size=1)
+    plt.title("SHAP Feature Importance")
+    plt.tight_layout()
+    plt.savefig(dot_path)
+    _LOGGER.info(f"📊 SHAP dot plot saved as '{dot_path.name}'")
+    plt.close()
 
-        # Save Summary Data to CSV
-        summary_path = save_dir_path / "shap_summary.csv"
-        # Ensure the array is 1D before creating the DataFrame
-        mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
+    # Save Summary Data to CSV
+    summary_path = save_dir_path / "shap_summary.csv"
+    # Ensure the array is 1D before creating the DataFrame
+    mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
+    
+    if feature_names is None:
+        feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
         
-        if feature_names is None:
-            feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
-            
-        summary_df = pd.DataFrame({
-            'feature': feature_names,
-            'mean_abs_shap_value': mean_abs_shap
-        }).sort_values('mean_abs_shap_value', ascending=False)
-        
-        summary_df.to_csv(summary_path, index=False)
-        
-        _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
-        plt.ion()
-        
-    else:
-        _LOGGER.info("No save directory provided. Displaying SHAP dot plot.")
-        shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot")
+    summary_df = pd.DataFrame({
+        'feature': feature_names,
+        'mean_abs_shap_value': mean_abs_shap
+    }).sort_values('mean_abs_shap_value', ascending=False)
+    
+    summary_df.to_csv(summary_path, index=False)
+    
+    _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
+    plt.ion()
+
+
+def plot_attention_importance(weights: List[torch.Tensor], feature_names: Optional[List[str]], save_dir: Union[str, Path]):
+    """
+    Aggregates attention weights and plots global feature importance.
+
+    The plot shows the mean attention for each feature as a bar, with the
+    standard deviation represented by error bars.
+
+    Args:
+        weights (List[torch.Tensor]): A list of attention weight tensors from each batch.
+        feature_names (List[str] | None): Names of the features for plot labeling.
+        save_dir (str | Path): Directory to save the plot and summary CSV.
+    """
+    if not weights:
+        _LOGGER.warning("⚠️ Attention weights list is empty. Skipping importance plot.")
+        return
+
+    # --- Step 1: Aggregate data ---
+    # Concatenate the list of tensors into a single large tensor
+    full_weights_tensor = torch.cat(weights, dim=0)
+    
+    # Calculate mean and std dev across the batch dimension (dim=0)
+    mean_weights = full_weights_tensor.mean(dim=0)
+    std_weights = full_weights_tensor.std(dim=0)
+
+    # --- Step 2: Create and save summary DataFrame ---
+    if feature_names is None:
+        feature_names = [f'feature_{i}' for i in range(len(mean_weights))]
+    
+    summary_df = pd.DataFrame({
+        'feature': feature_names,
+        'mean_attention': mean_weights.numpy(),
+        'std_attention': std_weights.numpy()
+    }).sort_values('mean_attention', ascending=False)
+
+    save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+    summary_path = save_dir_path / "attention_summary.csv"
+    summary_df.to_csv(summary_path, index=False)
+    _LOGGER.info(f"📝 Attention summary data saved as '{summary_path.name}'")
+
+    # --- Step 3: Create and save the plot ---
+    plt.figure(figsize=(10, 8), dpi=100)
+    
+    # Sort for plotting
+    plot_df = summary_df.sort_values('mean_attention', ascending=True)
+
+    # Create horizontal bar plot with error bars
+    plt.barh(
+        y=plot_df['feature'],
+        width=plot_df['mean_attention'],
+        xerr=plot_df['std_attention'],
+        align='center',
+        alpha=0.7,
+        ecolor='grey',
+        capsize=3,
+        color='cornflowerblue'
+    )
+    
+    plt.title('Global Feature Importance')
+    plt.xlabel('Average Attention Weight')
+    plt.ylabel('Feature')
+    plt.grid(axis='x', linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    
+    plot_path = save_dir_path / "attention_importance.svg"
+    plt.savefig(plot_path)
+    _LOGGER.info(f"📊 Attention importance plot saved as '{plot_path.name}'")
+    plt.close()
 
 
 def info():

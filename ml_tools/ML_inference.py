@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from typing import Union, Literal, Dict, Any, Optional
 
+from .ML_scaler import PytorchScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
@@ -25,7 +26,8 @@ class PyTorchInferenceHandler:
                  state_dict: Union[str, Path],
                  task: Literal["classification", "regression"],
                  device: str = 'cpu',
-                 target_id: Optional[str]=None):
+                 target_id: Optional[str]=None,
+                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
         """
         Initializes the handler by loading a model's state_dict.
 
@@ -35,12 +37,22 @@ class PyTorchInferenceHandler:
             task (str): The type of task, 'regression' or 'classification'.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             target_id (str | None): Target name as used in the training set.
+            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
         """
         self.model = model
         self.task = task
         self.device = self._validate_device(device)
         self.target_id = target_id
-
+        
+        # Load the scaler if a path is provided
+        if scaler is not None:
+            if isinstance(scaler, (str, Path)):
+                self.scaler = PytorchScaler.load(scaler)
+            else:
+                self.scaler = scaler
+        else:
+            self.scaler = None
+        
         model_p = make_fullpath(state_dict, enforce="file")
 
         try:
@@ -65,12 +77,22 @@ class PyTorchInferenceHandler:
         return torch.device(device_lower)
 
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        """Converts input to a torch.Tensor and moves it to the correct device."""
+        """
+        Converts input to a torch.Tensor, applies scaling if a scaler is
+        present, and moves it to the correct device.
+        """
         if isinstance(features, np.ndarray):
-            features = torch.from_numpy(features).float()
+            features_tensor = torch.from_numpy(features).float()
+        else:
+            # Ensure it's a float tensor for the model
+            features_tensor = features.float()
+        
+        # Apply the scaler transformation if the scaler is available
+        if self.scaler:
+            features_tensor = self.scaler.transform(features_tensor)
         
         # Ensure tensor is on the correct device
-        return features.to(self.device)
+        return features_tensor.to(self.device)
     
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """

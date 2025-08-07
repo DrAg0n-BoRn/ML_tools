@@ -70,6 +70,7 @@ ML_evaluation
 ML_inference
 ML_models
 ML_optimization
+ML_scaler
 ML_trainer
 optimization_tools
 path_manager
@@ -161,6 +162,7 @@ custom_logger
 GUI_tools
 ML_models
 ML_inference
+ML_scaler
 path_manager
 ```
 

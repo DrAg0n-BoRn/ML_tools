@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] 2025-08-07
+
+### Added
+
+- ML_models: 
+    - `AttentionMLP`, A Multilayer Perceptron that incorporates an Attention layer to dynamically weigh input features.
+    - `MultiHeadAttentionMLP`, A Multilayer Perceptron that incorporates a MultiheadAttention layer to process the input features.
+    - `TabularTransformer`,  A Transformer-based model for tabular data tasks.
+- ML_scaler: `PytorchScaler`, Standardizes continuous features in a PyTorch dataset by subtracting the mean and dividing by the standard deviation.
+- ML_evaluation: `plot_attention_importance()`, Aggregates attention weights and plots global feature importance.
+- ML_trainer: `MLTrainer.explain_attention()`, Automates the generation of a feature importance plot based on attention weights.
+
+### Removed
+
+- ML_datasetmaster: Original `DatasetMaker`, deprecated functionality.
+
+### Changed
+
+- ML_evaluation: `shap_summary_plot()`, "save directory" is no longer optional.
+- ML_trainer: `MLTrainer.explain()`, modified parameters to match new SHAP functionality.
+- ML_datasetmaster: 
+    - `SimpleDatasetMaker` renamed to `DatasetMaker`.
+    - `DatasetMaker` automates the creation and usage of a `PytorchScaler`.
+    - `SequenceMaker` makes use of the `PytorchScaler` instead of Scikit-learn's scaler.
+
 ## [6.4.1] 2025-08-06
 
 ### Fixed

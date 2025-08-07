@@ -6,7 +6,7 @@ from torch import nn
 import numpy as np
 
 from .ML_callbacks import Callback, History, TqdmProgressBar
-from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot
+from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from ._script_info import _script_info
 from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
@@ -282,8 +282,11 @@ class MLTrainer:
         print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
-    def explain(self, explain_dataset: Optional[Dataset] = None, n_samples: int = 1000, 
-                feature_names: Optional[List[str]] = None, save_dir: Optional[Union[str,Path]] = None):
+    def explain(self,
+                feature_names: Optional[List[str]], 
+                save_dir: Union[str,Path], 
+                explain_dataset: Optional[Dataset] = None, 
+                n_samples: int = 1000):
         """
         Explains model predictions using SHAP and saves all artifacts.
 
@@ -328,14 +331,14 @@ class MLTrainer:
         # 1. Get background data from the trainer's train_dataset
         background_data = _get_random_sample(self.train_dataset, n_samples)
         if background_data is None:
-            print("Warning: Trainer's train_dataset is empty or invalid. Skipping SHAP analysis.")
+            _LOGGER.error("❌ Trainer's train_dataset is empty or invalid. Skipping SHAP analysis.")
             return
 
         # 2. Determine target dataset and get explanation instances
         target_dataset = explain_dataset if explain_dataset is not None else self.test_dataset
         instances_to_explain = _get_random_sample(target_dataset, n_samples)
         if instances_to_explain is None:
-            print("Warning: Explanation dataset is empty or invalid. Skipping SHAP analysis.")
+            _LOGGER.error("❌ Explanation dataset is empty or invalid. Skipping SHAP analysis.")
             return
 
         # 3. Call the plotting function
@@ -347,7 +350,80 @@ class MLTrainer:
             save_dir=save_dir
         )
     
+    def _attention_helper(self, dataloader: DataLoader):
+        """
+        Private method to yield model attention weights batch by batch for evaluation.
 
+        Args:
+            dataloader (DataLoader): The dataloader to predict on.
+
+        Yields:
+            (torch.Tensor): Attention weights
+        """
+        self.model.eval()
+        self.model.to(self.device)
+        
+        with torch.no_grad():
+            for features, target in dataloader:
+                features = features.to(self.device)
+                attention_weights = None
+                
+                # Get model output
+                # Unpack logits and weights from the special forward method
+                _output, attention_weights = self.model.forward_attention(features) # type: ignore
+                
+                if attention_weights is not None:
+                    attention_weights = attention_weights.cpu()
+
+                yield attention_weights
+    
+    def explain_attention(self, save_dir: Union[str, Path], feature_names: Optional[List[str]], explain_dataset: Optional[Dataset] = None):
+        """
+        Generates and saves a feature importance plot based on attention weights.
+
+        This method only works for models with a `forward_attention` method.
+
+        Args:
+            save_dir (str | Path): Directory to save the plot and summary data.
+            feature_names (List[str] | None): Names for the features for plot labeling.
+            explain_dataset (Dataset, optional): A specific dataset to explain. If None, the trainer's test dataset is used.
+        """
+        
+        print("\n--- Attention Analysis ---")
+        
+        # --- Step 1: Check if the model supports this explanation ---
+        if not hasattr(self.model, 'forward_attention'):
+            _LOGGER.error("❌ Model does not have a `forward_attention` method. Skipping attention explanation.")
+            return
+
+        # --- Step 2: Set up the dataloader ---
+        dataset_to_use = explain_dataset if explain_dataset is not None else self.test_dataset
+        if not isinstance(dataset_to_use, Dataset):
+            _LOGGER.error("❌ The explanation dataset is empty or invalid. Skipping attention analysis.")
+            return
+        
+        explain_loader = DataLoader(
+            dataset=dataset_to_use, batch_size=32, shuffle=False,
+            num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+            pin_memory=("cuda" in self.device.type)
+        )
+        
+        # --- Step 3: Collect weights ---
+        all_weights = []
+        for att_weights_b in self._attention_helper(explain_loader):
+            if att_weights_b is not None:
+                all_weights.append(att_weights_b)
+
+        # --- Step 4: Call the plotting function ---
+        if all_weights:
+            plot_attention_importance(
+                weights=all_weights,
+                feature_names=feature_names,
+                save_dir=save_dir
+            )
+        else:
+            _LOGGER.error("❌ No attention weights were collected from the model.")
+    
     def callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""
         for callback in self.callbacks:
