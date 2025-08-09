@@ -89,10 +89,6 @@ class _BaseMLP(nn.Module):
 class MultilayerPerceptron(_BaseMLP):
     """
     Creates a versatile Multilayer Perceptron (MLP) for regression or classification tasks.
-
-    This model generates raw output values (logits) suitable for use with loss
-    functions like `nn.CrossEntropyLoss` (for classification) or `nn.MSELoss`
-    (for regression).
     """
     def __init__(self, in_features: int, out_targets: int,
                  hidden_layers: List[int] = [256, 128], drop_out: float = 0.2) -> None:

@@ -249,8 +249,11 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     plt.close(fig_hist)
 
 
-def shap_summary_plot(model, background_data: Union[torch.Tensor,np.ndarray], instances_to_explain: Union[torch.Tensor,np.ndarray], 
-                      feature_names: Optional[list[str]], save_dir: Union[str, Path]):
+def shap_summary_plot(model, 
+                      background_data: Union[torch.Tensor,np.ndarray], 
+                      instances_to_explain: Union[torch.Tensor,np.ndarray], 
+                      feature_names: Optional[list[str]], 
+                      save_dir: Union[str, Path]):
     """
     Calculates SHAP values and saves summary plots and data.
 

@@ -3,6 +3,7 @@ from torch import nn
 import numpy as np
 from pathlib import Path
 from typing import Union, Literal, Dict, Any, Optional
+from abc import ABC, abstractmethod
 
 from .ML_scaler import PytorchScaler
 from ._script_info import _script_info
@@ -12,38 +13,36 @@ from .keys import PyTorchInferenceKeys
 
 __all__ = [
     "PyTorchInferenceHandler",
+    "PyTorchInferenceHandlerMulti",
     "multi_inference_regression",
     "multi_inference_classification"
 ]
 
-class PyTorchInferenceHandler:
+
+class _BaseInferenceHandler(ABC):
     """
-    Handles loading a PyTorch model's state dictionary and performing inference
-    for either regression or classification tasks.
+    Abstract base class for PyTorch inference handlers.
+
+    Manages common tasks like loading a model's state dictionary, validating
+    the target device, and preprocessing input features.
     """
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["classification", "regression"],
                  device: str = 'cpu',
-                 target_id: Optional[str]=None,
                  scaler: Optional[Union[PytorchScaler, str, Path]] = None):
         """
-        Initializes the handler by loading a model's state_dict.
+        Initializes the handler.
 
         Args:
-            model (nn.Module): An instantiated PyTorch model with the correct architecture.
-            state_dict (str | Path): The path to the saved .pth model state_dict file.
-            task (str): The type of task, 'regression' or 'classification'.
+            model (nn.Module): An instantiated PyTorch model.
+            state_dict (str | Path): Path to the saved .pth model state_dict file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            target_id (str | None): Target name as used in the training set.
-            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
+            scaler (PytorchScaler | str | Path | None): An optional scaler or path to a saved scaler state.
         """
         self.model = model
-        self.task = task
         self.device = self._validate_device(device)
-        self.target_id = target_id
-        
+
         # Load the scaler if a path is provided
         if scaler is not None:
             if isinstance(scaler, (str, Path)):
@@ -52,7 +51,7 @@ class PyTorchInferenceHandler:
                 self.scaler = scaler
         else:
             self.scaler = None
-        
+
         model_p = make_fullpath(state_dict, enforce="file")
 
         try:
@@ -72,6 +71,7 @@ class PyTorchInferenceHandler:
             _LOGGER.warning("⚠️ CUDA not available, switching to CPU.")
             device_lower = "cpu"
         elif device_lower == "mps" and not torch.backends.mps.is_available():
+            # Your M-series Mac will appreciate this check!
             _LOGGER.warning("⚠️ Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device_lower = "cpu"
         return torch.device(device_lower)
@@ -84,51 +84,103 @@ class PyTorchInferenceHandler:
         if isinstance(features, np.ndarray):
             features_tensor = torch.from_numpy(features).float()
         else:
-            # Ensure it's a float tensor for the model
             features_tensor = features.float()
-        
-        # Apply the scaler transformation if the scaler is available
+
         if self.scaler:
             features_tensor = self.scaler.transform(features_tensor)
-        
-        # Ensure tensor is on the correct device
+
         return features_tensor.to(self.device)
-    
+
+    @abstractmethod
+    def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Core batch prediction method. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Core single-sample prediction method. Must be implemented by subclasses."""
+        pass
+
+
+class PyTorchInferenceHandler(_BaseInferenceHandler):
+    """
+    Handles loading a PyTorch model's state dictionary and performing inference
+    for single-target regression or classification tasks.
+    """
+    def __init__(self,
+                 model: nn.Module,
+                 state_dict: Union[str, Path],
+                 task: Literal["classification", "regression"],
+                 device: str = 'cpu',
+                 target_id: Optional[str] = None,
+                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
+        """
+        Initializes the handler for single-target tasks.
+
+        Args:
+            model (nn.Module): An instantiated PyTorch model architecture.
+            state_dict (str | Path): Path to the saved .pth model state_dict file.
+            task (str): The type of task, 'regression' or 'classification'.
+            device (str): The device to run inference on ('cpu', 'cuda', 'mps').
+            target_id (str | None): An optional identifier for the target.
+            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
+        """
+        # Call the parent constructor to handle model loading, device, and scaler
+        super().__init__(model, state_dict, device, scaler)
+
+        if task not in ["classification", "regression"]:
+            raise ValueError("`task` must be 'classification' or 'regression'.")
+        self.task = task
+        self.target_id = target_id
+
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Core batch prediction method. Returns results as PyTorch tensors on the model's device.
+        Core batch prediction method for single-target models.
+
+        Args:
+            features (np.ndarray | torch.Tensor): A 2D array/tensor of input features.
+
+        Returns:
+            A dictionary containing the raw output tensors from the model.
         """
         if features.ndim != 2:
             raise ValueError("Input for batch prediction must be a 2D array or tensor.")
 
         input_tensor = self._preprocess_input(features)
-        
+
         with torch.no_grad():
-            # Output tensor remains on the model's device (e.g., 'mps' or 'cuda')
             output = self.model(input_tensor)
 
             if self.task == "classification":
-                probs = nn.functional.softmax(output, dim=1)
+                probs = torch.softmax(output, dim=1)
                 labels = torch.argmax(probs, dim=1)
                 return {
                     PyTorchInferenceKeys.LABELS: labels,
                     PyTorchInferenceKeys.PROBABILITIES: probs
                 }
             else:  # regression
-                return {PyTorchInferenceKeys.PREDICTIONS: output}
+                # For single-target regression, ensure output is flattened
+                return {PyTorchInferenceKeys.PREDICTIONS: output.flatten()}
 
     def predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Core single-sample prediction. Returns results as PyTorch tensors on the model's device.
+        Core single-sample prediction method for single-target models.
+
+        Args:
+            features (np.ndarray | torch.Tensor): A 1D array/tensor of input features.
+
+        Returns:
+            A dictionary containing the raw output tensors for a single sample.
         """
         if features.ndim == 1:
-            features = features.reshape(1, -1)
-        
+            features = features.reshape(1, -1) # Reshape to a batch of one
+
         if features.shape[0] != 1:
             raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
 
         batch_results = self.predict_batch(features)
-        
+
+        # Extract the first (and only) result from the batch output
         single_results = {key: value[0] for key, value in batch_results.items()}
         return single_results
 
@@ -139,7 +191,6 @@ class PyTorchInferenceHandler:
         Convenience wrapper for predict_batch that returns NumPy arrays.
         """
         tensor_results = self.predict_batch(features)
-        # Move tensor to CPU before converting to NumPy
         numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
         return numpy_results
 
@@ -148,16 +199,163 @@ class PyTorchInferenceHandler:
         Convenience wrapper for predict that returns NumPy arrays or scalars.
         """
         tensor_results = self.predict(features)
-        
+
         if self.task == "regression":
-            # .item() implicitly moves to CPU
+            # .item() implicitly moves to CPU and returns a Python scalar
             return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
         else: # classification
             return {
                 PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].item(),
-                # Move tensor to CPU before converting to NumPy
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
+    
+    def quick_predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
+        """
+        Convenience wrapper to get the mapping {target_name: prediction} or {target_name: label}
+        
+        `target_id` must be implemented.
+        """
+        if self.target_id is None:
+            raise AttributeError(f"'target_id' has not been implemented.")
+        
+        if self.task == "regression":
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS]
+        else:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS]
+        
+        return {self.target_id: result}
+
+
+class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
+    """
+    Handles loading a PyTorch model's state dictionary and performing inference
+    for multi-target regression or multi-label classification tasks.
+    """
+    def __init__(self,
+                 model: nn.Module,
+                 state_dict: Union[str, Path],
+                 task: Literal["multi_target_regression", "multi_label_classification"],
+                 device: str = 'cpu',
+                 target_ids: Optional[list[str]] = None,
+                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
+        """
+        Initializes the handler for multi-target tasks.
+
+        Args:
+            model (nn.Module): An instantiated PyTorch model.
+            state_dict (str | Path): Path to the saved .pth model state_dict file.
+            task (str): The type of task, 'multi_target_regression' or 'multi_label_classification'.
+            device (str): The device to run inference on ('cpu', 'cuda', 'mps').
+            target_ids (list[str] | None): An optional identifier for the targets.
+            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
+        """
+        super().__init__(model, state_dict, device, scaler)
+
+        if task not in ["multi_target_regression", "multi_label_classification"]:
+            raise ValueError("`task` must be 'multi_target_regression' or 'multi_label_classification'.")
+        self.task = task
+        self.target_ids = target_ids
+
+    def predict_batch(self,
+                      features: Union[np.ndarray, torch.Tensor],
+                      classification_threshold: float = 0.5
+                      ) -> Dict[str, torch.Tensor]:
+        """
+        Core batch prediction method for multi-target models.
+
+        Args:
+            features (np.ndarray | torch.Tensor): A 2D array/tensor of input features.
+            classification_threshold (float): The threshold to convert probabilities
+                into binary predictions for multi-label classification.
+
+        Returns:
+            A dictionary containing the raw output tensors from the model.
+        """
+        if features.ndim != 2:
+            raise ValueError("Input for batch prediction must be a 2D array or tensor.")
+
+        input_tensor = self._preprocess_input(features)
+
+        with torch.no_grad():
+            output = self.model(input_tensor)
+
+            if self.task == "multi_label_classification":
+                probs = torch.sigmoid(output)
+                # Get binary predictions based on the threshold
+                labels = (probs >= classification_threshold).int()
+                return {
+                    PyTorchInferenceKeys.LABELS: labels,
+                    PyTorchInferenceKeys.PROBABILITIES: probs
+                }
+            else:  # multi_target_regression
+                # The output is already in the correct [batch_size, n_targets] shape
+                return {PyTorchInferenceKeys.PREDICTIONS: output}
+
+    def predict(self,
+                features: Union[np.ndarray, torch.Tensor],
+                classification_threshold: float = 0.5
+                ) -> Dict[str, torch.Tensor]:
+        """
+        Core single-sample prediction method for multi-target models.
+
+        Args:
+            features (np.ndarray | torch.Tensor): A 1D array/tensor of input features.
+            classification_threshold (float): The threshold for multi-label tasks.
+
+        Returns:
+            A dictionary containing the raw output tensors for a single sample.
+        """
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+
+        if features.shape[0] != 1:
+            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+
+        batch_results = self.predict_batch(features, classification_threshold)
+
+        single_results = {key: value[0] for key, value in batch_results.items()}
+        return single_results
+
+    # --- NumPy Convenience Wrappers (on CPU) ---
+
+    def predict_batch_numpy(self,
+                            features: Union[np.ndarray, torch.Tensor],
+                            classification_threshold: float = 0.5
+                            ) -> Dict[str, np.ndarray]:
+        """
+        Convenience wrapper for predict_batch that returns NumPy arrays.
+        """
+        tensor_results = self.predict_batch(features, classification_threshold)
+        numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
+        return numpy_results
+
+    def predict_numpy(self,
+                      features: Union[np.ndarray, torch.Tensor],
+                      classification_threshold: float = 0.5
+                      ) -> Dict[str, np.ndarray]:
+        """
+        Convenience wrapper for predict that returns NumPy arrays for a single sample.
+        Note: For multi-target models, the output is always an array.
+        """
+        tensor_results = self.predict(features, classification_threshold)
+        numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
+        return numpy_results
+    
+    def quick_predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
+        """
+        Convenience wrapper to get the mapping {target_name: prediction} or {target_name: label}
+        
+        `target_ids` must be implemented.
+        """
+        if self.target_ids is None:
+            raise AttributeError(f"'target_id' has not been implemented.")
+        
+        if self.task == "multi_target_regression":
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
+        else:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS].flatten().tolist()
+        
+        return {key: value for key, value in zip(self.target_ids, result)}
 
 
 def multi_inference_regression(handlers: list[PyTorchInferenceHandler], 

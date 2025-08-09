@@ -66,6 +66,7 @@ ensemble_learning
 ETL_engineering
 ML_callbacks
 ML_datasetmaster
+ML_evaluation_multi
 ML_evaluation
 ML_inference
 ML_models

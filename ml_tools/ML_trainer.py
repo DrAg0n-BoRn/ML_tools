@@ -7,6 +7,7 @@ import numpy as np
 
 from .ML_callbacks import Callback, History, TqdmProgressBar
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
+from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._script_info import _script_info
 from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
@@ -19,7 +20,7 @@ __all__ = [
 
 class MLTrainer:
     def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
-                 kind: Literal["regression", "classification"],
+                 kind: Literal["regression", "classification", "multi_target_regression", "multi_label_classification"],
                  criterion: nn.Module, optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], dataloader_workers: int = 2, callbacks: Optional[List[Callback]] = None):
         """
@@ -31,20 +32,22 @@ class MLTrainer:
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
             test_dataset (Dataset): The testing/validation dataset.
-            kind (str): The type of task, 'regression' or 'classification'.
+            kind (str): Can be 'regression', 'classification', 'multi_target_regression', or 'multi_label_classification'.
             criterion (nn.Module): The loss function.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
-            dataloader_workers (int): Subprocesses for data loading. Defaults to 2.
+            dataloader_workers (int): Subprocesses for data loading.
             callbacks (List[Callback] | None): A list of callbacks to use during training.
             
         Note:
-            For **regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`.
-            
-            For **classification** tasks, `nn.CrossEntropyLoss` (multi-class) or `nn.BCEWithLogitsLoss` (binary) are common choices.
+            - For **regression** and **multi_target_regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`.
+    
+            - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice.
+    
+            - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem.
         """
-        if kind not in ["regression", "classification"]:
-            raise TypeError("Kind must be 'regression' or 'classification'.")
+        if kind not in ["regression", "classification", "multi_target_regression", "multi_label_classification"]:
+            raise ValueError(f"'{kind}' is not a valid task type.")
 
         self.model = model
         self.train_dataset = train_dataset
@@ -157,7 +160,6 @@ class MLTrainer:
     def _train_step(self):
         self.model.train()
         running_loss = 0.0
-        # Enumerate to get batch index
         for batch_idx, (features, target) in enumerate(self.train_loader): # type: ignore
             # Create a log dictionary for the batch
             batch_logs = {
@@ -168,22 +170,26 @@ class MLTrainer:
 
             features, target = features.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
+            
             output = self.model(features)
-            if isinstance(self.criterion, (nn.MSELoss, nn.L1Loss)):
+            
+            # Apply shape correction only for single-target regression
+            if self.kind == "regression":
                 output = output.view_as(target)
+                
             loss = self.criterion(output, target)
+            
             loss.backward()
             self.optimizer.step()
 
             # Calculate batch loss and update running loss for the epoch
             batch_loss = loss.item()
             running_loss += batch_loss * features.size(0)
-
+            
             # Add the batch loss to the logs and call the end-of-batch hook
             batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss
             self.callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
 
-        # Return the average loss for the entire epoch
         return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
 
     def _validation_step(self):
@@ -192,25 +198,27 @@ class MLTrainer:
         with torch.no_grad():
             for features, target in self.test_loader: # type: ignore
                 features, target = features.to(self.device), target.to(self.device)
+                
                 output = self.model(features)
-                if isinstance(self.criterion, (nn.MSELoss, nn.L1Loss)):
+                # Apply shape correction only for single-target regression
+                if self.kind == "regression":
                     output = output.view_as(target)
+                
                 loss = self.criterion(output, target)
+                
                 running_loss += loss.item() * features.size(0)
+        
         logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
         return logs
     
-    def _predict_for_eval(self, dataloader: DataLoader):
+    def _predict_for_eval(self, dataloader: DataLoader, classification_threshold: float = 0.5):
         """
         Private method to yield model predictions batch by batch for evaluation.
-        This is used internally by the `evaluate` method.
-
-        Args:
-            dataloader (DataLoader): The dataloader to predict on.
-
+        
         Yields:
             tuple: A tuple containing (y_pred_batch, y_prob_batch, y_true_batch).
-                   y_prob_batch is None for regression tasks.
+                   
+                - y_prob_batch is None for regression tasks.
         """
         self.model.eval()
         self.model.to(self.device)
@@ -220,84 +228,135 @@ class MLTrainer:
                 output = self.model(features).cpu()
                 y_true_batch = target.numpy()
 
-                if self.kind == "classification":
-                    probs = nn.functional.softmax(output, dim=1)
+                y_pred_batch = None
+                y_prob_batch = None
+
+                if self.kind in ["regression", "multi_target_regression"]:
+                    y_pred_batch = output.numpy()
+
+                elif self.kind == "classification":
+                    probs = torch.softmax(output, dim=1)
                     preds = torch.argmax(probs, dim=1)
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
-                # regression
-                else:
-                    y_pred_batch = output.numpy()
-                    y_prob_batch = None
-                
+
+                elif self.kind == "multi_label_classification":
+                    probs = torch.sigmoid(output)
+                    preds = (probs >= classification_threshold).int()
+                    y_pred_batch = preds.numpy()
+                    y_prob_batch = probs.numpy()
+
                 yield y_pred_batch, y_prob_batch, y_true_batch
-    
-    def evaluate(self, save_dir: Union[str,Path], data: Optional[Union[DataLoader, Dataset]] = None):
+
+    def evaluate(self, save_dir: Union[str, Path], data: Optional[Union[DataLoader, Dataset]] = None, classification_threshold: float = 0.5):
         """
-        Evaluates the model on the given data.
+        Evaluates the model, routing to the correct evaluation function based on task `kind`.
 
         Args:
-            data (DataLoader | Dataset | None ): The data to evaluate on.
-                Can be a DataLoader or a Dataset. If None, defaults to the trainer's internal test_dataset.
             save_dir (str | Path): Directory to save all reports and plots.
+            data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
+            classification_threshold (float): Probability threshold for multi-label tasks.
         """
+        dataset_for_names = None
         eval_loader = None
+
         if isinstance(data, DataLoader):
             eval_loader = data
-        else:
-            # Determine which dataset to use (the one passed in, or the default test_dataset)
-            dataset_to_use = data if data is not None else self.test_dataset
-            if not isinstance(dataset_to_use, Dataset):
-                raise ValueError("Cannot evaluate. No valid DataLoader or Dataset was provided, "
-                                 "and no test_dataset is available in the trainer.")
+            # Try to get the dataset from the loader for fetching target names
+            if hasattr(data, 'dataset'):
+                dataset_for_names = data.dataset
+        elif isinstance(data, Dataset):
+            # Create a new loader from the provided dataset
+            eval_loader = DataLoader(data, 
+                                     batch_size=32, 
+                                     shuffle=False, 
+                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                                     pin_memory=(self.device.type == "cuda"))
+            dataset_for_names = data
+        else: # data is None, use the trainer's default test dataset
+            if self.test_dataset is None:
+                raise ValueError("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
+            # Create a fresh DataLoader from the test_dataset
+            eval_loader = DataLoader(self.test_dataset, 
+                                     batch_size=32, 
+                                     shuffle=False, 
+                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                                     pin_memory=(self.device.type == "cuda"))
+            dataset_for_names = self.test_dataset
 
-            # Create a new DataLoader from the dataset
-            eval_loader = DataLoader(
-                dataset=dataset_to_use,
-                batch_size=32,  # A sensible default for evaluation
-                shuffle=False,
-                num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-                pin_memory=(self.device.type == "cuda")
-            )
-            
+        if eval_loader is None:
+            raise ValueError("Cannot evaluate. No valid data was provided or found.")
+
         print("\n--- Model Evaluation ---")
 
-        # Collect results from the predict generator
         all_preds, all_probs, all_true = [], [], []
-        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
-            all_preds.append(y_pred_b)
-            if y_prob_b is not None:
-                all_probs.append(y_prob_b)
-            all_true.append(y_true_b)
+        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader, classification_threshold):
+            if y_pred_b is not None: all_preds.append(y_pred_b)
+            if y_prob_b is not None: all_probs.append(y_prob_b)
+            if y_true_b is not None: all_true.append(y_true_b)
+
+        if not all_true:
+            _LOGGER.error("❌ Evaluation failed: No data was processed.")
+            return
 
         y_pred = np.concatenate(all_preds)
         y_true = np.concatenate(all_true)
-        y_prob = np.concatenate(all_probs) if self.kind == "classification" else None
+        y_prob = np.concatenate(all_probs) if all_probs else None
 
-        if self.kind == "classification":
-            classification_metrics(save_dir, y_true, y_pred, y_prob)
-        else:
+        # --- Routing Logic ---
+        if self.kind == "regression":
             regression_metrics(y_true.flatten(), y_pred.flatten(), save_dir)
+
+        elif self.kind == "classification":
+            classification_metrics(save_dir, y_true, y_pred, y_prob)
+
+        elif self.kind == "multi_target_regression":
+            try:
+                target_names = dataset_for_names.target_names # type: ignore
+            except AttributeError:
+                num_targets = y_true.shape[1]
+                target_names = [f"target_{i}" for i in range(num_targets)]
+                _LOGGER.warning(f"⚠️ Dataset has no 'target_names' attribute. Using generic names.")
+            multi_target_regression_metrics(y_true, y_pred, target_names, save_dir)
+
+        elif self.kind == "multi_label_classification":
+            try:
+                target_names = dataset_for_names.target_names # type: ignore
+            except AttributeError:
+                num_targets = y_true.shape[1]
+                target_names = [f"label_{i}" for i in range(num_targets)]
+                _LOGGER.warning(f"⚠️ Dataset has no 'target_names' attribute. Using generic names.")
+            
+            if y_prob is None:
+                _LOGGER.error("❌ Evaluation for multi_label_classification requires probabilities (y_prob).")
+                return
+            multi_label_classification_metrics(y_true, y_prob, target_names, save_dir, classification_threshold)
 
         print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
     def explain(self,
-                feature_names: Optional[List[str]], 
                 save_dir: Union[str,Path], 
                 explain_dataset: Optional[Dataset] = None, 
-                n_samples: int = 1000):
+                n_samples: int = 1000,
+                feature_names: Optional[List[str]] = None,
+                target_names: Optional[List[str]] = None):
         """
         Explains model predictions using SHAP and saves all artifacts.
 
         The background data is automatically sampled from the trainer's training dataset.
+        
+        This method automatically routes to the appropriate SHAP summary plot
+        function based on the task. If `feature_names` or `target_names` (multi-target) are not provided,
+        it will attempt to extract them from the dataset.
 
         Args:
-            explain_dataset (Dataset, optional): A specific dataset to explain. 
+            explain_dataset (Dataset | None): A specific dataset to explain. 
                                                  If None, the trainer's test dataset is used.
             n_samples (int): The number of samples to use for both background and explanation.
-            feature_names (List[str], optional): Names for the features.
-            save_dir (str, optional): Directory to save all SHAP artifacts.
+            feature_names (list[str] | None): Feature names.
+            target_names (list[str] | None): Target names
+            save_dir (str | Path): Directory to save all SHAP artifacts.
         """
         # Internal helper to create a dataloader and get a random sample
         def _get_random_sample(dataset: Dataset, num_samples: int):
@@ -340,16 +399,54 @@ class MLTrainer:
         if instances_to_explain is None:
             _LOGGER.error("❌ Explanation dataset is empty or invalid. Skipping SHAP analysis.")
             return
+        
+        # attempt to get feature names
+        if feature_names is None:
+            # _LOGGER.info("`feature_names` not provided. Attempting to extract from dataset...")
+            if hasattr(target_dataset, "feature_names"):
+                feature_names = target_dataset.feature_names # type: ignore
+            else:
+                try:
+                # Handle PyTorch Subset 
+                    feature_names = target_dataset.dataset.feature_names # type: ignore
+                except AttributeError:
+                    _LOGGER.error("❌ Could not extract `feature_names` from the dataset.")
+                    raise ValueError("`feature_names` must be provided if the dataset object does not have a `feature_names` attribute.")
 
         # 3. Call the plotting function
-        shap_summary_plot(
-            model=self.model,
-            background_data=background_data,
-            instances_to_explain=instances_to_explain,
-            feature_names=feature_names,
-            save_dir=save_dir
-        )
-    
+        if self.kind in ["regression", "classification"]:
+            shap_summary_plot(
+                model=self.model,
+                background_data=background_data,
+                instances_to_explain=instances_to_explain,
+                feature_names=feature_names,
+                save_dir=save_dir
+            )
+        elif self.kind in ["multi_target_regression", "multi_label_classification"]:
+            # try to get target names
+            if target_names is None:
+                target_names = []
+                if hasattr(target_dataset, 'target_names'):
+                    target_names = target_dataset.target_names # type: ignore
+                else:
+                    # Infer number of targets from the model's output layer
+                    try:
+                        num_targets = self.model.output_layer.out_features # type: ignore
+                        target_names = [f"target_{i}" for i in range(num_targets)] # type: ignore
+                        _LOGGER.warning("Dataset has no 'target_names' attribute. Using generic names.")
+                    except AttributeError:
+                        _LOGGER.error("Cannot determine target names for multi-target SHAP plot. Skipping.")
+                        return
+
+            multi_target_shap_summary_plot(
+                model=self.model,
+                background_data=background_data,
+                instances_to_explain=instances_to_explain,
+                feature_names=feature_names, # type: ignore
+                target_names=target_names, # type: ignore
+                save_dir=save_dir
+            )
+
     def _attention_helper(self, dataloader: DataLoader):
         """
         Private method to yield model attention weights batch by batch for evaluation.

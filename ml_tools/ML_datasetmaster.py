@@ -18,6 +18,7 @@ from .ML_scaler import PytorchScaler
 
 __all__ = [
     "DatasetMaker",
+    "DatasetMakerMulti",
     "VisionDatasetMaker",
     "SequenceMaker",
     "ResizeAspectFill",
@@ -57,10 +58,114 @@ class _PytorchDataset(Dataset):
         return self.features[index], self.labels[index]
 
 
-# Streamlined DatasetMaker version
-class DatasetMaker:
+# --- Abstract Base Class (New) ---
+# --- Abstract Base Class (Corrected) ---
+class _BaseDatasetMaker(ABC):
     """
-    A simplified dataset maker for pre-processed, numerical pandas DataFrames.
+    Abstract base class for dataset makers. Contains shared logic for
+    splitting, scaling, and accessing datasets to reduce code duplication.
+    """
+    def __init__(self):
+        self._train_ds: Optional[Dataset] = None
+        self._test_ds: Optional[Dataset] = None
+        self.scaler: Optional[PytorchScaler] = None
+        self._id: Optional[str] = None
+        self._feature_names: List[str] = []
+        self._X_train_shape = (0,0)
+        self._X_test_shape = (0,0)
+        self._y_train_shape = (0,)
+        self._y_test_shape = (0,)
+
+    def _prepare_scaler(self, X_train: pandas.DataFrame, y_train: Union[pandas.Series, pandas.DataFrame], X_test: pandas.DataFrame, label_dtype: torch.dtype, continuous_feature_columns: Optional[Union[List[int], List[str]]]):
+        """Internal helper to fit and apply a PytorchScaler."""
+        continuous_feature_indices: Optional[List[int]] = None
+        if continuous_feature_columns:
+            if all(isinstance(c, str) for c in continuous_feature_columns):
+                name_to_idx = {name: i for i, name in enumerate(self._feature_names)}
+                try:
+                    continuous_feature_indices = [name_to_idx[name] for name in continuous_feature_columns] # type: ignore
+                except KeyError as e:
+                    raise ValueError(f"Feature column '{e.args[0]}' not found.")
+            elif all(isinstance(c, int) for c in continuous_feature_columns):
+                continuous_feature_indices = continuous_feature_columns # type: ignore
+            else:
+                raise TypeError("`continuous_feature_columns` must be a list of all strings or all integers.")
+
+        X_train_values = X_train.values
+        X_test_values = X_test.values
+
+        if self.scaler is None and continuous_feature_indices:
+            _LOGGER.info("Fitting a new PytorchScaler on training data.")
+            temp_train_ds = _PytorchDataset(X_train_values, y_train, label_dtype) # type: ignore
+            self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices)
+
+        if self.scaler and self.scaler.mean_ is not None:
+            _LOGGER.info("Applying scaler transformation to train and test feature sets.")
+            X_train_tensor = self.scaler.transform(torch.tensor(X_train_values, dtype=torch.float32))
+            X_test_tensor = self.scaler.transform(torch.tensor(X_test_values, dtype=torch.float32))
+            return X_train_tensor.numpy(), X_test_tensor.numpy()
+
+        return X_train_values, X_test_values
+
+    @property
+    def train_dataset(self) -> Dataset:
+        if self._train_ds is None: raise RuntimeError("Dataset not yet created.")
+        return self._train_ds
+
+    @property
+    def test_dataset(self) -> Dataset:
+        if self._test_ds is None: raise RuntimeError("Dataset not yet created.")
+        return self._test_ds
+
+    @property
+    def feature_names(self) -> list[str]:
+        return self._feature_names
+
+    @property
+    def id(self) -> Optional[str]:
+        return self._id
+
+    @id.setter
+    def id(self, dataset_id: str):
+        if not isinstance(dataset_id, str): raise ValueError("ID must be a string.")
+        self._id = dataset_id
+
+    def dataframes_info(self) -> None:
+        print("--- DataFrame Shapes After Split ---")
+        print(f"  X_train shape: {self._X_train_shape}, y_train shape: {self._y_train_shape}")
+        print(f"  X_test shape:  {self._X_test_shape}, y_test shape:  {self._y_test_shape}")
+        print("------------------------------------")
+    
+    def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """Saves a list of feature names as a text file"""
+        save_list_strings(list_strings=self._feature_names,
+                          directory=directory,
+                          filename="feature_names",
+                          verbose=verbose)    
+
+    def save_scaler(self, save_dir: Union[str, Path]):
+        """
+        Saves the fitted PytorchScaler's state to a .pth file.
+
+        The filename is automatically generated based on the dataset id.
+        
+        Args:
+            save_dir (str | Path): The directory where the scaler will be saved.
+        """
+        if not self.scaler: raise RuntimeError("No scaler was fitted or provided.")
+        if not self.id: raise ValueError("Must set the `id` before saving scaler.")
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        sanitized_id = sanitize_filename(self.id)
+        filename = f"scaler_{sanitized_id}.pth"
+        filepath = save_path / filename
+        self.scaler.save(filepath)
+        _LOGGER.info(f"Scaler for dataset '{self.id}' saved to '{filepath.name}'.")
+
+
+# Single target dataset
+class DatasetMaker(_BaseDatasetMaker):
+    """
+    Dataset maker for pre-processed, numerical pandas DataFrames with a single target column.
 
     This class takes a DataFrame, automatically splits it into training and
     testing sets, and converts them into PyTorch Datasets. It assumes the
@@ -73,14 +178,14 @@ class DatasetMaker:
         `test_dataset`  -> PyTorch Dataset
         `feature_names` -> list[str]
         `target_name`   -> str
-        `id` -> str | None
+        `id` -> str
         
-    The ID can be manually set to any string if needed, it is `None` by default.
+    The ID can be manually set to any string if needed, it is the target name by default.
     """
-    def __init__(self, 
-                 pandas_df: pandas.DataFrame, 
-                 kind: Literal["regression", "classification"], 
-                 test_size: float = 0.2, 
+    def __init__(self,
+                 pandas_df: pandas.DataFrame,
+                 kind: Literal["regression", "classification"],
+                 test_size: float = 0.2,
                  random_state: int = 42,
                  scaler: Optional[PytorchScaler] = None,
                  continuous_feature_columns: Optional[Union[List[int], List[str]]] = None):
@@ -93,144 +198,88 @@ class DatasetMaker:
             scaler (PytorchScaler | None): A pre-fitted PytorchScaler instance.
             continuous_feature_columns (List[int] | List[str] | None): Column indices or names of continuous features to scale. If provided creates a new PytorchScaler.
         """
-        # Validation
-        if not isinstance(pandas_df, pandas.DataFrame):
-            raise TypeError("Input must be a pandas.DataFrame.")
-        if kind not in ["regression", "classification"]:
-            raise ValueError("`kind` must be 'regression' or 'classification'.")
-
-        # 1. Identify features and target
+        super().__init__()
+        self.scaler = scaler
+        
+        # --- 1. Identify features and target (single-target logic) ---
         features = pandas_df.iloc[:, :-1]
         target = pandas_df.iloc[:, -1]
-
         self._feature_names = features.columns.tolist()
         self._target_name = str(target.name)
-        
-        #set id
-        self._id: Optional[str] = None
-        # set scaler
-        self.scaler = scaler
+        self._id = self._target_name
 
-        # 2. Split the data
+        # --- 2. Split ---
         X_train, X_test, y_train, y_test = train_test_split(
             features, target, test_size=test_size, random_state=random_state
         )
-
-        self._X_train_shape = X_train.shape
-        self._X_test_shape = X_test.shape
-        self._y_train_shape = y_train.shape
-        self._y_test_shape = y_test.shape
+        self._X_train_shape, self._X_test_shape = X_train.shape, X_test.shape
+        self._y_train_shape, self._y_test_shape = y_train.shape, y_test.shape
         
-        # 3. Handle Column to Index Conversion
-        continuous_feature_indices: Optional[List[int]] = None
-        if continuous_feature_columns:
-            if all(isinstance(c, str) for c in continuous_feature_columns):
-                name_to_idx = {name: i for i, name in enumerate(self._feature_names)}
-                try:
-                    continuous_feature_indices = [name_to_idx[name] for name in continuous_feature_columns] # type: ignore
-                except KeyError as e:
-                    raise ValueError(f"Feature column '{e.args[0]}' not found in DataFrame.")
-            elif all(isinstance(c, int) for c in continuous_feature_columns):
-                continuous_feature_indices = continuous_feature_columns # type: ignore
-            else:
-                raise TypeError("`continuous_feature_columns` must be a list of all strings or all integers.")
-        
-        # 4. Handle Scaling
-        X_train_values = X_train.values
-        X_test_values = X_test.values
-        
-        # If no scaler is provided, fit a new one from the training data
-        if self.scaler is None:
-            if continuous_feature_indices:
-                _LOGGER.info("Feature indices provided. Fitting a new PytorchScaler on training data.")
-                # A temporary dataset is needed for the PytorchScaler.fit method
-                temp_label_dtype = torch.float32 if kind == "regression" else torch.int64
-                temp_train_ds = _PytorchDataset(X_train_values, y_train.values, labels_dtype=temp_label_dtype)
-                self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices)
-        
-        # If a scaler exists (either passed in or just fitted), apply it
-        if self.scaler and self.scaler.mean_ is not None:
-            _LOGGER.info("Applying scaler transformation to train and test feature sets.")
-            X_train_tensor = self.scaler.transform(torch.tensor(X_train_values, dtype=torch.float32))
-            X_test_tensor = self.scaler.transform(torch.tensor(X_test_values, dtype=torch.float32))
-            # Convert back to numpy for the _PytorchDataset class
-            X_train_values = X_train_tensor.numpy()
-            X_test_values = X_test_tensor.numpy()
-
-        # 5. Convert to final PyTorch Datasets
         label_dtype = torch.float32 if kind == "regression" else torch.int64
-        self._train_ds = _PytorchDataset(X_train_values, y_train.values, labels_dtype=label_dtype)
-        self._test_ds = _PytorchDataset(X_test_values, y_test.values, labels_dtype=label_dtype)
 
-    @property
-    def train_dataset(self) -> Dataset:
-        """Returns the training PyTorch dataset."""
-        return self._train_ds
-
-    @property
-    def test_dataset(self) -> Dataset:
-        """Returns the testing PyTorch dataset."""
-        return self._test_ds
-
-    @property
-    def feature_names(self) -> list[str]:
-        """Returns the list of feature column names."""
-        return self._feature_names
+        # --- 3. Scale ---
+        X_train_final, X_test_final = self._prepare_scaler(
+            X_train, y_train, X_test, label_dtype, continuous_feature_columns
+        )
+        
+        # --- 4. Create Datasets ---
+        self._train_ds = _PytorchDataset(X_train_final, y_train.values, label_dtype)
+        self._test_ds = _PytorchDataset(X_test_final, y_test.values, label_dtype)
 
     @property
     def target_name(self) -> str:
-        """Returns the name of the target column."""
         return self._target_name
-    
-    @property
-    def id(self) -> Optional[str]:
-        """Returns the object identifier if any."""
-        return self._id
-    
-    @id.setter
-    def id(self, dataset_id: str):
-        """Sets the ID value"""
-        if not isinstance(dataset_id, str):
-            raise ValueError(f"Dataset ID '{type(dataset_id)}' is not a string.")
-        self._id = dataset_id
 
-    def dataframes_info(self) -> None:
-        """Prints the shape information of the split pandas DataFrames."""
-        print("--- Original DataFrame Shapes After Split ---")
-        print(f"  X_train shape: {self._X_train_shape}")
-        print(f"  y_train shape: {self._y_train_shape}\n")
-        print(f"  X_test shape:  {self._X_test_shape}")
-        print(f"  y_test shape:  {self._y_test_shape}")
-        print("-------------------------------------------")
-        
-    def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
-        """Saves a list of feature names as a text file"""
-        save_list_strings(list_strings=self._feature_names,
-                          directory=directory,
-                          filename="feature_names",
-                          verbose=verbose)
-        
-    def save_scaler(self, save_dir: Union[str, Path]):
+
+# --- New Multi-Target Class ---
+class DatasetMakerMulti(_BaseDatasetMaker):
+    """
+    Dataset maker for pre-processed, numerical pandas DataFrames with a multiple target columns.
+
+    This class takes a DataFrame, automatically splits it into training and testing sets, and converts them into PyTorch Datasets.
+    """
+    def __init__(self,
+                 pandas_df: pandas.DataFrame,
+                 target_columns: List[str],
+                 test_size: float = 0.2,
+                 random_state: int = 42,
+                 scaler: Optional[PytorchScaler] = None,
+                 continuous_feature_columns: Optional[Union[List[int], List[str]]] = None):
         """
-        Saves the fitted PytorchScaler's state to a .pth file.
-
-        The filename is automatically generated based on the target name.
-        
         Args:
-            save_dir (str | Path): The directory where the scaler will be saved.
+            pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
+            target_columns (list[str]): List of target column names.
+            test_size (float): The proportion of the dataset to allocate to the test split.
+            random_state (int): The seed for the random number generator for reproducibility.
+            scaler (PytorchScaler | None): A pre-fitted PytorchScaler instance.
+            continuous_feature_columns (List[int] | List[str] | None): Column indices or names of continuous features to scale. If provided creates a new PytorchScaler.
         """
-        if not self.scaler:
-            _LOGGER.error("❌ No scaler was fitted or provided.")
-            return
+        super().__init__()
+        self.scaler = scaler
 
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        self._target_names = target_columns
+        self._feature_names = [col for col in pandas_df.columns if col not in target_columns]
+        features = pandas_df[self._feature_names]
+        target = pandas_df[self._target_names]
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            features, target, test_size=test_size, random_state=random_state
+        )
+        self._X_train_shape, self._X_test_shape = X_train.shape, X_test.shape
+        self._y_train_shape, self._y_test_shape = y_train.shape, y_test.shape
         
-        # Sanitize the target name for use in a filename
-        sanitized_target = sanitize_filename(self.target_name)
-        filename = f"scaler_{sanitized_target}.pth"
+        label_dtype = torch.float32
+
+        X_train_final, X_test_final = self._prepare_scaler(
+            X_train, y_train, X_test, label_dtype, continuous_feature_columns
+        )
         
-        filepath = save_path / filename
-        self.scaler.save(filepath)
+        self._train_ds = _PytorchDataset(X_train_final, y_train, label_dtype)
+        self._test_ds = _PytorchDataset(X_test_final, y_test, label_dtype)
+
+    @property
+    def target_names(self) -> list[str]:
+        return self._target_names
 
 
 # --- Private Base Class ---

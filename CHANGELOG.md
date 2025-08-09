@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] 2025-08-09
+
+### Added
+
+- ML_datasetmaster: `DatasetMakerMulti`, handle multi-target regression or multi-label-binary classification tasks.
+- ML_inference: 
+    - `PyTorchInferenceHandlerMulti`, handle multi-target regression or multi-label-binary classification tasks.
+    - `PyTorchInferenceHandler`, added method `quick_predict()`, convenience wrapper to get a mapping {target_name: prediction/label} for regression and classification.
+- ML_evaluation_multi: New module that contains metric-evaluation functions for multi-target regression or multi-label-binary classification tasks.:
+    - `multi_target_regression_metrics()`
+    - `multi_label_classification_metrics()`
+    - `multi_target_shap_summary_plot()`
+
+### Changed
+
+- ML_trainer: Updated logic to work with multi-target regression or multi-label-binary classification tasks.
+
 ## [7.0.0] 2025-08-07
 
 ### Added
