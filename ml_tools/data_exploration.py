@@ -5,10 +5,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Union, Literal, Dict, Tuple, List, Optional
 from pathlib import Path
+import re
+
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
-import re
+from .utilities import save_dataframe
 
 
 # Keep track of all available tools, show using `info()`
@@ -18,6 +20,7 @@ __all__ = [
     "drop_rows_with_missing_data",
     "show_null_columns",
     "drop_columns_with_missing_data",
+    "drop_macro",
     "split_features_targets", 
     "split_continuous_binary", 
     "plot_correlation_heatmap", 
@@ -155,7 +158,7 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
 
 def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
     """
-    Displays a table of columns with missing values, showing both the count and
+    Returns a table of columns with missing values, showing both the count and
     percentage of missing entries per column.
 
     Parameters:
@@ -219,6 +222,81 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     else:
         _LOGGER.info(f"No columns have more than {threshold*100:.0f}% missing data.")
         return df
+
+
+def drop_macro(df: pd.DataFrame, 
+               log_directory: Union[str,Path], 
+               targets: list[str], 
+               skip_targets: bool=False, 
+               threshold: float=0.7) -> pd.DataFrame:
+    """
+    Iteratively removes rows and columns with excessive missing data.
+
+    This function performs a comprehensive cleaning cycle on a DataFrame. It
+    repeatedly drops columns with constant values, followed by rows and columns that exceed
+    a specified threshold of missing values. The process continues until the
+    DataFrame's dimensions stabilize, ensuring that the interdependency between
+    row and column deletions is handled. 
+    
+    Initial and final missing data reports are saved to the specified log directory.
+
+    Args:
+        df (pd.DataFrame): The input pandas DataFrame to be cleaned.
+        log_directory (Union[str, Path]): Path to the directory where the
+            'Missing_Data_start.csv' and 'Missing_Data_final.csv' logs
+            will be saved.
+        targets (list[str]): A list of column names to be treated as target
+            variables. This list guides the row-dropping logic.
+        skip_targets (bool, optional): If True, the columns listed in `targets`
+            will be exempt from being dropped, even if they exceed the missing
+            data threshold.
+        threshold (float, optional): The proportion of missing data required to drop
+            a row or column. For example, 0.7 means a row/column will be
+            dropped if 70% or more of its data is missing.
+
+    Returns:
+        pd.DataFrame: A new, cleaned DataFrame with offending rows and columns removed.
+    """
+    # make a deep copy to work with
+    df_clean = df.copy()
+    
+    # Log initial state
+    missing_data = show_null_columns(df=df_clean)
+    save_dataframe(df=missing_data.reset_index(drop=False),
+                   save_dir=log_directory,
+                   filename="Missing_Data_start")
+    
+    # Clean cycles for rows and columns
+    master = True
+    while master:
+        # track rows and columns
+        initial_rows, initial_columns = df_clean.shape
+        
+        # drop constant columns
+        df_clean = drop_constant_columns(df=df_clean)
+        
+        # clean rows
+        df_clean = drop_rows_with_missing_data(df=df_clean, targets=targets, threshold=threshold)
+        
+        # clean columns
+        if skip_targets:
+            df_clean = drop_columns_with_missing_data(df=df_clean, threshold=threshold, show_nulls_after=False, skip_columns=targets)
+        else:
+            df_clean = drop_columns_with_missing_data(df=df_clean, threshold=threshold, show_nulls_after=False)
+        
+        # cleaned?
+        remaining_rows, remaining_columns = df_clean.shape
+        if remaining_rows >= initial_rows and remaining_columns >= initial_columns:
+            master = False
+    
+    # log final state
+    missing_data = show_null_columns(df=df_clean)
+    save_dataframe(df=missing_data.reset_index(drop=False),
+                   save_dir=log_directory,
+                   filename="Missing_Data_final")
+    
+    # return cleaned dataframe
+    return df_clean
 
 
 def split_features_targets(df: pd.DataFrame, targets: list[str]):
