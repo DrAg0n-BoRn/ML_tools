@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "8.2.0"
+version = "9.0.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -24,7 +24,8 @@ base = [
     "pandas", 
     "numpy", 
     "polars", 
-    "joblib"
+    "joblib", 
+    "colorlog"
 ]
 
 # Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
@@ -47,7 +48,8 @@ ML = [
     "shap",
     "tqdm",
     "Pillow",
-    "evotorch"
+    "evotorch", 
+    "colorlog"
 ]
 
 # MICE and VIF - Requires a new virtual-env due to dependency version conflicts
@@ -62,6 +64,7 @@ mice = [
     "statsmodels",
     "lightgbm<=4.5.0",
     "shap",
+    "colorlog"
 ]
 
 # pytorch base CPU installations - not recommended
@@ -79,6 +82,7 @@ excel = [
     "notebook",
     "jupyterlab",
     "ipywidgets",
+    "colorlog"
 ]
 
 # GUI for boost algorithms

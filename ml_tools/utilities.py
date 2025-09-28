@@ -76,11 +76,13 @@ def load_dataframe(
             df = pl.read_csv(path, infer_schema_length=1000)
             
     else:
-        raise ValueError(f"❌ Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
+        _LOGGER.error(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
+        raise ValueError()
 
     # This check works for both pandas and polars DataFrames
     if df.shape[0] == 0:
-        raise ValueError(f"❌ DataFrame '{df_name}' loaded from '{path}' is empty.")
+        _LOGGER.error(f"DataFrame '{df_name}' loaded from '{path}' is empty.")
+        raise ValueError()
 
     if verbose:
         _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
@@ -162,13 +164,14 @@ def merge_dataframes(
         merged_df = pd.concat(dfs, axis=0)
 
     else:
-        raise ValueError(f"❌ Invalid merge direction: {direction}")
+        _LOGGER.error(f"Invalid merge direction: {direction}")
+        raise ValueError()
 
     if reset_index:
         merged_df = merged_df.reset_index(drop=True)
     
     if verbose:
-        _LOGGER.info(f"✅ Merged DataFrame shape: {merged_df.shape}")
+        _LOGGER.info(f"Merged DataFrame shape: {merged_df.shape}")
 
     return merged_df
 
@@ -187,7 +190,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
     """
     # This check works for both pandas and polars
     if df.shape[0] == 0:
-        _LOGGER.warning(f"⚠️ Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
+        _LOGGER.warning(f"Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
         return
     
     # Create the directory if it doesn't exist
@@ -207,9 +210,10 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
         df.write_csv(output_path) # Polars defaults to utf8 and no index
     else:
         # This error handles cases where an unsupported type is passed
-        raise TypeError(f"❌ Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
+        _LOGGER.error(f"Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
+        raise TypeError()
     
-    _LOGGER.info(f"✅ Saved dataset: '{filename}' with shape: {df.shape}")
+    _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df.shape}")
 
 
 def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
@@ -243,7 +247,8 @@ def normalize_mixed_list(data: list, threshold: int = 2) -> list[float]:
     
     # Raise for negative values
     if any(x < 0 for x in float_list):
-        raise ValueError("❌ Negative values are not allowed in the input list.")
+        _LOGGER.error("Negative values are not allowed in the input list.")
+        raise ValueError()
     
     # Step 2: Compute log10 of non-zero values
     nonzero = [x for x in float_list if x > 0]
@@ -302,14 +307,16 @@ def threshold_binary_values(
     elif isinstance(input_array, (list, tuple)):
         array = np.array(input_array)
     else:
-        raise TypeError("❌ Unsupported input type")
+        _LOGGER.error("Unsupported input type")
+        raise TypeError()
 
     array = array.flatten()
     total = array.shape[0]
 
     bin_count = total if binary_values is None else binary_values
     if not (0 <= bin_count <= total):
-        raise ValueError("❌ binary_values must be between 0 and the total number of elements")
+        _LOGGER.error("'binary_values' must be between 0 and the total number of elements")
+        raise ValueError()
 
     if bin_count == 0:
         result = array
@@ -349,9 +356,15 @@ def threshold_binary_values_batch(
     np.ndarray
         Thresholded array, same shape as input.
     """
-    assert input_array.ndim == 2, f"❌ Expected 2D array, got {input_array.ndim}D"
+    if input_array.ndim != 2:
+        _LOGGER.error(f"Expected 2D array, got {input_array.ndim}D array.")
+        raise AssertionError()
+    
     batch_size, total_features = input_array.shape
-    assert 0 <= binary_values <= total_features, "❌ binary_values out of valid range"
+    
+    if not (0 <= binary_values <= total_features):
+        _LOGGER.error("'binary_values' out of valid range.")
+        raise AssertionError()
 
     if binary_values == 0:
         return input_array.copy()
@@ -380,15 +393,13 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         full_path = save_path / sanitized_name
         joblib.dump(obj, full_path)
     except (IOError, OSError, TypeError, TerminatedWorkerError) as e:
-        message = f"❌ Failed to serialize object of type '{type(obj)}': {e}"
+        _LOGGER.error(f"Failed to serialize object of type '{type(obj)}'.")
         if raise_on_error:
-            raise Exception(message)
-        else:
-            _LOGGER.warning(message)
+            raise e
         return None
     else:
         if verbose:
-            _LOGGER.info(f"✅ Object of type '{type(obj)}' saved to '{full_path}'")
+            _LOGGER.info(f"Object of type '{type(obj)}' saved to '{full_path}'")
         return None
 
 
@@ -407,15 +418,13 @@ def deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_e
     try:
         obj = joblib.load(true_filepath)
     except (IOError, OSError, EOFError, TypeError, ValueError) as e:
-        message = f"❌ Failed to deserialize object from '{true_filepath}': {e}"
+        _LOGGER.error(f"Failed to deserialize object from '{true_filepath}'.")
         if raise_on_error:
-            raise Exception(message)
-        else:
-            _LOGGER.warning(message)
+            raise e
         return None
     else:
         if verbose:
-            _LOGGER.info(f"✅ Loaded object of type '{type(obj)}'")
+            _LOGGER.info(f"Loaded object of type '{type(obj)}'.")
         return obj
 
 
@@ -486,7 +495,8 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
     for dir in list_of_dirs:
         dir_path = make_fullpath(dir)
         if not dir_path.is_dir():
-            raise IOError(f"'{dir}' is not a directory.")
+            _LOGGER.error(f"'{dir}' is not a directory.")
+            raise IOError()
         all_dir_paths.append(dir_path)
     
     # main loop
@@ -502,10 +512,10 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                     save_dataframe(df=df, save_dir=save_dir, filename=filename)
                     total_saved += 1
             except Exception as e:
-                _LOGGER.warning(f"⚠️ Failed to process file '{df_path}'. Reason: {e}")
+                _LOGGER.error(f"Failed to process file '{df_path}'. Reason: {e}")
                 continue 
 
-    _LOGGER.info(f"✅ {total_saved} single-target datasets were created.")
+    _LOGGER.info(f"{total_saved} single-target datasets were created.")
 
 
 def train_dataset_yielder(
@@ -528,7 +538,6 @@ def train_dataset_yielder(
     for target_col in valid_targets:
         df_target = df[target_col]
         yield (df_features, df_target, feature_names, target_col)
-
 
 
 def info():

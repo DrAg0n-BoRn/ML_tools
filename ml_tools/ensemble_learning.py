@@ -339,7 +339,8 @@ def _resample(X_train: np.ndarray, y_train: pd.Series,
     elif strategy == 'ADASYN':
         resample_algorithm = ADASYN(random_state=random_state, n_neighbors=3)
     else:
-        raise ValueError(f"Invalid resampling strategy: {strategy}")
+        _LOGGER.error(f"Invalid resampling strategy: {strategy}")
+        raise ValueError()
     
     X_res, y_res, *_ = resample_algorithm.fit_resample(X_train, y_train)
     return X_res, y_res
@@ -459,7 +460,8 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
         y_pred = evaluate_model_regression(model=trained_model, model_name=model_name, save_dir=local_save_directory, 
                              x_test_scaled=test_features, single_y_test=test_target, target_name=target_name)
     else:
-        raise ValueError(f"Unrecognized task '{task}' for model training,")
+        _LOGGER.error(f"Unrecognized task '{task}' for model training,")
+        raise ValueError()
     if debug:
         _LOGGER.info(f"Predicted vector: {type(y_pred)} with shape: {y_pred.shape}")
     
@@ -487,13 +489,14 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
     elif isinstance(model_object, ClassificationTreeModels):
         task = "classification"
         if handle_classification_imbalance is None:
-            _LOGGER.warning("⚠️ No method to handle classification class imbalance has been selected. Datasets are assumed to be balanced.")
+            _LOGGER.warning("No method to handle classification class imbalance has been selected. Datasets are assumed to be balanced.")
         elif handle_classification_imbalance == "by_model":
             model_object.use_model_balance = True
         else:
             model_object.use_model_balance = False
     else:
-        raise TypeError(f"Unrecognized model {type(model_object)}")
+        _LOGGER.error(f"Unrecognized model {type(model_object)}")
+        raise TypeError()
     
     #Check paths
     datasets_path = make_fullpath(datasets_dir)
@@ -519,7 +522,7 @@ def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Pat
                                     debug=debug, save_dir=save_path, save_model=save_model,
                                     generate_learning_curves=generate_learning_curves)
 
-    _LOGGER.info("✅ Training and evaluation complete.")
+    _LOGGER.info("Training and evaluation complete.")
 
 
 def info():

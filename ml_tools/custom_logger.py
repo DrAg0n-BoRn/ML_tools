@@ -76,12 +76,13 @@ def custom_logger(
             _log_exception_to_log(data, base_path.with_suffix(".log"))
 
         else:
-            raise ValueError("Unsupported data type. Must be list, dict, str, or BaseException.")
+            _LOGGER.error("Unsupported data type. Must be list, dict, str, or BaseException.")
+            raise ValueError()
 
-        _LOGGER.info(f"🗄️ Log saved to: '{base_path}'")
+        _LOGGER.info(f"Log saved to: '{base_path}'")
 
-    except Exception as e:
-        _LOGGER.error(f"❌ Log not saved: {e}")
+    except Exception:
+        _LOGGER.exception(f"Log not saved.")
 
 
 def _log_list_to_txt(data: List[Any], path: Path) -> None:
@@ -102,7 +103,9 @@ def _log_dict_to_csv(data: Dict[Any, List[Any]], path: Path) -> None:
 
     for key, value in data.items():
         if not isinstance(value, list):
-            raise ValueError(f"Dictionary value for key '{key}' must be a list.")
+            _LOGGER.error(f"Dictionary value for key '{key}' must be a list.")
+            raise ValueError()
+        
         sanitized_key = str(key).strip().replace('\n', '_').replace('\r', '_')
         padded_value = value + [None] * (max_length - len(value))
         sanitized_dict[sanitized_key] = padded_value
@@ -152,7 +155,7 @@ def save_list_strings(list_strings: list[str], directory: Union[str,Path], filen
             f.write(f"{string_data}\n")
     
     if verbose:
-        _LOGGER.info(f"✅ Text file saved as '{full_path.name}'.")
+        _LOGGER.info(f"Text file saved as '{full_path.name}'.")
 
 
 def load_list_strings(text_file: Union[str,Path], verbose: bool=True) -> list[str]:
@@ -164,10 +167,11 @@ def load_list_strings(text_file: Union[str,Path], verbose: bool=True) -> list[st
         loaded_strings = [line.strip() for line in f]
     
     if len(loaded_strings) == 0:
-        raise ValueError("❌ The text file is empty.")
+        _LOGGER.error("The text file is empty.")
+        raise ValueError()
     
     if verbose:
-        _LOGGER.info(f"✅ Text file loaded as list of strings.")
+        _LOGGER.info(f"Text file loaded as list of strings.")
         
     return loaded_strings
 

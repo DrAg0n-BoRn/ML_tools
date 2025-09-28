@@ -85,11 +85,13 @@ class _BaseDatasetMaker(ABC):
                 try:
                     continuous_feature_indices = [name_to_idx[name] for name in continuous_feature_columns] # type: ignore
                 except KeyError as e:
-                    raise ValueError(f"Feature column '{e.args[0]}' not found.")
+                    _LOGGER.error(f"Feature column '{e.args[0]}' not found.")
+                    raise ValueError()
             elif all(isinstance(c, int) for c in continuous_feature_columns):
                 continuous_feature_indices = continuous_feature_columns # type: ignore
             else:
-                raise TypeError("`continuous_feature_columns` must be a list of all strings or all integers.")
+                _LOGGER.error("'continuous_feature_columns' must be a list of all strings or all integers.")
+                raise TypeError()
 
         X_train_values = X_train.values
         X_test_values = X_test.values
@@ -152,8 +154,12 @@ class _BaseDatasetMaker(ABC):
         Args:
             save_dir (str | Path): The directory where the scaler will be saved.
         """
-        if not self.scaler: raise RuntimeError("No scaler was fitted or provided.")
-        if not self.id: raise ValueError("Must set the `id` before saving scaler.")
+        if not self.scaler: 
+            _LOGGER.error("No scaler was fitted or provided.")
+            raise RuntimeError()
+        if not self.id: 
+            _LOGGER.error("Must set the `id` before saving scaler.")
+            raise ValueError()
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         sanitized_id = sanitize_filename(self.id)
         filename = f"scaler_{sanitized_id}.pth"
@@ -365,7 +371,7 @@ class VisionDatasetMaker(_BaseMaker):
             f"Image channels (bands): {img_channels or 'None'}\n"
             f"--------------------------------------"
         )
-        _LOGGER.info(report)
+        print(report)
 
     def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
                    stratify: bool = True, random_state: Optional[int] = None) -> 'VisionDatasetMaker':
@@ -375,7 +381,8 @@ class VisionDatasetMaker(_BaseMaker):
             return self
 
         if val_size + test_size >= 1.0:
-            raise ValueError("The sum of val_size and test_size must be less than 1.")
+            _LOGGER.error("The sum of val_size and test_size must be less than 1.")
+            raise ValueError()
 
         indices = list(range(len(self.full_dataset)))
         labels_for_split = self.labels if stratify else None
@@ -409,7 +416,8 @@ class VisionDatasetMaker(_BaseMaker):
                              extra_train_transforms: Optional[List] = None) -> 'VisionDatasetMaker':
         """Configures and applies the image transformations (augmentations)."""
         if not self._is_split:
-            raise RuntimeError("Transforms must be configured AFTER splitting data. Call .split_data() first.")
+            _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
+            raise RuntimeError()
 
         base_train_transforms = [transforms.RandomResizedCrop(crop_size), transforms.RandomHorizontalFlip()]
         if extra_train_transforms:
@@ -432,9 +440,10 @@ class VisionDatasetMaker(_BaseMaker):
     def get_datasets(self) -> Tuple[Dataset, ...]:
         """Returns the final train, validation, and optional test datasets."""
         if not self._is_split:
-            raise RuntimeError("Data has not been split. Call .split_data() first.")
+            _LOGGER.error("Data has not been split. Call .split_data() first.")
+            raise RuntimeError()
         if not self._are_transforms_configured:
-            _LOGGER.warning("⚠️ Transforms have not been configured. Using default ToTensor only.")
+            _LOGGER.warning("Transforms have not been configured. Using default ToTensor only.")
 
         if self._test_dataset:
             return self._train_dataset, self._val_dataset, self._test_dataset
@@ -468,7 +477,8 @@ class SequenceMaker(_BaseMaker):
             self.time_axis = numpy.arange(len(data))
             self.sequence = data.astype(numpy.float32)
         else:
-            raise TypeError("Data must be a pandas DataFrame/Series or a numpy array.")
+            _LOGGER.error("Data must be a pandas DataFrame/Series or a numpy array.")
+            raise TypeError()
             
         self.train_sequence = None
         self.test_sequence = None
@@ -483,10 +493,11 @@ class SequenceMaker(_BaseMaker):
         splitting to prevent data leakage from the test set.
         """
         if not self._is_split:
-            raise RuntimeError("Data must be split BEFORE normalizing. Call .split_data() first.")
+            _LOGGER.error("Data must be split BEFORE normalizing. Call .split_data() first.")
+            raise RuntimeError()
 
         if self.scaler:
-            _LOGGER.warning("⚠️ Data has already been normalized.")
+            _LOGGER.warning("Data has already been normalized.")
             return self
 
         # 1. PytorchScaler requires a Dataset to fit. Create a temporary one.
@@ -511,13 +522,13 @@ class SequenceMaker(_BaseMaker):
         self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
 
         self._is_normalized = True
-        _LOGGER.info("✅ Sequence data normalized using PytorchScaler.")
+        _LOGGER.info("Sequence data normalized using PytorchScaler.")
         return self
 
     def split_data(self, test_size: float = 0.2) -> 'SequenceMaker':
         """Splits the sequence into training and testing portions."""
         if self._is_split:
-            _LOGGER.warning("⚠️ Data has already been split.")
+            _LOGGER.warning("Data has already been split.")
             return self
 
         split_idx = int(len(self.sequence) * (1 - test_size))
@@ -538,7 +549,8 @@ class SequenceMaker(_BaseMaker):
         "sequence-to-sequence": Label vectors are of the same size as the feature vectors instead of a single future prediction.
         """
         if not self._is_split:
-            raise RuntimeError("Cannot generate windows before splitting data. Call .split_data() first.")
+            _LOGGER.error("Cannot generate windows before splitting data. Call .split_data() first.")
+            raise RuntimeError()
 
         self._train_dataset = self._create_windowed_dataset(self.train_sequence, sequence_to_sequence) # type: ignore
         self._test_dataset = self._create_windowed_dataset(self.test_sequence, sequence_to_sequence) # type: ignore
@@ -550,7 +562,8 @@ class SequenceMaker(_BaseMaker):
     def _create_windowed_dataset(self, data: numpy.ndarray, use_sequence_labels: bool) -> Dataset:
         """Efficiently creates windowed features and labels using numpy."""
         if len(data) <= self.sequence_length:
-            raise ValueError("Data length must be greater than the sequence_length to create at least one window.")
+            _LOGGER.error("Data length must be greater than the sequence_length to create at least one window.")
+            raise ValueError()
             
         if not use_sequence_labels:
             features = data[:-1]
@@ -578,7 +591,8 @@ class SequenceMaker(_BaseMaker):
     def denormalize(self, data: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
         """Applies inverse transformation using the stored PytorchScaler."""
         if self.scaler is None:
-            raise RuntimeError("Data was not normalized. Cannot denormalize.")
+            _LOGGER.error("Data was not normalized. Cannot denormalize.")
+            raise RuntimeError()
 
         # Ensure data is a torch.Tensor
         if isinstance(data, numpy.ndarray):
@@ -597,7 +611,8 @@ class SequenceMaker(_BaseMaker):
     def plot(self, predictions: Optional[numpy.ndarray] = None):
         """Plots the original training and testing data, with optional predictions."""
         if not self._is_split:
-            raise RuntimeError("Cannot plot before splitting data. Call .split_data() first.")
+            _LOGGER.error("Cannot plot before splitting data. Call .split_data() first.")
+            raise RuntimeError()
         
         plt.figure(figsize=(15, 6))
         plt.title("Time Series Data")
@@ -618,7 +633,8 @@ class SequenceMaker(_BaseMaker):
     def get_datasets(self) -> Tuple[Dataset, Dataset]:
         """Returns the final train and test datasets."""
         if not self._are_windows_generated:
-            raise RuntimeError("Windows have not been generated. Call .generate_windows() first.")
+            _LOGGER.error("Windows have not been generated. Call .generate_windows() first.")
+            raise RuntimeError()
         return self._train_dataset, self._test_dataset
 
 
@@ -637,7 +653,8 @@ class ResizeAspectFill:
 
     def __call__(self, image: Image.Image) -> Image.Image:
         if not isinstance(image, Image.Image):
-            raise TypeError(f"Expected PIL.Image.Image, got {type(image).__name__}")
+            _LOGGER.error(f"Expected PIL.Image.Image, got {type(image).__name__}")
+            raise TypeError()
 
         w, h = image.size
         if w == h:

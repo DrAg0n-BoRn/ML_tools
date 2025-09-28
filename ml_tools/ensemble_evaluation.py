@@ -119,8 +119,8 @@ def evaluate_model_classification(
         heatmap_path = save_path / f"Classification_Report_{sanitized_target_name}.svg"
         plt.savefig(heatmap_path, format="svg", bbox_inches="tight")
         plt.close()
-    except Exception as e:
-        _LOGGER.error(f"❌ Could not generate classification report heatmap for {target_name}: {e}")
+    except Exception:
+        _LOGGER.exception(f"Could not generate classification report heatmap for {target_name}:")
 
     # Create confusion matrix
     fig, ax = plt.subplots(figsize=figsize)
@@ -198,7 +198,8 @@ def plot_roc_curve(
             
     elif hasattr(probabilities_or_model, "predict_proba"):
         if input_features is None:
-            raise ValueError("input_features must be provided when using a classifier.")
+            _LOGGER.error("input_features must be provided when using a classifier.")
+            raise ValueError()
 
         try:
             classes = probabilities_or_model.classes_ # type: ignore
@@ -209,7 +210,8 @@ def plot_roc_curve(
         y_score = probabilities_or_model.predict_proba(input_features)[:, positive_class_index] # type: ignore
 
     else:
-        raise TypeError("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
+        _LOGGER.error("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
+        raise TypeError()
 
     # ROC and AUC
     fpr, tpr, _ = roc_curve(true_labels, y_score)
@@ -276,7 +278,8 @@ def plot_precision_recall_curve(
             
     elif hasattr(probabilities_or_model, "predict_proba"):
         if input_features is None:
-            raise ValueError("input_features must be provided when using a classifier.")
+            _LOGGER.error("input_features must be provided when using a classifier.")
+            raise ValueError()
         try:
             classes = probabilities_or_model.classes_ # type: ignore
             positive_class_index = list(classes).index(1)
@@ -284,7 +287,8 @@ def plot_precision_recall_curve(
             positive_class_index = 1
         y_score = probabilities_or_model.predict_proba(input_features)[:, positive_class_index] # type: ignore
     else:
-        raise TypeError("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
+        _LOGGER.error("Unsupported type for 'probabilities_or_model'. Must be a NumPy array or a model with support for '.predict_proba()'.")
+        raise TypeError()
 
     # Calculate PR curve and AP score
     precision, recall, _ = precision_recall_curve(true_labels, y_score)

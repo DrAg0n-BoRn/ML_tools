@@ -134,7 +134,8 @@ class EarlyStopping(Callback):
         self.verbose = verbose
         
         if mode not in ['auto', 'min', 'max']:
-            raise ValueError(f"EarlyStopping mode {mode} is unknown, choose one of ('auto', 'min', 'max')")
+            _LOGGER.error(f"EarlyStopping mode {mode} is unknown, choose one of ('auto', 'min', 'max')")
+            raise ValueError()
         self.mode = mode
 
         # Determine the comparison operator based on the mode
@@ -221,7 +222,8 @@ class ModelCheckpoint(Callback):
         self.last_best_filepath = None
 
         if mode not in ['auto', 'min', 'max']:
-            raise ValueError(f"ModelCheckpoint mode {mode} is unknown.")
+            _LOGGER.error(f"ModelCheckpoint mode {mode} is unknown.")
+            raise ValueError()
         self.mode = mode
 
         if self.mode == 'min':
@@ -329,7 +331,8 @@ class LRScheduler(Callback):
         # For schedulers that need a metric (e.g., val_loss)
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
             if self.monitor is None:
-                raise ValueError("LRScheduler needs a `monitor` metric for ReduceLROnPlateau.")
+                _LOGGER.error("LRScheduler needs a `monitor` metric for ReduceLROnPlateau.")
+                raise ValueError()
             
             metric_val = logs.get(self.monitor) # type: ignore
             if metric_val is not None:

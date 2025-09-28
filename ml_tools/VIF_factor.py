@@ -55,19 +55,19 @@ def compute_vif(
         sanitized_columns = df.select_dtypes(include='number').columns.tolist()
         missing_features = set(ground_truth_cols) - set(sanitized_columns)
         if missing_features:
-            _LOGGER.warning(f"⚠️ These columns are not Numeric:\n{missing_features}")
+            _LOGGER.warning(f"These columns are not Numeric:\n{missing_features}")
     else:
         sanitized_columns = list()
         for feature in use_columns:
             if feature not in ground_truth_cols:
-                _LOGGER.warning(f"⚠️ The provided column '{feature}' is not in the DataFrame.")
+                _LOGGER.warning(f"The provided column '{feature}' is not in the DataFrame.")
             else:
                 sanitized_columns.append(feature)
     
     if ignore_columns is not None and use_columns is None:
         missing_ignore = set(ignore_columns) - set(ground_truth_cols)
         if missing_ignore:
-            _LOGGER.warning(f"⚠️ Warning: The following 'columns to ignore' are not found in the Dataframe:\n{missing_ignore}")
+            _LOGGER.warning(f"The following 'columns to ignore' are not found in the Dataframe:\n{missing_ignore}")
         sanitized_columns = [f for f in sanitized_columns if f not in ignore_columns]
 
     X = df[sanitized_columns].copy()
@@ -138,7 +138,7 @@ def compute_vif(
                         filename += ".svg"
                 full_save_path = save_path / filename
                 plt.savefig(full_save_path, format='svg', bbox_inches='tight')
-                _LOGGER.info(f"✅ Saved VIF plot: '{filename}'")
+                _LOGGER.info(f"📊 Saved VIF plot: '{filename}'")
             
             if show_plot:
                 plt.show()
@@ -163,7 +163,8 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     """
     # Ensure expected structure
     if 'feature' not in vif_df.columns or 'VIF' not in vif_df.columns:
-        raise ValueError("'vif_df' must contain 'feature' and 'VIF' columns.")
+        _LOGGER.error("'vif_df' must contain 'feature' and 'VIF' columns.")
+        raise ValueError()
     
     # Identify features to drop
     to_drop = vif_df[vif_df["VIF"] > threshold]["feature"].tolist()
@@ -177,7 +178,7 @@ def drop_vif_based(df: pd.DataFrame, vif_df: pd.DataFrame, threshold: float = 10
     result_df = df.drop(columns=to_drop)
     
     if result_df.empty:
-        _LOGGER.warning(f"⚠️ All columns were dropped.")
+        _LOGGER.warning(f"All columns were dropped.")
 
     return result_df, to_drop
 

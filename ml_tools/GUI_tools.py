@@ -88,7 +88,7 @@ class ConfigManager:
         
         path = Path(file_path)
         if path.exists():
-            _LOGGER.warning(f"⚠️ Configuration file already exists at {path}, or wrong path provided. Aborting.")
+            _LOGGER.warning(f"Configuration file already exists at {path}, or wrong path provided. Aborting.")
             return
 
         config = configparser.ConfigParser()
@@ -150,7 +150,7 @@ class ConfigManager:
 
         with open(path, 'w') as configfile:
             config.write(configfile)
-        _LOGGER.info(f"📝 Successfully generated config template at: '{path}'")
+        _LOGGER.info(f"Successfully generated config template at: '{path}'")
 
 
 # --- GUI Factory ---
@@ -442,14 +442,14 @@ def catch_exceptions(show_popup: bool = True):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 # Format the full traceback to give detailed error info
-                error_msg = traceback.format_exc()
                 if show_popup:
+                    error_msg = traceback.format_exc()
                     sg.popup_error("An error occurred:", error_msg, title="Error")
                 else:
                     # Fallback for non-GUI contexts or if popup is disabled
-                    _LOGGER.error(error_msg)
+                    _LOGGER.exception("An error occurred.")
         return wrapper
     return decorator
 

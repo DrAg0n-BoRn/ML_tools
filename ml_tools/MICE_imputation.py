@@ -38,13 +38,14 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
     imputed_datasets = [kernel.complete_data(dataset=i) for i in range(resulting_datasets)]
     
     if imputed_datasets is None or len(imputed_datasets) == 0:
-        raise ValueError("❌ No imputed datasets were generated. Check the MICE process.")
+        _LOGGER.error("No imputed datasets were generated. Check the MICE process.")
+        raise ValueError()
     
     # threshold binary columns
     if binary_columns is not None:
         invalid_binary_columns = set(binary_columns) - set(df.columns)
         if invalid_binary_columns:
-            _LOGGER.warning(f"⚠️ These 'binary columns' are not in the dataset:")
+            _LOGGER.warning(f"These 'binary columns' are not in the dataset:")
             for invalid_binary_col in invalid_binary_columns:
                 print(f"  - {invalid_binary_col}")
         valid_binary_columns = [col for col in binary_columns if col not in invalid_binary_columns]
@@ -63,7 +64,7 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
         assert all(imputed_df.index == df.index), f"❌ Index mismatch in dataset {subname}" # type: ignore
     # print("✅ All imputed datasets match the original DataFrame indexes.")
     
-    _LOGGER.info("✅ MICE imputation complete.")
+    _LOGGER.info("MICE imputation complete.")
     
     return kernel, imputed_datasets, imputed_dataset_names
 
@@ -95,7 +96,8 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
     dataset_count = kernel.num_datasets
     
     if dataset_count != len(imputed_dataset_names):
-        raise ValueError(f"❌ Expected {dataset_count} names in imputed_dataset_names, got {len(imputed_dataset_names)}")
+        _LOGGER.error(f"Expected {dataset_count} names in imputed_dataset_names, got {len(imputed_dataset_names)}")
+        raise ValueError()
     
     # Check path
     root_path = make_fullpath(root_dir, make=True)
@@ -133,7 +135,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-        _LOGGER.info(f"✅ {dataset_file_dir} process completed.")
+        _LOGGER.info(f"{dataset_file_dir} process completed.")
 
 
 # Imputed distributions
@@ -157,7 +159,8 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         """Helper function to add labels and legends to a figure"""
         
         if not isinstance(fig, ggplot):
-            raise TypeError("❌ Expected a plotnine.ggplot object")
+            _LOGGER.error(f"Expected a plotnine.ggplot object, received {type(fig)}.")
+            raise TypeError()
         
         # Edit labels and title
         fig = fig + theme(
@@ -171,7 +174,8 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
         fig = fig.draw()
         
         if not hasattr(fig, 'axes') or len(fig.axes) == 0:
-            raise RuntimeError("❌ Rendered figure has no axes to modify")
+            _LOGGER.error("Rendered figure has no axes to modify.")
+            raise RuntimeError()
         
         if filename == "Combined_Distributions":
             custom_xlabel = "Feature Values"
@@ -218,7 +222,7 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    _LOGGER.info(f"✅ {local_dir_name} completed.")
+    _LOGGER.info(f"{local_dir_name} completed.")
 
 
 def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str], 

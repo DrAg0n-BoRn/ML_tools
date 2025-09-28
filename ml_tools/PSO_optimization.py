@@ -65,7 +65,9 @@ class ObjectiveFunction():
         np.ndarray
             1D array with length n_samples containing predicted target values.
         """
-        assert features_array.ndim == 2, f"Expected 2D array, got shape {features_array.shape}"
+        if features_array.ndim != 2:
+            _LOGGER.error(f"Expected 2D array, got shape {features_array.shape}.")
+            raise AssertionError()
         
         # Apply noise if enabled
         if self.use_noise:
@@ -101,7 +103,9 @@ class ObjectiveFunction():
         np.ndarray
             Noised array of same shape
         """
-        assert features_array.ndim == 2, "Expected 2D array for batch noise injection"
+        if features_array.ndim != 2:
+            _LOGGER.error(f"Expected 2D array for batch noise injection, got shape {features_array.shape}.")
+            raise AssertionError()
 
         if self.binary_features > 0:
             split_idx = -self.binary_features
@@ -118,13 +122,16 @@ class ObjectiveFunction():
     
     def check_model(self):
         if isinstance(self.model, xgb.XGBClassifier) or isinstance(self.model, lgb.LGBMClassifier):
-            raise ValueError(f"[Model Check Failed] ❌\nThe loaded model ({type(self.model).__name__}) is a Classifier.\nOptimization is not suitable for standard classification tasks.")
+            _LOGGER.error(f"[Model Check Failed]\nThe loaded model ({type(self.model).__name__}) is a Classifier.\nOptimization is not suitable for standard classification tasks.")
+            raise ValueError()
         if self.model is None:
-            raise ValueError("Loaded model is None")
+            _LOGGER.error("Loaded model is None")
+            raise ValueError()
 
     def _get_from_artifact(self, key: str):
         if self._artifact is None:
-            raise TypeError("Load model error")
+            _LOGGER.error("Load model error")
+            raise TypeError()
         val = self._artifact.get(key)
         if key == EnsembleKeys.FEATURES:
             result = val if isinstance(val, list) and val else None
@@ -314,7 +321,8 @@ def run_pso(lower_boundaries: list[float],
     if target_name is None and objective_function.target_name is not None:
         target_name = objective_function.target_name
     if target_name is None:
-        raise ValueError(f"'target' name was not provided and was not found in the .joblib object.")
+        _LOGGER.error(f"'target' name was not provided and was not found in the .joblib object.")
+        raise ValueError()
     
     # --- Setup: Saving Infrastructure ---
     sanitized_target_name = sanitize_filename(target_name)
@@ -355,7 +363,7 @@ def run_pso(lower_boundaries: list[float],
                 objective_function, pso_arguments, names, target_name, random_state,
                 save_format, csv_path, db_manager, db_table_name
             )
-            _LOGGER.info(f"✅ Single optimization complete.")
+            _LOGGER.info(f"Single optimization complete.")
             return features_dict, target_dict
         
         else:
@@ -365,7 +373,7 @@ def run_pso(lower_boundaries: list[float],
                 objective_function, pso_arguments, names, target_name, post_hoc_analysis,
                 save_format, csv_path, db_manager, db_table_name
             )
-            _LOGGER.info("✅ Post-hoc analysis complete. Results saved.")
+            _LOGGER.info("Post-hoc analysis complete. Results saved.")
             return None
 
 

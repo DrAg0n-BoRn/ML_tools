@@ -88,7 +88,7 @@ class PathManager:
         try:
             return self._paths[key]
         except KeyError:
-            _LOGGER.error(f"❌ Path key '{key}' not found.")
+            _LOGGER.error(f"Path key '{key}' not found.")
             raise
 
     def update(self, new_paths: Dict[str, Union[str, Path]], overwrite: bool = False) -> None:
@@ -106,9 +106,8 @@ class PathManager:
         if not overwrite:
             for key in new_paths:
                 if key in self._paths:
-                    raise KeyError(
-                        f"❌ Path key '{key}' already exists in the manager. To replace it, call update() with overwrite=True."
-                    )
+                    _LOGGER.error(f"Path key '{key}' already exists in the manager. To replace it, call update() with overwrite=True.")
+                    raise KeyError
 
         # Resolve any string paths to Path objects before storing
         resolved_new_paths = {k: Path(v) for k, v in new_paths.items()}
@@ -136,7 +135,7 @@ class PathManager:
                 if key in self._paths:
                     path_items.append((key, self._paths[key]))
                 elif verbose:
-                    _LOGGER.warning(f"⚠️ Key '{key}' not found in PathManager, skipping.")
+                    _LOGGER.warning(f"Key '{key}' not found in PathManager, skipping.")
         else:
             path_items = self._paths.items()
 
@@ -153,7 +152,7 @@ class PathManager:
 
             if self._is_bundled and is_internal_path:
                 if verbose:
-                    _LOGGER.warning(f"⚠️ Skipping internal directory '{key}' in bundled app (read-only).")
+                    _LOGGER.warning(f"Skipping internal directory '{key}' in bundled app (read-only).")
                 continue
             # -------------------------
 
@@ -261,7 +260,8 @@ def make_fullpath(
         resolved = path.resolve(strict=True)
     except FileNotFoundError:
         if not make:
-            raise ValueError(f"❌ Path does not exist: '{path}'")
+            _LOGGER.error(f"Path does not exist: '{path}'.")
+            raise FileNotFoundError()
 
         try:
             if is_file:
@@ -271,14 +271,17 @@ def make_fullpath(
             else:
                 path.mkdir(parents=True, exist_ok=True)
             resolved = path.resolve(strict=True)
-        except Exception as e:
-            raise ValueError(f"❌ Failed to create {'file' if is_file else 'directory'} '{path}': {e}")
+        except Exception:
+            _LOGGER.exception(f"Failed to create {'file' if is_file else 'directory'} '{path}'.")
+            raise IOError()
     
     if enforce == "file" and not resolved.is_file():
-        raise TypeError(f"❌ Path was enforced as a file, but it is not: '{resolved}'")
+        _LOGGER.error(f"Path was enforced as a file, but it is not: '{resolved}'")
+        raise TypeError()
     
     if enforce == "directory" and not resolved.is_dir():
-        raise TypeError(f"❌ Path was enforced as a directory, but it is not: '{resolved}'")
+        _LOGGER.error(f"Path was enforced as a directory, but it is not: '{resolved}'")
+        raise TypeError()
 
     if verbose:
         if resolved.is_file():
@@ -315,7 +318,8 @@ def sanitize_filename(filename: str) -> str:
     
     # Check for empty string after sanitization
     if not sanitized:
-        raise ValueError("The sanitized filename is empty. The original input may have contained only invalid characters.")
+        _LOGGER.error("The sanitized filename is empty. The original input may have contained only invalid characters.")
+        raise ValueError()
 
     return sanitized
 
@@ -334,7 +338,8 @@ def list_csv_paths(directory: Union[str,Path], verbose: bool=True) -> dict[str, 
 
     csv_paths = list(dir_path.glob("*.csv"))
     if not csv_paths:
-        raise IOError(f"❌ No CSV files found in directory: {dir_path.name}")
+        _LOGGER.error(f"No CSV files found in directory: {dir_path.name}")
+        raise IOError()
     
     # make a dictionary of paths and names
     name_path_dict = {p.stem: p for p in csv_paths}
@@ -367,12 +372,13 @@ def list_files_by_extension(directory: Union[str,Path], extension: str, verbose:
     
     matched_paths = list(dir_path.glob(pattern))
     if not matched_paths:
-        raise IOError(f"❌ No '.{normalized_ext}' files found in directory: {dir_path}")
+        _LOGGER.error(f"No '.{normalized_ext}' files found in directory: {dir_path}.")
+        raise IOError()
 
     name_path_dict = {p.stem: p for p in matched_paths}
     
     if verbose:
-        _LOGGER.info(f"\n📂 '{normalized_ext.upper()}' files found:")
+        _LOGGER.info(f"📂 '{normalized_ext.upper()}' files found:")
         for name in name_path_dict:
             print(f"\t{name}")
     

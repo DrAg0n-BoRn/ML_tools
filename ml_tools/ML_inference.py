@@ -59,20 +59,20 @@ class _BaseInferenceHandler(ABC):
             self.model.load_state_dict(torch.load(model_p, map_location=self.device))
             self.model.to(self.device)
             self.model.eval()  # Set the model to evaluation mode
-            _LOGGER.info(f"✅ Model state loaded from '{model_p.name}' and set to evaluation mode.")
+            _LOGGER.info(f"Model state loaded from '{model_p.name}' and set to evaluation mode.")
         except Exception as e:
-            _LOGGER.error(f"❌ Failed to load model state from '{model_p}': {e}")
+            _LOGGER.error(f"Failed to load model state from '{model_p}': {e}")
             raise
 
     def _validate_device(self, device: str) -> torch.device:
         """Validates the selected device and returns a torch.device object."""
         device_lower = device.lower()
         if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("⚠️ CUDA not available, switching to CPU.")
+            _LOGGER.warning("CUDA not available, switching to CPU.")
             device_lower = "cpu"
         elif device_lower == "mps" and not torch.backends.mps.is_available():
             # Your M-series Mac will appreciate this check!
-            _LOGGER.warning("⚠️ Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
+            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device_lower = "cpu"
         return torch.device(device_lower)
 
@@ -144,7 +144,8 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
             A dictionary containing the raw output tensors from the model.
         """
         if features.ndim != 2:
-            raise ValueError("Input for batch prediction must be a 2D array or tensor.")
+            _LOGGER.error("Input for batch prediction must be a 2D array or tensor.")
+            raise ValueError()
 
         input_tensor = self._preprocess_input(features)
 
@@ -176,7 +177,8 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
             features = features.reshape(1, -1) # Reshape to a batch of one
 
         if features.shape[0] != 1:
-            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+            _LOGGER.error("The 'predict()' method is for a single sample. Use 'predict_batch()' for multiple samples.")
+            raise ValueError()
 
         batch_results = self.predict_batch(features)
 
@@ -216,7 +218,8 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
         `target_id` must be implemented.
         """
         if self.target_id is None:
-            raise AttributeError(f"'target_id' has not been implemented.")
+            _LOGGER.error(f"'target_id' has not been implemented.")
+            raise AttributeError()
         
         if self.task == "regression":
             result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS]
@@ -252,7 +255,8 @@ class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
         super().__init__(model, state_dict, device, scaler)
 
         if task not in ["multi_target_regression", "multi_label_classification"]:
-            raise ValueError("`task` must be 'multi_target_regression' or 'multi_label_classification'.")
+            _LOGGER.error("`task` must be 'multi_target_regression' or 'multi_label_classification'.")
+            raise ValueError()
         self.task = task
         self.target_ids = target_ids
 
@@ -272,7 +276,8 @@ class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
             A dictionary containing the raw output tensors from the model.
         """
         if features.ndim != 2:
-            raise ValueError("Input for batch prediction must be a 2D array or tensor.")
+            _LOGGER.error("Input for batch prediction must be a 2D array or tensor.")
+            raise ValueError()
 
         input_tensor = self._preprocess_input(features)
 
@@ -309,7 +314,8 @@ class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
             features = features.reshape(1, -1)
 
         if features.shape[0] != 1:
-            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+            _LOGGER.error("The 'predict()' method is for a single sample. 'Use predict_batch()' for multiple samples.")
+            raise ValueError()
 
         batch_results = self.predict_batch(features, classification_threshold)
 
@@ -348,7 +354,8 @@ class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
         `target_ids` must be implemented.
         """
         if self.target_ids is None:
-            raise AttributeError(f"'target_id' has not been implemented.")
+            _LOGGER.error(f"'target_id' has not been implemented.")
+            raise AttributeError()
         
         if self.task == "multi_target_regression":
             result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
@@ -398,18 +405,18 @@ def multi_inference_regression(handlers: list[PyTorchInferenceHandler],
     
     # Validate that the input is a 2D tensor.
     if feature_vector.ndim != 2:
-        raise ValueError("Input feature_vector must be a 1D or 2D array/tensor.")
+        _LOGGER.error("Input feature_vector must be a 1D or 2D array/tensor.")
+        raise ValueError()
     
     results: dict[str,Any] = dict()
     for handler in handlers:
         # validation
         if handler.target_id is None:
-            raise AttributeError("All inference handlers must have a 'target_id' attribute.")
+            _LOGGER.error("All inference handlers must have a 'target_id' attribute.")
+            raise AttributeError()
         if handler.task != "regression":
-            raise ValueError(
-                f"Invalid task type: The handler for target_id '{handler.target_id}' "
-                f"is for '{handler.task}', but only 'regression' tasks are supported."
-            )
+            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_id}' is for '{handler.task}', but only 'regression' tasks are supported.")
+            raise ValueError()
             
         # inference
         if output == "numpy":
@@ -476,7 +483,8 @@ def multi_inference_classification(
         feature_vector = feature_vector.reshape(1, -1)
     
     if feature_vector.ndim != 2:
-        raise ValueError("Input feature_vector must be a 1D or 2D array/tensor.")
+        _LOGGER.error("Input feature_vector must be a 1D or 2D array/tensor.")
+        raise ValueError()
 
     # Initialize two dictionaries for results
     labels_results: dict[str, Any] = dict()
@@ -485,12 +493,11 @@ def multi_inference_classification(
     for handler in handlers:
         # Validation
         if handler.target_id is None:
-            raise AttributeError("All inference handlers must have a 'target_id' attribute.")
+            _LOGGER.error("All inference handlers must have a 'target_id' attribute.")
+            raise AttributeError()
         if handler.task != "classification":
-            raise ValueError(
-                f"Invalid task type: The handler for target_id '{handler.target_id}' "
-                f"is for '{handler.task}', but this function only supports 'classification'."
-            )
+            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_id}' is for '{handler.task}', but this function only supports 'classification'.")
+            raise ValueError()
             
         # Inference
         if output == "numpy":

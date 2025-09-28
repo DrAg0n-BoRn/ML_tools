@@ -59,15 +59,15 @@ class InferenceHandler:
                     self._feature_names = feature_names_list
                 elif self._feature_names != feature_names_list:
                     # Add a warning if subsequent models have different feature names.
-                    _LOGGER.warning(f"⚠️ Mismatched feature names in {fname}. Using feature order from the first model loaded.")
+                    _LOGGER.warning(f"Mismatched feature names in {fname}. Using feature order from the first model loaded.")
                 
                 self.models[target_name] = model
                 if self.verbose:
-                    _LOGGER.info(f"✅ Loaded model for target: {target_name}")
+                    _LOGGER.info(f"Loaded model for target: {target_name}")
 
-            except Exception as e:
-                _LOGGER.warning(f"⚠️ Failed to load or parse {fname}: {e}")
-                
+            except Exception:
+                _LOGGER.error(f"Failed to load or parse {fname}.")
+
     @property
     def feature_names(self) -> List[str]:
         """
@@ -92,7 +92,8 @@ class InferenceHandler:
             features = features.reshape(1, -1)
         
         if features.shape[0] != 1:
-            raise ValueError("The predict() method is for a single sample. Use predict_batch() for multiple samples.")
+            _LOGGER.error("The 'predict()' method is for a single sample. Use 'predict_batch()' for multiple samples.")
+            raise ValueError()
 
         results: Dict[str, Any] = dict()
         for target_name, model in self.models.items():
@@ -106,7 +107,7 @@ class InferenceHandler:
                                         EnsembleKeys.CLASSIFICATION_PROBABILITIES: probabilities}
         
         if self.verbose:
-            _LOGGER.info("✅ Inference process complete.")
+            _LOGGER.info("Inference process complete.")
         return results
 
     def predict_batch(self, features: np.ndarray) -> Dict[str, Any]:
@@ -122,7 +123,8 @@ class InferenceHandler:
                 - For classification: The value is another dictionary {'labels': ..., 'probabilities': ...}.
         """
         if features.ndim != 2:
-            raise ValueError("Input for batch prediction must be a 2D array.")
+            _LOGGER.error("Input for batch prediction must be a 2D array.")
+            raise ValueError()
 
         results: Dict[str, Any] = dict()
         for target_name, model in self.models.items():
@@ -134,7 +136,7 @@ class InferenceHandler:
                 results[target_name] = {"labels": labels, "probabilities": probabilities}
                 
         if self.verbose:
-            _LOGGER.info("✅ Inference process complete.")
+            _LOGGER.info("Inference process complete.")
 
         return results
 
@@ -174,11 +176,11 @@ def model_report(
         target = full_object[EnsembleKeys.TARGET]
         features = full_object[EnsembleKeys.FEATURES]
     except FileNotFoundError:
-        _LOGGER.error(f"❌ Model file not found at '{model_p}'")
+        _LOGGER.error(f"Model file not found at '{model_p}'")
         raise
     except (KeyError, TypeError) as e:
         _LOGGER.error(
-            f"❌ The serialized object is missing required keys '{EnsembleKeys.MODEL}', '{EnsembleKeys.TARGET}', '{EnsembleKeys.FEATURES}'"
+            f"The serialized object is missing required keys '{EnsembleKeys.MODEL}', '{EnsembleKeys.TARGET}', '{EnsembleKeys.FEATURES}'"
         )
         raise e
 
@@ -209,9 +211,9 @@ def model_report(
         with open(json_filepath, 'w') as f:
             json.dump(report_data, f, indent=4)
         if verbose:
-            _LOGGER.info(f"✅ JSON report saved to: '{json_filepath}'")
+            _LOGGER.info(f"JSON report saved to: '{json_filepath}'")
     except PermissionError:
-        _LOGGER.error(f"❌ Permission denied to write JSON report at '{json_filepath}'")
+        _LOGGER.exception(f"Permission denied to write JSON report at '{json_filepath}'.")
 
     # --- 5. Return the extracted data ---
     return report_data
@@ -233,15 +235,13 @@ def _deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_
     try:
         obj = joblib.load(true_filepath)
     except (IOError, OSError, EOFError, TypeError, ValueError) as e:
-        message = f"❌ Failed to deserialize object from '{true_filepath}': {e}"
+        _LOGGER.error(f"Failed to deserialize object from '{true_filepath}'.")
         if raise_on_error:
-            raise Exception(message)
-        else:
-            print(message)
+            raise e
         return None
     else:
         if verbose:
-            print(f"\n✅ Loaded object of type '{type(obj)}'")
+            _LOGGER.info(f"Loaded object of type '{type(obj)}'")
         return obj
 
 

@@ -50,7 +50,7 @@ class PytorchScaler:
             PytorchScaler: A new, fitted instance of the scaler.
         """
         if not continuous_feature_indices:
-            _LOGGER.warning("⚠️ No continuous feature indices provided. Scaler will not be fitted.")
+            _LOGGER.error("No continuous feature indices provided. Scaler will not be fitted.")
             return cls()
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
@@ -72,7 +72,7 @@ class PytorchScaler:
             count += continuous_features.size(0)
 
         if count == 0:
-             _LOGGER.warning("⚠️ Dataset is empty. Scaler cannot be fitted.")
+             _LOGGER.error("Dataset is empty. Scaler cannot be fitted.")
              return cls(continuous_feature_indices=continuous_feature_indices)
 
         # Calculate mean
@@ -80,7 +80,7 @@ class PytorchScaler:
 
         # Calculate standard deviation
         if count < 2:
-            _LOGGER.warning(f"⚠️ Only one sample found. Standard deviation cannot be calculated and is set to 1.")
+            _LOGGER.warning(f"Only one sample found. Standard deviation cannot be calculated and is set to 1.")
             std = torch.ones_like(mean)
         else:
             # var = E[X^2] - (E[X])^2
@@ -101,7 +101,7 @@ class PytorchScaler:
             torch.Tensor: The transformed data tensor.
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
-            _LOGGER.warning("⚠️ Scaler has not been fitted. Returning original data.")
+            _LOGGER.error("Scaler has not been fitted. Returning original data.")
             return data
 
         data_clone = data.clone()
@@ -132,7 +132,7 @@ class PytorchScaler:
             torch.Tensor: The original-scale data tensor.
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
-            _LOGGER.warning("⚠️ Scaler has not been fitted. Returning original data.")
+            _LOGGER.error("Scaler has not been fitted. Returning original data.")
             return data
             
         data_clone = data.clone()
@@ -163,7 +163,7 @@ class PytorchScaler:
             'continuous_feature_indices': self.continuous_feature_indices
         }
         torch.save(state, path_obj)
-        _LOGGER.info(f"✅ PytorchScaler state saved to '{path_obj.name}'.")
+        _LOGGER.info(f"PytorchScaler state saved to '{path_obj.name}'.")
 
     @staticmethod
     def load(filepath: Union[str, Path]) -> 'PytorchScaler':
@@ -178,7 +178,7 @@ class PytorchScaler:
         """
         path_obj = make_fullpath(filepath, enforce="file")
         state = torch.load(path_obj)
-        _LOGGER.info(f"✅ PytorchScaler state loaded from '{path_obj.name}'.")
+        _LOGGER.info(f"PytorchScaler state loaded from '{path_obj.name}'.")
         return PytorchScaler(
             mean=state['mean'],
             std=state['std'],

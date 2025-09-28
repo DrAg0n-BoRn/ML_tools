@@ -62,7 +62,7 @@ class DatabaseManager:
             _LOGGER.info(f"❇️ Successfully connected to database: {self.db_path}")
             return self
         except sqlite3.Error as e:
-            _LOGGER.error(f"❌ Database connection failed: {e}")
+            _LOGGER.error(f"Database connection failed: {e}")
             raise  # Re-raise the exception after logging
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -70,11 +70,11 @@ class DatabaseManager:
         if self.conn:
             if exc_type:  # If an exception occurred, rollback
                 self.conn.rollback()
-                _LOGGER.warning("⚠️ Rolling back transaction due to an error.")
+                _LOGGER.warning("Rolling back transaction due to an error.")
             else:  # Otherwise, commit the transaction
                 self.conn.commit()
             self.conn.close()
-            _LOGGER.info(f"❇️ Database connection closed: {self.db_path.name}")
+            _LOGGER.info(f"Database connection closed: {self.db_path.name}")
 
     def create_table(self, table_name: str, schema: Dict[str, str], if_not_exists: bool = True):
         """
@@ -92,7 +92,8 @@ class DatabaseManager:
             if the table already exists.
         """
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
 
         columns_def = ", ".join([f'"{col_name}" {col_type}' for col_name, col_type in schema.items()])
         exists_clause = "IF NOT EXISTS" if if_not_exists else ""
@@ -115,7 +116,8 @@ class DatabaseManager:
             data to be inserted.
         """
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
 
         columns = ', '.join(f'"{k}"' for k in data.keys())
         placeholders = ', '.join(['?'] * len(data))
@@ -143,7 +145,8 @@ class DatabaseManager:
             A DataFrame containing the query results.
         """
         if not self.conn:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
             
         return pd.read_sql_query(query, self.conn, params=params)
 
@@ -159,7 +162,8 @@ class DatabaseManager:
             An optional tuple of parameters for the query.
         """
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
         
         self.cursor.execute(query, params if params else ())
 
@@ -176,9 +180,10 @@ class DatabaseManager:
             All dictionaries should have the same keys.
         """
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
         if not data:
-            _LOGGER.warning("⚠️ insert_many called with empty data list. No action taken.")
+            _LOGGER.warning("'insert_many' called with empty data list. No action taken.")
             return
 
         # Assume all dicts have the same keys as the first one
@@ -211,7 +216,8 @@ class DatabaseManager:
             - 'append': Insert new values to the existing table.
         """
         if not self.conn:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
 
         df.to_sql(
             table_name,
@@ -224,7 +230,8 @@ class DatabaseManager:
     def list_tables(self) -> List[str]:
         """Returns a list of all table names in the database."""
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
         
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         # The result of the fetch is a list of tuples, e.g., [('table1',), ('table2',)]
@@ -237,7 +244,8 @@ class DatabaseManager:
         Returns a DataFrame with columns: cid, name, type, notnull, dflt_value, pk
         """
         if not self.conn:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
             
         # PRAGMA is a special SQL command in SQLite for database metadata
         return pd.read_sql_query(f'PRAGMA table_info("{table_name}");', self.conn)
@@ -257,7 +265,8 @@ class DatabaseManager:
             column are unique.
         """
         if not self.cursor:
-            raise sqlite3.Error("Database connection is not open.")
+            _LOGGER.error("Database connection is not open.")
+            raise sqlite3.Error()
 
         index_name = f"idx_{table_name}_{column_name}"
         unique_clause = "UNIQUE" if unique else ""

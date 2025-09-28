@@ -110,7 +110,7 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         _LOGGER.info(f"📊 Report heatmap saved as '{heatmap_path.name}'")
         plt.close()
     except Exception as e:
-        _LOGGER.error(f"❌ Could not generate classification report heatmap: {e}")
+        _LOGGER.error(f"Could not generate classification report heatmap: {e}")
 
     # Save Confusion Matrix
     fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=100)
@@ -172,7 +172,7 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
             
             cal_path = save_dir_path / "calibration_plot.svg"
             plt.savefig(cal_path)
-            _LOGGER.info(f"✅ Calibration plot saved as '{cal_path.name}'")
+            _LOGGER.info(f"📈 Calibration plot saved as '{cal_path.name}'")
             plt.close(fig_cal)
 
 
@@ -277,7 +277,7 @@ def shap_summary_plot(model,
     
     # --- Data Validation Step ---
     if np.isnan(background_data_np).any() or np.isnan(instances_to_explain_np).any():
-        _LOGGER.error("❌ Input data for SHAP contains NaN values. Aborting explanation.")
+        _LOGGER.error("Input data for SHAP contains NaN values. Aborting explanation.")
         return
     
     print("\n--- SHAP Value Explanation ---")
@@ -364,7 +364,7 @@ def plot_attention_importance(weights: List[torch.Tensor], feature_names: Option
         save_dir (str | Path): Directory to save the plot and summary CSV.
     """
     if not weights:
-        _LOGGER.warning("⚠️ Attention weights list is empty. Skipping importance plot.")
+        _LOGGER.error("Attention weights list is empty. Skipping importance plot.")
         return
 
     # --- Step 1: Aggregate data ---

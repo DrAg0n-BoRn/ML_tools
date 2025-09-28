@@ -83,7 +83,8 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
             A new DataFrame with the constant columns removed.
     """
     if not isinstance(df, pd.DataFrame):
-        raise TypeError("Input must be a pandas DataFrame.")
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
 
     original_columns = set(df.columns)
     cols_to_keep = []
@@ -136,7 +137,7 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
             _LOGGER.info(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
             df_clean = df_clean[~target_na]
         else:
-            _LOGGER.info("✅ No rows with all targets missing.")
+            _LOGGER.info("No rows found where all targets are missing.")
     else:
         valid_targets = []
 
@@ -149,9 +150,9 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
             _LOGGER.info(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
             df_clean = df_clean.drop(index=rows_to_drop)
         else:
-            _LOGGER.info(f"✅ No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
+            _LOGGER.info(f"No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
     else:
-        _LOGGER.warning("⚠️ No feature columns available to evaluate.")
+        _LOGGER.warning("No feature columns available to evaluate.")
 
     return df_clean
 
@@ -211,7 +212,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     cols_to_drop = missing_fraction[missing_fraction > threshold].index
 
     if len(cols_to_drop) > 0:
-        _LOGGER.info(f"Dropping columns with more than {threshold*100:.0f}% missing data:")
+        _LOGGER.info(f"🧹 Dropping columns with more than {threshold*100:.0f}% missing data:")
         print(list(cols_to_drop))
         
         result_df = df.drop(columns=cols_to_drop)
@@ -339,7 +340,8 @@ def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
         TypeError: If any column is not numeric.
     """
     if not all(np.issubdtype(dtype, np.number) for dtype in df.dtypes):
-        raise TypeError("All columns must be numeric (int or float).")
+        _LOGGER.error("All columns must be numeric (int or float).")
+        raise TypeError()
 
     binary_cols = []
     continuous_cols = []
@@ -390,7 +392,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     """
     numeric_df = df.select_dtypes(include='number')
     if numeric_df.empty:
-        _LOGGER.warning("⚠️ No numeric columns found. Heatmap not generated.")
+        _LOGGER.warning("No numeric columns found. Heatmap not generated.")
         return
     
     corr = numeric_df.corr(method=method)
@@ -558,11 +560,11 @@ def clip_outliers_single(
         None: if a problem with the dataframe column occurred.
     """
     if column not in df.columns:
-        _LOGGER.warning(f"⚠️ Column '{column}' not found in DataFrame.")
+        _LOGGER.warning(f"Column '{column}' not found in DataFrame.")
         return None
 
     if not pd.api.types.is_numeric_dtype(df[column]):
-        _LOGGER.warning(f"⚠️ Column '{column}' must be numeric.")
+        _LOGGER.warning(f"Column '{column}' must be numeric.")
         return None
 
     new_df = df.copy(deep=True)
@@ -600,13 +602,16 @@ def clip_outliers_multi(
     for col, bounds in clip_dict.items():
         try:
             if col not in df.columns:
-                raise ValueError(f"Column '{col}' not found in DataFrame.")
+                _LOGGER.error(f"Column '{col}' not found in DataFrame.")
+                raise ValueError()
 
             if not pd.api.types.is_numeric_dtype(df[col]):
-                raise TypeError(f"Column '{col}' is not numeric.")
+                _LOGGER.error(f"Column '{col}' is not numeric.")
+                raise TypeError()
 
             if not (isinstance(bounds, tuple) and len(bounds) == 2):
-                raise ValueError(f"Bounds for '{col}' must be a tuple of (min, max).")
+                _LOGGER.error(f"Bounds for '{col}' must be a tuple of (min, max).")
+                raise ValueError()
 
             min_val, max_val = bounds
             new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
@@ -621,7 +626,7 @@ def clip_outliers_multi(
     _LOGGER.info(f"Clipped {clipped_columns} columns.")
 
     if skipped_columns:
-        _LOGGER.warning("⚠️ Skipped columns:")
+        _LOGGER.warning("Skipped columns:")
         for col, msg in skipped_columns:
             print(f" - {col}: {msg}")
 
@@ -707,11 +712,11 @@ def standardize_percentages(
     for col in columns:
         # --- Robustness Checks ---
         if col not in df_copy.columns:
-            _LOGGER.warning(f"⚠️ Column '{col}' not found. Skipping.")
+            _LOGGER.warning(f"Column '{col}' not found. Skipping.")
             continue
 
         if not is_numeric_dtype(df_copy[col]):
-            _LOGGER.warning(f"⚠️ Column '{col}' is not numeric. Skipping.")
+            _LOGGER.warning(f"Column '{col}' is not numeric. Skipping.")
             continue
 
         # --- Applying the Logic ---

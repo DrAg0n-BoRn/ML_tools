@@ -34,13 +34,17 @@ class _BaseMLP(nn.Module):
 
         # --- Validation ---
         if not isinstance(in_features, int) or in_features < 1:
-            raise ValueError("in_features must be a positive integer.")
+            _LOGGER.error("'in_features' must be a positive integer.")
+            raise ValueError()
         if not isinstance(out_targets, int) or out_targets < 1:
-            raise ValueError("out_targets must be a positive integer.")
+            _LOGGER.error("'out_targets' must be a positive integer.")
+            raise ValueError()
         if not isinstance(hidden_layers, list) or not all(isinstance(n, int) for n in hidden_layers):
-            raise TypeError("hidden_layers must be a list of integers.")
+            _LOGGER.error("'hidden_layers' must be a list of integers.")
+            raise TypeError()
         if not (0.0 <= drop_out < 1.0):
-            raise ValueError("drop_out must be a float between 0.0 and 1.0.")
+            _LOGGER.error("'drop_out' must be a float between 0.0 and 1.0.")
+            raise ValueError()
         
         # --- Save configuration ---
         self.in_features = in_features
@@ -626,10 +630,8 @@ def save_architecture(model: nn.Module, directory: Union[str, Path], verbose: bo
         AttributeError: If the model does not have a `get_config()` method.
     """
     if not hasattr(model, 'get_config'):
-        raise AttributeError(
-            f"Model '{model.__class__.__name__}' does not have a 'get_config()' method. "
-            "Please implement it to return the model's constructor arguments."
-        ) 
+        _LOGGER.error(f"Model '{model.__class__.__name__}' does not have a 'get_config()' method.")
+        raise AttributeError() 
 
     # Ensure the target directory exists
     path_dir = make_fullpath(directory, make=True, enforce="directory")
@@ -644,7 +646,7 @@ def save_architecture(model: nn.Module, directory: Union[str, Path], verbose: bo
         json.dump(config, f, indent=4)
     
     if verbose:
-        _LOGGER.info(f"✅ Architecture for '{model.__class__.__name__}' saved to '{path_dir.name}'")
+        _LOGGER.info(f"Architecture for '{model.__class__.__name__}' saved to '{path_dir.name}'")
 
 
 def load_architecture(filepath: Union[str, Path], expected_model_class: type, verbose: bool=True) -> nn.Module:
@@ -674,15 +676,13 @@ def load_architecture(filepath: Union[str, Path], expected_model_class: type, ve
     config = saved_data['config']
 
     if saved_class_name != expected_model_class.__name__:
-        raise ValueError(
-            f"Model class mismatch. File specifies '{saved_class_name}', "
-            f"but you expected '{expected_model_class.__name__}'."
-        )
+        _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{expected_model_class.__name__}' was expected.")
+        raise ValueError()
 
     # Create an instance of the model using the provided class and config
     model = expected_model_class(**config)
     if verbose:
-        _LOGGER.info(f"✅ Successfully loaded architecture for '{saved_class_name}'")
+        _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
     return model
 
 

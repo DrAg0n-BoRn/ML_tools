@@ -51,4 +51,4 @@ def rnn_forecast(model: nn.Module, start_sequence: torch.Tensor, steps: int, dev
 
 
 def info():
-    _script_info
+    _script_info(__all__)

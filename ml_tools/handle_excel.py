@@ -37,7 +37,8 @@ def find_excel_files(
     input_path = make_fullpath(directory)
 
     if not input_path.is_dir():
-        raise NotADirectoryError(f"❌ Directory not found: {input_path}")
+        _LOGGER.error(f"Directory not found: {input_path}")
+        raise NotADirectoryError()
 
     excel_files = [
         f for f in input_path.iterdir()
@@ -47,7 +48,8 @@ def find_excel_files(
     ]
     
     if not excel_files:
-        raise FileNotFoundError(f"❌ No valid Excel files found in directory: {input_path}")
+        _LOGGER.error(f"No valid Excel files found in directory: {input_path}")
+        raise FileNotFoundError()
 
     return excel_files
 
@@ -99,7 +101,7 @@ def unmerge_and_split_excel(filepath: Union[str,Path]) -> None:
 
         total_output_files += 1
 
-    _LOGGER.info(f"✅ Processed file: {file_path} into {total_output_files} output file(s).")
+    _LOGGER.info(f"Processed file: {file_path} into {total_output_files} output file(s).")
     return None
 
 
@@ -155,7 +157,7 @@ def unmerge_and_split_from_directory(input_dir: Union[str,Path], output_dir: Uni
 
             total_output_files += 1
 
-    _LOGGER.info(f"✅ Processed {len(excel_files)} input Excel file(s) with a total of {total_output_files} output Excel file(s).")
+    _LOGGER.info(f"Processed {len(excel_files)} input Excel file(s) with a total of {total_output_files} output Excel file(s).")
     return None
 
 
@@ -199,13 +201,13 @@ def validate_excel_schema(
                     invalid_files.append(file)
 
         except Exception as e:
-            _LOGGER.error(f"❌ Error processing '{file}': {e}")
+            _LOGGER.error(f"Error processing '{file}': {e}")
             invalid_files.append(file)
     
     valid_excel_number = len(excel_paths) - len(invalid_files)
     _LOGGER.info(f"{valid_excel_number} out of {len(excel_paths)} excel files conform to the schema.")
     if invalid_files:
-        _LOGGER.warning(f"⚠️ {len(invalid_files)} excel files are invalid:")
+        _LOGGER.warning(f"{len(invalid_files)} excel files are invalid:")
         for in_file in invalid_files:
             print(f"  - {in_file.name}")
 
@@ -252,7 +254,8 @@ def vertical_merge_transform_excel(
         if target_columns is not None:
             missing = [col for col in target_columns if col not in df.columns]
             if missing:
-                raise ValueError(f"❌ Invalid columns in {file.name}: {missing}")
+                _LOGGER.error(f"Invalid columns in {file.name}: {missing}")
+                raise ValueError()
             df = df[target_columns]
 
         dataframes.append(df)
@@ -262,11 +265,12 @@ def vertical_merge_transform_excel(
     if rename_columns is not None:
         expected_len = len(target_columns if target_columns is not None else merged_df.columns)
         if len(rename_columns) != expected_len:
-            raise ValueError("❌ Length of 'rename_columns' must match the selected columns")
+            _LOGGER.error("Length of 'rename_columns' must match the selected columns")
+            raise ValueError()
         merged_df.columns = rename_columns
 
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
-    _LOGGER.info(f"✅ Merged {len(dataframes)} excel files into '{csv_filename}'.")
+    _LOGGER.info(f"Merged {len(dataframes)} excel files into '{csv_filename}'.")
 
 
 def horizontal_merge_transform_excel(
@@ -327,7 +331,7 @@ def horizontal_merge_transform_excel(
     duplicate_columns = merged_df.columns[merged_df.columns.duplicated()].tolist()
     
     if duplicate_columns:
-        _LOGGER.warning(f"⚠️ Duplicate columns: {duplicate_columns}")
+        _LOGGER.warning(f"Duplicate columns: {duplicate_columns}")
 
     if skip_duplicates:
         merged_df = merged_df.loc[:, ~merged_df.columns.duplicated()]
@@ -347,7 +351,7 @@ def horizontal_merge_transform_excel(
 
     merged_df.to_csv(csv_path, index=False, encoding='utf-8')
 
-    _LOGGER.info(f"✅ Merged {len(excel_files)} Excel files into '{csv_filename}'.")
+    _LOGGER.info(f"Merged {len(excel_files)} Excel files into '{csv_filename}'.")
     
 
 def info():

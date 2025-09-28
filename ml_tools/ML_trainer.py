@@ -76,10 +76,10 @@ class MLTrainer:
         """Validates the selected device and returns a torch.device object."""
         device_lower = device.lower()
         if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("⚠️ CUDA not available, switching to CPU.")
+            _LOGGER.warning("CUDA not available, switching to CPU.")
             device = "cpu"
         elif device_lower == "mps" and not torch.backends.mps.is_available():
-            _LOGGER.warning("⚠️ Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
+            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device = "cpu"
         return torch.device(device)
 
@@ -275,7 +275,8 @@ class MLTrainer:
             dataset_for_names = data
         else: # data is None, use the trainer's default test dataset
             if self.test_dataset is None:
-                raise ValueError("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
+                _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
+                raise ValueError()
             # Create a fresh DataLoader from the test_dataset
             eval_loader = DataLoader(self.test_dataset, 
                                      batch_size=32, 
@@ -285,7 +286,8 @@ class MLTrainer:
             dataset_for_names = self.test_dataset
 
         if eval_loader is None:
-            raise ValueError("Cannot evaluate. No valid data was provided or found.")
+            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
+            raise ValueError()
 
         print("\n--- Model Evaluation ---")
 
@@ -296,7 +298,7 @@ class MLTrainer:
             if y_true_b is not None: all_true.append(y_true_b)
 
         if not all_true:
-            _LOGGER.error("❌ Evaluation failed: No data was processed.")
+            _LOGGER.error("Evaluation failed: No data was processed.")
             return
 
         y_pred = np.concatenate(all_preds)
@@ -316,7 +318,7 @@ class MLTrainer:
             except AttributeError:
                 num_targets = y_true.shape[1]
                 target_names = [f"target_{i}" for i in range(num_targets)]
-                _LOGGER.warning(f"⚠️ Dataset has no 'target_names' attribute. Using generic names.")
+                _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
             multi_target_regression_metrics(y_true, y_pred, target_names, save_dir)
 
         elif self.kind == "multi_label_classification":
@@ -325,10 +327,10 @@ class MLTrainer:
             except AttributeError:
                 num_targets = y_true.shape[1]
                 target_names = [f"label_{i}" for i in range(num_targets)]
-                _LOGGER.warning(f"⚠️ Dataset has no 'target_names' attribute. Using generic names.")
+                _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
             
             if y_prob is None:
-                _LOGGER.error("❌ Evaluation for multi_label_classification requires probabilities (y_prob).")
+                _LOGGER.error("Evaluation for multi_label_classification requires probabilities (y_prob).")
                 return
             multi_label_classification_metrics(y_true, y_prob, target_names, save_dir, classification_threshold)
 
@@ -390,14 +392,14 @@ class MLTrainer:
         # 1. Get background data from the trainer's train_dataset
         background_data = _get_random_sample(self.train_dataset, n_samples)
         if background_data is None:
-            _LOGGER.error("❌ Trainer's train_dataset is empty or invalid. Skipping SHAP analysis.")
+            _LOGGER.error("Trainer's train_dataset is empty or invalid. Skipping SHAP analysis.")
             return
 
         # 2. Determine target dataset and get explanation instances
         target_dataset = explain_dataset if explain_dataset is not None else self.test_dataset
         instances_to_explain = _get_random_sample(target_dataset, n_samples)
         if instances_to_explain is None:
-            _LOGGER.error("❌ Explanation dataset is empty or invalid. Skipping SHAP analysis.")
+            _LOGGER.error("Explanation dataset is empty or invalid. Skipping SHAP analysis.")
             return
         
         # attempt to get feature names
@@ -410,8 +412,8 @@ class MLTrainer:
                 # Handle PyTorch Subset 
                     feature_names = target_dataset.dataset.feature_names # type: ignore
                 except AttributeError:
-                    _LOGGER.error("❌ Could not extract `feature_names` from the dataset.")
-                    raise ValueError("`feature_names` must be provided if the dataset object does not have a `feature_names` attribute.")
+                    _LOGGER.error("Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a `feature_names` attribute.")
+                    raise ValueError()
 
         # 3. Call the plotting function
         if self.kind in ["regression", "classification"]:
@@ -490,13 +492,13 @@ class MLTrainer:
         
         # --- Step 1: Check if the model supports this explanation ---
         if not hasattr(self.model, 'forward_attention'):
-            _LOGGER.error("❌ Model does not have a `forward_attention` method. Skipping attention explanation.")
+            _LOGGER.error("Model does not have a `forward_attention` method. Skipping attention explanation.")
             return
 
         # --- Step 2: Set up the dataloader ---
         dataset_to_use = explain_dataset if explain_dataset is not None else self.test_dataset
         if not isinstance(dataset_to_use, Dataset):
-            _LOGGER.error("❌ The explanation dataset is empty or invalid. Skipping attention analysis.")
+            _LOGGER.error("The explanation dataset is empty or invalid. Skipping attention analysis.")
             return
         
         explain_loader = DataLoader(
@@ -519,7 +521,7 @@ class MLTrainer:
                 save_dir=save_dir
             )
         else:
-            _LOGGER.error("❌ No attention weights were collected from the model.")
+            _LOGGER.error("No attention weights were collected from the model.")
     
     def callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""

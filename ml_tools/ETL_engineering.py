@@ -1,11 +1,15 @@
 import polars as pl
+import pandas as pd
 import re
+from pathlib import Path
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
+from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
 
 
 __all__ = [
+    "save_unique_values",
     "ColumnCleaner",
     "DataFrameCleaner",
     "TransformationRecipe",
@@ -22,6 +26,80 @@ __all__ = [
     "ValueBinner",
     "DateFeatureExtractor"
 ]
+
+################ Unique Values per column #################
+def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path]) -> None:
+    """
+    Loads a CSV file, then analyzes it and saves the unique non-null values
+    from each column into a separate text file exactly as they appear.
+
+    This is useful for understanding the raw categories or range of values
+    within a dataset before cleaning.
+
+    Args:
+        csv_path (Union[str, Path]):
+            The file path to the input CSV file.
+        output_dir (Union[str, Path]):
+            The path to the directory where the .txt files will be saved.
+            The directory will be created if it does not exist.
+    """
+    # --- 1. Input Validation ---
+    csv_path = make_fullpath(input_path=csv_path, enforce="file")
+    output_dir = make_fullpath(input_path=output_dir, make=True)
+
+    # --- 2. Load Data ---
+    try:
+        # Load all columns as strings to preserve original formatting
+        df = pd.read_csv(csv_path, dtype=str, encoding='utf-8')
+    except FileNotFoundError as e:
+        _LOGGER.error(f"The file was not found at '{csv_path}'.")
+        raise e
+    except Exception as e2:
+        _LOGGER.error(f"An error occurred while reading the CSV file.")
+        raise e2
+    else:
+        _LOGGER.info(f"Data loaded from '{csv_path}'")
+        
+    # --- 3. Process Each Column ---
+    for i, column_name in enumerate(df.columns):
+        _LOGGER.info(f"Processing column: '{column_name}'...")
+
+        # --- Get unique values AS IS ---
+        try:
+            # Drop nulls, get unique values, and sort them.
+            # The values are preserved exactly as they are in the cells.
+            unique_values = df[column_name].dropna().unique()
+            sorted_uniques = sorted(unique_values)
+        except Exception:
+            _LOGGER.exception(f"Could not process column '{column_name}'.")
+            continue
+
+        if not sorted_uniques:
+            _LOGGER.warning(f"Column '{column_name}' has no unique non-null values. Skipping.")
+            continue
+
+        # --- Sanitize column name to create a valid filename ---
+        sanitized_name = sanitize_filename(column_name)
+        if not sanitized_name.strip('_'):
+            sanitized_name = f'column_{i}'
+        file_path = output_dir / f"{sanitized_name}_unique_values.txt"
+
+        # --- Write to file ---
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(f"# Unique values for column: '{column_name}'\n")
+                f.write(f"# Total unique non-null values: {len(sorted_uniques)}\n")
+                f.write("-" * 30 + "\n")
+                for value in sorted_uniques:
+                    f.write(f"{value}\n")
+                    f.write("-" * 30 + "\n")
+        except IOError:
+            _LOGGER.exception(f"Error writing to file {file_path}.")
+        else:
+            _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values to '{file_path}'")
+            
+    _LOGGER.info("Process complete.")
+
 
 ########## EXTRACT and CLEAN ##########
 class ColumnCleaner:
@@ -60,16 +138,19 @@ class ColumnCleaner:
     """
     def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
         if not isinstance(column_name, str) or not column_name:
-            raise TypeError("The 'column_name' must be a non-empty string.")
+            _LOGGER.error("The 'column_name' must be a non-empty string.")
+            raise TypeError()
         if not isinstance(rules, dict):
-            raise TypeError("The 'rules' argument must be a dictionary.")
+            _LOGGER.error("The 'rules' argument must be a dictionary.")
+            raise TypeError()
 
         # Validate each regex pattern for correctness
         for pattern in rules.keys():
             try:
                 re.compile(pattern)
-            except re.error as e:
-                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
+            except re.error:
+                _LOGGER.error(f"Invalid regex pattern '{pattern}'.")
+                raise
 
         self.column_name = column_name
         self.rules = rules
@@ -94,20 +175,17 @@ class DataFrameCleaner:
     """
     def __init__(self, cleaners: List[ColumnCleaner]):
         if not isinstance(cleaners, list):
-            raise TypeError("The 'cleaners' argument must be a list of ColumnCleaner objects.")
+            _LOGGER.error("The 'cleaners' argument must be a list of ColumnCleaner objects.")
+            raise TypeError()
 
         seen_columns = set()
         for cleaner in cleaners:
             if not isinstance(cleaner, ColumnCleaner):
-                raise TypeError(
-                    f"All items in 'cleaners' list must be ColumnCleaner objects, "
-                    f"but found an object of type {type(cleaner).__name__}."
-                )
+                _LOGGER.error(f"All items in 'cleaners' list must be ColumnCleaner objects, but found an object of type {type(cleaner).__name__}.")
+                raise TypeError()
             if cleaner.column_name in seen_columns:
-                raise ValueError(
-                    f"Duplicate ColumnCleaner found for column '{cleaner.column_name}'. "
-                    "Each column should only have one cleaner."
-                )
+                _LOGGER.error(f"Duplicate ColumnCleaner found for column '{cleaner.column_name}'. Each column should only have one cleaner.")
+                raise ValueError()
             seen_columns.add(cleaner.column_name)
 
         self.cleaners = cleaners
@@ -131,10 +209,10 @@ class DataFrameCleaner:
         missing_columns = rule_columns - df_columns
 
         if missing_columns:
-            raise ValueError(
-                f"The following columns specified in cleaning rules "
-                f"were not found in the DataFrame: {sorted(list(missing_columns))}"
-            )
+            _LOGGER.error("The following columns specified in cleaning rules were not found in the DataFrame:")
+            for miss_col in sorted(list(missing_columns)):
+                print(f"\t- {miss_col}")
+            raise ValueError()
 
         df_cleaned = df.clone()
         
@@ -153,7 +231,7 @@ class DataFrameCleaner:
             # Execute the expression chain for the column
             df_cleaned = df_cleaned.with_columns(col_expr.alias(col_name))
             
-        print(f"Cleaned {len(self.cleaners)} columns.")
+        _LOGGER.info(f"Cleaned {len(self.cleaners)} columns.")
             
         return df_cleaned
 
@@ -199,16 +277,20 @@ class TransformationRecipe:
         """
         # --- Validation ---
         if not isinstance(input_col_name, str) or not input_col_name:
-            raise TypeError("'input_col' must be a non-empty string.")
+            _LOGGER.error("'input_col' must be a non-empty string.")
+            raise TypeError()
             
         if transform == _RENAME:
             if not isinstance(output_col_names, str):
-                raise TypeError("For a RENAME operation, 'output_col' must be a string.")
+                _LOGGER.error("For a RENAME operation, 'output_col' must be a string.")
+                raise TypeError()
         elif not isinstance(transform, Callable):
-            raise TypeError(f"'transform' must be a callable function or the string '{_RENAME}'.")
+            _LOGGER.error(f"'transform' must be a callable function or the string '{_RENAME}'.")
+            raise TypeError()
 
         if isinstance(output_col_names, list) and transform == _RENAME:
-            raise ValueError("A RENAME operation cannot have a list of output columns.")
+            _LOGGER.error("A RENAME operation cannot have a list of output columns.")
+            raise ValueError()
         
         # --- Add Step ---
         step = {
@@ -243,9 +325,11 @@ class DataProcessor:
                     been populated with transformation steps.
         """
         if not isinstance(recipe, TransformationRecipe):
-            raise TypeError("The recipe must be an instance of TransformationRecipe.")
+            _LOGGER.error("The recipe must be an instance of TransformationRecipe.")
+            raise TypeError()
         if len(recipe) == 0:
-            raise ValueError("The recipe cannot be empty.")
+            _LOGGER.error("The recipe cannot be empty.")
+            raise ValueError()
         self._recipe = recipe
 
     def transform(self, df: pl.DataFrame) -> pl.DataFrame:
@@ -260,7 +344,8 @@ class DataProcessor:
             transform_action = step["transform"]
 
             if input_col_name not in df.columns:
-                raise ValueError(f"Input column '{input_col_name}' not found in DataFrame.")
+                _LOGGER.error(f"Input column '{input_col_name}' not found in DataFrame.")
+                raise ValueError()
 
             input_series = df.get_column(input_col_name)
 
@@ -273,17 +358,16 @@ class DataProcessor:
 
                 if isinstance(result, pl.Series):
                     if not isinstance(output_col_spec, str):
-                        raise TypeError(f"Function for '{input_col_name}' returned a Series but 'output_col' is not a string.")
+                        _LOGGER.error(f"Function for '{input_col_name}' returned a Series but 'output_col' is not a string.")
+                        raise TypeError()
                     processed_columns.append(result.alias(output_col_spec))
                 
                 elif isinstance(result, pl.DataFrame):
                     # 1. Handle list-based renaming
                     if isinstance(output_col_spec, list):
                         if len(result.columns) != len(output_col_spec):
-                            raise ValueError(
-                                f"Mismatch in '{input_col_name}': function produced {len(result.columns)} columns, "
-                                f"but recipe specifies {len(output_col_spec)} output names."
-                            )
+                            _LOGGER.error(f"Mismatch in '{input_col_name}': function produced {len(result.columns)} columns, but recipe specifies {len(output_col_spec)} output names.")
+                            raise ValueError()
                         
                         renamed_df = result.rename(dict(zip(result.columns, output_col_spec)))
                         processed_columns.extend(renamed_df.get_columns())
@@ -299,19 +383,19 @@ class DataProcessor:
                         processed_columns.extend(renamed_df.get_columns())
                     
                     else:
-                        raise TypeError(
-                            f"Function for '{input_col_name}' returned a DataFrame, "
-                            f"so 'output_col' must be a list of names or a string prefix."
-                        )
+                        _LOGGER.error(f"Function for '{input_col_name}' returned a DataFrame, so 'output_col' must be a list of names or a string prefix.")
+                        raise TypeError()
                 
                 else:
-                    raise TypeError(f"Function for '{input_col_name}' returned an unexpected type: {type(result)}.")
+                    _LOGGER.error(f"Function for '{input_col_name}' returned an unexpected type: {type(result)}.")
+                    raise TypeError()
             
-            else: # This case is now unlikely due to builder validation.
-                raise TypeError(f"Invalid 'transform' action for '{input_col_name}': {transform_action}")
+            else: # This case is unlikely due to builder validation.
+                _LOGGER.error(f"Invalid 'transform' action for '{input_col_name}': {transform_action}")
+                raise TypeError()
 
         if not processed_columns:
-            _LOGGER.warning("⚠️ The transformation resulted in an empty DataFrame.")
+            _LOGGER.error("The transformation resulted in an empty DataFrame.")
             return pl.DataFrame()
             
         return pl.DataFrame(processed_columns)
@@ -381,18 +465,17 @@ class BinaryTransformer:
     ):
         # --- Validation: Enforce one and only one option ---
         if true_keywords is not None and false_keywords is not None:
-            raise ValueError(
-                "Provide either 'true_keywords' or 'false_keywords', but not both."
-            )
+            _LOGGER.error("Provide either 'true_keywords' or 'false_keywords', but not both.")
+            raise ValueError()
         if true_keywords is None and false_keywords is None:
-            raise ValueError(
-                "You must provide either 'true_keywords' or 'false_keywords'."
-            )
+            _LOGGER.error("You must provide either 'true_keywords' or 'false_keywords'.")
+            raise ValueError()
 
         # --- Configuration ---
         self.keywords: List[str] = true_keywords if true_keywords is not None else false_keywords # type: ignore
         if not self.keywords:
-            raise ValueError("Keyword list cannot be empty.")
+            _LOGGER.error("Keyword list cannot be empty.")
+            raise ValueError()
 
         self.mode: str = "true_mode" if true_keywords is not None else "false_mode"
         
@@ -468,9 +551,11 @@ class MultiBinaryDummifier:
     """
     def __init__(self, keywords: List[str], case_insensitive: bool = True):
         if not isinstance(keywords, list) or not all(isinstance(k, str) for k in keywords):
-            raise TypeError("The 'keywords' argument must be a list of strings.")
+            _LOGGER.error("The 'keywords' argument must be a list of strings.")
+            raise TypeError()
         if not keywords:
-            raise ValueError("The 'keywords' list cannot be empty.")
+            _LOGGER.error("The 'keywords' list cannot be empty.")
+            raise ValueError()
 
         self.keywords = keywords
         self.case_insensitive = case_insensitive
@@ -530,7 +615,8 @@ class KeywordDummifier:
     """
     def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True):
         if len(group_names) != len(group_keywords):
-            raise ValueError("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
+            _LOGGER.error("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
+            raise ValueError()
         
         self.group_names = group_names
         self.group_keywords = group_keywords
@@ -610,23 +696,28 @@ class NumberExtractor:
     ):
         # --- Validation ---
         if not isinstance(regex_pattern, str):
-            raise TypeError("regex_pattern must be a string.")
+            _LOGGER.error("regex_pattern must be a string.")
+            raise TypeError()
         
         # Validate that the regex has exactly one capturing group
         try:
             if re.compile(regex_pattern).groups != 1:
-                raise ValueError("regex_pattern must contain exactly one capturing group '(...)'")
+                _LOGGER.error("regex_pattern must contain exactly one capturing group '(...)'")
+                raise ValueError()
         except re.error as e:
-            raise ValueError(f"Invalid regex pattern provided: {e}") from e
+            _LOGGER.error(f"Invalid regex pattern provided: {e}")
+            raise ValueError()
 
         if dtype not in ["float", "int"]:
-            raise ValueError("dtype must be either 'float' or 'int'.")
+            _LOGGER.error("dtype must be either 'float' or 'int'.")
+            raise ValueError()
             
         if round_digits is not None:
             if not isinstance(round_digits, int):
-                raise TypeError("round_digits must be an integer.")
+                _LOGGER.error("round_digits must be an integer.")
+                raise TypeError()
             if dtype == "int":
-                _LOGGER.warning(f"⚠️ 'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
+                _LOGGER.warning(f"'round_digits' is specified but dtype is 'int'. Rounding will be ignored.")
 
         self.regex_pattern = regex_pattern
         self.dtype = dtype
@@ -684,21 +775,26 @@ class MultiNumberExtractor:
     ):
         # --- Validation ---
         if not isinstance(num_outputs, int) or num_outputs <= 0:
-            raise ValueError("num_outputs must be a positive integer.")
+            _LOGGER.error("num_outputs must be a positive integer.")
+            raise ValueError()
         
         if not isinstance(regex_pattern, str):
-            raise TypeError("regex_pattern must be a string.")
+            _LOGGER.error("regex_pattern must be a string.")
+            raise TypeError()
         
         # Validate that the regex has exactly one capturing group
         try:
             if re.compile(regex_pattern).groups != 1:
-                raise ValueError("regex_pattern must contain exactly one capturing group '(...)'")
+                _LOGGER.error("regex_pattern must contain exactly one capturing group '(...)'")
+                raise ValueError()
         except re.error as e:
-            raise ValueError(f"Invalid regex pattern provided: {e}") from e
+            _LOGGER.error(f"Invalid regex pattern provided: {e}")
+            raise ValueError()
         
         # Validate dtype
         if dtype not in ["float", "int"]:
-            raise ValueError("dtype must be either 'float' or 'int'.")
+            _LOGGER.error("dtype must be either 'float' or 'int'.")
+            raise ValueError()
         
         self.num_outputs = num_outputs
         self.regex_pattern = regex_pattern
@@ -751,17 +847,14 @@ class RatioCalculator:
         try:
             compiled_pattern = re.compile(regex_pattern)
             if compiled_pattern.groups != 2:
-                raise ValueError(
-                    "RatioCalculator regex_pattern must contain exactly two "
-                    "capturing groups '(...)'."
-                )
+                _LOGGER.error("RatioCalculator regex_pattern must contain exactly two capturing groups '(...)'.")
+                raise ValueError()
             if compiled_pattern.groupindex:
-                raise ValueError(
-                    "RatioCalculator must be initialized with unnamed capturing groups "
-                    "(e.g., '(\\d+)'), not named groups (e.g., '(?P<name>\\d+)')."
-                )
+                _LOGGER.error("RatioCalculator must be initialized with unnamed capturing groups (e.g., '(\\d+)'), not named groups (e.g., '(?P<name>\\d+)').")
+                raise ValueError()
         except re.error as e:
-            raise ValueError(f"Invalid regex pattern provided: {e}") from e
+            _LOGGER.error(f"Invalid regex pattern provided: {e}")
+            raise ValueError()
 
         self.regex_pattern = regex_pattern
 
@@ -805,7 +898,8 @@ class CategoryMapper:
         unseen_value: Optional[Union[int, float]] = None,
     ):
         if not isinstance(mapping, dict):
-            raise TypeError("The 'mapping' argument must be a dictionary.")
+            _LOGGER.error("The 'mapping' argument must be a dictionary.")
+            raise TypeError()
         
         self.mapping = mapping
         self.default_value = unseen_value
@@ -866,7 +960,8 @@ class RegexMapper:
     ):
         # --- Validation ---
         if not isinstance(mapping, dict):
-            raise TypeError("The 'mapping' argument must be a dictionary.")
+            _LOGGER.error("The 'mapping' argument must be a dictionary.")
+            raise TypeError()
 
         self.unseen_value = unseen_value
         
@@ -880,9 +975,11 @@ class RegexMapper:
             try:
                 re.compile(final_pattern)
             except re.error as e:
-                raise ValueError(f"Invalid regex pattern '{final_pattern}': {e}") from e
+                _LOGGER.error(f"Invalid regex pattern '{final_pattern}': {e}")
+                raise ValueError()
             if not isinstance(value, (int, float)):
-                raise TypeError(f"Mapping values must be int or float, but got {type(value)} for pattern '{pattern}'.")
+                _LOGGER.error(f"Mapping values must be int or float, but got {type(value)} for pattern '{pattern}'.")
+                raise TypeError()
             
             self.processed_mapping.append((final_pattern, value))
 
@@ -937,11 +1034,13 @@ class ValueBinner:
     ):
         # --- Validation ---
         if not isinstance(breaks, list) or len(breaks) < 2:
-            raise ValueError("The 'breaks' argument must be a list of at least two numbers.")
+            _LOGGER.error("The 'breaks' argument must be a list of at least two numbers.")
+            raise ValueError()
         
         # Check if the list is sorted
         if not all(breaks[i] <= breaks[i+1] for i in range(len(breaks)-1)):
-            raise ValueError("The 'breaks' list must be sorted in ascending order.")
+            _LOGGER.error("The 'breaks' list must be sorted in ascending order.")
+            raise ValueError()
 
         self.breaks = breaks
         self.left_closed = left_closed
@@ -1001,14 +1100,13 @@ class DateFeatureExtractor:
     ):
         # --- Validation ---
         if not isinstance(features, list) or not features:
-            raise ValueError("'features' must be a non-empty list of strings.")
+            _LOGGER.error("'features' must be a non-empty list of strings.")
+            raise ValueError()
         
         for feature in features:
             if feature not in self.ALLOWED_FEATURES:
-                raise ValueError(
-                    f"Feature '{feature}' is not supported. "
-                    f"Allowed features are: {self.ALLOWED_FEATURES}"
-                )
+                _LOGGER.error(f"Feature '{feature}' is not supported. Allowed features are: {self.ALLOWED_FEATURES}")
+                raise ValueError()
 
         self.features = features
         self.format = format

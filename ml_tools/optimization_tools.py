@@ -61,7 +61,7 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path]):
     
     long_df = pd.concat(data_to_plot, ignore_index=True)
     features = long_df['feature'].unique()
-    _LOGGER.info(f"📂 Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
+    _LOGGER.info(f"Found data for {len(features)} features across {len(long_df['target'].unique())} targets. Generating plots...")
 
     # --- Plotting Loop ---
     for feature_name in features:
@@ -105,7 +105,7 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path]):
         plt.savefig(plot_filename, bbox_inches='tight')
         plt.close()
 
-    _LOGGER.info(f"✅ All plots saved successfully to: '{output_path}'")
+    _LOGGER.info(f"All plots saved successfully to: '{output_path}'")
     
 
 def _save_result(
@@ -129,8 +129,7 @@ def _save_result(
         if db_manager and db_table_name:
             db_manager.insert_row(db_table_name, result_dict)
         else:
-            _LOGGER.warning("⚠️ SQLite saving requested but db_manager or table_name not provided.")
-
+            _LOGGER.warning("SQLite saving requested but db_manager or table_name not provided.")
 
 
 def info():

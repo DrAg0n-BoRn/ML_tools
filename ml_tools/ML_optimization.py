@@ -127,7 +127,8 @@ def create_pytorch_problem(
         SearcherClass = GeneticAlgorithm
         
     else:
-        raise ValueError(f"Unknown algorithm '{algorithm}'.")
+        _LOGGER.error(f"Unknown algorithm '{algorithm}'.")
+        raise ValueError()
     
     # Create a factory function with all arguments pre-filled
     searcher_factory = partial(SearcherClass, problem, **searcher_kwargs)
@@ -242,7 +243,7 @@ def run_optimization(
         if verbose:
             _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)
         
-        _LOGGER.info(f"✅ Optimization complete. Best solution saved to '{csv_path.name}'")
+        _LOGGER.info(f"Optimization complete. Best solution saved to '{csv_path.name}'")
         return result_dict
 
     # --- MULTIPLE REPETITIONS LOGIC ---
@@ -295,7 +296,7 @@ def run_optimization(
         if pandas_logger is not None:
             _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)      
         
-        _LOGGER.info(f"✅ Optimal solution space complete. Results saved to '{save_path}'")
+        _LOGGER.info(f"Optimal solution space complete. Results saved to '{save_path}'")
         return None
 
 

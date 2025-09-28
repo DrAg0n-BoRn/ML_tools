@@ -19,7 +19,7 @@ from sklearn.metrics import (
     jaccard_score
 )
 from pathlib import Path
-from typing import Union, List, Optional
+from typing import Union, List
 
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
@@ -52,11 +52,14 @@ def multi_target_regression_metrics(
         save_dir (str | Path): Directory to save plots and the report.
     """
     if y_true.ndim != 2 or y_pred.ndim != 2:
-        raise ValueError("y_true and y_pred must be 2D arrays for multi-target regression.")
+        _LOGGER.error("y_true and y_pred must be 2D arrays for multi-target regression.")
+        raise ValueError()
     if y_true.shape != y_pred.shape:
-        raise ValueError("Shapes of y_true and y_pred must match.")
+        _LOGGER.error("Shapes of y_true and y_pred must match.")
+        raise ValueError()
     if y_true.shape[1] != len(target_names):
-        raise ValueError("Number of target names must match the number of columns in y_true.")
+        _LOGGER.error("Number of target names must match the number of columns in y_true.")
+        raise ValueError()
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     metrics_summary = []
@@ -64,7 +67,7 @@ def multi_target_regression_metrics(
     _LOGGER.info("--- Multi-Target Regression Evaluation ---")
 
     for i, name in enumerate(target_names):
-        _LOGGER.info(f"  -> Evaluating target: '{name}'")
+        print(f"  -> Evaluating target: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i]
         sanitized_name = sanitize_filename(name)
@@ -113,7 +116,7 @@ def multi_target_regression_metrics(
     summary_df = pd.DataFrame(metrics_summary)
     report_path = save_dir_path / "regression_report_multi.csv"
     summary_df.to_csv(report_path, index=False)
-    _LOGGER.info(f"✅ Full regression report saved to '{report_path.name}'")
+    _LOGGER.info(f"Full regression report saved to '{report_path.name}'")
 
 
 def multi_label_classification_metrics(
@@ -139,11 +142,14 @@ def multi_label_classification_metrics(
                            binary predictions for metrics like the confusion matrix.
     """
     if y_true.ndim != 2 or y_prob.ndim != 2:
-        raise ValueError("y_true and y_prob must be 2D arrays for multi-label classification.")
+        _LOGGER.error("y_true and y_prob must be 2D arrays for multi-label classification.")
+        raise ValueError()
     if y_true.shape != y_prob.shape:
-        raise ValueError("Shapes of y_true and y_prob must match.")
+        _LOGGER.error("Shapes of y_true and y_prob must match.")
+        raise ValueError()
     if y_true.shape[1] != len(target_names):
-        raise ValueError("Number of target names must match the number of columns in y_true.")
+        _LOGGER.error("Number of target names must match the number of columns in y_true.")
+        raise ValueError()
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
@@ -165,13 +171,13 @@ def multi_label_classification_metrics(
         f"Jaccard Score (macro): {j_score_macro:.4f}\n"
         f"--------------------------------------------------\n"
     )
-    _LOGGER.info(overall_report)
+    print(overall_report)
     overall_report_path = save_dir_path / "classification_report_overall.txt"
     overall_report_path.write_text(overall_report)
 
     # --- Per-Label Metrics and Plots ---
     for i, name in enumerate(target_names):
-        _LOGGER.info(f"  -> Evaluating label: '{name}'")
+        print(f"  -> Evaluating label: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i]
         prob_i = y_prob[:, i]
@@ -215,7 +221,7 @@ def multi_label_classification_metrics(
         plt.savefig(pr_path)
         plt.close(fig_pr)
 
-    _LOGGER.info(f"✅ All individual label reports and plots saved to '{save_dir_path.name}'")
+    _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")
 
 
 def multi_target_shap_summary_plot(
@@ -242,10 +248,10 @@ def multi_target_shap_summary_plot(
     instances_to_explain_np = instances_to_explain.numpy() if isinstance(instances_to_explain, torch.Tensor) else instances_to_explain
 
     if np.isnan(background_data_np).any() or np.isnan(instances_to_explain_np).any():
-        _LOGGER.error("❌ Input data for SHAP contains NaN values. Aborting explanation.")
+        _LOGGER.error("Input data for SHAP contains NaN values. Aborting explanation.")
         return
 
-    _LOGGER.info("\n--- Multi-Target SHAP Value Explanation ---")
+    _LOGGER.info("--- Multi-Target SHAP Value Explanation ---")
     model.eval()
     model.cpu()
 
@@ -262,7 +268,7 @@ def multi_target_shap_summary_plot(
     # 3. Create the KernelExplainer.
     explainer = shap.KernelExplainer(prediction_wrapper, background_summary)
 
-    _LOGGER.info("Calculating SHAP values with KernelExplainer...")
+    print("Calculating SHAP values with KernelExplainer...")
     # For multi-output models, shap_values is a list of arrays.
     shap_values_list = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
 
@@ -271,7 +277,7 @@ def multi_target_shap_summary_plot(
 
     # 4. Iterate through each target's SHAP values and generate plots.
     for i, target_name in enumerate(target_names):
-        _LOGGER.info(f"  -> Generating SHAP plots for target: '{target_name}'")
+        print(f"  -> Generating SHAP plots for target: '{target_name}'")
         shap_values_for_target = shap_values_list[i]
         sanitized_target_name = sanitize_filename(target_name)
 
@@ -292,5 +298,8 @@ def multi_target_shap_summary_plot(
         plt.close()
 
     plt.ion()
-    _LOGGER.info(f"✅ All SHAP plots saved to '{save_dir_path.name}'")
+    _LOGGER.info(f"All SHAP plots saved to '{save_dir_path.name}'")
 
+
+def info():
+    _script_info(__all__)
