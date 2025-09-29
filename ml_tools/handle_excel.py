@@ -167,49 +167,63 @@ def validate_excel_schema(
     strict: bool = False
 ) -> None:
     """
-    Validates that each Excel file in a directory conforms to the expected column schema.
+    Validates that each Excel file in a directory conforms to the expected column schema. Only the first worksheet of each file is analyzed.
     
     Parameters:
         target_dir (str | Path): Path to the directory containing Excel files.
         expected_columns (list[str]): List of expected column names.
         strict (bool): If True, columns must match exactly (names and order).
                       If False, columns must contain at least all expected names.
-
-    Returns:
-        List[str]: List of file paths that failed the schema validation.
     """
-    invalid_files: list[Path] = []
+    invalid_files: dict[str, str] = {}
     expected_set = set(expected_columns)
     
     target_path = make_fullpath(target_dir)
-    
     excel_paths = find_excel_files(target_path)
     
     for file in excel_paths:
         try:
+            # Using first worksheet
             wb = load_workbook(file, read_only=True)
-            ws = wb.active  # Only check the first worksheet
+            ws = wb.active
 
             header = [cell.value for cell in next(ws.iter_rows(max_row=1))] # type: ignore
 
+            # Change 2: Detailed reason-finding logic
             if strict:
                 if header != expected_columns:
-                    invalid_files.append(file)
+                    header_set = set(header)
+                    reason_parts = []
+                    missing = sorted(list(expected_set - header_set)) # type: ignore
+                    extra = sorted(list(header_set - expected_set)) # type: ignore
+                    
+                    if missing:
+                        reason_parts.append(f"Missing: {missing}")
+                    if extra:
+                        reason_parts.append(f"Extra: {extra}")
+                    if not missing and not extra:
+                        reason_parts.append("Incorrect column order")
+                    
+                    invalid_files[file.name] = ". ".join(reason_parts)
             else:
                 header_set = set(header)
                 if not expected_set.issubset(header_set):
-                    invalid_files.append(file)
+                    missing_cols = sorted(list(expected_set - header_set)) # type: ignore
+                    reason = f"Missing required columns: {missing_cols}"
+                    invalid_files[file.name] = reason
 
         except Exception as e:
             _LOGGER.error(f"Error processing '{file}': {e}")
-            invalid_files.append(file)
+            invalid_files[file.name] = f"File could not be read. Error: {e}"
     
     valid_excel_number = len(excel_paths) - len(invalid_files)
     _LOGGER.info(f"{valid_excel_number} out of {len(excel_paths)} excel files conform to the schema.")
+    
+    # Change 3: Updated print loop to show the reason
     if invalid_files:
         _LOGGER.warning(f"{len(invalid_files)} excel files are invalid:")
-        for in_file in invalid_files:
-            print(f"  - {in_file.name}")
+        for file_name, reason in invalid_files.items():
+            print(f"  - {file_name}: {reason}")
 
     return None
 

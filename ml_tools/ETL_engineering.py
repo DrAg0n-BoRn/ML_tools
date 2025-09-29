@@ -62,7 +62,7 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path])
         
     # --- 3. Process Each Column ---
     for i, column_name in enumerate(df.columns):
-        _LOGGER.info(f"Processing column: '{column_name}'...")
+        # _LOGGER.info(f"Processing column: '{column_name}'...")
 
         # --- Get unique values AS IS ---
         try:
@@ -96,7 +96,7 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path])
         except IOError:
             _LOGGER.exception(f"Error writing to file {file_path}.")
         else:
-            _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values to '{file_path}'")
+            _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
             
     _LOGGER.info("Process complete.")
 
