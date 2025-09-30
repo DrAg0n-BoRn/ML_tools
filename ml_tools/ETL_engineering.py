@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
 from .path_manager import sanitize_filename, make_fullpath
+from .utilities import save_dataframe, load_dataframe
 from ._script_info import _script_info
 from ._logger import _LOGGER
 
@@ -190,12 +191,13 @@ class DataFrameCleaner:
 
         self.cleaners = cleaners
 
-    def clean(self, df: pl.DataFrame) -> pl.DataFrame:
+    def clean(self, df: pl.DataFrame, clone_df: bool=True) -> pl.DataFrame:
         """
         Applies all defined cleaning rules to the Polars DataFrame.
 
         Args:
             df (pl.DataFrame): The Polars DataFrame to clean.
+            clone_df (bool): Whether to work on a clone to prevent undesired changes.
 
         Returns:
             pl.DataFrame: A new, cleaned Polars DataFrame.
@@ -214,7 +216,10 @@ class DataFrameCleaner:
                 print(f"\t- {miss_col}")
             raise ValueError()
 
-        df_cleaned = df.clone()
+        if clone_df:
+            df_cleaned = df.clone()
+        else:
+            df_cleaned = df
         
         # Build and apply a series of expressions for each column
         for cleaner in self.cleaners:
@@ -226,7 +231,14 @@ class DataFrameCleaner:
             # Sequentially chain 'replace_all' expressions for each rule
             for pattern, replacement in cleaner.rules.items():
                 final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
-                col_expr = col_expr.str.replace_all(final_pattern, replacement)
+                
+                if replacement is None:
+                    # If replacement is None, use a when/then expression to set matching values to null
+                    col_expr = pl.when(col_expr.str.contains(final_pattern)) \
+                                .then(None) \
+                                .otherwise(col_expr)
+                else:
+                    col_expr = col_expr.str.replace_all(final_pattern, replacement)
             
             # Execute the expression chain for the column
             df_cleaned = df_cleaned.with_columns(col_expr.alias(col_name))
@@ -234,6 +246,33 @@ class DataFrameCleaner:
         _LOGGER.info(f"Cleaned {len(self.cleaners)} columns.")
             
         return df_cleaned
+    
+    def load_clean_save(self, input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
+        """
+        This convenience method encapsulates the entire cleaning process into a
+        single call. It loads a DataFrame from a specified file, applies all
+        cleaning rules configured in the `DataFrameCleaner` instance, and saves
+        the resulting cleaned DataFrame to a new file.
+
+        The method ensures that all data is loaded as string types to prevent
+        unintended type inference issues before cleaning operations are applied.
+
+        Args:
+            input_filepath (Union[str, Path]):
+                The path to the input data file.
+            output_filepath (Union[str, Path]):
+                The full path, where the cleaned data file will be saved.
+        """
+        df, _ = load_dataframe(df_path=input_filepath, kind="polars", all_strings=True)
+        
+        df_clean = self.clean(df=df, clone_df=False)
+        
+        if isinstance(output_filepath, str):
+            output_filepath = make_fullpath(input_path=output_filepath, enforce="file")
+        
+        save_dataframe(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
+        
+        return None
 
 
 ############ TRANSFORM MAIN ####################
