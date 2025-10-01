@@ -63,6 +63,7 @@ data_exploration
 ensemble_evaluation
 ensemble_inference
 ensemble_learning
+ETL_cleaning
 ETL_engineering
 ML_callbacks
 ML_datasetmaster
@@ -180,7 +181,8 @@ pip install "dragon-ml-toolbox[base]"
 #### Modules:
 
 ```Bash
-ETL_Engineering
+ETL_cleaning
+ETL_engineering
 custom_logger
 SQL
 utilities
