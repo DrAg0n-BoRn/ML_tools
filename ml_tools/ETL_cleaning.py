@@ -1,0 +1,372 @@
+import polars as pl
+import pandas as pd
+import re
+from pathlib import Path
+from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
+from .path_manager import sanitize_filename, make_fullpath
+from .utilities import save_dataframe, load_dataframe
+from ._script_info import _script_info
+from ._logger import _LOGGER
+
+
+__all__ = [
+    "save_unique_values",
+    "basic_clean",
+    "ColumnCleaner",
+    "DataFrameCleaner"
+]
+
+
+################ Unique Values per column #################
+def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path]) -> None:
+    """
+    Loads a CSV file, then analyzes it and saves the unique non-null values
+    from each column into a separate text file exactly as they appear.
+
+    This is useful for understanding the raw categories or range of values
+    within a dataset before cleaning.
+
+    Args:
+        csv_path (Union[str, Path]):
+            The file path to the input CSV file.
+        output_dir (Union[str, Path]):
+            The path to the directory where the .txt files will be saved.
+            The directory will be created if it does not exist.
+    """
+    # --- 1. Input Validation ---
+    csv_path = make_fullpath(input_path=csv_path, enforce="file")
+    output_dir = make_fullpath(input_path=output_dir, make=True)
+
+    # --- 2. Load Data ---
+    try:
+        # Load all columns as strings to preserve original formatting
+        df = pd.read_csv(csv_path, dtype=str, encoding='utf-8')
+    except FileNotFoundError as e:
+        _LOGGER.error(f"The file was not found at '{csv_path}'.")
+        raise e
+    except Exception as e2:
+        _LOGGER.error(f"An error occurred while reading the CSV file.")
+        raise e2
+    else:
+        _LOGGER.info(f"Data loaded from '{csv_path}'")
+        
+    # --- 3. Process Each Column ---
+    for i, column_name in enumerate(df.columns):
+        # _LOGGER.info(f"Processing column: '{column_name}'...")
+
+        # --- Get unique values AS IS ---
+        try:
+            # Drop nulls, get unique values, and sort them.
+            # The values are preserved exactly as they are in the cells.
+            unique_values = df[column_name].dropna().unique()
+            sorted_uniques = sorted(unique_values)
+        except Exception:
+            _LOGGER.exception(f"Could not process column '{column_name}'.")
+            continue
+
+        if not sorted_uniques:
+            _LOGGER.warning(f"Column '{column_name}' has no unique non-null values. Skipping.")
+            continue
+
+        # --- Sanitize column name to create a valid filename ---
+        sanitized_name = sanitize_filename(column_name)
+        if not sanitized_name.strip('_'):
+            sanitized_name = f'column_{i}'
+        file_path = output_dir / f"{sanitized_name}_unique_values.txt"
+
+        # --- Write to file ---
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(f"# Unique values for column: '{column_name}'\n")
+                f.write(f"# Total unique non-null values: {len(sorted_uniques)}\n")
+                f.write("-" * 30 + "\n")
+                for value in sorted_uniques:
+                    f.write(f"{value}\n")
+                    f.write("-" * 30 + "\n")
+        except IOError:
+            _LOGGER.exception(f"Error writing to file {file_path}.")
+        else:
+            _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
+            
+    _LOGGER.info("Process complete.")
+
+
+########## Basic df cleaner #############
+def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path,None]=None):
+    """
+    Performs a comprehensive, standardized cleaning on all columns of a CSV file.
+
+    The cleaning process includes:
+    - Normalizing full-width and typographical punctuation to standard equivalents.
+    - Consolidating all internal whitespace (spaces, tabs, newlines) into a single space.
+    - Stripping any leading or trailing whitespace.
+    - Converting common textual representations of null (e.g., "N/A", "NULL") to true null values.
+    - Converting strings that become empty after cleaning into true null values.
+    - Normalizing all text to lowercase.
+
+    Args:
+        input_filepath (Union[str, Path]):
+            The path to the source CSV file to be cleaned.
+        output_filepath (Union[str, Path, None], optional):
+            The path to save the cleaned CSV file. If None (default),
+            the original input file will be overwritten.
+    """
+    # Handle paths
+    input_path = make_fullpath(input_filepath, enforce="file")
+    
+    # Unless explicitly defined, overwrite file.
+    if output_filepath is not None:
+        parent_dir = make_fullpath(Path(output_filepath).parent, make=True, enforce="directory")
+        output_path = parent_dir / Path(output_filepath).name
+    else:
+        output_path = input_path
+        
+    # load polars df
+    df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
+    
+    # Cleaning rules
+    cleaning_rules = {
+        # 1. Comprehensive Punctuation & Symbol Normalization
+        # Remove invisible control characters
+        r'\p{C}+': '',
+        
+        # Full-width to half-width
+        '》': '>', '《': '<', '：': ':', '，': ',', '。': '.', '；': ';', '【': '[', '】': ']',
+        '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#',
+        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '\\', '｜': '|',
+        
+        # Others
+        '©': '',
+        '®': '',
+        '™': '',
+        
+        # Collapse repeating punctuation (explicit method)
+        r'\.{2,}': '.',      # Replace two or more dots with a single dot
+        r'\?{2,}': '?',      # Replace two or more question marks with a single question mark
+        r'!{2,}': '!',      # Replace two or more exclamation marks with a single one
+        
+        # Typographical standardization
+        # Unify various dashes and hyphens to a standard hyphen-minus
+        r'[—–―]': '-',
+        # Unify various quote types to standard single quotes
+        r'[“”]': "'",
+        r'[‘’]': "'",
+
+        # 2. Internal Whitespace Consolidation
+        # Collapse any sequence of whitespace chars (including non-breaking spaces) to a single space
+        r'\s+': ' ',
+
+        # 3. Leading/Trailing Whitespace Removal
+        # Strip any whitespace from the beginning or end of the string
+        r'^\s+|\s+$': '',
+        
+        # 4. Textual Null Standardization (New Step)
+        # Convert common null-like text to actual nulls. (?i) makes it case-insensitive.
+        r'^(N/A|NA|NULL|NONE|NIL|)$': None,
+
+        # 5. Final Nullification of Empty Strings
+        # After all cleaning, if a string is now empty, convert it to a null
+        r'^$': None
+    }
+    
+    # Clean data
+    try:
+        # Create a cleaner for every column in the dataframe
+        all_columns = df.columns
+        column_cleaners = [
+            ColumnCleaner(col, rules=cleaning_rules, case_insensitive=True) for col in all_columns
+        ]
+        
+        # Instantiate and run the main dataframe cleaner
+        df_cleaner = DataFrameCleaner(cleaners=column_cleaners)
+        df_cleaned = df_cleaner.clean(df, clone_df=False) # Use clone_df=False for efficiency
+        
+        # apply lowercase to all string columns
+        df_final = df_cleaned.with_columns(
+            pl.col(pl.String).str.to_lowercase()
+        )
+    except Exception as e:
+        _LOGGER.error(f"An error occurred during the cleaning process for '{input_path.name}'.")
+        raise e
+    
+    # Save cleaned dataframe
+    save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
+    
+    _LOGGER.info(f"Successfully cleaned and saved data to '{output_path.name}'.")
+
+
+########## EXTRACT and CLEAN ##########
+class ColumnCleaner:
+    """
+    A configuration object that defines cleaning rules for a single Polars DataFrame column.
+
+    This class holds a dictionary of regex-to-replacement rules, the target column name,
+    and the case-sensitivity setting. It is intended to be used with the DataFrameCleaner.
+    
+    Notes:
+        - Define rules from most specific to more general to create a fallback system.
+        - Beware of chain replacements (rules matching strings that have already been
+          changed by a previous rule in the same cleaner).
+
+    Args:
+        column_name (str):
+            The name of the column to be cleaned.
+        rules (Dict[str, str]):
+            A dictionary of regex patterns to replacement strings. Can use
+            backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
+            uses a '$' prefix for backreferences.
+        case_insensitive (bool):
+            If True (default), regex matching ignores case.
+
+    ## Usage Example
+
+    ```python
+    id_rules = {
+        # Matches 'ID-12345' or 'ID 12345' and reformats to 'ID:12345'
+        r'ID[- ](\\d+)': r'ID:$1'
+    }
+
+    id_cleaner = ColumnCleaner(column_name='user_id', rules=id_rules)
+    # This object would then be passed to a DataFrameCleaner.
+    ```
+    """
+    def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
+        if not isinstance(column_name, str) or not column_name:
+            _LOGGER.error("The 'column_name' must be a non-empty string.")
+            raise TypeError()
+        if not isinstance(rules, dict):
+            _LOGGER.error("The 'rules' argument must be a dictionary.")
+            raise TypeError()
+
+        # Validate each regex pattern for correctness
+        for pattern in rules.keys():
+            try:
+                re.compile(pattern)
+            except re.error:
+                _LOGGER.error(f"Invalid regex pattern '{pattern}'.")
+                raise
+
+        self.column_name = column_name
+        self.rules = rules
+        self.case_insensitive = case_insensitive
+
+
+class DataFrameCleaner:
+    """
+    Orchestrates cleaning multiple columns in a Polars DataFrame.
+
+    This class takes a list of ColumnCleaner objects and applies their defined
+    rules to the corresponding columns of a DataFrame using high-performance
+    Polars expressions.
+
+    Args:
+        cleaners (List[ColumnCleaner]):
+            A list of ColumnCleaner configuration objects.
+
+    Raises:
+        TypeError: If 'cleaners' is not a list or contains non-ColumnCleaner objects.
+        ValueError: If multiple ColumnCleaner objects target the same column.
+    """
+    def __init__(self, cleaners: List[ColumnCleaner]):
+        if not isinstance(cleaners, list):
+            _LOGGER.error("The 'cleaners' argument must be a list of ColumnCleaner objects.")
+            raise TypeError()
+
+        seen_columns = set()
+        for cleaner in cleaners:
+            if not isinstance(cleaner, ColumnCleaner):
+                _LOGGER.error(f"All items in 'cleaners' list must be ColumnCleaner objects, but found an object of type {type(cleaner).__name__}.")
+                raise TypeError()
+            if cleaner.column_name in seen_columns:
+                _LOGGER.error(f"Duplicate ColumnCleaner found for column '{cleaner.column_name}'. Each column should only have one cleaner.")
+                raise ValueError()
+            seen_columns.add(cleaner.column_name)
+
+        self.cleaners = cleaners
+
+    def clean(self, df: pl.DataFrame, clone_df: bool=True) -> pl.DataFrame:
+        """
+        Applies all defined cleaning rules to the Polars DataFrame.
+
+        Args:
+            df (pl.DataFrame): The Polars DataFrame to clean.
+            clone_df (bool): Whether to work on a clone to prevent undesired changes.
+
+        Returns:
+            pl.DataFrame: A new, cleaned Polars DataFrame.
+
+        Raises:
+            ValueError: If any columns specified in the cleaners are not found
+                        in the input DataFrame.
+        """
+        rule_columns = {c.column_name for c in self.cleaners}
+        df_columns = set(df.columns)
+        missing_columns = rule_columns - df_columns
+
+        if missing_columns:
+            _LOGGER.error("The following columns specified in cleaning rules were not found in the DataFrame:")
+            for miss_col in sorted(list(missing_columns)):
+                print(f"\t- {miss_col}")
+            raise ValueError()
+
+        if clone_df:
+            df_cleaned = df.clone()
+        else:
+            df_cleaned = df
+        
+        # Build and apply a series of expressions for each column
+        for cleaner in self.cleaners:
+            col_name = cleaner.column_name
+            
+            # Start with the column, cast to String for replacement operations
+            col_expr = pl.col(col_name).cast(pl.String)
+
+            # Sequentially chain 'replace_all' expressions for each rule
+            for pattern, replacement in cleaner.rules.items():
+                final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
+                
+                if replacement is None:
+                    # If replacement is None, use a when/then expression to set matching values to null
+                    col_expr = pl.when(col_expr.str.contains(final_pattern)) \
+                                .then(None) \
+                                .otherwise(col_expr)
+                else:
+                    col_expr = col_expr.str.replace_all(final_pattern, replacement)
+            
+            # Execute the expression chain for the column
+            df_cleaned = df_cleaned.with_columns(col_expr.alias(col_name))
+            
+        _LOGGER.info(f"Cleaned {len(self.cleaners)} columns.")
+            
+        return df_cleaned
+    
+    def load_clean_save(self, input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
+        """
+        This convenience method encapsulates the entire cleaning process into a
+        single call. It loads a DataFrame from a specified file, applies all
+        cleaning rules configured in the `DataFrameCleaner` instance, and saves
+        the resulting cleaned DataFrame to a new file.
+
+        The method ensures that all data is loaded as string types to prevent
+        unintended type inference issues before cleaning operations are applied.
+
+        Args:
+            input_filepath (Union[str, Path]):
+                The path to the input data file.
+            output_filepath (Union[str, Path]):
+                The full path, where the cleaned data file will be saved.
+        """
+        df, _ = load_dataframe(df_path=input_filepath, kind="polars", all_strings=True)
+        
+        df_clean = self.clean(df=df, clone_df=False)
+        
+        if isinstance(output_filepath, str):
+            output_filepath = make_fullpath(input_path=output_filepath, enforce="file")
+        
+        save_dataframe(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
+        
+        return None
+
+
+def info():
+    _script_info(__all__)

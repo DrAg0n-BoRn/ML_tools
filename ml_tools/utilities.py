@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from pathlib import Path
-from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple
+from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple, overload
 import joblib
 from joblib.externals.loky.process_executor import TerminatedWorkerError
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
@@ -28,12 +28,32 @@ __all__ = [
 ]
 
 
+# Overload 1: When kind='pandas'
+@overload
+def load_dataframe(
+    df_path: Union[str, Path], 
+    kind: Literal["pandas"] = "pandas",
+    all_strings: bool = False,
+    verbose: bool = True
+) -> Tuple[pd.DataFrame, str]:
+    ... # for overload stubs
+
+# Overload 2: When kind='polars'
+@overload
+def load_dataframe(
+    df_path: Union[str, Path], 
+    kind: Literal["polars"],
+    all_strings: bool = False,
+    verbose: bool = True
+) -> Tuple[pl.DataFrame, str]:
+    ... # for overload stubs
+
 def load_dataframe(
     df_path: Union[str, Path], 
     kind: Literal["pandas", "polars"] = "pandas",
     all_strings: bool = False,
     verbose: bool = True
-) -> Tuple[Union[pd.DataFrame, pl.DataFrame], str]:
+) -> Union[Tuple[pd.DataFrame, str], Tuple[pl.DataFrame, str]]:
     """
     Load a CSV file into a DataFrame and extract its base name.
 
@@ -41,13 +61,13 @@ def load_dataframe(
     columns as string types to prevent type inference errors.
 
     Args:
-        df_path (Union[str, Path]): 
+        df_path (str, Path): 
             The path to the CSV file.
-        kind (Literal["pandas", "polars"], optional): 
+        kind ("pandas", "polars"): 
             The type of DataFrame to load. Defaults to "pandas".
-        all_strings (bool, optional): 
+        all_strings (bool): 
             If True, loads all columns as string data types. This is useful for
-            ETL tasks and to avoid type-inference errors. Defaults to False.
+            ETL tasks and to avoid type-inference errors.
 
     Returns:
         (Tuple[DataFrameType, str]):
@@ -87,7 +107,7 @@ def load_dataframe(
     if verbose:
         _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
-    return df, df_name
+    return df, df_name # type: ignore
 
 
 def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
