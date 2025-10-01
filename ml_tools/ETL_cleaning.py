@@ -140,7 +140,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         '®': '',
         '™': '',
         
-        # Collapse repeating punctuation (explicit method)
+        # Collapse repeating punctuation
         r'\.{2,}': '.',      # Replace two or more dots with a single dot
         r'\?{2,}': '?',      # Replace two or more question marks with a single question mark
         r'!{2,}': '!',      # Replace two or more exclamation marks with a single one
@@ -192,7 +192,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     # Save cleaned dataframe
     save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
     
-    _LOGGER.info(f"Successfully cleaned and saved data to '{output_path.name}'.")
+    _LOGGER.info(f"Data successfully cleaned.")
 
 
 ########## EXTRACT and CLEAN ##########
