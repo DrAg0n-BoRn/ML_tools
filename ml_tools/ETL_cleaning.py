@@ -17,7 +17,7 @@ __all__ = [
 
 
 ################ Unique Values per column #################
-def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path]) -> None:
+def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path], verbose: bool=False) -> None:
     """
     Loads a CSV file, then analyzes it and saves the unique non-null values
     from each column into a separate text file exactly as they appear.
@@ -50,6 +50,7 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path])
         _LOGGER.info(f"Data loaded from '{csv_path}'")
         
     # --- 3. Process Each Column ---
+    counter = 0
     for i, column_name in enumerate(df.columns):
         # _LOGGER.info(f"Processing column: '{column_name}'...")
 
@@ -85,9 +86,11 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path])
         except IOError:
             _LOGGER.exception(f"Error writing to file {file_path}.")
         else:
-            _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
-            
-    _LOGGER.info("Process complete.")
+            if verbose:
+                _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
+            counter += 1
+
+    _LOGGER.info(f"{counter} files of unique values created.")
 
 
 ########## Basic df cleaner #############
