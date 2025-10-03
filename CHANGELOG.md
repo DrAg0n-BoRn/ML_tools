@@ -5,9 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.1.0] 2025-10-03
+
+### Changed
+
+- ETL_cleaning:
+    - `basic_clean()`, expanded full-width character cleaning.
+    - `ColumnCleaner`, no longer performs regex pattern validation using an incompatible engine.
+
 ## [10.0.1] 2025-10-01
 
 ### Fixed
+
 - ETL_cleaning: minor logging tweaks.
 
 ## [10.0.0] 2025-10-01

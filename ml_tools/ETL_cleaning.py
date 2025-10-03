@@ -1,8 +1,7 @@
 import polars as pl
 import pandas as pd
-import re
 from pathlib import Path
-from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
+from typing import Union, List, Dict
 from .path_manager import sanitize_filename, make_fullpath
 from .utilities import save_dataframe, load_dataframe
 from ._script_info import _script_info
@@ -131,9 +130,30 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         r'\p{C}+': '',
         
         # Full-width to half-width
+        # Numbers
+        '０': '0', '１': '1', '２': '2', '３': '3', '４': '4',
+        '５': '5', '６': '6', '７': '7', '８': '8', '９': '9',
+        # Superscripts & Subscripts
+        '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5',
+        '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0',
+        '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5',
+        '₆': '6', '₇': '7', '₈': '8', '₉': '9', '₀': '0',
+        # Uppercase Alphabet
+        'Ａ': 'A', 'Ｂ': 'B', 'Ｃ': 'C', 'Ｄ': 'D', 'Ｅ': 'E', 'Ｆ': 'F',
+        'Ｇ': 'G', 'Ｈ': 'H', 'Ｉ': 'I', 'Ｊ': 'J', 'Ｋ': 'K', 'Ｌ': 'L',
+        'Ｍ': 'M', 'Ｎ': 'N', 'Ｏ': 'O', 'Ｐ': 'P', 'Ｑ': 'Q', 'Ｒ': 'R',
+        'Ｓ': 'S', 'Ｔ': 'T', 'Ｕ': 'U', 'Ｖ': 'V', 'Ｗ': 'W', 'Ｘ': 'X',
+        'Ｙ': 'Y', 'Ｚ': 'Z',
+        # Lowercase Alphabet
+        'ａ': 'a', 'ｂ': 'b', 'ｃ': 'c', 'ｄ': 'd', 'ｅ': 'e', 'ｆ': 'f',
+        'ｇ': 'g', 'ｈ': 'h', 'ｉ': 'i', 'ｊ': 'j', 'ｋ': 'k', 'ｌ': 'l',
+        'ｍ': 'm', 'ｎ': 'n', 'ｏ': 'o', 'ｐ': 'p', 'ｑ': 'q', 'ｒ': 'r',
+        'ｓ': 's', 'ｔ': 't', 'ｕ': 'u', 'ｖ': 'v', 'ｗ': 'w', 'ｘ': 'x',
+        'ｙ': 'y', 'ｚ': 'z',
+        # Punctuation
         '》': '>', '《': '<', '：': ':', '，': ',', '。': '.', '；': ';', '【': '[', '】': ']',
-        '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#',
-        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '\\', '｜': '|',
+        '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
+        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '\\', '｜': '|', '、':',', '≈':'=',
         
         # Others
         '©': '',
@@ -148,9 +168,9 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         # Typographical standardization
         # Unify various dashes and hyphens to a standard hyphen-minus
         r'[—–―]': '-',
-        # Unify various quote types to standard single quotes
+        # Unify various quote types to standard quotes
         r'[“”]': "'",
-        r'[‘’]': "'",
+        r'[‘’′]': "'",
 
         # 2. Internal Whitespace Consolidation
         # Collapse any sequence of whitespace chars (including non-breaking spaces) to a single space
@@ -162,7 +182,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         
         # 4. Textual Null Standardization (New Step)
         # Convert common null-like text to actual nulls. (?i) makes it case-insensitive.
-        r'^(N/A|NA|NULL|NONE|NIL|)$': None,
+        r'^(N/A|无|NA|NULL|NONE|NIL|)$': None,
 
         # 5. Final Nullification of Empty Strings
         # After all cleaning, if a string is now empty, convert it to a null
@@ -237,14 +257,6 @@ class ColumnCleaner:
         if not isinstance(rules, dict):
             _LOGGER.error("The 'rules' argument must be a dictionary.")
             raise TypeError()
-
-        # Validate each regex pattern for correctness
-        for pattern in rules.keys():
-            try:
-                re.compile(pattern)
-            except re.error:
-                _LOGGER.error(f"Invalid regex pattern '{pattern}'.")
-                raise
 
         self.column_name = column_name
         self.rules = rules
