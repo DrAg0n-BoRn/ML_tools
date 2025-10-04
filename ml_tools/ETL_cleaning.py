@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Union, List, Dict
 from .path_manager import sanitize_filename, make_fullpath
+from .data_exploration import drop_macro
 from .utilities import save_dataframe, load_dataframe
 from ._script_info import _script_info
 from ._logger import _LOGGER
@@ -11,6 +12,7 @@ from ._logger import _LOGGER
 __all__ = [
     "save_unique_values",
     "basic_clean",
+    "basic_clean_drop",
     "ColumnCleaner",
     "DataFrameCleaner"
 ]
@@ -93,39 +95,8 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path],
     _LOGGER.info(f"{counter} files of unique values created.")
 
 
-########## Basic df cleaner #############
-def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path,None]=None):
-    """
-    Performs a comprehensive, standardized cleaning on all columns of a CSV file.
-
-    The cleaning process includes:
-    - Normalizing full-width and typographical punctuation to standard equivalents.
-    - Consolidating all internal whitespace (spaces, tabs, newlines) into a single space.
-    - Stripping any leading or trailing whitespace.
-    - Converting common textual representations of null (e.g., "N/A", "NULL") to true null values.
-    - Converting strings that become empty after cleaning into true null values.
-    - Normalizing all text to lowercase.
-
-    Args:
-        input_filepath (Union[str, Path]):
-            The path to the source CSV file to be cleaned.
-        output_filepath (Union[str, Path, None], optional):
-            The path to save the cleaned CSV file. If None (default),
-            the original input file will be overwritten.
-    """
-    # Handle paths
-    input_path = make_fullpath(input_filepath, enforce="file")
-    
-    # Unless explicitly defined, overwrite file.
-    if output_filepath is not None:
-        parent_dir = make_fullpath(Path(output_filepath).parent, make=True, enforce="directory")
-        output_path = parent_dir / Path(output_filepath).name
-    else:
-        output_path = input_path
-        
-    # load polars df
-    df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
-    
+########## Basic df cleaners #############
+def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
     # Cleaning rules
     cleaning_rules = {
         # 1. Comprehensive Punctuation & Symbol Normalization
@@ -141,6 +112,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0',
         '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5',
         '₆': '6', '₇': '7', '₈': '8', '₉': '9', '₀': '0',
+        '⁺': '', '⁻': '', '₊': '', '₋': '',
         # Uppercase Alphabet
         'Ａ': 'A', 'Ｂ': 'B', 'Ｃ': 'C', 'Ｄ': 'D', 'Ｅ': 'E', 'Ｆ': 'F',
         'Ｇ': 'G', 'Ｈ': 'H', 'Ｉ': 'I', 'Ｊ': 'J', 'Ｋ': 'K', 'Ｌ': 'L',
@@ -154,7 +126,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         'ｓ': 's', 'ｔ': 't', 'ｕ': 'u', 'ｖ': 'v', 'ｗ': 'w', 'ｘ': 'x',
         'ｙ': 'y', 'ｚ': 'z',
         # Punctuation
-        '》': '>', '《': '<', '：': ':', '，': ',', '。': '.', '；': ';', '【': '[', '】': ']',
+        '》': '>', '《': '<', '：': ':', '，': ',', '。': '.', '；': ';', '【': '[', '】': ']', 
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
         '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '\\', '｜': '|', '、':',', '≈':'=',
         
@@ -171,6 +143,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         # Typographical standardization
         # Unify various dashes and hyphens to a standard hyphen-minus
         r'[—–―]': '-',
+        r'−': '-',
         # Unify various quote types to standard quotes
         r'[“”]': "'",
         r'[‘’′]': "'",
@@ -184,33 +157,138 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         r'^\s+|\s+$': '',
         
         # 4. Textual Null Standardization (New Step)
-        # Convert common null-like text to actual nulls. (?i) makes it case-insensitive.
+        # Convert common null-like text to actual nulls.
         r'^(N/A|无|NA|NULL|NONE|NIL|)$': None,
 
         # 5. Final Nullification of Empty Strings
         # After all cleaning, if a string is now empty, convert it to a null
-        r'^$': None
+        r'^\s*$': None,
+        r'^$': None,
     }
     
     # Clean data
     try:
         # Create a cleaner for every column in the dataframe
-        all_columns = df.columns
+        all_columns = df_in.columns
         column_cleaners = [
             ColumnCleaner(col, rules=cleaning_rules, case_insensitive=True) for col in all_columns
         ]
         
         # Instantiate and run the main dataframe cleaner
         df_cleaner = DataFrameCleaner(cleaners=column_cleaners)
-        df_cleaned = df_cleaner.clean(df, clone_df=False) # Use clone_df=False for efficiency
+        df_cleaned = df_cleaner.clean(df_in, clone_df=False) # Use clone_df=False for efficiency
         
         # apply lowercase to all string columns
         df_final = df_cleaned.with_columns(
             pl.col(pl.String).str.to_lowercase()
         )
     except Exception as e:
-        _LOGGER.error(f"An error occurred during the cleaning process for '{input_path.name}'.")
+        _LOGGER.error(f"An error occurred during the cleaning process.")
         raise e
+    else:
+        return df_final
+
+
+def _path_manager(path_in: Union[str,Path], path_out: Union[str,Path]):
+    # Handle paths
+    input_path = make_fullpath(path_in, enforce="file")
+    
+    parent_dir = make_fullpath(Path(path_out).parent, make=True, enforce="directory")
+    output_path = parent_dir / Path(path_out).name
+    
+    return input_path, output_path
+
+
+def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
+    """
+    Performs a comprehensive, standardized cleaning on all columns of a CSV file.
+
+    The cleaning process includes:
+    - Normalizing full-width and typographical punctuation to standard equivalents.
+    - Consolidating all internal whitespace (spaces, tabs, newlines) into a single space.
+    - Stripping any leading or trailing whitespace.
+    - Converting common textual representations of null (e.g., "N/A", "NULL") to true null values.
+    - Converting strings that become empty after cleaning into true null values.
+    - Normalizing all text to lowercase.
+
+    Args:
+        input_filepath (Union[str, Path]):
+            The path to the source CSV file to be cleaned.
+        output_filepath (Union[str, Path, None], optional):
+            The path to save the cleaned CSV file.
+    """
+    # Handle paths
+    input_path, output_path = _path_manager(path_in=input_filepath, path_out=output_filepath)
+        
+    # load polars df
+    df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
+    
+    # CLEAN
+    df_final = _cleaner_core(df)
+    
+    # Save cleaned dataframe
+    save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
+    
+    _LOGGER.info(f"Data successfully cleaned.")
+    
+
+def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str,Path], log_directory: Union[str,Path], targets: list[str], 
+                     skip_targets: bool=False, threshold: float=0.8):
+    """
+    Performs standardized cleaning followed by iterative removal of rows and 
+    columns with excessive missing data.
+
+    This function combines the functionality of `basic_clean` and `drop_macro`. It first 
+    applies a comprehensive normalization process to all columns in the input CSV file, 
+    ensuring consistent formatting and proper null value handling. The cleaned data is then 
+    converted to a pandas DataFrame, where iterative row and column dropping is applied 
+    to remove redundant or incomplete data.  
+
+    The iterative dropping cycle continues until no further rows or columns meet the 
+    removal criteria, ensuring that dependencies between row and column deletions are 
+    fully resolved. Logs documenting the missing data profile before and after the 
+    dropping process are saved to the specified log directory.  
+
+    Args:
+        input_filepath (str, Path):
+            The path to the source CSV file to be cleaned.
+        output_filepath (str, Path):
+            The path to save the fully cleaned CSV file after cleaning 
+            and missing-data-based pruning.
+        log_directory (str, Path):
+            Path to the directory where missing data reports will be stored.
+        targets (list[str]):
+            A list of column names to be treated as target variables. 
+            This list guides the row-dropping logic.
+        skip_targets (bool):
+            If True, the columns listed in `targets` will be exempt from being dropped, 
+            even if they exceed the missing data threshold.
+        threshold (float):
+            The proportion of missing data required to drop a row or column. 
+            For example, 0.8 means a row/column will be dropped if 80% or more 
+            of its data is missing.
+    """
+    # handle log path
+    log_path = make_fullpath(log_directory, make=True, enforce="directory")
+    
+    # Handle df paths
+    input_path, output_path = _path_manager(path_in=input_filepath, path_out=output_filepath)
+    
+    # load polars df
+    df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
+    
+    # CLEAN
+    df_cleaned = _cleaner_core(df)
+    
+    # switch to pandas
+    df_cleaned_pandas = df_cleaned.to_pandas()
+    
+    # Drop macro
+    df_final = drop_macro(df=df_cleaned_pandas,
+                          log_directory=log_path,
+                          targets=targets,
+                          skip_targets=skip_targets,
+                          threshold=threshold)
     
     # Save cleaned dataframe
     save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
