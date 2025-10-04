@@ -126,27 +126,37 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         'ｓ': 's', 'ｔ': 't', 'ｕ': 'u', 'ｖ': 'v', 'ｗ': 'w', 'ｘ': 'x',
         'ｙ': 'y', 'ｚ': 'z',
         # Punctuation
-        '》': '>', '《': '<', '：': ':', '，': ',', '。': '.', '；': ';', '【': '[', '】': ']', 
+        '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', 
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
-        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '\\', '｜': '|', '、':',', '≈':'=',
+        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=',
+        
+        # Commas (avoid commas in entries)
+        '，': ';',
+        ',': ';',
+        '、':';',
         
         # Others
         '©': '',
         '®': '',
         '™': '',
+        r'[°˚]': '',
+        
+        # Replace special characters in entries
+        r'\\': '-',
+        '/': '-',
+        
+        # Typographical standardization
+        # Unify various dashes and hyphens to a standard hyphen
+        r'[—–―]': '-',
+        r'−': '-',
+        # remove various quote types
+        r'[“”"]': '',
+        r"[‘’′']": '',
         
         # Collapse repeating punctuation
         r'\.{2,}': '.',      # Replace two or more dots with a single dot
         r'\?{2,}': '?',      # Replace two or more question marks with a single question mark
         r'!{2,}': '!',      # Replace two or more exclamation marks with a single one
-        
-        # Typographical standardization
-        # Unify various dashes and hyphens to a standard hyphen-minus
-        r'[—–―]': '-',
-        r'−': '-',
-        # Unify various quote types to standard quotes
-        r'[“”]': "'",
-        r'[‘’′]': "'",
 
         # 2. Internal Whitespace Consolidation
         # Collapse any sequence of whitespace chars (including non-breaking spaces) to a single space
