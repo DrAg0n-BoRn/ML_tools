@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.3.0] 2025-10-05
+
+### Added
+
+- ETL_engineering:
+    - `DataProcessor.load_transform_save()`, convenience wrapper for the transform method that includes automatic dataframe loading and saving.
+    - `RatioCalculator`, includes optional handling for zeros and single numbers.
+    - `TriRatioCalculator`, A transformer that handles three-part ("A:B:C") and two-part ("A:C") mixed ratios.
+
 ## [10.2.1] 2025-10-04
 
 ### Added

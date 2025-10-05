@@ -1,6 +1,9 @@
 import polars as pl
 import re
+from pathlib import Path
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
+from .utilities import load_dataframe, save_dataframe
+from .path_manager import make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
 
@@ -182,9 +185,28 @@ class DataProcessor:
         if not processed_columns:
             _LOGGER.error("The transformation resulted in an empty DataFrame.")
             return pl.DataFrame()
-            
+        
+        _LOGGER.info(f"Processed dataframe with {len(processed_columns)} columns.")
+
         return pl.DataFrame(processed_columns)
     
+    def load_transform_save(self, input_path: Union[str,Path], output_path: Union[str,Path]):
+        """
+        Convenience wrapper for the transform method that includes automatic dataframe loading and saving.
+        """
+        # Validate paths
+        in_path = make_fullpath(input_path, enforce="file")
+        out_path = make_fullpath(output_path, make=True, enforce="file")
+        
+        # load df
+        df, _ = load_dataframe(df_path=in_path, kind="polars", all_strings=True)
+        
+        # Process
+        df_processed = self.transform(df)
+        
+        # save processed df
+        save_dataframe(df=df_processed, save_dir=out_path.parent, filename=out_path.name)
+        
     def __str__(self) -> str:
         """
         Provides a detailed, human-readable string representation of the
@@ -620,13 +642,14 @@ class MultiNumberExtractor:
 class RatioCalculator:
     """
     A transformer that parses a string ratio (e.g., "40:5" or "30/2") and
-    computes the result of the division. It gracefully handles strings that
-    do not match the pattern by returning null.
+    computes the result of the division. Includes robust handling for
+    zeros and single numbers.
     """
     def __init__(
         self,
-        # Default pattern includes the full-width colon '：'
-        regex_pattern: str = r"(\d+\.?\d*)\s*[:：/]\s*(\d+\.?\d*)"
+        regex_pattern: str = r"(\d+\.?\d*)\s*[:：/]\s*(\d+\.?\d*)",
+        handle_zeros: bool = False,
+        handle_single_number: bool = False
     ):
         # --- Robust Validation ---
         try:
@@ -642,24 +665,118 @@ class RatioCalculator:
             raise ValueError()
 
         self.regex_pattern = regex_pattern
+        self.handle_zeros = handle_zeros
+        self.handle_single_number = handle_single_number
 
     def __call__(self, column: pl.Series) -> pl.Series:
         """
-        Applies the ratio calculation logic to the input column.
-        This version uses .str.extract() for maximum stability.
+        Applies the ratio calculation logic to the input column. Uses .str.extract() for maximum stability and includes optional handling for zeros and single numbers.
         """
         # Extract numerator (group 1) and denominator (group 2) separately.
         numerator_expr = column.str.extract(self.regex_pattern, 1).cast(pl.Float64, strict=False)
         denominator_expr = column.str.extract(self.regex_pattern, 2).cast(pl.Float64, strict=False)
 
-        # Calculate the ratio, handling division by zero.
-        final_expr = pl.when(denominator_expr != 0).then(
-            numerator_expr / denominator_expr
-        ).otherwise(
-            None # Handles both null denominators and division by zero
-        )
+        # --- Logic for Requirement A: Special zero handling ---
+        if self.handle_zeros:
+            ratio_expr = (
+                pl.when(numerator_expr.is_not_null() & denominator_expr.is_not_null())
+                .then(
+                    pl.when((numerator_expr == 0) & (denominator_expr == 0)).then(pl.lit(0.0))
+                    .when((numerator_expr != 0) & (denominator_expr == 0)).then(numerator_expr)
+                    .when((numerator_expr == 0) & (denominator_expr != 0)).then(denominator_expr)
+                    .otherwise(numerator_expr / denominator_expr)  # Default: both are non-zero
+                )
+            )
+        else:
+            # Original logic
+            ratio_expr = pl.when(denominator_expr != 0).then(
+                numerator_expr / denominator_expr
+            ).otherwise(
+                None # Handles null denominators and division by zero
+            )
+
+        # --- Logic for Requirement B: Handle single numbers as a fallback ---
+        if self.handle_single_number:
+            # Regex to match a string that is ONLY a valid float/int
+            single_number_regex = r"^\d+\.?\d*$"
+            single_number_expr = (
+                pl.when(column.str.contains(single_number_regex))
+                .then(column.cast(pl.Float64, strict=False))
+                .otherwise(None)
+            )
+            # If ratio_expr is null, try to fill it with single_number_expr
+            final_expr = ratio_expr.fill_null(single_number_expr)
+        else:
+            final_expr = ratio_expr
 
         return pl.select(final_expr.round(4)).to_series()
+
+
+class TriRatioCalculator:
+    """
+    A transformer that handles three-part ("A:B:C") and two-part ("A:C")
+    ratios, enforcing a strict output structure.
+
+    - Three-part ratios produce A/B and A/C.
+    - Two-part ratios are assumed to be A:C and produce None for A/B.
+    - Single values produce None for both outputs.
+    """
+    def __init__(self, handle_zeros: bool = False):
+        """
+        Initializes the TriRatioCalculator.
+
+        Args:
+            handle_zeros (bool): If True, returns a valid value if either the denominator or numerator is zero; returns zero if both are zero.
+        """
+        self.handle_zeros = handle_zeros
+
+    def _calculate_ratio(self, num: pl.Expr, den: pl.Expr) -> pl.Expr:
+        """Helper to contain the core division logic."""
+        if self.handle_zeros:
+            # Special handling for zeros
+            expr = (
+                pl.when((num == 0) & (den == 0)).then(pl.lit(0.0))
+                .when((num != 0) & (den == 0)).then(num) # Return numerator
+                .when((num == 0) & (den != 0)).then(den) # Return denominator
+                .otherwise(num / den)
+            )
+        else:
+            # Default behavior: return null if denominator is 0
+            expr = pl.when(den != 0).then(num / den).otherwise(None)
+
+        return expr.round(4)
+
+    def __call__(self, column: pl.Series) -> pl.DataFrame:
+        """
+        Applies the robust tri-ratio logic using the lazy API.
+        """
+        # Wrap the input Series in a DataFrame to use the lazy expression API
+        temp_df = column.to_frame()
+
+        # Define all steps as lazy expressions
+        all_numbers_expr = pl.col(column.name).str.extract_all(r"(\d+\.?\d*)")
+        num_parts_expr = all_numbers_expr.list.len()
+
+        expr_A = all_numbers_expr.list.get(0).cast(pl.Float64)
+        expr_B = all_numbers_expr.list.get(1).cast(pl.Float64)
+        expr_C = all_numbers_expr.list.get(2).cast(pl.Float64)
+
+        # Define logic for each output column using expressions
+        ratio_ab_expr = pl.when(num_parts_expr == 3).then(
+            self._calculate_ratio(expr_A, expr_B)
+        ).otherwise(None)
+
+        ratio_ac_expr = pl.when(num_parts_expr == 3).then(
+            self._calculate_ratio(expr_A, expr_C)
+        ).when(num_parts_expr == 2).then(
+            self._calculate_ratio(expr_A, expr_B) # B is actually C in this case
+        ).otherwise(None)
+
+        # Execute the expressions and return the final DataFrame
+        return temp_df.select(
+            A_div_B=ratio_ab_expr,
+            A_div_C=ratio_ac_expr
+        )
 
 
 class CategoryMapper:
