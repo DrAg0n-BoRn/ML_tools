@@ -800,7 +800,7 @@ class MultiTemperatureExtractor:
             # --- Step 1: Extract the i-th number as a Celsius value ---
             celsius_expr = (
                 column.str.extract_all(self.regex_pattern)
-                .list.get(i)
+                .list.get(i, null_on_oob=True)
                 .cast(pl.Float64, strict=False)
             )
 
@@ -952,9 +952,9 @@ class TriRatioCalculator:
         all_numbers_expr = pl.col(column.name).str.extract_all(r"(\d+\.?\d*)")
         num_parts_expr = all_numbers_expr.list.len()
 
-        expr_A = all_numbers_expr.list.get(0).cast(pl.Float64)
-        expr_B = all_numbers_expr.list.get(1).cast(pl.Float64)
-        expr_C = all_numbers_expr.list.get(2).cast(pl.Float64)
+        expr_A = all_numbers_expr.list.get(0, null_on_oob=True).cast(pl.Float64)
+        expr_B = all_numbers_expr.list.get(1, null_on_oob=True).cast(pl.Float64)
+        expr_C = all_numbers_expr.list.get(2, null_on_oob=True).cast(pl.Float64)
 
         # Define logic for each output column using expressions
         ratio_ab_expr = pl.when(num_parts_expr == 3).then(
