@@ -714,7 +714,11 @@ class TemperatureExtractor:
         if self.average_mode:
             # Extract all numbers and compute their mean. Polars' list.mean()
             # handles the casting to float automatically.
-            celsius_expr = column.str.extract_all(self._avg_mode_pattern).list.mean()
+            celsius_expr = (
+                column.str.extract_all(self._avg_mode_pattern)
+                .list.eval(pl.element().cast(pl.Float64, strict=False))
+                .list.mean()
+            )
         else:
             # Extract a single number using the specified pattern.
             # Cast to Float64, with non-matches becoming null.
