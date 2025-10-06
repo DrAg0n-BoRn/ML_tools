@@ -17,7 +17,10 @@ __all__ = [
     "KeywordDummifier",
     "NumberExtractor",
     "MultiNumberExtractor",
+    "TemperatureExtractor",
+    "MultiTemperatureExtractor",
     "RatioCalculator",
+    "TriRatioCalculator",
     "CategoryMapper",
     "RegexMapper",
     "ValueBinner",
@@ -324,6 +327,15 @@ class AutoDummifier:
     A transformer that performs one-hot encoding on a categorical column,
     automatically detecting the unique categories from the data.
     """
+    def __init__(self, drop_first: bool = False):
+        """
+        Initializes the AutoDummifier.
+
+        Args:
+            drop_first (bool): If True, drops the first dummy column.
+        """
+        self.drop_first = drop_first
+
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
         Executes the one-hot encoding logic.
@@ -337,7 +349,7 @@ class AutoDummifier:
                           '{original_col_name}_{category_value}'.
         """
         # Ensure the column is treated as a string before creating dummies
-        return column.cast(pl.Utf8).to_dummies()
+        return column.cast(pl.Utf8).to_dummies(drop_first=self.drop_first)
 
 
 class MultiBinaryDummifier:
@@ -636,6 +648,189 @@ class MultiNumberExtractor:
             
             output_expressions.append(final_expr)
         
+        return pl.select(output_expressions)
+
+
+class TemperatureExtractor:
+    """
+    Extracts temperature values from a string column.
+
+    This transformer assumes that the source temperature values are in Celsius.
+    It can extract a single value using a specific regex or find all numbers in
+    a string and calculate their average. It also supports converting the final
+    Celsius value to Kelvin or Rankine.
+
+    Args:
+        regex_pattern (str):
+            The regex to find a single temperature. MUST contain exactly one
+            capturing group `(...)`. This is ignored if `average_mode` is True.
+        average_mode (bool):
+            If True, extracts all numbers from the string and returns their average.
+            This overrides the `regex_pattern` with a generic number-finding regex.
+        convert (str | None):
+            If "K", converts the final Celsius value to Kelvin.
+            If "R", converts the final Celsius value to Rankine.
+            If None (default), the value remains in Celsius.
+    """
+    def __init__(
+        self,
+        regex_pattern: str = r"(\d+\.?\d*)",
+        average_mode: bool = False,
+        convert: Optional[Literal["K", "R"]] = None,
+    ):
+        # --- Store configuration ---
+        self.average_mode = average_mode
+        self.convert = convert
+        self.regex_pattern = regex_pattern
+        
+        # Generic pattern for average mode, defined once for efficiency.
+        self._avg_mode_pattern = r"(\d+\.?\d*)"
+
+        # --- Validation ---
+        if not self.average_mode:
+            try:
+                if re.compile(self.regex_pattern).groups != 1:
+                    _LOGGER.error("'regex_pattern' must contain exactly one capturing group '(...)' for single extraction mode.")
+                    raise ValueError()
+            except re.error as e:
+                _LOGGER.error(f"Invalid regex pattern provided: {e}")
+                raise ValueError()
+
+        if self.convert is not None and self.convert not in ["K", "R"]:
+            _LOGGER.error("'convert' must be either 'K' (Kelvin) or 'R' (Rankine).")
+            raise ValueError()
+
+    def __call__(self, column: pl.Series) -> pl.Series:
+        """
+        Applies the temperature extraction and conversion logic.
+
+        Args:
+            column (pl.Series): The input Polars Series with string data.
+
+        Returns:
+            pl.Series: A new Series containing the final temperature values as floats.
+        """
+        # --- Step 1: Extract number(s) to get a Celsius value expression ---
+        if self.average_mode:
+            # Extract all numbers and compute their mean. Polars' list.mean()
+            # handles the casting to float automatically.
+            celsius_expr = column.str.extract_all(self._avg_mode_pattern).list.mean()
+        else:
+            # Extract a single number using the specified pattern.
+            # Cast to Float64, with non-matches becoming null.
+            celsius_expr = column.str.extract(self.regex_pattern, 1).cast(pl.Float64, strict=False)
+
+        # --- Step 2: Apply conversion if specified ---
+        if self.convert == "K":
+            # Celsius to Kelvin: C + 273.15
+            final_expr = celsius_expr + 273.15
+        elif self.convert == "R":
+            # Celsius to Rankine: (C * 9/5) + 491.67
+            final_expr = (celsius_expr * 1.8) + 491.67
+        else:
+            # No conversion needed
+            final_expr = celsius_expr
+
+        # --- Step 3: Round the result and return as a Series ---
+        # The select().to_series() pattern is a robust way to execute an
+        # expression and guarantee a Series is returned.
+        return pl.select(final_expr.round(2)).to_series()
+
+
+class MultiTemperatureExtractor:
+    """
+    Extracts multiple temperature values from a single string column into
+    several new columns, assuming the source values are in Celsius.
+
+    This one-to-many transformer is designed for cases where multiple readings
+    are packed into one field, like "Min: 10C, Max: 25C".
+
+    Args:
+        num_outputs (int):
+            The number of numeric columns to create.
+        regex_pattern (str):
+            The regex to find all numbers. Must contain exactly one capturing
+            group around the number part (e.g., r"(-?\\d+\\.?\\d*)").
+        convert (str | None):
+            If "K", converts the final Celsius values to Kelvin.
+            If "R", converts the final Celsius values to Rankine.
+            If None (default), the values remain in Celsius.
+        fill_value (int | float | None):
+            A value to use if a temperature is not found at a given position.
+            For example, if `num_outputs=3` and only two temperatures are
+            found, the third column will be filled with this value. If None,
+            it will be filled with null.
+    """
+    def __init__(
+        self,
+        num_outputs: int,
+        regex_pattern: str = r"(\d+\.?\d*)",
+        convert: Optional[Literal["K", "R"]] = None,
+        fill_value: Optional[Union[int, float]] = None
+    ):
+        # --- Validation ---
+        if not isinstance(num_outputs, int) or num_outputs <= 0:
+            _LOGGER.error("'num_outputs' must be a positive integer.")
+            raise ValueError()
+        
+        try:
+            if re.compile(regex_pattern).groups != 1:
+                _LOGGER.error("'regex_pattern' must contain exactly one capturing group '(...)'.")
+                raise ValueError()
+        except re.error as e:
+            _LOGGER.error(f"Invalid regex pattern provided: {e}")
+            raise ValueError()
+
+        if convert is not None and convert not in ["K", "R"]:
+            _LOGGER.error("'convert' must be either 'K' (Kelvin) or 'R' (Rankine).")
+            raise ValueError()
+
+        # --- Store configuration ---
+        self.num_outputs = num_outputs
+        self.regex_pattern = regex_pattern
+        self.convert = convert
+        self.fill_value = fill_value
+
+    def __call__(self, column: pl.Series) -> pl.DataFrame:
+        """
+        Applies the multi-temperature extraction and conversion logic.
+        """
+        output_expressions = []
+        for i in range(self.num_outputs):
+            # --- Step 1: Extract the i-th number as a Celsius value ---
+            celsius_expr = (
+                column.str.extract_all(self.regex_pattern)
+                .list.get(i)
+                .cast(pl.Float64, strict=False)
+            )
+
+            # --- Step 2: Apply conversion if specified ---
+            if self.convert == "K":
+                # Celsius to Kelvin: C + 273.15
+                converted_expr = celsius_expr + 273.15
+            elif self.convert == "R":
+                # Celsius to Rankine: (C * 9/5) + 491.67
+                converted_expr = (celsius_expr * 1.8) + 491.67
+            else:
+                # No conversion needed
+                converted_expr = celsius_expr
+            
+            # --- Step 3: Apply fill value and handle original nulls ---
+            final_expr = converted_expr.round(2)
+            if self.fill_value is not None:
+                final_expr = final_expr.fill_null(self.fill_value)
+
+            # Ensure that if the original row was null, all outputs are null
+            final_expr = (
+                pl.when(column.is_not_null())
+                .then(final_expr)
+                .otherwise(None)
+                .alias(f"col_{i}") # Temporary name for DataProcessor
+            )
+            
+            output_expressions.append(final_expr)
+        
+        # Execute all expressions at once for performance
         return pl.select(output_expressions)
 
 

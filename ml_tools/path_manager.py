@@ -20,7 +20,7 @@ class PathManager:
     """
     Manages and stores a project's file paths, acting as a centralized
     "path database". It supports both development mode and applications
-    bundled with Pyinstaller.
+    bundled with Pyinstaller or Nuitka.
     
     Supports python dictionary syntax.
     """
