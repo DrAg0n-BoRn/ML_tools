@@ -21,6 +21,7 @@ __all__ = [
     "show_null_columns",
     "drop_columns_with_missing_data",
     "drop_macro",
+    "clean_column_names",
     "split_features_targets", 
     "split_continuous_binary", 
     "plot_correlation_heatmap", 
@@ -298,6 +299,42 @@ def drop_macro(df: pd.DataFrame,
     
     # return cleaned dataframe
     return df_clean
+
+
+def clean_column_names(df: pd.DataFrame, replacement_char: str = '-', replacement_pattern: str = r'[\[\]{}<>,:"]', verbose: bool = True) -> pd.DataFrame:
+    """
+    Cleans DataFrame column names by replacing special characters.
+
+    This function is useful for ensuring compatibility with libraries like LightGBM,
+    which do not support special JSON characters such as `[]{}<>,:"` in feature names.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        replacement_char (str): The character to use for replacing characters.
+        replacement_pattern (str): Regex pattern to use for the replacement logic.
+        verbose (bool): If True, prints the renamed columns.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with cleaned column names.
+    """
+    new_df = df.copy()
+    
+    original_columns = new_df.columns
+    new_columns = original_columns.str.replace(replacement_pattern, replacement_char, regex=True)
+    
+    # Create a map of changes for logging
+    rename_map = {old: new for old, new in zip(original_columns, new_columns) if old != new}
+    
+    if verbose:
+        if rename_map:
+            _LOGGER.info(f"Cleaned {len(rename_map)} column name(s) containing special characters:")
+            for old, new in rename_map.items():
+                print(f"    '{old}' -> '{new}'")
+        else:
+            _LOGGER.info("No column names required cleaning.")
+            
+    new_df.columns = new_columns
+    return new_df
 
 
 def split_features_targets(df: pd.DataFrame, targets: list[str]):
