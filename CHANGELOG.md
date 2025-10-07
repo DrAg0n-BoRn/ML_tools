@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.6.0] 2025-10-07
+
+### Added
+
+- ML_models: Added methods to the model classes:
+    - `.save()`, saves the model's architecture to an JSON file.
+    - `.load()`, loads a model architecture from a JSON file or a directory containing a JSON file.
+
+### Removed
+
+- ML_models:
+    - `load_architecture()`, use model method instead.
+    - `save_architecture()`, use model method instead.
+
 ## [10.5.0] 2025-10-07
 
 ### Added

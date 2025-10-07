@@ -6,6 +6,8 @@ import json
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from ._script_info import _script_info
+from .keys import PytorchModelKeys
+
 
 __all__ = [
     "MultilayerPerceptron",
@@ -13,12 +15,63 @@ __all__ = [
     "MultiHeadAttentionMLP",
     "TabularTransformer",
     "SequencePredictorLSTM",
-    "save_architecture",
-    "load_architecture"
 ]
 
 
-class _BaseMLP(nn.Module):
+class _ArchitectureHandlerMixin:
+    """
+    A mixin class to provide save and load functionality for model architectures.
+    """
+    def save(self: nn.Module, directory: Union[str, Path], verbose: bool = True): # type: ignore
+        """Saves the model's architecture to a JSON file."""
+        if not hasattr(self, 'get_architecture_config'):
+            _LOGGER.error(f"Model '{self.__class__.__name__}' must have a 'get_architecture_config()' method to use this functionality.")
+            raise AttributeError()
+
+        path_dir = make_fullpath(directory, make=True, enforce="directory")
+        full_path = path_dir / PytorchModelKeys.SAVENAME
+
+        config = {
+            PytorchModelKeys.MODEL: self.__class__.__name__,
+            PytorchModelKeys.CONFIG: self.get_architecture_config() # type: ignore
+        }
+
+        with open(full_path, 'w') as f:
+            json.dump(config, f, indent=4)
+        
+        if verbose:
+            _LOGGER.info(f"Architecture for '{self.__class__.__name__}' saved to '{path_dir.name}'")
+
+    @classmethod
+    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
+        """Loads a model architecture from a JSON file. If a directory is provided, the function will attempt to load a JSON file inside."""
+        user_path = make_fullpath(file_or_dir)
+        
+        if user_path.is_dir():
+            target_path = make_fullpath(user_path / PytorchModelKeys.SAVENAME, enforce="file")
+        elif user_path.is_file():
+            target_path = user_path
+        else:
+            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
+            raise IOError()
+
+        with open(target_path, 'r') as f:
+            saved_data = json.load(f)
+
+        saved_class_name = saved_data[PytorchModelKeys.MODEL]
+        config = saved_data[PytorchModelKeys.CONFIG]
+
+        if saved_class_name != cls.__name__:
+            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
+            raise ValueError()
+
+        model = cls(**config)
+        if verbose:
+            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
+        return model
+
+
+class _BaseMLP(nn.Module, _ArchitectureHandlerMixin):
     """
     A base class for Multilayer Perceptrons.
     
@@ -68,7 +121,7 @@ class _BaseMLP(nn.Module):
         # Set a customizable Prediction Head for flexibility, specially in transfer learning and fine-tuning
         self.output_layer = nn.Linear(current_features, out_targets)
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the base configuration of the model."""
         return {
             'in_features': self.in_features,
@@ -228,9 +281,9 @@ class MultiHeadAttentionMLP(_BaseMLP):
         
         return logits, attention_weights
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""
-        config = super().get_config()
+        config = super().get_architecture_config()
         config['num_heads'] = self.num_heads
         config['attention_dropout'] = self.attention_dropout
         return config
@@ -247,7 +300,7 @@ class MultiHeadAttentionMLP(_BaseMLP):
         return f"MultiHeadAttentionMLP(arch: {arch_str})"
 
 
-class TabularTransformer(nn.Module):
+class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     """
     A Transformer-based model for tabular data tasks.
     
@@ -357,7 +410,7 @@ class TabularTransformer(nn.Module):
         
         return logits
     
-    def get_config(self) -> Dict[str, Any]:
+    def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""
         return {
             'out_targets': self.out_targets,
@@ -529,7 +582,7 @@ class _MultiHeadAttentionLayer(nn.Module):
         return out, attn_weights.squeeze()
 
 
-class SequencePredictorLSTM(nn.Module):
+class SequencePredictorLSTM(nn.Module, _ArchitectureHandlerMixin):
     """
     A simple LSTM-based network for sequence-to-sequence prediction tasks.
 
@@ -597,7 +650,7 @@ class SequencePredictorLSTM(nn.Module):
         
         return predictions
     
-    def get_config(self) -> dict:
+    def get_architecture_config(self) -> dict:
         """Returns the configuration of the model."""
         return {
             'features': self.features,
@@ -613,77 +666,6 @@ class SequencePredictorLSTM(nn.Module):
             f"hidden_size={self.lstm.hidden_size}, "
             f"recurrent_layers={self.lstm.num_layers})"
         )
-
-
-def save_architecture(model: nn.Module, directory: Union[str, Path], verbose: bool=True):
-    """
-    Saves a model's architecture to a 'architecture.json' file.
-
-    This function relies on the model having a `get_config()` method that
-    returns a dictionary of the arguments needed to initialize it.
-
-    Args:
-        model (nn.Module): The PyTorch model instance to save.
-        directory (str | Path): The directory to save the JSON file.
-
-    Raises:
-        AttributeError: If the model does not have a `get_config()` method.
-    """
-    if not hasattr(model, 'get_config'):
-        _LOGGER.error(f"Model '{model.__class__.__name__}' does not have a 'get_config()' method.")
-        raise AttributeError() 
-
-    # Ensure the target directory exists
-    path_dir = make_fullpath(directory, make=True, enforce="directory")
-    full_path = path_dir / "architecture.json"
-
-    config = {
-        'model_class': model.__class__.__name__,
-        'config': model.get_config() # type: ignore
-    }
-
-    with open(full_path, 'w') as f:
-        json.dump(config, f, indent=4)
-    
-    if verbose:
-        _LOGGER.info(f"Architecture for '{model.__class__.__name__}' saved to '{path_dir.name}'")
-
-
-def load_architecture(filepath: Union[str, Path], expected_model_class: type, verbose: bool=True) -> nn.Module:
-    """
-    Loads a model architecture from a JSON file.
-
-    This function instantiates a model by providing an explicit class to use
-    and checking that it matches the class name specified in the file.
-
-    Args:
-        filepath (Union[str, Path]): The path of the JSON architecture file.
-        expected_model_class (type): The model class expected to load (e.g., MultilayerPerceptron).
-
-    Returns:
-        nn.Module: An instance of the model with a freshly initialized state.
-
-    Raises:
-        FileNotFoundError: If the filepath does not exist.
-        ValueError: If the class name in the file does not match the `expected_model_class`.
-    """
-    path_obj = make_fullpath(filepath, enforce="file")
-
-    with open(path_obj, 'r') as f:
-        saved_data = json.load(f)
-
-    saved_class_name = saved_data['model_class']
-    config = saved_data['config']
-
-    if saved_class_name != expected_model_class.__name__:
-        _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{expected_model_class.__name__}' was expected.")
-        raise ValueError()
-
-    # Create an instance of the model using the provided class and config
-    model = expected_model_class(**config)
-    if verbose:
-        _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
-    return model
 
 
 def info():

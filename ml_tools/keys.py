@@ -38,6 +38,13 @@ class PyTorchInferenceKeys:
     PROBABILITIES = "probabilities"
 
 
+class PytorchModelKeys:
+    """Keys for saving and loading models"""
+    MODEL = 'model_class',
+    CONFIG = "config",
+    SAVENAME = "architecture.json"
+
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"
