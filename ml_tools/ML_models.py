@@ -6,7 +6,7 @@ import json
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from ._script_info import _script_info
-from .keys import PytorchModelKeys
+from .keys import PytorchModelArchitectureKeys
 
 
 __all__ = [
@@ -29,11 +29,14 @@ class _ArchitectureHandlerMixin:
             raise AttributeError()
 
         path_dir = make_fullpath(directory, make=True, enforce="directory")
-        full_path = path_dir / PytorchModelKeys.SAVENAME
+        
+        json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
+        
+        full_path = path_dir / json_filename
 
         config = {
-            PytorchModelKeys.MODEL: self.__class__.__name__,
-            PytorchModelKeys.CONFIG: self.get_architecture_config() # type: ignore
+            PytorchModelArchitectureKeys.MODEL: self.__class__.__name__,
+            PytorchModelArchitectureKeys.CONFIG: self.get_architecture_config() # type: ignore
         }
 
         with open(full_path, 'w') as f:
@@ -48,7 +51,8 @@ class _ArchitectureHandlerMixin:
         user_path = make_fullpath(file_or_dir)
         
         if user_path.is_dir():
-            target_path = make_fullpath(user_path / PytorchModelKeys.SAVENAME, enforce="file")
+            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
+            target_path = make_fullpath(user_path / json_filename, enforce="file")
         elif user_path.is_file():
             target_path = user_path
         else:
@@ -58,8 +62,8 @@ class _ArchitectureHandlerMixin:
         with open(target_path, 'r') as f:
             saved_data = json.load(f)
 
-        saved_class_name = saved_data[PytorchModelKeys.MODEL]
-        config = saved_data[PytorchModelKeys.CONFIG]
+        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
+        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
 
         if saved_class_name != cls.__name__:
             _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")

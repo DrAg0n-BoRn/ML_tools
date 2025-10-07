@@ -13,6 +13,7 @@ __all__ = [
     "sanitize_filename",
     "list_csv_paths",
     "list_files_by_extension",
+    "list_subdirectories"
 ]
 
 
@@ -383,6 +384,38 @@ def list_files_by_extension(directory: Union[str,Path], extension: str, verbose:
             print(f"\t{name}")
     
     return name_path_dict
+
+
+def list_subdirectories(root_dir: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
+    """
+    Scans a directory and returns a dictionary of its immediate subdirectories.
+
+    Args:
+        root_dir (str | Path): The path to the directory to scan.
+        verbose (bool): If True, prints the number of directories found. 
+
+    Returns:
+        dict[str, Path]: A dictionary mapping subdirectory names (str) to their full Path objects.
+    """
+    root_path = make_fullpath(root_dir, enforce="directory")
+    
+    directories = [p.resolve() for p in root_path.iterdir() if p.is_dir()]
+    
+    if len(directories) < 1:
+        _LOGGER.error(f"No subdirectories found inside '{root_path}'")
+        raise IOError()
+    
+    if verbose:
+        count = len(directories)
+        # Use pluralization for better readability
+        plural = 'ies' if count != 1 else 'y'
+        print(f"Found {count} subdirector{plural} in '{root_path.name}'.")
+    
+    # Create a dictionary where the key is the directory's name (a string)
+    # and the value is the full Path object.
+    dir_map = {p.name: p for p in directories}
+    
+    return dir_map
 
 
 def info():

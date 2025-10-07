@@ -38,11 +38,27 @@ class PyTorchInferenceKeys:
     PROBABILITIES = "probabilities"
 
 
-class PytorchModelKeys:
-    """Keys for saving and loading models"""
+class PytorchModelArchitectureKeys:
+    """Keys for saving and loading model architecture."""
     MODEL = 'model_class'
     CONFIG = "config"
-    SAVENAME = "architecture.json"
+    SAVENAME = "architecture"
+
+
+class PytorchArtifactPathKeys:
+    """Keys for model artifact paths."""
+    FEATURES_PATH = "feature_names_path"
+    TARGETS_PATH = "target_names_path"
+    ARCHITECTURE_PATH = "model_architecture_path"
+    WEIGHTS_PATH = "model_weights_path"
+    SCALER_PATH = "scaler_path"
+
+
+class DatasetKeys:
+    """Keys for saving dataset artifacts"""
+    FEATURE_NAMES = "feature_names"
+    TARGET_NAMES = "target_names"
+    SCALER_PREFIX = "scaler_"
 
 
 class _OneHotOtherPlaceholder:

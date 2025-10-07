@@ -15,6 +15,8 @@ from ._logger import _LOGGER
 from ._script_info import _script_info
 from .custom_logger import save_list_strings
 from .ML_scaler import PytorchScaler
+from .keys import DatasetKeys
+
 
 __all__ = [
     "DatasetMaker",
@@ -91,6 +93,7 @@ class _BaseDatasetMaker(ABC):
         self.scaler: Optional[PytorchScaler] = None
         self._id: Optional[str] = None
         self._feature_names: List[str] = []
+        self._target_names: List[str] = []
         self._X_train_shape = (0,0)
         self._X_test_shape = (0,0)
         self._y_train_shape = (0,)
@@ -142,6 +145,10 @@ class _BaseDatasetMaker(ABC):
     @property
     def feature_names(self) -> list[str]:
         return self._feature_names
+    
+    @property
+    def target_names(self) -> list[str]:
+        return self._target_names
 
     @property
     def id(self) -> Optional[str]:
@@ -162,10 +169,17 @@ class _BaseDatasetMaker(ABC):
         """Saves a list of feature names as a text file"""
         save_list_strings(list_strings=self._feature_names,
                           directory=directory,
-                          filename="feature_names",
-                          verbose=verbose)    
+                          filename=DatasetKeys.FEATURE_NAMES,
+                          verbose=verbose)
+        
+    def save_target_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """Saves a list of target names as a text file"""
+        save_list_strings(list_strings=self._target_names,
+                          directory=directory,
+                          filename=DatasetKeys.TARGET_NAMES,
+                          verbose=verbose)
 
-    def save_scaler(self, save_dir: Union[str, Path]):
+    def save_scaler(self, save_dir: Union[str, Path], verbose: bool=True) -> None:
         """
         Saves the fitted PytorchScaler's state to a .pth file.
 
@@ -178,14 +192,15 @@ class _BaseDatasetMaker(ABC):
             _LOGGER.error("No scaler was fitted or provided.")
             raise RuntimeError()
         if not self.id: 
-            _LOGGER.error("Must set the `id` before saving scaler.")
+            _LOGGER.error("Must set the dataset `id` before saving scaler.")
             raise ValueError()
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         sanitized_id = sanitize_filename(self.id)
-        filename = f"scaler_{sanitized_id}.pth"
+        filename = f"{DatasetKeys.SCALER_PREFIX}{sanitized_id}.pth"
         filepath = save_path / filename
-        self.scaler.save(filepath)
-        _LOGGER.info(f"Scaler for dataset '{self.id}' saved to '{filepath.name}'.")
+        self.scaler.save(filepath, verbose=False)
+        if verbose:
+            _LOGGER.info(f"Scaler for dataset '{self.id}' saved to '{filepath.name}'.")
 
 
 # Single target dataset
@@ -203,7 +218,7 @@ class DatasetMaker(_BaseDatasetMaker):
         `train_dataset` -> PyTorch Dataset
         `test_dataset`  -> PyTorch Dataset
         `feature_names` -> list[str]
-        `target_name`   -> str
+        `target_names`  -> list[str]
         `id` -> str
         
     The ID can be manually set to any string if needed, it is the target name by default.
@@ -231,8 +246,8 @@ class DatasetMaker(_BaseDatasetMaker):
         features = pandas_df.iloc[:, :-1]
         target = pandas_df.iloc[:, -1]
         self._feature_names = features.columns.tolist()
-        self._target_name = str(target.name)
-        self._id = self._target_name
+        self._target_names = [str(target.name)]
+        self._id = self._target_names[0]
 
         # --- 2. Split ---
         X_train, X_test, y_train, y_test = train_test_split(
@@ -249,12 +264,8 @@ class DatasetMaker(_BaseDatasetMaker):
         )
         
         # --- 4. Create Datasets ---
-        self._train_ds = _PytorchDataset(X_train_final, y_train.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=[self._target_name])
-        self._test_ds = _PytorchDataset(X_test_final, y_test.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=[self._target_name])
-
-    @property
-    def target_name(self) -> str:
-        return self._target_name
+        self._train_ds = _PytorchDataset(X_train_final, y_train.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        self._test_ds = _PytorchDataset(X_test_final, y_test.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
 
 
 # --- New Multi-Target Class ---
@@ -302,10 +313,6 @@ class DatasetMakerMulti(_BaseDatasetMaker):
         
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
-
-    @property
-    def target_names(self) -> list[str]:
-        return self._target_names
 
 
 # --- Private Base Class ---

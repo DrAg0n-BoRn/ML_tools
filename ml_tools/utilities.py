@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Literal, Union, Sequence, Optional, Any, Iterator, Tuple, overload
 import joblib
 from joblib.externals.loky.process_executor import TerminatedWorkerError
-from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
+from .path_manager import sanitize_filename, make_fullpath, list_csv_paths, list_files_by_extension, list_subdirectories
 from ._script_info import _script_info
 from ._logger import _LOGGER
+from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys
 
 
 # Keep track of available tools
@@ -24,7 +25,8 @@ __all__ = [
     "deserialize_object",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
-    "train_dataset_yielder"
+    "train_dataset_yielder",
+    "find_model_artifacts"
 ]
 
 
@@ -558,6 +560,127 @@ def train_dataset_yielder(
     for target_col in valid_targets:
         df_target = df[target_col]
         yield (df_features, df_target, feature_names, target_col)
+
+
+def find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=False) -> list[dict[str,Any]]:
+    """
+    Scans subdirectories to find paths to model weights, target names, feature names, and model architecture. Optionally an scaler path if `load_scaler` is True.
+
+    This function operates on a specific directory structure. It expects the
+    `target_directory` to contain one or more subdirectories, where each
+    subdirectory represents a single trained model result.
+
+    The expected directory structure for each model is as follows:
+    ```
+        target_directory
+        ├── model_1
+        │   ├── *.pth
+        │   ├── scaler_*.pth          (Required if `load_scaler` is True)
+        │   ├── feature_names.txt
+        │   ├── target_names.txt
+        │   └── architecture.json
+        └── model_2/
+            └── ...
+    ```
+
+    Args:
+        target_directory (str | Path): The path to the root directory that contains model subdirectories.
+        load_scaler (bool): If True, the function requires and searches for a scaler file (`.pth`) in each model subdirectory.
+        verbose (bool): If True, enables detailed logging during the file paths search process.
+
+    Returns:
+        (list[dict[str, Path]]): A list of dictionaries, where each dictionary
+            corresponds to a model found in a subdirectory. The dictionary
+            maps standardized keys to the absolute paths of the model's
+            artifacts (weights, architecture, features, targets, and scaler).
+            The scaler path will be `None` if `load_scaler` is False.
+    """
+    # validate directory
+    root_path = make_fullpath(target_directory, enforce="directory")
+    
+    # store results
+    all_artifacts: list[dict] = list()
+    
+    # find model directories
+    result_dirs_dict = list_subdirectories(root_dir=root_path, verbose=verbose)
+    for dir_name, dir_path in result_dirs_dict.items():
+        # find files
+        model_pth_dict = list_files_by_extension(directory=dir_path, extension="pth", verbose=verbose)
+        
+        # restriction
+        if load_scaler:
+            if len(model_pth_dict) != 2:
+                _LOGGER.error(f"Directory {dir_path} should contain exactly 2 '.pth' files: scaler and weights.")
+                raise IOError()
+        else:
+            if len(model_pth_dict) != 1:
+                _LOGGER.error(f"Directory {dir_path} should contain exactly 1 '.pth' file: weights.")
+                raise IOError()
+        
+        ##### Scaler and Weights #####
+        scaler_path = None
+        weights_path = None
+        
+        # load weights and scaler if present
+        for pth_filename, pth_path in model_pth_dict.items():
+            if load_scaler and pth_filename.lower().startswith(DatasetKeys.SCALER_PREFIX):
+                scaler_path = pth_path
+            else:
+                weights_path = pth_path
+        
+        # validation
+        if not weights_path:
+            _LOGGER.error(f"Error parsing the model weights path from '{dir_name}'")
+            raise IOError()
+        
+        if load_scaler and not scaler_path:
+            _LOGGER.error(f"Error parsing the scaler path from '{dir_name}'")
+            raise IOError()
+        
+        ##### Target and Feature names #####
+        target_names_path = None
+        feature_names_path = None
+        
+        # load feature and target names
+        model_txt_dict = list_files_by_extension(directory=dir_path, extension="txt", verbose=verbose)
+        
+        for txt_filename, txt_path in model_txt_dict.items():
+            if txt_filename == DatasetKeys.FEATURE_NAMES:
+                feature_names_path = txt_path
+            elif txt_filename == DatasetKeys.TARGET_NAMES:
+                target_names_path = txt_path
+        
+        # validation
+        if not target_names_path or not feature_names_path:
+            _LOGGER.error(f"Error parsing features path or targets path from '{dir_name}'")
+            raise IOError()
+        
+        ##### load model architecture path #####
+        architecture_path = None
+        
+        model_json_dict = list_files_by_extension(directory=dir_path, extension="json", verbose=verbose)
+        
+        for json_filename, json_path in model_json_dict.items():
+            if json_filename == PytorchModelArchitectureKeys.SAVENAME:
+                architecture_path = json_path
+        
+        # validation
+        if not architecture_path:
+            _LOGGER.error(f"Error parsing the model architecture path from '{dir_name}'")
+            raise IOError()
+        
+        ##### Paths dictionary #####
+        parsing_dict = {
+            PytorchArtifactPathKeys.WEIGHTS_PATH: weights_path,
+            PytorchArtifactPathKeys.ARCHITECTURE_PATH: architecture_path,
+            PytorchArtifactPathKeys.FEATURES_PATH: feature_names_path,
+            PytorchArtifactPathKeys.TARGETS_PATH: target_names_path,
+            PytorchArtifactPathKeys.SCALER_PATH: scaler_path
+        }
+        
+        all_artifacts.append(parsing_dict)
+    
+    return all_artifacts
 
 
 def info():

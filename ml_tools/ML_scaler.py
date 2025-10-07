@@ -149,7 +149,7 @@ class PytorchScaler:
         
         return data_clone
 
-    def save(self, filepath: Union[str, Path]):
+    def save(self, filepath: Union[str, Path], verbose: bool=True):
         """
         Saves the scaler's state (mean, std, indices) to a .pth file.
 
@@ -163,10 +163,11 @@ class PytorchScaler:
             'continuous_feature_indices': self.continuous_feature_indices
         }
         torch.save(state, path_obj)
-        _LOGGER.info(f"PytorchScaler state saved to '{path_obj.name}'.")
+        if verbose:
+            _LOGGER.info(f"PytorchScaler state saved to '{path_obj.name}'.")
 
     @staticmethod
-    def load(filepath: Union[str, Path]) -> 'PytorchScaler':
+    def load(filepath: Union[str, Path], verbose: bool=True) -> 'PytorchScaler':
         """
         Loads a scaler's state from a .pth file.
 
@@ -178,7 +179,8 @@ class PytorchScaler:
         """
         path_obj = make_fullpath(filepath, enforce="file")
         state = torch.load(path_obj)
-        _LOGGER.info(f"PytorchScaler state loaded from '{path_obj.name}'.")
+        if verbose:
+            _LOGGER.info(f"PytorchScaler state loaded from '{path_obj.name}'.")
         return PytorchScaler(
             mean=state['mean'],
             std=state['std'],

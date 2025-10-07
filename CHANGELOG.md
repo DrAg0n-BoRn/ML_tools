@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.8.0] 2025-10-07
+
+### Added
+
+- path_manager: `list_subdirectories()`, scans a directory and returns a dictionary of its immediate subdirectories.
+- utilities: `find_model_artifacts`, scans trained model directories to find paths to model weights, scalers, model architecture, feature names, and target names.
+- ML_datasetmaster: `DatasetMaker` and `DatasetMakerMulti` now return and/or save a list of target names with the attribute `.target_names` and method `save_target_names()`.
+- ML_scaler: `PytorchScaler`, added 'verbose' parameters to some methods.
+
 ## [10.7.0] 2025-10-07
 
 ### Fixed
