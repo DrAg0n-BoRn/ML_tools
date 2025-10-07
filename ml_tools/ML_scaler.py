@@ -156,7 +156,7 @@ class PytorchScaler:
         Args:
             filepath (str | Path): The path to save the file.
         """
-        path_obj = make_fullpath(filepath)
+        path_obj = make_fullpath(filepath, make=True, enforce="file")
         state = {
             'mean': self.mean_,
             'std': self.std_,

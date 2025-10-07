@@ -34,7 +34,9 @@ class _PytorchDataset(Dataset):
     def __init__(self, features: Union[numpy.ndarray, pandas.DataFrame], 
                  labels: Union[numpy.ndarray, pandas.Series],
                  labels_dtype: torch.dtype,
-                 features_dtype: torch.dtype = torch.float32):
+                 features_dtype: torch.dtype = torch.float32,
+                 feature_names: Optional[List[str]] = None,
+                 target_names: Optional[List[str]] = None):
         """
         integer labels for classification.
         
@@ -50,12 +52,30 @@ class _PytorchDataset(Dataset):
             self.labels = torch.tensor(labels, dtype=labels_dtype)
         else:
             self.labels = torch.tensor(labels.values, dtype=labels_dtype)
+            
+        self._feature_names = feature_names
+        self._target_names = target_names
 
     def __len__(self):
         return len(self.features)
 
     def __getitem__(self, index):
         return self.features[index], self.labels[index]
+    
+    @property
+    def feature_names(self):
+        if self._feature_names is not None:
+            return self._feature_names
+        else:
+            _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any feature names.")
+            raise ValueError()
+        
+    @property
+    def target_names(self):
+        if self._target_names is not None:
+            return self._target_names
+        else:
+            _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
 
 
 # --- Abstract Base Class (New) ---
@@ -229,8 +249,8 @@ class DatasetMaker(_BaseDatasetMaker):
         )
         
         # --- 4. Create Datasets ---
-        self._train_ds = _PytorchDataset(X_train_final, y_train.values, label_dtype)
-        self._test_ds = _PytorchDataset(X_test_final, y_test.values, label_dtype)
+        self._train_ds = _PytorchDataset(X_train_final, y_train.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=[self._target_name])
+        self._test_ds = _PytorchDataset(X_test_final, y_test.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=[self._target_name])
 
     @property
     def target_name(self) -> str:
@@ -280,8 +300,8 @@ class DatasetMakerMulti(_BaseDatasetMaker):
             X_train, y_train, X_test, label_dtype, continuous_feature_columns
         )
         
-        self._train_ds = _PytorchDataset(X_train_final, y_train, label_dtype)
-        self._test_ds = _PytorchDataset(X_test_final, y_test, label_dtype)
+        self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
 
     @property
     def target_names(self) -> list[str]:

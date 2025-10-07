@@ -40,8 +40,8 @@ class PyTorchInferenceKeys:
 
 class PytorchModelKeys:
     """Keys for saving and loading models"""
-    MODEL = 'model_class',
-    CONFIG = "config",
+    MODEL = 'model_class'
+    CONFIG = "config"
     SAVENAME = "architecture.json"
 
 

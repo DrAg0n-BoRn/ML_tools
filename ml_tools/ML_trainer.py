@@ -357,7 +357,7 @@ class MLTrainer:
                                                  If None, the trainer's test dataset is used.
             n_samples (int): The number of samples to use for both background and explanation.
             feature_names (list[str] | None): Feature names.
-            target_names (list[str] | None): Target names
+            target_names (list[str] | None): Target names for multi-target tasks.
             save_dir (str | Path): Directory to save all SHAP artifacts.
         """
         # Internal helper to create a dataloader and get a random sample
@@ -408,12 +408,8 @@ class MLTrainer:
             if hasattr(target_dataset, "feature_names"):
                 feature_names = target_dataset.feature_names # type: ignore
             else:
-                try:
-                # Handle PyTorch Subset 
-                    feature_names = target_dataset.dataset.feature_names # type: ignore
-                except AttributeError:
-                    _LOGGER.error("Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a `feature_names` attribute.")
-                    raise ValueError()
+                _LOGGER.error("Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a `feature_names` attribute.")
+                raise ValueError()
 
         # 3. Call the plotting function
         if self.kind in ["regression", "classification"]:
