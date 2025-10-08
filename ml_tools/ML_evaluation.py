@@ -22,6 +22,7 @@ from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from typing import Union, Optional, List
 from ._script_info import _script_info
+from .keys import SHAPKeys
 
 
 __all__ = [
@@ -333,7 +334,8 @@ def shap_summary_plot(model,
     plt.close()
 
     # Save Summary Data to CSV
-    summary_path = save_dir_path / "shap_summary.csv"
+    shap_summary_filename = SHAPKeys.SAVENAME + ".csv"
+    summary_path = save_dir_path / shap_summary_filename
     # Ensure the array is 1D before creating the DataFrame
     mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
     
@@ -341,9 +343,9 @@ def shap_summary_plot(model,
         feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
         
     summary_df = pd.DataFrame({
-        'feature': feature_names,
-        'mean_abs_shap_value': mean_abs_shap
-    }).sort_values('mean_abs_shap_value', ascending=False)
+        SHAPKeys.FEATURE_COLUMN: feature_names,
+        SHAPKeys.SHAP_VALUE_COLUMN: mean_abs_shap
+    }).sort_values(SHAPKeys.SHAP_VALUE_COLUMN, ascending=False)
     
     summary_df.to_csv(summary_path, index=False)
     

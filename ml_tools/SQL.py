@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Literal
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .path_manager import make_fullpath
+from .path_manager import make_fullpath, sanitize_filename
 
 
 __all__ = [
@@ -94,11 +94,13 @@ class DatabaseManager:
         if not self.cursor:
             _LOGGER.error("Database connection is not open.")
             raise sqlite3.Error()
+        
+        sanitized_table_name = sanitize_filename(table_name)
 
         columns_def = ", ".join([f'"{col_name}" {col_type}' for col_name, col_type in schema.items()])
         exists_clause = "IF NOT EXISTS" if if_not_exists else ""
         
-        query = f"CREATE TABLE {exists_clause} {table_name} ({columns_def})"
+        query = f"CREATE TABLE {exists_clause} {sanitized_table_name} ({columns_def})"
         
         _LOGGER.info(f"➡️ Executing: {query}")
         self.cursor.execute(query)

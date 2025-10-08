@@ -25,6 +25,7 @@ from typing import Union, Optional, Literal
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
+from .keys import SHAPKeys
 
 
 __all__ = [
@@ -472,7 +473,7 @@ def get_shap_values(
         save_dir: Directory to save visualizations.
     """
     sanitized_target_name = sanitize_filename(target_name)
-    global_save_path = make_fullpath(save_dir, make=True)
+    global_save_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     def _apply_plot_style():
         styles = ['seaborn', 'seaborn-v0_8-darkgrid', 'seaborn-v0_8', 'default']
@@ -539,6 +540,15 @@ def get_shap_values(
                         plot_type=plot_type,
                         title=f"{model_name} - {target_name} (Class {class_name})"
                     )
+                    
+                # Save the summary data for the current class
+                summary_save_path = global_save_path / f"SHAP_{sanitized_target_name}_{class_name}.csv"
+                _save_summary_csv(
+                    shap_values_for_summary=class_shap,
+                    feature_names=feature_names,
+                    save_path=summary_save_path
+                )
+                    
         else:
             values = shap_values[1] if isinstance(shap_values, list) else shap_values
             for plot_type in ["bar", "dot"]:
@@ -549,6 +559,15 @@ def get_shap_values(
                     plot_type=plot_type,
                     title=f"{model_name} - {target_name}"
                 )
+                
+            # Save the summary data for the positive class
+            shap_summary_filename = SHAPKeys.SAVENAME + ".csv"
+            summary_save_path = global_save_path / shap_summary_filename
+            _save_summary_csv(
+                shap_values_for_summary=values,
+                feature_names=feature_names,
+                save_path=summary_save_path
+            )
 
     def _plot_for_regression(shap_values):
         for plot_type in ["bar", "dot"]:
@@ -559,6 +578,34 @@ def get_shap_values(
                 plot_type=plot_type,
                 title=f"{model_name} - {target_name}"
             )
+        
+        # Save the summary data to a CSV file
+        shap_summary_filename = SHAPKeys.SAVENAME + ".csv"
+        summary_save_path = global_save_path / shap_summary_filename
+        _save_summary_csv(
+            shap_values_for_summary=shap_values,
+            feature_names=feature_names,
+            save_path=summary_save_path
+        )
+        
+    def _save_summary_csv(shap_values_for_summary: np.ndarray, feature_names: list[str], save_path: Path):
+        """Calculates and saves the SHAP summary data to a CSV file."""
+        mean_abs_shap = np.abs(shap_values_for_summary).mean(axis=0)
+        
+        # Create default feature names if none are provided
+        current_feature_names = feature_names
+        if current_feature_names is None:
+            current_feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
+        
+        summary_df = pd.DataFrame({
+            SHAPKeys.FEATURE_COLUMN: feature_names,
+            SHAPKeys.SHAP_VALUE_COLUMN: mean_abs_shap
+        }).sort_values(SHAPKeys.SHAP_VALUE_COLUMN, ascending=False)
+        
+        summary_df.to_csv(save_path, index=False)
+        # print(f"📝 SHAP summary data saved as '{save_path.name}'")
+    
+            
     #START_O
 
     explainer = shap.TreeExplainer(model)

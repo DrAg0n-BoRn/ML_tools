@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.9.0] 2025-10-07
+
+### Changed
+
+- ensemble_evaluation: `get_shap_values()` now saves a SHAP summary as a csv file.
+- SQL: `DatabaseManager`, sanitizes the table name before creation.
+- utilities: `load_dataframe()`, supports loading all columns or a subset of columns.
+
+### Added
+
+- utilities: `select_features_by_shap()`, scans subdirectories to find SHAP summary CSVs, then extracts feature names whose mean absolute SHAP value meets a specified threshold.
+
 ## [10.8.0] 2025-10-07
 
 ### Added

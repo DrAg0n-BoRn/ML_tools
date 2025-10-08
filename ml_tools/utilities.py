@@ -9,7 +9,7 @@ from joblib.externals.loky.process_executor import TerminatedWorkerError
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths, list_files_by_extension, list_subdirectories
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys
+from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys
 
 
 # Keep track of available tools
@@ -26,7 +26,8 @@ __all__ = [
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder",
-    "find_model_artifacts"
+    "find_model_artifacts",
+    "select_features_by_shap"
 ]
 
 
@@ -34,6 +35,7 @@ __all__ = [
 @overload
 def load_dataframe(
     df_path: Union[str, Path], 
+    use_columns: Optional[list[str]] = None, 
     kind: Literal["pandas"] = "pandas",
     all_strings: bool = False,
     verbose: bool = True
@@ -44,7 +46,8 @@ def load_dataframe(
 @overload
 def load_dataframe(
     df_path: Union[str, Path], 
-    kind: Literal["polars"],
+    use_columns: Optional[list[str]] = None,
+    kind: Literal["polars"] = "polars",
     all_strings: bool = False,
     verbose: bool = True
 ) -> Tuple[pl.DataFrame, str]:
@@ -52,6 +55,7 @@ def load_dataframe(
 
 def load_dataframe(
     df_path: Union[str, Path], 
+    use_columns: Optional[list[str]] = None,
     kind: Literal["pandas", "polars"] = "pandas",
     all_strings: bool = False,
     verbose: bool = True
@@ -60,11 +64,13 @@ def load_dataframe(
     Load a CSV file into a DataFrame and extract its base name.
 
     Can load data as either a pandas or a polars DataFrame. Allows for loading all
-    columns as string types to prevent type inference errors.
+    columns or a subset of columns as string types to prevent type inference errors.
 
     Args:
         df_path (str, Path): 
             The path to the CSV file.
+        use_columns (list[str] | None):
+            If provided, only these columns will be loaded from the CSV.
         kind ("pandas", "polars"): 
             The type of DataFrame to load. Defaults to "pandas".
         all_strings (bool): 
@@ -78,28 +84,43 @@ def load_dataframe(
             
     Raises:
         FileNotFoundError: If the file does not exist at the given path.
-        ValueError: If the DataFrame is empty or an invalid 'kind' is provided.
+        ValueError: If the DataFrame is empty, an invalid 'kind' is provided, or a column in 'use_columns' is not found in the file.
     """
     path = make_fullpath(df_path)
     
     df_name = path.stem
 
-    if kind == "pandas":
-        if all_strings:
-            df = pd.read_csv(path, encoding='utf-8', dtype=str)
+    try:
+        if kind == "pandas":
+            pd_kwargs: dict[str,Any]
+            pd_kwargs = {'encoding': 'utf-8'}
+            if use_columns:
+                pd_kwargs['usecols'] = use_columns
+            if all_strings:
+                pd_kwargs['dtype'] = str
+                
+            df = pd.read_csv(path, **pd_kwargs)
+
+        elif kind == "polars":
+            pl_kwargs: dict[str,Any]
+            pl_kwargs = {}
+            if use_columns:
+                pl_kwargs['columns'] = use_columns
+                
+            if all_strings:
+                pl_kwargs['infer_schema'] = False
+            else:
+                pl_kwargs['infer_schema_length'] = 1000
+                
+            df = pl.read_csv(path, **pl_kwargs)
+
         else:
-            df = pd.read_csv(path, encoding='utf-8')
+            _LOGGER.error(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
+            raise ValueError()
             
-    elif kind == "polars":
-        if all_strings:
-            df = pl.read_csv(path, infer_schema=False)
-        else:
-            # Default behavior: infer the schema.
-            df = pl.read_csv(path, infer_schema_length=1000)
-            
-    else:
-        _LOGGER.error(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
-        raise ValueError()
+    except (ValueError, pl.exceptions.ColumnNotFoundError) as e:
+        _LOGGER.error(f"Failed to load '{df_name}'. A specified column may not exist in the file.")
+        raise e
 
     # This check works for both pandas and polars DataFrames
     if df.shape[0] == 0:
@@ -110,7 +131,6 @@ def load_dataframe(
         _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
     return df, df_name # type: ignore
-
 
 def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
     """
@@ -681,6 +701,85 @@ def find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, v
         all_artifacts.append(parsing_dict)
     
     return all_artifacts
+
+
+def select_features_by_shap(
+    root_directory: Union[str, Path],
+    shap_threshold: float = 1.0,
+    verbose: bool = True) -> list[str]:
+    """
+    Scans subdirectories to find SHAP summary CSVs, then extracts feature
+    names whose mean absolute SHAP value meets a specified threshold.
+
+    This function is useful for automated feature selection based on feature
+    importance scores aggregated from multiple models.
+
+    Args:
+        root_directory (Union[str, Path]):
+            The path to the root directory that contains model subdirectories.
+        shap_threshold (float):
+            The minimum mean absolute SHAP value for a feature to be included
+            in the final list.
+
+    Returns:
+        list[str]:
+            A single, sorted list of unique feature names that meet the
+            threshold criteria across all found files.
+    """
+    if verbose:
+        _LOGGER.info(f"Starting feature selection with SHAP threshold >= {shap_threshold}")
+    root_path = make_fullpath(root_directory, enforce="directory")
+
+    # --- Step 2: Directory and File Discovery ---
+    subdirectories = list_subdirectories(root_dir=root_path, verbose=False)
+    
+    shap_filename = SHAPKeys.SAVENAME + ".csv"
+
+    valid_csv_paths = []
+    for dir_name, dir_path in subdirectories.items():
+        expected_path = dir_path / shap_filename
+        if expected_path.is_file():
+            valid_csv_paths.append(expected_path)
+        else:
+            _LOGGER.warning(f"No '{shap_filename}' found in subdirectory '{dir_name}'.")
+    
+    if not valid_csv_paths:
+        _LOGGER.error(f"Process halted: No '{shap_filename}' files were found in any subdirectory.")
+        return []
+
+    if verbose:
+        _LOGGER.info(f"Found {len(valid_csv_paths)} SHAP summary files to process.")
+
+    # --- Step 3: Data Processing and Feature Extraction ---
+    master_feature_set = set()
+    for csv_path in valid_csv_paths:
+        try:
+            df, _ = load_dataframe(csv_path, kind="pandas", verbose=False)
+            
+            # Validate required columns
+            required_cols = {SHAPKeys.FEATURE_COLUMN, SHAPKeys.SHAP_VALUE_COLUMN}
+            if not required_cols.issubset(df.columns):
+                _LOGGER.warning(f"Skipping '{csv_path}': missing required columns.")
+                continue
+
+            # Filter by threshold and extract features
+            filtered_df = df[df[SHAPKeys.SHAP_VALUE_COLUMN] >= shap_threshold]
+            features = filtered_df[SHAPKeys.FEATURE_COLUMN].tolist()
+            master_feature_set.update(features)
+
+        except (ValueError, pd.errors.EmptyDataError):
+            _LOGGER.warning(f"Skipping '{csv_path}' because it is empty or malformed.")
+            continue
+        except Exception as e:
+            _LOGGER.error(f"An unexpected error occurred while processing '{csv_path}': {e}")
+            continue
+
+    # --- Step 4: Finalize and Return ---
+    final_features = sorted(list(master_feature_set))
+    if verbose:
+        _LOGGER.info(f"Selected {len(final_features)} unique features across all files.")
+    
+    return final_features
 
 
 def info():

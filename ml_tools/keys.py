@@ -61,6 +61,13 @@ class DatasetKeys:
     SCALER_PREFIX = "scaler_"
 
 
+class SHAPKeys:
+    """Keys for SHAP functions"""
+    FEATURE_COLUMN = "feature"
+    SHAP_VALUE_COLUMN = "mean_abs_shap_value"
+    SAVENAME = "shap_summary"
+
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"
