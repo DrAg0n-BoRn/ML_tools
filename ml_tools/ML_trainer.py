@@ -472,23 +472,30 @@ class MLTrainer:
 
                 yield attention_weights
     
-    def explain_attention(self, save_dir: Union[str, Path], feature_names: Optional[List[str]], explain_dataset: Optional[Dataset] = None):
+    def explain_attention(self, save_dir: Union[str, Path], 
+                          feature_names: Optional[List[str]], 
+                          explain_dataset: Optional[Dataset] = None,
+                          plot_n_features: int = 10):
         """
         Generates and saves a feature importance plot based on attention weights.
 
-        This method only works for models with a `forward_attention` method.
+        This method only works for models with models with 'has_interpretable_attention'.
 
         Args:
             save_dir (str | Path): Directory to save the plot and summary data.
-            feature_names (List[str] | None): Names for the features for plot labeling.
+            feature_names (List[str] | None): Names for the features for plot labeling. If not given, generic names will be used.
             explain_dataset (Dataset, optional): A specific dataset to explain. If None, the trainer's test dataset is used.
+            plot_n_features (int): Number of top features to plot.
         """
         
         print("\n--- Attention Analysis ---")
         
         # --- Step 1: Check if the model supports this explanation ---
-        if not hasattr(self.model, 'forward_attention'):
-            _LOGGER.error("Model does not have a `forward_attention` method. Skipping attention explanation.")
+        if not getattr(self.model, 'has_interpretable_attention', False):
+            _LOGGER.warning(
+                "Model is not flagged for interpretable attention analysis. "
+                "Skipping. This is the correct behavior for models like MultiHeadAttentionMLP."
+            )
             return
 
         # --- Step 2: Set up the dataloader ---
@@ -514,7 +521,8 @@ class MLTrainer:
             plot_attention_importance(
                 weights=all_weights,
                 feature_names=feature_names,
-                save_dir=save_dir
+                save_dir=save_dir,
+                top_n=plot_n_features
             )
         else:
             _LOGGER.error("No attention weights were collected from the model.")

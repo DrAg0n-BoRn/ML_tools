@@ -353,7 +353,7 @@ def shap_summary_plot(model,
     plt.ion()
 
 
-def plot_attention_importance(weights: List[torch.Tensor], feature_names: Optional[List[str]], save_dir: Union[str, Path]):
+def plot_attention_importance(weights: List[torch.Tensor], feature_names: Optional[List[str]], save_dir: Union[str, Path], top_n: int = 10):
     """
     Aggregates attention weights and plots global feature importance.
 
@@ -364,6 +364,7 @@ def plot_attention_importance(weights: List[torch.Tensor], feature_names: Option
         weights (List[torch.Tensor]): A list of attention weight tensors from each batch.
         feature_names (List[str] | None): Names of the features for plot labeling.
         save_dir (str | Path): Directory to save the plot and summary CSV.
+        top_n (int): The number of top features to display in the plot.
     """
     if not weights:
         _LOGGER.error("Attention weights list is empty. Skipping importance plot.")
@@ -392,11 +393,10 @@ def plot_attention_importance(weights: List[torch.Tensor], feature_names: Option
     summary_df.to_csv(summary_path, index=False)
     _LOGGER.info(f"📝 Attention summary data saved as '{summary_path.name}'")
 
-    # --- Step 3: Create and save the plot ---
-    plt.figure(figsize=(10, 8), dpi=100)
+    # --- Step 3: Create and save the plot for top N features ---
+    plot_df = summary_df.head(top_n).sort_values('mean_attention', ascending=True)
     
-    # Sort for plotting
-    plot_df = summary_df.sort_values('mean_attention', ascending=True)
+    plt.figure(figsize=(10, 8), dpi=100)
 
     # Create horizontal bar plot with error bars
     plt.barh(
@@ -410,7 +410,7 @@ def plot_attention_importance(weights: List[torch.Tensor], feature_names: Option
         color='cornflowerblue'
     )
     
-    plt.title('Global Feature Importance')
+    plt.title('Top Features by Attention')
     plt.xlabel('Average Attention Weight')
     plt.ylabel('Feature')
     plt.grid(axis='x', linestyle='--', alpha=0.6)

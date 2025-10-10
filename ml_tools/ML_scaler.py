@@ -164,7 +164,7 @@ class PytorchScaler:
         }
         torch.save(state, path_obj)
         if verbose:
-            _LOGGER.info(f"PytorchScaler state saved to '{path_obj.name}'.")
+            _LOGGER.info(f"PytorchScaler state saved as '{path_obj.name}'.")
 
     @staticmethod
     def load(filepath: Union[str, Path], verbose: bool=True) -> 'PytorchScaler':

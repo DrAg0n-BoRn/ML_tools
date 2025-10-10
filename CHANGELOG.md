@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.10.0] 2025-10-10
+
+### Changed
+
+- ML_models: Attention-related models now have the attribute `has_interpretable_attention`, to check if the attention mechanism can be interpreted.
+- ML_trainer: `MLTrainer.explain_attention()`, checks if the model attention is compatible before executing.
+
+### Added
+
+- ML_evaluation: `plot_attention_importance()`, added a parameter to control the number of features to be plotted.
+
 ## [10.9.0] 2025-10-07
 
 ### Changed

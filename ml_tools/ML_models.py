@@ -43,7 +43,7 @@ class _ArchitectureHandlerMixin:
             json.dump(config, f, indent=4)
         
         if verbose:
-            _LOGGER.info(f"Architecture for '{self.__class__.__name__}' saved to '{path_dir.name}'")
+            _LOGGER.info(f"Architecture for '{self.__class__.__name__}' saved as '{full_path.name}'")
 
     @classmethod
     def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
@@ -147,6 +147,30 @@ class _BaseMLP(nn.Module, _ArchitectureHandlerMixin):
         return f"{name}(arch: {arch_str})"
 
 
+class _BaseAttention(_BaseMLP):
+    """
+    Abstract base class for MLP models that incorporate an attention mechanism
+    before the main MLP layers.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # By default, models inheriting this do not have the flag.
+        self.has_interpretable_attention = False
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Defines the standard forward pass."""
+        logits, _attention_weights = self.forward_attention(x)
+        return logits
+
+    def forward_attention(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns logits and attention weights."""
+        # This logic is now shared and defined in one place
+        x, attention_weights = self.attention(x)
+        x = self.mlp(x)
+        logits = self.output_layer(x)
+        return logits, attention_weights
+
+
 class MultilayerPerceptron(_BaseMLP):
     """
     Creates a versatile Multilayer Perceptron (MLP) for regression or classification tasks.
@@ -184,7 +208,7 @@ class MultilayerPerceptron(_BaseMLP):
         return self._repr_helper(name="MultilayerPerceptron", mlp_layers=layer_sizes)
 
 
-class AttentionMLP(_BaseMLP):
+class AttentionMLP(_BaseAttention):
     """
     A Multilayer Perceptron (MLP) that incorporates an Attention layer to dynamically weigh input features.
     
@@ -205,25 +229,7 @@ class AttentionMLP(_BaseMLP):
         super().__init__(in_features, out_targets, hidden_layers, drop_out)
         # Attention
         self.attention = _AttentionLayer(in_features)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Defines the standard forward pass.
-        """
-        logits, _attention_weights = self.forward_attention(x)
-        return logits
-    
-    def forward_attention(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Returns logits and attention weights
-        """
-        # The attention layer returns the processed x and the weights
-        x, attention_weights = self.attention(x)
-        
-        # Pass the attention-modified tensor through the MLP
-        logits = self.mlp(x)
-        
-        return logits, attention_weights
+        self.has_interpretable_attention = True
     
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
@@ -238,7 +244,7 @@ class AttentionMLP(_BaseMLP):
         return self._repr_helper(name="AttentionMLP", mlp_layers=arch)
 
 
-class MultiHeadAttentionMLP(_BaseMLP):
+class MultiHeadAttentionMLP(_BaseAttention):
     """
     An MLP that incorporates a standard `nn.MultiheadAttention` layer to process
     the input features.
@@ -266,24 +272,6 @@ class MultiHeadAttentionMLP(_BaseMLP):
             num_heads=num_heads,
             dropout=attention_dropout
         )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Defines the standard forward pass of the model."""
-        logits, _attention_weights = self.forward_attention(x)
-        return logits
-    
-    def forward_attention(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Returns logits and attention weights.
-        """
-        # The attention layer returns the processed x and the weights
-        x, attention_weights = self.attention(x)
-        
-        # Pass the attention-modified tensor through the MLP and prediction head
-        x = self.mlp(x)
-        logits = self.output_layer(x)
-        
-        return logits, attention_weights
 
     def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""

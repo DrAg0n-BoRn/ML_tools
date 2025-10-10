@@ -200,7 +200,7 @@ class _BaseDatasetMaker(ABC):
         filepath = save_path / filename
         self.scaler.save(filepath, verbose=False)
         if verbose:
-            _LOGGER.info(f"Scaler for dataset '{self.id}' saved to '{filepath.name}'.")
+            _LOGGER.info(f"Scaler for dataset '{self.id}' saved as '{filepath.name}'.")
 
 
 # Single target dataset
