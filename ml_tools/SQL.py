@@ -120,12 +120,14 @@ class DatabaseManager:
         if not self.cursor:
             _LOGGER.error("Database connection is not open.")
             raise sqlite3.Error()
+        
+        sanitized_table_name = sanitize_filename(table_name)
 
         columns = ', '.join(f'"{k}"' for k in data.keys())
         placeholders = ', '.join(['?'] * len(data))
         values = list(data.values())
         
-        query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+        query = f'INSERT INTO "{sanitized_table_name}" ({columns}) VALUES ({placeholders})'
         
         self.cursor.execute(query, values)
 
@@ -187,6 +189,8 @@ class DatabaseManager:
         if not data:
             _LOGGER.warning("'insert_many' called with empty data list. No action taken.")
             return
+        
+        sanitized_table_name = sanitize_filename(table_name)
 
         # Assume all dicts have the same keys as the first one
         first_row = data[0]
@@ -196,10 +200,10 @@ class DatabaseManager:
         # Create a list of tuples, where each tuple is a row of values
         values_to_insert = [list(row.values()) for row in data]
 
-        query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+        query = f'INSERT INTO "{sanitized_table_name}" ({columns}) VALUES ({placeholders})'
         
         self.cursor.executemany(query, values_to_insert)
-        _LOGGER.info(f"➡️ Bulk inserted {len(values_to_insert)} rows into '{table_name}'.")
+        _LOGGER.info(f"➡️ Bulk inserted {len(values_to_insert)} rows into '{sanitized_table_name}'.")
         
     def insert_from_dataframe(self, table_name: str, df: pd.DataFrame, if_exists: Literal['fail', 'replace', 'append'] = 'append'):
         """
@@ -220,9 +224,11 @@ class DatabaseManager:
         if not self.conn:
             _LOGGER.error("Database connection is not open.")
             raise sqlite3.Error()
+        
+        sanitized_table_name = sanitize_filename(table_name)
 
         df.to_sql(
-            table_name,
+            sanitized_table_name,
             self.conn,
             if_exists=if_exists,
             index=False  # Typically, we don't want to save the DataFrame index
@@ -248,9 +254,11 @@ class DatabaseManager:
         if not self.conn:
             _LOGGER.error("Database connection is not open.")
             raise sqlite3.Error()
+        
+        sanitized_table_name = sanitize_filename(table_name)
             
         # PRAGMA is a special SQL command in SQLite for database metadata
-        return pd.read_sql_query(f'PRAGMA table_info("{table_name}");', self.conn)
+        return pd.read_sql_query(f'PRAGMA table_info("{sanitized_table_name}");', self.conn)
 
     def create_index(self, table_name: str, column_name: str, unique: bool = False):
         """
@@ -269,11 +277,13 @@ class DatabaseManager:
         if not self.cursor:
             _LOGGER.error("Database connection is not open.")
             raise sqlite3.Error()
+        
+        sanitized_table_name = sanitize_filename(table_name)
 
-        index_name = f"idx_{table_name}_{column_name}"
+        index_name = f"idx_{sanitized_table_name}_{column_name}"
         unique_clause = "UNIQUE" if unique else ""
         
-        query = f"CREATE {unique_clause} INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_name})"
+        query = f'CREATE {unique_clause} INDEX IF NOT EXISTS "{index_name}" ON "{sanitized_table_name}" ("{column_name}")'
         
         _LOGGER.info(f"➡️ Executing: {query}")
         self.cursor.execute(query)

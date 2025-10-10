@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.10.1] 2025-10-10
+
+### Fixed
+
+- SQL: `DatabaseManager`, fixed bug with table names. Now all methods use a sanitized string version of the input table name.
+
 ## [10.10.0] 2025-10-10
 
 ### Changed
