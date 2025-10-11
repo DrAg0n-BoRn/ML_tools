@@ -23,13 +23,33 @@ class PathManager:
     "path database". It supports both development mode and applications
     bundled with Pyinstaller or Nuitka.
     
-    Supports python dictionary syntax.
+    All keys provided to the manager are automatically sanitized to ensure
+    they are valid Python identifiers. This allows for clean, attribute-style
+    access. The sanitization process involves replacing whitespace with
+    underscores and removing special characters.
     """
     def __init__(
         self,
         anchor_file: str,
         base_directories: Optional[List[str]] = None
     ):
+        """
+        Sets up the core paths for a project by anchoring to a specific file.
+
+        The manager automatically registers a 'ROOT' path, which points to the
+        root of the package, and can pre-register common subdirectories found
+        directly within that root.
+
+        Args:
+            anchor_file (str): The path to a file within your package, typically
+                            the `__file__` of the script where PathManager
+                            is instantiated. This is used to locate the
+                            package root directory.
+            base_directories (List[str] | None): An optional list of strings,
+                                                    where each string is the name
+                                                    of a subdirectory to register
+                                                    relative to the package root.
+        """
         resolved_anchor_path = Path(anchor_file).resolve()
         self._package_name = resolved_anchor_path.parent.name
         self._is_bundled, bundle_root = self._get_bundle_root()
@@ -43,13 +63,17 @@ class PathManager:
             package_root = resolved_anchor_path.parent
 
         # Register the root of the package itself
-        self._paths["ROOT"] = package_root
+        self.ROOT = package_root
 
         # Register all the base directories
         if base_directories:
             for dir_name in base_directories:
-                # This logic works for both dev mode and bundled mode
-                self._paths[dir_name] = package_root / dir_name
+                sanitized_dir_name = self._sanitize_key(dir_name)
+                self._check_underscore_key(sanitized_dir_name)
+                setattr(self, sanitized_dir_name, package_root / sanitized_dir_name)
+        
+        # Signal that initialization is complete.
+        self._initialized = True
     
     def _get_bundle_root(self) -> tuple[bool, Optional[str]]:
         """
@@ -72,47 +96,35 @@ class PathManager:
         # --- Not Bundled ---
         else:
             return False, None
+        
+    def _check_underscore_key(self, key: str) -> None:
+        if key.startswith("_"):
+            _LOGGER.error(f"Path key '{key}' cannot start with underscores.")
+            raise ValueError()
 
-    def get(self, key: str) -> Path:
+    def update(self, new_paths: Dict[str, Union[str, Path]]) -> None:
         """
-        Retrieves a stored path by its key.
-
-        Args:
-            key (str): The key of the path to retrieve.
-
-        Returns:
-            Path: The resolved, absolute Path object.
-
-        Raises:
-            KeyError: If the key is not found in the manager.
-        """
-        try:
-            return self._paths[key]
-        except KeyError:
-            _LOGGER.error(f"Path key '{key}' not found.")
-            raise
-
-    def update(self, new_paths: Dict[str, Union[str, Path]], overwrite: bool = False) -> None:
-        """
-        Adds new paths or overwrites existing ones in the manager.
+        Adds new paths in the manager.
 
         Args:
             new_paths (Dict[str, Union[str, Path]]): A dictionary where keys are
                                     the identifiers and values are the
-                                    Path objects or strings to store.
-            overwrite (bool): If False (default), raises a KeyError if any
-                            key in new_paths already exists. If True,
-                            allows overwriting existing keys.
+                                    Path objects to store.
         """
-        if not overwrite:
-            for key in new_paths:
-                if key in self._paths:
-                    _LOGGER.error(f"Path key '{key}' already exists in the manager. To replace it, call update() with overwrite=True.")
-                    raise KeyError
-
-        # Resolve any string paths to Path objects before storing
-        resolved_new_paths = {k: Path(v) for k, v in new_paths.items()}
-        self._paths.update(resolved_new_paths)
+        # Pre-check
+        for key in new_paths:
+            sanitized_key = self._sanitize_key(key)
+            self._check_underscore_key(sanitized_key)
+            if hasattr(self, sanitized_key):
+                _LOGGER.error(f"Cannot add path for key '{sanitized_key}' ({key}): an attribute with this name already exists.")
+                raise KeyError()
+        
+        # If no conflicts, add new paths
+        for key, value in new_paths.items():
+            self.__setattr__(key, value)
+        
+    def _sanitize_key(self, key: str):
+        return sanitize_filename(key)
         
     def make_dirs(self, keys: Optional[List[str]] = None, verbose: bool = False) -> None:
         """
@@ -147,7 +159,7 @@ class PathManager:
             if path.suffix:  # It's a file, not a directory
                 continue
 
-            # --- THE CRITICAL CHECK ---
+            # --- CRITICAL CHECK ---
             # Determine if the path is inside the main application package.
             is_internal_path = package_root and path.is_relative_to(package_root)
 
@@ -186,15 +198,20 @@ class PathManager:
     # --- Dictionary-Style Methods ---
     def __getitem__(self, key: str) -> Path:
         """Allows dictionary-style getting, e.g., PM['my_key']"""
-        return self.get(key)
+        return self.__getattr__(key)
 
     def __setitem__(self, key: str, value: Union[str, Path]):
-        """Allows dictionary-style setting, does not allow overwriting, e.g., PM['my_key'] = path"""
-        self.update({key: value}, overwrite=False)
+        """Allows dictionary-style setting, e.g., PM['my_key'] = path"""
+        sanitized_key = self._sanitize_key(key)
+        self._check_underscore_key(sanitized_key)
+        self.__setattr__(sanitized_key, value)
 
     def __contains__(self, key: str) -> bool:
         """Allows checking for a key's existence, e.g., if 'my_key' in PM"""
-        return key in self._paths
+        sanitized_key = self._sanitize_key(key)
+        true_false = sanitized_key in self._paths
+        # print(f"key {sanitized_key} in current path dictionary keys: {true_false}")
+        return true_false
 
     def __len__(self) -> int:
         """Allows getting the number of paths, e.g., len(PM)"""
@@ -211,6 +228,47 @@ class PathManager:
     def items(self):
         """Returns all registered (key, Path) pairs."""
         return self._paths.items()
+    
+    def __getattr__(self, name: str) -> Path:
+        """
+        Allows attribute-style access to paths, e.g., PM.data.
+        """
+        # Block access to private attributes
+        if name.startswith('_'):
+            _LOGGER.error(f"Access to private attribute '{name}' is not allowed, remove leading underscore.")
+            raise AttributeError()
+        
+        sanitized_name = self._sanitize_key(name)
+        
+        try:
+            # Look for the key in our internal dictionary
+            return self._paths[sanitized_name]
+        except KeyError:
+            # If not found, raise an AttributeError
+            _LOGGER.error(f"'{type(self).__name__}' object has no attribute or path key '{sanitized_name}'")
+            raise AttributeError()
+    
+    def __setattr__(self, name: str, value: Union[str, Path]):
+        """Allows attribute-style setting of paths, e.g., PM.data = 'path/to/data'."""
+        # Check for internal attributes 
+        if name.startswith('_'):
+            if hasattr(self, '_initialized') and self._initialized:
+                self._check_underscore_key(name)
+                return
+            else:
+                # During initialization, allow private attributes to be set.
+                super().__setattr__(name, value)
+            return
+
+        # Block overwriting of existing methods/attributes
+        sanitized_name = self._sanitize_key(name)
+        self._check_underscore_key(sanitized_name)
+        if hasattr(self, sanitized_name):
+            _LOGGER.error(f"Cannot overwrite existing attribute or method '{sanitized_name}' ({name}).")
+            raise AttributeError()
+
+        # If all checks pass, treat it as a public path.
+        self._paths[sanitized_name] = Path(value)
 
 
 def make_fullpath(

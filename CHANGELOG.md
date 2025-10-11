@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.11.0] 2025-10-11
+
+### Changed
+
+- path_manager: `PathManager` now supports direct attribute access for all paths, providing a cleaner, safer, and more modern way to interact with class instances.
+
 ## [10.10.1] 2025-10-10
 
 ### Fixed
