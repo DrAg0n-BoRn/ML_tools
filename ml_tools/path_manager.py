@@ -248,26 +248,33 @@ class PathManager:
             _LOGGER.error(f"'{type(self).__name__}' object has no attribute or path key '{sanitized_name}'")
             raise AttributeError()
     
-    def __setattr__(self, name: str, value: Union[str, Path]):
+    def __setattr__(self, name: str, value: Union[str, Path, bool, dict, str, int, tuple]):
         """Allows attribute-style setting of paths, e.g., PM.data = 'path/to/data'."""
-        # Check for internal attributes 
+        # Check for internal attributes, which are set directly on the object.
         if name.startswith('_'):
-            if hasattr(self, '_initialized') and self._initialized:
-                self._check_underscore_key(name)
-                return
-            else:
-                # During initialization, allow private attributes to be set.
-                super().__setattr__(name, value)
+            # This check prevents setting new private attributes after __init__ is done.
+            is_initialized = self.__dict__.get('_initialized', False)
+            if is_initialized:
+                _LOGGER.error(f"Cannot set private attribute '{name}' after initialization.")
+                raise AttributeError()
+            super().__setattr__(name, value)
             return
 
-        # Block overwriting of existing methods/attributes
+        # Sanitize the key for the public path.
         sanitized_name = self._sanitize_key(name)
         self._check_underscore_key(sanitized_name)
-        if hasattr(self, sanitized_name):
+
+        # Prevent overwriting existing methods (e.g., PM.status = 'foo').
+        # This check looks at the class, not the instance therefore won't trigger __getattr__.
+        if hasattr(self.__class__, sanitized_name):
             _LOGGER.error(f"Cannot overwrite existing attribute or method '{sanitized_name}' ({name}).")
             raise AttributeError()
+        
+        if not isinstance(value, (str, Path)):
+            _LOGGER.error(f"Cannot assign type '{type(value).__name__}' to a path. Must be str or Path.")
+            raise TypeError
 
-        # If all checks pass, treat it as a public path.
+        # If all checks pass, treat it as a public path and store it in the _paths dictionary.
         self._paths[sanitized_name] = Path(value)
 
 
