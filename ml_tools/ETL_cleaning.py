@@ -142,8 +142,8 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         r'[°˚]': '',
         
         # Replace special characters in entries
-        r'\\': '-',
-        '/': '-',
+        r'\\': '_',
+        # '/': '_', # keep forward slash 
         
         # Typographical standardization
         # Unify various dashes and hyphens to a standard hyphen
@@ -157,6 +157,8 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         r'\.{2,}': '.',      # Replace two or more dots with a single dot
         r'\?{2,}': '?',      # Replace two or more question marks with a single question mark
         r'!{2,}': '!',      # Replace two or more exclamation marks with a single one
+        r';{2,}': ';',
+        r'-{2,}': '-',
 
         # 2. Internal Whitespace Consolidation
         # Collapse any sequence of whitespace chars (including non-breaking spaces) to a single space
@@ -168,7 +170,7 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         
         # 4. Textual Null Standardization (New Step)
         # Convert common null-like text to actual nulls.
-        r'^(N/A|无|NA|NULL|NONE|NIL|)$': None,
+        r'^(N/A|无|NA|NULL|NONE|NIL|-|\.|;)$': None,
 
         # 5. Final Nullification of Empty Strings
         # After all cleaning, if a string is now empty, convert it to a null
