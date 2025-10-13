@@ -96,7 +96,7 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path],
 
 
 ########## Basic df cleaners #############
-def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
+def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
     # Cleaning rules
     cleaning_rules = {
         # 1. Comprehensive Punctuation & Symbol Normalization
@@ -128,7 +128,7 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         # Punctuation
         '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', 
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
-        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=',
+        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=', '·': '-',
         
         # Commas (avoid commas in entries)
         '，': ';',
@@ -159,6 +159,9 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         r'!{2,}': '!',      # Replace two or more exclamation marks with a single one
         r';{2,}': ';',
         r'-{2,}': '-',
+        r'/{2,}': '/',
+        r'%{2,}': '%',
+        r'&{2,}': '&',
 
         # 2. Internal Whitespace Consolidation
         # Collapse any sequence of whitespace chars (including non-breaking spaces) to a single space
@@ -170,7 +173,7 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         
         # 4. Textual Null Standardization (New Step)
         # Convert common null-like text to actual nulls.
-        r'^(N/A|无|NA|NULL|NONE|NIL|-|\.|;)$': None,
+        r'^(N/A|无|NA|NULL|NONE|NIL|-|\.|;|/|%|&)$': None,
 
         # 5. Final Nullification of Empty Strings
         # After all cleaning, if a string is now empty, convert it to a null
@@ -191,9 +194,13 @@ def _cleaner_core(df_in: pl.DataFrame) -> pl.DataFrame:
         df_cleaned = df_cleaner.clean(df_in, clone_df=False) # Use clone_df=False for efficiency
         
         # apply lowercase to all string columns
-        df_final = df_cleaned.with_columns(
-            pl.col(pl.String).str.to_lowercase()
-        )
+        if all_lowercase:
+            df_final = df_cleaned.with_columns(
+                pl.col(pl.String).str.to_lowercase()
+            )
+        else:
+            df_final = df_cleaned
+
     except Exception as e:
         _LOGGER.error(f"An error occurred during the cleaning process.")
         raise e
@@ -211,7 +218,7 @@ def _path_manager(path_in: Union[str,Path], path_out: Union[str,Path]):
     return input_path, output_path
 
 
-def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
+def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path], all_lowercase: bool=True):
     """
     Performs a comprehensive, standardized cleaning on all columns of a CSV file.
 
@@ -221,13 +228,16 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     - Stripping any leading or trailing whitespace.
     - Converting common textual representations of null (e.g., "N/A", "NULL") to true null values.
     - Converting strings that become empty after cleaning into true null values.
-    - Normalizing all text to lowercase.
+    - Normalizing all text to lowercase (Optional).
 
     Args:
-        input_filepath (Union[str, Path]):
+        input_filepath (str | Path):
             The path to the source CSV file to be cleaned.
-        output_filepath (Union[str, Path, None], optional):
+        output_filepath (str | Path):
             The path to save the cleaned CSV file.
+        all_lowercase (bool):
+            Whether to normalize all text to lowercase.
+        
     """
     # Handle paths
     input_path, output_path = _path_manager(path_in=input_filepath, path_out=output_filepath)
@@ -236,7 +246,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
     
     # CLEAN
-    df_final = _cleaner_core(df)
+    df_final = _cleaner_core(df_in=df, all_lowercase=all_lowercase)
     
     # Save cleaned dataframe
     save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
@@ -245,7 +255,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     
 
 def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str,Path], log_directory: Union[str,Path], targets: list[str], 
-                     skip_targets: bool=False, threshold: float=0.8):
+                     skip_targets: bool=False, threshold: float=0.8, all_lowercase: bool=True):
     """
     Performs standardized cleaning followed by iterative removal of rows and 
     columns with excessive missing data.
@@ -262,12 +272,12 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
     dropping process are saved to the specified log directory.  
 
     Args:
-        input_filepath (str, Path):
+        input_filepath (str | Path):
             The path to the source CSV file to be cleaned.
-        output_filepath (str, Path):
+        output_filepath (str | Path):
             The path to save the fully cleaned CSV file after cleaning 
             and missing-data-based pruning.
-        log_directory (str, Path):
+        log_directory (str | Path):
             Path to the directory where missing data reports will be stored.
         targets (list[str]):
             A list of column names to be treated as target variables. 
@@ -279,6 +289,8 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
             The proportion of missing data required to drop a row or column. 
             For example, 0.8 means a row/column will be dropped if 80% or more 
             of its data is missing.
+        all_lowercase (bool):
+            Whether to normalize all text to lowercase.
     """
     # handle log path
     log_path = make_fullpath(log_directory, make=True, enforce="directory")
@@ -290,7 +302,7 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
     df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
     
     # CLEAN
-    df_cleaned = _cleaner_core(df)
+    df_cleaned = _cleaner_core(df_in=df, all_lowercase=all_lowercase)
     
     # switch to pandas
     df_cleaned_pandas = df_cleaned.to_pandas()

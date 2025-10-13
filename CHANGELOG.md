@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.14.0] 2025-10-13
+
+### Changed
+
+- ETL_cleaning: 
+    - Enhanced cleaning regex strategy for base cleaner functions.
+    - `basic_clean_drop()` and `basic_clean()` now include the parameter `all_lowercase` that controls whether all values should be normalized to lowercase in the cleaning process.
+
 ## [10.13.0] 2025-10-13
 
 ### Added
