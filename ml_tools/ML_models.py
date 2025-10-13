@@ -300,8 +300,8 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     sequence with a standard Transformer Encoder.
     """
     def __init__(self, *,
+                 in_features: int,
                  out_targets: int,
-                 numerical_indices: List[int],
                  categorical_map: Dict[int, int],
                  embedding_dim: int = 32,
                  num_heads: int = 8,
@@ -309,8 +309,8 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
                  dropout: float = 0.1):
         """
         Args:
+            in_features (int): The total number of columns in the input data (features).
             out_targets (int): Number of output targets (1 for regression).
-            numerical_indices (List[int]): Column indices for numerical features.
             categorical_map (Dict[int, int]): Maps categorical column index to its cardinality (number of unique categories).
             embedding_dim (int): The dimension for all feature embeddings. Must be divisible by num_heads.
             num_heads (int): The number of heads in the multi-head attention mechanism.
@@ -330,15 +330,25 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         their cardinality (the number of unique categories) via the `categorical_map` parameter.
 
         **Ordinal & Binary Features** (e.g., 'Low/Medium/High', 'True/False'): Should be treated as **numerical**. Map them to numbers that 
-        represent their state (e.g., `{'Low': 0, 'Medium': 1}` or `{False: 0, True: 1}`). Their column indices should be included in the 
-        `numerical_indices` list.
+        represent their state (e.g., `{'Low': 0, 'Medium': 1}` or `{False: 0, True: 1}`). Their column indices should **NOT** be included in the 
+        `categorical_map` parameter.
 
-        **Standard Numerical Features** (e.g., 'Age', 'Price'): Should be included in the `numerical_indices` list. It is highly recommended to 
-        scale them before training.
+        **Standard Numerical and Continuous Features** (e.g., 'Age', 'Price'): It is highly recommended to scale them before training.
         """
         super().__init__()
-
+        
+         # --- Validation ---
+        if categorical_map and max(categorical_map.keys()) >= in_features:
+            _LOGGER.error(f"A categorical index ({max(categorical_map.keys())}) is out of bounds for the provided input features ({in_features}).")
+            raise ValueError()
+        
+        # --- Derive numerical indices ---
+        all_indices = set(range(in_features))
+        categorical_indices_set = set(categorical_map.keys())
+        numerical_indices = sorted(list(all_indices - categorical_indices_set))
+        
         # --- Save configuration ---
+        self.in_features = in_features
         self.out_targets = out_targets
         self.numerical_indices = numerical_indices
         self.categorical_map = categorical_map
@@ -405,8 +415,8 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""
         return {
+            'in_features': self.in_features,
             'out_targets': self.out_targets,
-            'numerical_indices': self.numerical_indices,
             'categorical_map': self.categorical_map,
             'embedding_dim': self.embedding_dim,
             'num_heads': self.num_heads,
@@ -416,11 +426,9 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
-        num_features = len(self.numerical_indices) + len(self.categorical_map)
-
         # Build the architecture string part-by-part
         parts = [
-            f"Tokenizer(features={num_features}, dim={self.embedding_dim})",
+            f"Tokenizer(features={self.in_features}, dim={self.embedding_dim})",
             "[CLS]",
             f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads})",
             f"PredictionHead(outputs={self.out_targets})"

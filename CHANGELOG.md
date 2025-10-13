@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.12.0] 2025-10-13
+
+### Changed
+
+- ML_models: `TabularTransformer`, API has been simplified and made more robust. It now accepts an 'in_features' argument instead of 'numerical_indices'.
+
+### Added
+
+- data_exploration:
+    - `encode_categorical_features()`, automates the label encoding of specified categorical columns and returns a dictionary containing their mappings.
+    - `create_transformer_categorical_map()`, generates the 'categorical_map' required by the 'TabularTransformer' model.
+    - `reconstruct_one_hot()`, function to collapse one-hot encoded columns back into a single categorical feature.
+
 ## [10.11.2] 2025-10-12
 
 ### Fixed

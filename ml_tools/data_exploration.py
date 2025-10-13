@@ -22,6 +22,7 @@ __all__ = [
     "drop_columns_with_missing_data",
     "drop_macro",
     "clean_column_names",
+    "encode_categorical_features",
     "split_features_targets", 
     "split_continuous_binary", 
     "plot_correlation_heatmap", 
@@ -29,7 +30,9 @@ __all__ = [
     "clip_outliers_single", 
     "clip_outliers_multi",
     "match_and_filter_columns_by_regex",
-    "standardize_percentages"
+    "standardize_percentages",
+    "create_transformer_categorical_map",
+    "reconstruct_one_hot"
 ]
 
 
@@ -335,6 +338,90 @@ def clean_column_names(df: pd.DataFrame, replacement_char: str = '-', replacemen
             
     new_df.columns = new_columns
     return new_df
+
+
+def encode_categorical_features(
+    df: pd.DataFrame,
+    columns_to_encode: List[str],
+    encode_nulls: bool,
+    split_resulting_dataset: bool = True,
+    verbose: bool = True
+) -> Tuple[Dict[str, Dict[str, int]], pd.DataFrame, Optional[pd.DataFrame]]:
+    """
+    Finds unique values in specified categorical columns, encodes them into integers,
+    and returns a dictionary containing the mappings for each column.
+
+    This function automates the label encoding process and generates a simple,
+    human-readable dictionary of the mappings.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        columns_to_encode (List[str]): A list of column names to be encoded.
+        encode_nulls (bool): If True, encodes Null values as a distinct category
+            "Other" with a value of 0. Other categories start from 1.
+            If False, Nulls are ignored.
+        split_resulting_dataset (bool): If True, returns two separate DataFrames:
+            one with non-categorical columns and one with the encoded columns.
+            If False, returns a single DataFrame with all columns.
+        verbose (bool): If True, prints encoding progress.
+
+    Returns:
+        Tuple:
+        
+        - Dict[str, Dict[str, int]]: A dictionary where each key is a column name and the value is its category-to-integer mapping.
+        
+        - pd.DataFrame: The original dataframe with or without encoded columns (see `split_resulting_dataset`).
+        
+        - pd.DataFrame | None: If `split_resulting_dataset` is True, the encoded columns as a new dataframe.
+    """
+    df_encoded = df.copy()
+    
+    # Validate columns
+    valid_columns = [col for col in columns_to_encode if col in df_encoded.columns]
+    missing_columns = set(columns_to_encode) - set(valid_columns)
+    if missing_columns:
+        _LOGGER.warning(f"Columns not found and will be skipped: {list(missing_columns)}")
+
+    mappings: Dict[str, Dict[str, int]] = {}
+
+    _LOGGER.info(f"Encoding {len(valid_columns)} categorical column(s).")
+    for col_name in valid_columns:
+        has_nulls = df_encoded[col_name].isnull().any()
+        
+        if encode_nulls and has_nulls:
+            # Handle nulls: "Other" -> 0, other categories -> 1, 2, 3...
+            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
+            # Start mapping from 1 for non-null values
+            mapping = {category: i + 1 for i, category in enumerate(categories)}
+            
+            # Apply mapping and fill remaining NaNs with 0
+            mapped_series = df_encoded[col_name].astype(str).map(mapping)
+            df_encoded[col_name] = mapped_series.fillna(0).astype(int)
+            
+            # Create the complete user-facing map including "Other"
+            user_mapping = {**mapping, "Other": 0}
+            mappings[col_name] = user_mapping
+        else:
+            # ignore nulls
+            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
+            
+            mapping = {category: i for i, category in enumerate(categories)}
+            
+            df_encoded[col_name] = df_encoded[col_name].astype(str).map(mapping)
+            
+            mappings[col_name] = mapping
+            
+        if verbose:
+            cardinality = len(mappings[col_name])
+            print(f"  - Encoded '{col_name}' with {cardinality} unique values.")
+
+    # Handle the dataset splitting logic
+    if split_resulting_dataset:
+        df_categorical = df_encoded[valid_columns].to_frame()
+        df_non_categorical = df.drop(columns=valid_columns)
+        return mappings, df_non_categorical, df_categorical
+    else:
+        return mappings, df_encoded, None
 
 
 def split_features_targets(df: pd.DataFrame, targets: list[str]):
@@ -764,6 +851,141 @@ def standardize_percentages(
         df_copy[col] = df_copy[col].round(round_digits)
 
     return df_copy
+
+
+def create_transformer_categorical_map(
+    df: pd.DataFrame,
+    mappings: Dict[str, Dict[str, int]],
+    verbose: bool = True
+) -> Dict[int, int]:
+    """
+    Creates the `categorical_map` required by a `TabularTransformer` model.
+
+    This function should be called late in the preprocessing pipeline, after all
+    column additions, deletions, or reordering have occurred. It uses the final
+    DataFrame's column order to map the correct column index to its cardinality.
+
+    Args:
+        df (pd.DataFrame): The final, processed DataFrame.
+        mappings (Dict[str, Dict[str, int]]): The mappings dictionary generated by
+          `encode_categorical_features`, containing the category-to-integer
+          mapping for each categorical column.
+        verbose (bool): If True, prints mapping progress.
+
+    Returns:
+        (Dict[int, int]): The final `categorical_map` for the transformer,
+          mapping each column's current index to its cardinality (e.g., {0: 3}).
+    """
+    transformer_map = {}
+    categorical_column_names = mappings.keys()
+
+    _LOGGER.info("Creating categorical map for TabularTransformer.")
+    for col_name in categorical_column_names:
+        if col_name in df.columns:
+            col_idx = df.columns.get_loc(col_name)
+            
+            # Get cardinality directly from the length of the mapping dictionary
+            cardinality = len(mappings[col_name])
+            
+            transformer_map[col_idx] = cardinality
+            if verbose:
+                print(f"  - Mapping column '{col_name}' at index {col_idx} with cardinality {cardinality}.")
+        else:
+            _LOGGER.warning(f"Categorical column '{col_name}' not found in the final DataFrame. Skipping.")
+            
+    return transformer_map
+
+
+def reconstruct_one_hot(
+    df: pd.DataFrame,
+    base_feature_names: List[str],
+    separator: str = '_',
+    drop_original: bool = True
+) -> pd.DataFrame:
+    """
+    Reconstructs original categorical columns from a one-hot encoded DataFrame.
+
+    This function identifies groups of one-hot encoded columns based on a common
+    prefix (base feature name) and a separator. It then collapses each group
+    into a single column containing the categorical value.
+
+    Args:
+        df (pd.DataFrame): 
+            The input DataFrame with one-hot encoded columns.
+        base_features (List[str]): 
+            A list of base feature names to reconstruct. For example, if you have 
+            columns 'B_a', 'B_b', 'B_c', you would pass `['B']`.
+        separator (str): 
+            The character separating the base name from the categorical value in 
+            the column names (e.g., '_' in 'B_a').
+        drop_original (bool): 
+            If True, the original one-hot encoded columns will be dropped from 
+            the returned DataFrame.
+
+    Returns:
+        pd.DataFrame: 
+            A new DataFrame with the specified one-hot encoded features 
+            reconstructed into single categorical columns.
+    
+    <br>
+    
+    ## Note: 
+    
+    This function is designed to be robust, but users should be aware of two key edge cases:
+
+    1.  **Ambiguous Base Feature Prefixes**: If `base_feature_names` list contains names where one is a prefix of another (e.g., `['feat', 'feat_ext']`), the order is critical. The function will match columns greedily. To avoid incorrect grouping, always list the **most specific base names first** (e.g., `['feat_ext', 'feat']`).
+
+    2.  **Malformed One-Hot Data**: If a row contains multiple `1`s within the same feature group (e.g., both `B_a` and `B_c` are `1`), the function will not raise an error. It uses `.idxmax()`, which returns the first column that contains the maximum value. This means it will silently select the first category it encounters and ignore the others, potentially masking an upstream data issue.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+
+    new_df = df.copy()
+    all_ohe_cols_to_drop = []
+    reconstructed_count = 0
+
+    _LOGGER.info(f"Attempting to reconstruct {len(base_feature_names)} one-hot encoded feature(s).")
+
+    for base_name in base_feature_names:
+        # Regex to find all columns belonging to this base feature.
+        pattern = f"^{re.escape(base_name)}{re.escape(separator)}"
+        
+        # Find matching columns
+        ohe_cols = [col for col in df.columns if re.match(pattern, col)]
+
+        if not ohe_cols:
+            _LOGGER.warning(f"No one-hot encoded columns found for base feature '{base_name}'. Skipping.")
+            continue
+
+        # For each row, find the column name with the maximum value (which is 1)
+        reconstructed_series = new_df[ohe_cols].idxmax(axis=1)
+
+        # Extract the categorical value (the suffix) from the column name
+        # Use n=1 in split to handle cases where the category itself might contain the separator
+        new_column_values = reconstructed_series.str.split(separator, n=1).str[1]
+        
+        # Handle rows where all OHE columns were 0 (e.g., original value was NaN).
+        # In these cases, idxmax returns the first column name, but the sum of values is 0.
+        all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0
+        new_column_values.loc[all_zero_mask] = np.nan
+
+        # Assign the new reconstructed column to the DataFrame
+        new_df[base_name] = new_column_values
+        
+        all_ohe_cols_to_drop.extend(ohe_cols)
+        reconstructed_count += 1
+        print(f"  - Reconstructed '{base_name}' from {len(ohe_cols)} columns.")
+
+    if drop_original and all_ohe_cols_to_drop:
+        # Drop the original OHE columns, ensuring no duplicates in the drop list
+        unique_cols_to_drop = list(set(all_ohe_cols_to_drop))
+        new_df.drop(columns=unique_cols_to_drop, inplace=True)
+        _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original one-hot encoded columns.")
+    
+    _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
+
+    return new_df
 
 
 def _validate_columns(df: pd.DataFrame, columns: list[str]):
