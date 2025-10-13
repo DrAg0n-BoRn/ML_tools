@@ -170,27 +170,6 @@ path_manager
 
 ---
 
-### 🎫 Base Tools [base]
-
-General purpose functions and classes.
-
-```Bash
-pip install "dragon-ml-toolbox[base]"
-```
-
-#### Modules:
-
-```Bash
-ETL_cleaning
-ETL_engineering
-custom_logger
-SQL
-utilities
-path_manager
-```
-
----
-
 ### ⚒️ APP bundlers
 
 Choose one if needed.

@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "10.12.1"
+version = "10.13.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl Loza", email = "luigiloza@gmail.com" }
@@ -19,15 +19,6 @@ Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
 Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-# Base all purpose tools
-base = [ 
-    "pandas", 
-    "numpy", 
-    "polars", 
-    "joblib", 
-    "colorlog"
-]
-
 # Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
 ML = [
     "numpy>=2.0",
@@ -48,7 +39,8 @@ ML = [
     "shap",
     "tqdm",
     "Pillow",
-    "evotorch", 
+    "evotorch",
+    "pyarrow",
     "colorlog"
 ]
 
@@ -64,7 +56,8 @@ mice = [
     "statsmodels",
     "lightgbm<=4.5.0",
     "shap",
-    "colorlog"
+    "colorlog", 
+    "pyarrow"
 ]
 
 # pytorch base CPU installations - not recommended

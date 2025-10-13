@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [10.13.0] 2025-10-13
+
+### Added
+
+- Add dependency `pyarrow` for the core project modules: "Machine Learning" and "MICE". Dependency required for ETL_cleaning.
+
+### Removed
+
+- Removed the core project module "Base".
+
 ## [10.12.1] 2025-10-13
 
 ### Changed

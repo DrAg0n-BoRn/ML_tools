@@ -26,3 +26,4 @@ This project depends on the following third-party packages. Each is governed by 
 - [polars](https://github.com/pola-rs/polars/blob/main/LICENSE)
 - [plotnine](https://github.com/has2k1/plotnine/blob/main/LICENSE)
 - [tqdm](https://github.com/tqdm/tqdm/blob/master/LICENSE)
+- [pyarrow](https://github.com/apache/arrow/blob/main/LICENSE.txt)

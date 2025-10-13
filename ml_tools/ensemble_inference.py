@@ -219,7 +219,7 @@ def model_report(
     return report_data
 
 
-# Local implementation to avoid calling utilities' dependencies
+# Local implementation to avoid calling utilities dependencies
 def _deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
     """
     Loads a serialized object from a .joblib file.
