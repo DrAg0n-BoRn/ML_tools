@@ -20,10 +20,110 @@ from .SQL import DatabaseManager
 from .optimization_tools import _save_result
 from .utilities import threshold_binary_values, save_dataframe
 
+
 __all__ = [
+    "MLOptimizer",
     "create_pytorch_problem",
     "run_optimization"
 ]
+
+
+class MLOptimizer:
+    """
+    A wrapper class for setting up and running EvoTorch optimization tasks.
+
+    This class combines the functionality of `create_pytorch_problem` and
+    `run_optimization` functions into a single, streamlined workflow. 
+    
+    SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
+
+    Example:
+        >>> # 1. Initialize the optimizer with model and search parameters
+        >>> optimizer = MLOptimizer(
+        ...     inference_handler=my_handler,
+        ...     bounds=(lower_bounds, upper_bounds),
+        ...     number_binary_features=2,
+        ...     task="max",
+        ...     algorithm="Genetic"
+        ... )
+        >>> # 2. Run the optimization and save the results
+        >>> best_result = optimizer.run(
+        ...     num_generations=100,
+        ...     target_name="my_target",
+        ...     feature_names=my_feature_names,
+        ...     save_dir="/path/to/results",
+        ...     save_format="csv"
+        ... )
+    """
+    def __init__(self,
+                 inference_handler: PyTorchInferenceHandler,
+                 bounds: Tuple[List[float], List[float]],
+                 number_binary_features: int,
+                 task: Literal["min", "max"],
+                 algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
+                 population_size: int = 200,
+                 **searcher_kwargs):
+        """
+        Initializes the optimizer by creating the EvoTorch problem and searcher.
+
+        Args:
+            inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
+            bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for the solution features.
+            number_binary_features (int): Number of binary features located at the END of the feature vector.
+            task (str): The optimization goal, either "min" or "max".
+            algorithm (str): The search algorithm to use ("SNES", "CEM", "Genetic").
+            population_size (int): Population size for CEM and GeneticAlgorithm.
+            **searcher_kwargs: Additional keyword arguments for the selected search algorithm's constructor.
+        """
+        # Call the existing factory function to get the problem and searcher factory
+        self.problem, self.searcher_factory = create_pytorch_problem(
+            inference_handler=inference_handler,
+            bounds=bounds,
+            binary_features=number_binary_features,
+            task=task,
+            algorithm=algorithm,
+            population_size=population_size,
+            **searcher_kwargs
+        )
+        # Store binary_features count to pass it to the run function later
+        self._binary_features = number_binary_features
+
+    def run(self,
+            num_generations: int,
+            target_name: str,
+            save_dir: Union[str, Path],
+            feature_names: Optional[List[str]],
+            save_format: Literal['csv', 'sqlite', 'both'],
+            repetitions: int = 1,
+            verbose: bool = True) -> Optional[dict]:
+        """
+        Runs the evolutionary optimization process using the pre-configured settings.
+
+        Args:
+            num_generations (int): The total number of generations for each repetition.
+            target_name (str): Target name used for the CSV filename and/or SQL table.
+            save_dir (str | Path): The directory where result files will be saved.
+            feature_names (List[str] | None): Names of the solution features for labeling output. If None, generic names like 'feature_0', 'feature_1', ... , will be created.
+            save_format (Literal['csv', 'sqlite', 'both']): The format for saving results.
+            repetitions (int): The number of independent times to run the optimization.
+            verbose (bool): If True, enables detailed logging.
+
+        Returns:
+            Optional[dict]: A dictionary with the best result if repetitions is 1, otherwise None.
+        """
+        # Call the existing run function with the stored problem, searcher, and binary feature count
+        return run_optimization(
+            problem=self.problem,
+            searcher_factory=self.searcher_factory,
+            num_generations=num_generations,
+            target_name=target_name,
+            binary_features=self._binary_features,
+            save_dir=save_dir,
+            save_format=save_format,
+            feature_names=feature_names,
+            repetitions=repetitions,
+            verbose=verbose
+        )
 
 
 def create_pytorch_problem(
@@ -38,7 +138,7 @@ def create_pytorch_problem(
     """
     Creates and configures an EvoTorch Problem and a Searcher factory class for a PyTorch model.
     
-    SNES and CEM do not accept bounds, the given bounds will be used as initial bounds only.
+    SNES and CEM do not accept bounds, the given bounds will be used as an initial starting point.
     
     The Genetic Algorithm works directly with the bounds, and operators such as SimulatedBinaryCrossOver and GaussianMutation.
     
@@ -62,8 +162,8 @@ def create_pytorch_problem(
     
     # add binary bounds
     if binary_features > 0:
-        lower_bounds.extend([0.45] * binary_features)
-        upper_bounds.extend([0.55] * binary_features)
+        lower_bounds.extend([0.48] * binary_features)
+        upper_bounds.extend([0.52] * binary_features)
     
     solution_length = len(lower_bounds)
     device = inference_handler.device
