@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [11.0.0] 2025-10-16
+
+### Changed
+
+- ETL_engineering: 
+    - `TransformationRecipe`, the parameters `output_col_names()` is now optional. If None, the column names will be the same as returned by the transformer (DataFrame) or as the original input name (Series).
+    - `DataProcessor`, can add a common prefix to the outputs of any transformer.
+
+### Added
+
+- New Module: 'constants', general purpose STEM constants.
+
+- ETL_cleaning: 
+    - Enhanced cleaning regex strategy for base cleaner functions.
+    - `save_unique_values()`, new optional parameter to preserve original column order in the output filenames.
+
+- ETL_engineering: `MolecularFormulaTransformer`, parses a Polars Series of molecular formula strings into a wide DataFrame.
+
 ## [10.15.0] 2025-10-13
 
 ### Added

@@ -58,6 +58,7 @@ pip install "dragon-ml-toolbox[pytorch]"
 #### Modules:
 
 ```bash
+constants
 custom_logger
 data_exploration
 ensemble_evaluation
@@ -95,6 +96,7 @@ pip install "dragon-ml-toolbox[mice]"
 #### Modules:
 
 ```Bash
+constants
 custom_logger
 MICE_imputation
 VIF_factor
@@ -115,6 +117,7 @@ pip install "dragon-ml-toolbox[excel]"
 #### Modules:
 
 ```Bash
+constants
 custom_logger
 handle_excel
 path_manager
@@ -137,6 +140,7 @@ pip install "dragon-ml-toolbox[gui-boost,plot]"
 #### Modules:
 
 ```Bash
+constants
 custom_logger
 GUI_tools
 ensemble_inference
@@ -160,6 +164,7 @@ pip install "dragon-ml-toolbox[gui-torch,plot]"
 #### Modules:
 
 ```Bash
+constants
 custom_logger
 GUI_tools
 ML_models

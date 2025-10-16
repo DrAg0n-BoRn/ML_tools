@@ -19,20 +19,26 @@ __all__ = [
 
 
 ################ Unique Values per column #################
-def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path], verbose: bool=False) -> None:
+def save_unique_values(csv_path: Union[str, Path], 
+                       output_dir: Union[str, Path], 
+                       verbose: bool=False,
+                       keep_column_order: bool = False) -> None:
     """
     Loads a CSV file, then analyzes it and saves the unique non-null values
     from each column into a separate text file exactly as they appear.
 
     This is useful for understanding the raw categories or range of values
-    within a dataset before cleaning.
+    within a dataset before and after cleaning.
 
     Args:
-        csv_path (Union[str, Path]):
+        csv_path (str | Path):
             The file path to the input CSV file.
-        output_dir (Union[str, Path]):
+        output_dir (str | Path):
             The path to the directory where the .txt files will be saved.
             The directory will be created if it does not exist.
+        keep_column_order (bool):
+            If True, prepends a numeric prefix (e.g., '1_', '2_') to each
+            output filename to maintain the original column order.
     """
     # --- 1. Input Validation ---
     csv_path = make_fullpath(input_path=csv_path, enforce="file")
@@ -74,7 +80,12 @@ def save_unique_values(csv_path: Union[str, Path], output_dir: Union[str, Path],
         sanitized_name = sanitize_filename(column_name)
         if not sanitized_name.strip('_'):
             sanitized_name = f'column_{i}'
-        file_path = output_dir / f"{sanitized_name}_unique_values.txt"
+        
+        # --- create filename prefix ---
+        # If keep_column_order is True, create a prefix like "1_", "2_", etc.
+        prefix = f"{i + 1}_" if keep_column_order else ''
+        
+        file_path = output_dir / f"{prefix}{sanitized_name}_unique_values.txt"
 
         # --- Write to file ---
         try:
@@ -126,9 +137,10 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         'ｓ': 's', 'ｔ': 't', 'ｕ': 'u', 'ｖ': 'v', 'ｗ': 'w', 'ｘ': 'x',
         'ｙ': 'y', 'ｚ': 'z',
         # Punctuation
-        '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', 
+        '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', '∼': '~',
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
-        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=', '·': '-',
+        '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=', '·': '', '⋅': '',
+        '¯': '-',
         
         # Commas (avoid commas in entries)
         '，': ';',
@@ -136,6 +148,8 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         '、':';',
         
         # Others
+        'σ': '',
+        '□': '',
         '©': '',
         '®': '',
         '™': '',
@@ -143,7 +157,6 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         
         # Replace special characters in entries
         r'\\': '_',
-        # '/': '_', # keep forward slash 
         
         # Typographical standardization
         # Unify various dashes and hyphens to a standard hyphen
