@@ -22,7 +22,7 @@ __all__ = [
 def save_unique_values(csv_path: Union[str, Path], 
                        output_dir: Union[str, Path], 
                        verbose: bool=False,
-                       keep_column_order: bool = False) -> None:
+                       keep_column_order: bool = True) -> None:
     """
     Loads a CSV file, then analyzes it and saves the unique non-null values
     from each column into a separate text file exactly as they appear.

@@ -106,7 +106,7 @@ class DataProcessor:
     """
     Transforms a Polars DataFrame based on a provided `TransformationRecipe` object.
     
-    Use the method `transform()`.
+    Use the methods `transform()` or `load_transform_save()`.
     """
     def __init__(self, recipe: TransformationRecipe):
         """
@@ -186,7 +186,7 @@ class DataProcessor:
                             
                             # Case 2: Transformer's output is an independent name.
                             # Action: Prepend the prefix to the output name.
-                            # Example: input='ratio', output='A_div_B', prefix='spec' -> 'spec_A_div_B'
+                            # Example: input='ratio', output='A_B', prefix='spec' -> 'spec_A_B'
                             else:
                                 new_names[col] = f"{prefix}_{col}"
                                 
@@ -299,7 +299,7 @@ class BinaryTransformer:
             _LOGGER.error("Provide either 'true_keywords' or 'false_keywords', but not both.")
             raise ValueError()
         if true_keywords is None and false_keywords is None:
-            _LOGGER.error("You must provide either 'true_keywords' or 'false_keywords'.")
+            _LOGGER.error("Provide either 'true_keywords' or 'false_keywords'.")
             raise ValueError()
 
         # --- Configuration ---
@@ -331,16 +331,17 @@ class BinaryTransformer:
         Returns:
             pl.Series: A new Series of type UInt8 containing 1s and 0s.
         """
+        column_base_name = column.name
         # Create a boolean Series: True if any keyword is found, else False
         contains_keyword = column.str.contains(self.pattern)
 
         # Apply logic and cast directly to integer type
         if self.mode == "true_mode":
             # True -> 1, False -> 0
-            return contains_keyword.cast(pl.UInt8)
+            return contains_keyword.cast(pl.UInt8).alias(column_base_name)
         else: # false_mode
             # We want the inverse: True -> 0, False -> 1
-            return (~contains_keyword).cast(pl.UInt8)
+            return (~contains_keyword).cast(pl.UInt8).alias(column_base_name)
 
 
 class AutoDummifier:
@@ -410,11 +411,12 @@ class MultiBinaryDummifier:
         Returns:
             pl.DataFrame: A DataFrame where each column corresponds to a keyword.
         """
+        column_base_name = column.name
         # Ensure the input is treated as a string, preserving nulls
         str_column = column.cast(pl.Utf8)
         
         output_expressions = []
-        for i, keyword in enumerate(self.keywords):
+        for keyword in self.keywords:
             # Escape keyword to treat it as a literal, not a regex pattern
             base_pattern = re.escape(keyword)
 
@@ -428,7 +430,7 @@ class MultiBinaryDummifier:
                 .when(str_column.str.contains(pattern))
                 .then(pl.lit(1, dtype=pl.UInt8))
                 .otherwise(pl.lit(0, dtype=pl.UInt8))
-                .alias(f"col_{i}") # Generic name for DataProcessor
+                .alias(f"{column_base_name}_{keyword}") # name for DataProcessor
             )
             output_expressions.append(expr)
 
@@ -472,6 +474,7 @@ class KeywordDummifier:
         Returns:
             pl.DataFrame: A DataFrame with one-hot encoded columns.
         """
+        column_base_name = column.name
         column = column.cast(pl.Utf8)
         
         categorize_expr = pl.when(pl.lit(False)).then(pl.lit(None, dtype=pl.Utf8))
@@ -490,22 +493,24 @@ class KeywordDummifier:
                 column.str.contains(pattern)
             ).then(pl.lit(name))
         
-        categorize_expr = categorize_expr.otherwise(None).alias("category")
+        dummy_name = 'dummy_category'
+        
+        categorize_expr = categorize_expr.otherwise(None).alias(dummy_name)
 
         temp_df = pl.select(categorize_expr)
-        df_with_dummies = temp_df.to_dummies(columns=["category"])
+        df_with_dummies = temp_df.to_dummies(columns=[dummy_name])
         
         final_columns = []
         for name in self.group_names:
-            dummy_col_name = f"category_{name}"
+            dummy_col_name = f"{dummy_name}_{name}"
             if dummy_col_name in df_with_dummies.columns:
-                # The alias here uses the group name as the temporary column name
+                # The alias here uses the group name as the final column name
                 final_columns.append(
-                    df_with_dummies.get_column(dummy_col_name).alias(name)
+                    df_with_dummies.get_column(dummy_col_name).alias(f"{column_base_name}_{name}")
                 )
             else:
                 # If a group had no matches, create a column of zeros
-                final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(name))
+                final_columns.append(pl.lit(0, dtype=pl.UInt8).alias(f"{column_base_name}_{name}"))
 
         return pl.select(final_columns)
 
@@ -574,6 +579,7 @@ class NumberExtractor:
         Returns:
             pl.Series: A new Series containing the extracted numbers.
         """
+        column_base_name = column.name
         # Extract the first (and only) capturing group
         extracted = column.str.extract(self.regex_pattern, 1)
         
@@ -584,7 +590,7 @@ class NumberExtractor:
         if self.dtype == "float" and self.round_digits is not None:
             return casted.round(self.round_digits)
             
-        return casted
+        return casted.alias(column_base_name)
 
 
 class MultiNumberExtractor:
@@ -645,6 +651,7 @@ class MultiNumberExtractor:
         """
         Executes the multi-number extraction logic. Preserves nulls from the input column.
         """
+        column_base_name = column.name
         output_expressions = []
         for i in range(self.num_outputs):
             # Define the core extraction logic for the i-th number
@@ -664,7 +671,7 @@ class MultiNumberExtractor:
                 pl.when(column.is_not_null())
                 .then(extraction_expr)
                 .otherwise(None)
-                .alias(f"col_{i}") # Name the final output expression
+                .alias(f"{column_base_name}_{i}") # Name the final output expression
             )
             
             output_expressions.append(final_expr)
@@ -731,6 +738,7 @@ class TemperatureExtractor:
         Returns:
             pl.Series: A new Series containing the final temperature values as floats.
         """
+        column_base_name = column.name
         # --- Step 1: Extract number(s) to get a Celsius value expression ---
         if self.average_mode:
             # Extract all numbers and compute their mean. Polars' list.mean()
@@ -759,7 +767,7 @@ class TemperatureExtractor:
         # --- Step 3: Round the result and return as a Series ---
         # The select().to_series() pattern is a robust way to execute an
         # expression and guarantee a Series is returned.
-        return pl.select(final_expr.round(2)).to_series()
+        return pl.select(final_expr.round(2)).to_series().alias(column_base_name)
 
 
 class MultiTemperatureExtractor:
@@ -820,6 +828,7 @@ class MultiTemperatureExtractor:
         """
         Applies the multi-temperature extraction and conversion logic.
         """
+        column_base_name = column.name
         output_expressions = []
         for i in range(self.num_outputs):
             # --- Step 1: Extract the i-th number as a Celsius value ---
@@ -850,7 +859,7 @@ class MultiTemperatureExtractor:
                 pl.when(column.is_not_null())
                 .then(final_expr)
                 .otherwise(None)
-                .alias(f"col_{i}") # Temporary name for DataProcessor
+                .alias(f"{column_base_name}_{i}") # Temporary name for DataProcessor
             )
             
             output_expressions.append(final_expr)
@@ -892,6 +901,7 @@ class RatioCalculator:
         """
         Applies the ratio calculation logic to the input column. Uses .str.extract() for maximum stability and includes optional handling for zeros and single numbers.
         """
+        column_base_name = column.name
         # Extract numerator (group 1) and denominator (group 2) separately.
         numerator_expr = column.str.extract(self.regex_pattern, 1).cast(pl.Float64, strict=False)
         denominator_expr = column.str.extract(self.regex_pattern, 2).cast(pl.Float64, strict=False)
@@ -929,7 +939,7 @@ class RatioCalculator:
         else:
             final_expr = ratio_expr
 
-        return pl.select(final_expr.round(4)).to_series()
+        return pl.select(final_expr.round(4)).to_series().alias(column_base_name)
 
 
 class TriRatioCalculator:
@@ -970,6 +980,7 @@ class TriRatioCalculator:
         """
         Applies the robust tri-ratio logic using the lazy API.
         """
+        column_base_name = column.name
         # Wrap the input Series in a DataFrame to use the lazy expression API
         temp_df = column.to_frame()
 
@@ -994,8 +1005,8 @@ class TriRatioCalculator:
 
         # Execute the expressions and return the final DataFrame
         return temp_df.select(
-            A_div_B=ratio_ab_expr,
-            A_div_C=ratio_ac_expr
+            ratio_ab_expr.alias(f"{column_base_name}_A_to_B"),
+            ratio_ac_expr.alias(f"{column_base_name}_A_to_C")
         )
 
 
@@ -1036,6 +1047,7 @@ class CategoryMapper:
         Returns:
             pl.Series: A new Series with categories mapped to numbers.
         """
+        column_base_name = column.name
         # Ensure the column is treated as a string for matching keys
         str_column = column.cast(pl.Utf8)
 
@@ -1052,7 +1064,7 @@ class CategoryMapper:
             pl.lit(self.default_value)
         )
         
-        return pl.select(final_expr).to_series()
+        return pl.select(final_expr).to_series().alias(column_base_name)
 
 
 class RegexMapper:
@@ -1116,6 +1128,7 @@ class RegexMapper:
             pl.Series: A new Series with strings mapped to numbers based on
                        the first matching regex pattern.
         """
+        column_base_name = column.name
         # pl.String is the modern alias for pl.Utf8
         str_column = column.cast(pl.String)
 
@@ -1130,7 +1143,7 @@ class RegexMapper:
                 .otherwise(mapping_expr)
             )
         
-        return pl.select(mapping_expr).to_series()
+        return pl.select(mapping_expr).to_series().alias(column_base_name)
 
 
 class ValueBinner:
@@ -1180,6 +1193,7 @@ class ValueBinner:
             pl.Series: A new Series of integer labels for the bins. Values
                        outside the specified breaks will become null.
         """
+        column_base_name = column.name
         # `cut` creates a new column of type Categorical
         binned_column = column.cut(
             breaks=self.breaks,
@@ -1189,7 +1203,7 @@ class ValueBinner:
         
         # to_physical() converts the Categorical type to its underlying
         # integer representation (u32), which is perfect for ML.
-        return binned_column.to_physical()
+        return binned_column.to_physical().alias(column_base_name)
 
 
 class DateFeatureExtractor:
@@ -1198,16 +1212,6 @@ class DateFeatureExtractor:
 
     It can handle columns that are already in a Polars Date/Datetime format,
     or it can parse string columns if a format is provided.
-
-    Args:
-        features (List[str]):
-            A list of the date/time features to extract. Supported features are:
-            'year', 'month', 'day', 'hour', 'minute', 'second', 'millisecond',
-            'microsecond', 'nanosecond', 'ordinal_day' (day of year),
-            'weekday' (Mon=1, Sun=7), 'week' (week of year), and 'timestamp'.
-        format (str | None):
-            The format code used to parse string dates (e.g., "%Y-%m-%d %H:%M:%S").
-            Use if the input column is not a Date or Datetime type.
     """
     
     ALLOWED_FEATURES = {
@@ -1220,6 +1224,17 @@ class DateFeatureExtractor:
         features: List[str],
         format: Optional[str] = None,
     ):
+        """
+        Args:
+            features (List[str]):
+                A list of the date/time features to extract. Supported features are:
+                'year', 'month', 'day', 'hour', 'minute', 'second', 'millisecond',
+                'microsecond', 'nanosecond', 'ordinal_day' (day of year),
+                'weekday' (Mon=1, Sun=7), 'week' (week of year), 'timestamp'.
+            format (str | None):
+                The format code used to parse string dates (e.g., "%Y-%m-%d %H:%M:%S").
+                Use if the input column is not a Date or Datetime type.
+        """
         # --- Validation ---
         if not isinstance(features, list) or not features:
             _LOGGER.error("'features' must be a non-empty list of strings.")
@@ -1243,6 +1258,7 @@ class DateFeatureExtractor:
         Returns:
             pl.DataFrame: A DataFrame with columns for each extracted feature.
         """
+        column_base_name = column.name
         date_col = column
         # First, parse strings into a datetime object if a format is given
         if self.format is not None:
@@ -1258,7 +1274,7 @@ class DateFeatureExtractor:
                 expr = getattr(date_col.dt, feature)()
             
             # Alias with a generic name for the processor to handle
-            output_expressions.append(expr.alias(f"col_{i}"))
+            output_expressions.append(expr.alias(f"{column_base_name}_{feature}"))
             
         return pl.select(output_expressions)
 
@@ -1275,20 +1291,10 @@ class MolecularFormulaTransformer:
     It is designed to be used within the DataProcessor pipeline.
     """
 
-    def __init__(self, prefix: str = "Fraction", separator: str = "_"):
+    def __init__(self):
         """
         Initializes the transformer and pre-compiles the regex pattern.
-
-        Args:
-            prefix (str): The prefix for the output column names. Defaults to "Fraction".
-            separator (str): The separator between the prefix and element symbol. Defaults to "_".
         """
-        if not isinstance(prefix, str) or not isinstance(separator, str):
-            _LOGGER.error("'prefix' and 'separator' must be strings.")
-            raise TypeError()
-            
-        self.prefix = prefix
-        self.separator = separator
         # Sort symbols by length to prevent matching 'C' in 'Co'
         sorted_symbols = sorted(CHEMICAL_ELEMENT_SYMBOLS, key=len, reverse=True)
         
@@ -1305,6 +1311,7 @@ class MolecularFormulaTransformer:
         Returns:
             A Polars DataFrame with columns for every chemical element.
         """
+        column_base_name = column.name
         def parse_formula(formula: str) -> dict:
             """Helper to parse a single formula string into a dictionary."""
             if not isinstance(formula, str) or not formula:
@@ -1328,7 +1335,7 @@ class MolecularFormulaTransformer:
         # Ensure all possible element columns are created, filling with 0
         select_expressions = []
         for symbol in CHEMICAL_ELEMENT_SYMBOLS:
-            col_name = f"{self.prefix}{self.separator}{symbol}"
+            col_name = f"{column_base_name}_{symbol}"
             if symbol in df.columns:
                 expr = pl.col(symbol).fill_null(0).alias(col_name)
             else:
