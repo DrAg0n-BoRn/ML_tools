@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,10 +6,12 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
 import warnings
 from pathlib import Path
+
 from .utilities import yield_dataframes_from_dir, save_dataframe
 from .path_manager import sanitize_filename, make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
+
 
 __all__ = [
     "compute_vif",

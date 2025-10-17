@@ -3,6 +3,7 @@ from torch import nn
 from typing import List, Union, Tuple, Dict, Any
 from pathlib import Path
 import json
+
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from ._script_info import _script_info
@@ -155,6 +156,7 @@ class _BaseAttention(_BaseMLP):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # By default, models inheriting this do not have the flag.
+        self.attention = None
         self.has_interpretable_attention = False
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -165,7 +167,7 @@ class _BaseAttention(_BaseMLP):
     def forward_attention(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns logits and attention weights."""
         # This logic is now shared and defined in one place
-        x, attention_weights = self.attention(x)
+        x, attention_weights = self.attention(x) # type: ignore
         x = self.mlp(x)
         logits = self.output_layer(x)
         return logits, attention_weights

@@ -417,7 +417,7 @@ def encode_categorical_features(
 
     # Handle the dataset splitting logic
     if split_resulting_dataset:
-        df_categorical = df_encoded[valid_columns].to_frame()
+        df_categorical = df_encoded[valid_columns].to_frame() # type: ignore
         df_non_categorical = df.drop(columns=valid_columns)
         return mappings, df_non_categorical, df_categorical
     else:
@@ -493,9 +493,9 @@ def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
     return df_cont, df_bin # type: ignore
 
 
-def plot_correlation_heatmap(df: pd.DataFrame, 
+def plot_correlation_heatmap(df: pd.DataFrame,
+                             plot_title: str,
                              save_dir: Union[str, Path, None] = None, 
-                             plot_title: str="Correlation Heatmap",
                              method: Literal["pearson", "kendall", "spearman"]="pearson"):
     """
     Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
@@ -503,7 +503,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     Args:
         df (pd.DataFrame): The input dataset.
         save_dir (str | Path | None): If provided, the heatmap will be saved to this directory as a svg file.
-        plot_title: To make different plots, or overwrite existing ones.
+        plot_title: The suffix "`method` Correlation Heatmap" will be automatically appended.
         method (str): Correlation method to use. Must be one of:
             - 'pearson' (default): measures linear correlation (assumes normally distributed data),
             - 'kendall': rank correlation (non-parametric),
@@ -518,6 +518,9 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     if numeric_df.empty:
         _LOGGER.warning("No numeric columns found. Heatmap not generated.")
         return
+    if method not in ["pearson", "kendall", "spearman"]:
+        _LOGGER.error(f"'method' must be pearson, kendall, or spearman.")
+        raise ValueError()
     
     corr = numeric_df.corr(method=method)
 
@@ -538,7 +541,10 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         cbar_kws={"shrink": 0.8}
     )
     
-    plt.title(plot_title)
+    # add suffix to title
+    full_plot_title = f"{plot_title} - {method.title()} Correlation Heatmap"
+    
+    plt.title(full_plot_title)
     plt.xticks(rotation=45, ha='right')
     plt.yticks(rotation=0)
 
@@ -547,13 +553,13 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     if save_dir:
         save_path = make_fullpath(save_dir, make=True)
         # sanitize the plot title to save the file
-        plot_title = sanitize_filename(plot_title)
-        plot_title = plot_title + ".svg"
+        sanitized_plot_title = sanitize_filename(plot_title)
+        plot_filename = sanitized_plot_title + ".svg"
         
-        full_path = save_path / plot_title
+        full_path = save_path / plot_filename
         
         plt.savefig(full_path, bbox_inches="tight", format='svg')
-        _LOGGER.info(f"Saved correlation heatmap: '{plot_title}'")
+        _LOGGER.info(f"Saved correlation heatmap: '{plot_filename}'")
     
     plt.show()
     plt.close()
@@ -968,7 +974,7 @@ def reconstruct_one_hot(
         # Handle rows where all OHE columns were 0 (e.g., original value was NaN).
         # In these cases, idxmax returns the first column name, but the sum of values is 0.
         all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0
-        new_column_values.loc[all_zero_mask] = np.nan
+        new_column_values.loc[all_zero_mask] = np.nan # type: ignore
 
         # Assign the new reconstructed column to the DataFrame
         new_df[base_name] = new_column_values

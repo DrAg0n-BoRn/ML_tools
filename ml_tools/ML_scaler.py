@@ -2,13 +2,16 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from typing import Union, List, Optional
+
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .path_manager import make_fullpath
 
+
 __all__ = [
     "PytorchScaler"
 ]
+
 
 class PytorchScaler:
     """

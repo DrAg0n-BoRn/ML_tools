@@ -18,7 +18,8 @@ from .ML_inference import PyTorchInferenceHandler
 from .keys import PyTorchInferenceKeys
 from .SQL import DatabaseManager
 from .optimization_tools import _save_result
-from .utilities import threshold_binary_values, save_dataframe
+from .utilities import save_dataframe
+from .math_utilities import threshold_binary_values
 
 
 __all__ = [

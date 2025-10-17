@@ -2,9 +2,10 @@ from pprint import pprint
 from typing import Optional, List, Dict, Union, Literal
 from pathlib import Path
 import re
+import sys
+
 from ._script_info import _script_info
 from ._logger import _LOGGER
-import sys
 
 
 __all__ = [

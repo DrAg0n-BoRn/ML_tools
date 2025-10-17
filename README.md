@@ -9,7 +9,7 @@ A collection of Python utilities for data science and machine learning, structur
 
 ## Installation
 
-**Python 3.10+**
+**Python 3.12**
 
 ### Via PyPI
 
@@ -19,22 +19,22 @@ Install the latest stable release from PyPI:
 pip install dragon-ml-toolbox
 ```
 
-### Via GitHub (Editable)
-
-Clone the repository and install in editable mode with optional dependencies:
-
-```bash
-git clone https://github.com/DrAg0n-BoRn/ML_tools.git
-cd ML_tools
-pip install -e .
-```
-
 ### Via conda-forge
 
 Install from the conda-forge channel:
 
 ```bash
 conda install -c conda-forge dragon-ml-toolbox
+```
+
+### Via GitHub (Editable)
+
+Clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/DrAg0n-BoRn/ML_tools.git
+cd ML_tools
+pip install -e .
 ```
 
 ## Modular Installation
@@ -47,13 +47,7 @@ Installs a comprehensive set of tools for typical data science workflows, includ
 pip install "dragon-ml-toolbox[ML]"
 ```
 
-To install the standard CPU-only versions of Torch and Torchvision:
-
-```Bash
-pip install "dragon-ml-toolbox[pytorch]"
-```
-
-⚠️ To make use of GPU acceleration (highly recommended), follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
+⚠️ PyTorch required, follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 #### Modules:
 
@@ -66,6 +60,7 @@ ensemble_inference
 ensemble_learning
 ETL_cleaning
 ETL_engineering
+math_utilities
 ML_callbacks
 ML_datasetmaster
 ML_evaluation_multi
@@ -75,10 +70,12 @@ ML_models
 ML_optimization
 ML_scaler
 ML_trainer
+ML_utilities
 optimization_tools
 path_manager
 PSO_optimization
 RNN_forecast
+serde
 SQL
 utilities
 ```
@@ -98,7 +95,9 @@ pip install "dragon-ml-toolbox[mice]"
 ```Bash
 constants
 custom_logger
+math_utilities
 MICE_imputation
+serde
 VIF_factor
 path_manager
 utilities
@@ -127,14 +126,10 @@ path_manager
 
 ### 🎰 GUI for Boosting Algorithms (XGBoost, LightGBM) [gui-boost]
 
-For GUIs that include plotting functionality, you must also install the [plot] extra.
+GUI tools compatible with XGBoost and LightGBM models used for inference.
 
 ```Bash
 pip install "dragon-ml-toolbox[gui-boost]"
-```
-
-```Bash
-pip install "dragon-ml-toolbox[gui-boost,plot]"
 ```
 
 #### Modules:
@@ -145,20 +140,17 @@ custom_logger
 GUI_tools
 ensemble_inference
 path_manager
+serde
 ```
 
 ---
 
 ### 🤖 GUI for PyTorch Models [gui-torch]
 
-For GUIs that include plotting functionality, you must also install the [plot] extra.
+GUI tools compatible with PyTorch models used for inference.
 
 ```Bash
 pip install "dragon-ml-toolbox[gui-torch]"
-```
-
-```Bash
-pip install "dragon-ml-toolbox[gui-torch,plot]"
 ```
 
 #### Modules:
@@ -192,6 +184,6 @@ pip install "dragon-ml-toolbox[nuitka]"
 After installation, import modules like this:
 
 ```python
-from ml_tools.utilities import serialize_object, deserialize_object
+from ml_tools.serde import serialize_object, deserialize_object
 from ml_tools import custom_logger
 ```

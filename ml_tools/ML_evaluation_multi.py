@@ -25,6 +25,7 @@ from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 
+
 __all__ = [
     "multi_target_regression_metrics",
     "multi_label_classification_metrics",

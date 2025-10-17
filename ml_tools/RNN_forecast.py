@@ -1,7 +1,9 @@
 import torch
 from torch import nn
 import numpy as np
+
 from ._script_info import _script_info
+
 
 __all__ = [
     "rnn_forecast"

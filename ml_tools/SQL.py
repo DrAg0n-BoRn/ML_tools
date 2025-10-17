@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Literal
+
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .path_manager import make_fullpath, sanitize_filename

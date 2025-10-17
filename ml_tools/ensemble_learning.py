@@ -13,7 +13,8 @@ import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.base import clone
 
-from .utilities import yield_dataframes_from_dir, serialize_object, train_dataset_yielder
+from .utilities import yield_dataframes_from_dir, train_dataset_yielder
+from .serde import serialize_object
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from .keys import EnsembleKeys
@@ -481,7 +482,7 @@ def train_test_pipeline(model, model_name: str, dataset_id: str, task: Literal["
 
 ###### 4. Execution ######
 def run_ensemble_pipeline(datasets_dir: Union[str,Path], save_dir: Union[str,Path], target_columns: list[str], model_object: Union[RegressionTreeModels, ClassificationTreeModels],
-         handle_classification_imbalance: HandleImbalanceStrategy=None, save_model: bool=False,
+         handle_classification_imbalance: HandleImbalanceStrategy=None, save_model: bool=True,
          test_size: float=0.2, debug:bool=False, generate_learning_curves: bool = False):
     #Check models
     if isinstance(model_object, RegressionTreeModels):

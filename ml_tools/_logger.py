@@ -8,8 +8,6 @@ except ImportError:
     colorlog = None
 
 
-
-
 # --- Centralized Configuration ---
 LEVEL_EMOJIS = {
     logging.INFO: "✅",

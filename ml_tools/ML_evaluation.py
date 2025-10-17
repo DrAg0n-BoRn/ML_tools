@@ -18,9 +18,10 @@ from sklearn.metrics import (
 import torch
 import shap
 from pathlib import Path
+from typing import Union, Optional, List
+
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
-from typing import Union, Optional, List
 from ._script_info import _script_info
 from .keys import SHAPKeys
 

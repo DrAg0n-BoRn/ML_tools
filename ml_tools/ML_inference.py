@@ -11,6 +11,7 @@ from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from .keys import PyTorchInferenceKeys
 
+
 __all__ = [
     "PyTorchInferenceHandler",
     "PyTorchInferenceHandlerMulti",

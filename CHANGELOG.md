@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.0.0] 2025-10-17
+
+### Changed
+
+- Recommended Python version 3.12.
+- ensemble_learning: `run_ensemble_pipeline()`, the model will be saved by default.
+- data_exploration: `plot_correlation_heatmap()`, the plot title must be explicitly defined, automatic suffix added.
+- ETL_engineering: `AutoDummifier`, no longer returns '_null' category columns.
+- utilities: 
+    - `select_features_by_shap()`, the SHAP value threshold must be explicitly defined.
+    - `normalize_mixed_list()`, moved to module "math_utilities".
+    - `threshold_binary_values()`, moved to module "math_utilities".
+    - `threshold_binary_values_batch()`, moved to module "math_utilities".
+    - `find_model_artifacts()`, moved to module "ML_utilities".
+    - `select_features_by_shap()`, moved to module "ML_utilities".
+    - `serialize_object()`, moved to module "serde".
+    - `deserialize_object()`, moved to module "serde".
+
+### Added
+
+- New module: "ML_utilities"
+- New module: "serde"
+- New module: "math_utilities"
+- math_utilities: `discretize_categorical_value()`, rounds specified columns of a 2D NumPy array to the nearest integer and clamps the result to a valid categorical range.
+- utilities: `save_dataframe_path()`, convenience wrapper for `save_dataframe()` using a single Path object.
+
+### Removed
+
+- Optional dependency: Base CPU installation of PyTorch.
+- Optional dependency: independent installation of matplotlib and seaborn.
+
 ## [11.1.1] 2025-10-17
 
 ### Fixed

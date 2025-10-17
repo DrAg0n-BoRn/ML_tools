@@ -4,8 +4,9 @@ import traceback
 import FreeSimpleGUI as sg
 from functools import wraps
 from typing import Any, Dict, Tuple, List, Literal, Union, Optional, Callable
-from ._script_info import _script_info
 import numpy as np
+
+from ._script_info import _script_info
 from ._logger import _LOGGER
 from .keys import _OneHotOtherPlaceholder
 

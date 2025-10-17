@@ -1,13 +1,13 @@
 import numpy as np
 import torch
 from tqdm.auto import tqdm
+from typing import Union, Literal, Optional
+from pathlib import Path
+
 from .path_manager import make_fullpath, sanitize_filename
 from .keys import PyTorchLogKeys
 from ._logger import _LOGGER
-from typing import Optional
 from ._script_info import _script_info
-from typing import Union, Literal
-from pathlib import Path
 
 
 __all__ = [
