@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [11.1.1] 2025-10-17
+
+### Fixed
+
+- ETL_engineering: `MultiNumberExtractor`, fix bug when parsing non-existent numbers.
+
 ## [11.1.0] 2025-10-17
+
+### Changed
 
 - ETL_engineering: Standardize output column names of transformer classes returning a DataFrame to better work with the `DataProcessor` pipeline.
 - ETL_cleaning: `save_unique_values()`, preserves original column order in the output filenames by default.

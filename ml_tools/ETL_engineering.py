@@ -531,7 +531,7 @@ class NumberExtractor:
         round_digits (int | None):
             If the dtype is 'float', you can specify the number of decimal
             places to round the result to. This parameter is ignored if
-            dtype is 'int'. Defaults to None (no rounding).
+            dtype is 'int'.
     """
     def __init__(
         self,
@@ -657,7 +657,7 @@ class MultiNumberExtractor:
             # Define the core extraction logic for the i-th number
             extraction_expr = (
                 column.str.extract_all(self.regex_pattern)
-                .list.get(i)
+                .list.get(i, null_on_oob=True)
                 .cast(self.polars_dtype, strict=False)
             )
 
