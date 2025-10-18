@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.0.1] 2025-10-18
+
+- Minor fix for conda-forge release.
+
 ## [12.0.0] 2025-10-17
 
 ### Changed
