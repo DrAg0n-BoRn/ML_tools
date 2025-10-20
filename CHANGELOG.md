@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.2.0] 2025-10-20
+
+### Added
+
+- data_exploration: `reconstruct_binary()`, reconstructs new categorical columns from existing binary (0/1) columns.
+
 ## [12.1.0] 2025-10-20
 
 ### Added

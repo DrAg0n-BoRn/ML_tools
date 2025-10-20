@@ -3,7 +3,7 @@ from pandas.api.types import is_numeric_dtype
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Union, Literal, Dict, Tuple, List, Optional
+from typing import Union, Literal, Dict, Tuple, List, Optional, Any
 from pathlib import Path
 import re
 
@@ -33,7 +33,8 @@ __all__ = [
     "match_and_filter_columns_by_regex",
     "standardize_percentages",
     "create_transformer_categorical_map",
-    "reconstruct_one_hot"
+    "reconstruct_one_hot",
+    "reconstruct_binary"
 ]
 
 
@@ -1081,7 +1082,110 @@ def reconstruct_one_hot(
         unique_cols_to_drop = list(set(all_ohe_cols_to_drop))
         new_df.drop(columns=unique_cols_to_drop, inplace=True)
         _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original one-hot encoded columns.")
-    
+
+    _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
+
+    return new_df
+
+
+def reconstruct_binary(
+    df: pd.DataFrame,
+    reconstruction_map: Dict[str, Tuple[str, Any, Any]],
+    drop_original: bool = True,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Reconstructs new categorical columns from existing binary (0/1) columns.
+
+    Used to reverse a binary encoding by mapping 0 and 1 back to
+    descriptive categorical labels.
+
+    Args:
+        df (pd.DataFrame):
+            The input DataFrame.
+        reconstruction_map (Dict[str, Tuple[str, Any, Any]]):
+            A dictionary defining the reconstructions.
+            Format:
+            { "new_col_name": ("source_col_name", "label_for_0", "label_for_1") }
+            Example:
+            {
+                "Sex": ("Sex_male", "Female", "Male"),
+                "Smoker": ("Is_Smoker", "No", "Yes")
+            }
+        drop_original (bool):
+            If True, the original binary source columns (e.g., "Sex_male")
+            will be dropped from the returned DataFrame.
+        verbose (bool):
+            If True, prints the details of each reconstruction.
+
+    Returns:
+        pd.DataFrame:
+            A new DataFrame with the reconstructed categorical columns.
+
+    Raises:
+        TypeError: If `df` is not a pandas DataFrame.
+        ValueError: If `reconstruction_map` is not a dictionary or a
+                    configuration is invalid (e.g., column name collision).
+
+    Notes:
+        - The function operates on a copy of the DataFrame.
+        - Rows with `NaN` in the source column will have `NaN` in the
+          new column.
+        - Values in the source column other than 0 or 1 (e.g., 2) will
+          result in `NaN` in the new column.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+
+    if not isinstance(reconstruction_map, dict):
+        _LOGGER.error("`reconstruction_map` must be a dictionary with the required format.")
+        raise ValueError()
+
+    new_df = df.copy()
+    source_cols_to_drop: List[str] = []
+    reconstructed_count = 0
+
+    _LOGGER.info(f"Attempting to reconstruct {len(reconstruction_map)} binary feature(s).")
+
+    for new_col_name, config in reconstruction_map.items():
+        
+        # --- 1. Validation ---
+        if not (isinstance(config, tuple) and len(config) == 3):
+            _LOGGER.error(f"Config for '{new_col_name}' is invalid. Must be a 3-item tuple. Skipping.")
+            raise ValueError()
+
+        source_col, label_for_0, label_for_1 = config
+
+        if source_col not in new_df.columns:
+            _LOGGER.error(f"Source column '{source_col}' for new column '{new_col_name}' not found. Skipping.")
+            raise ValueError()
+
+        if new_col_name in new_df.columns and verbose:
+            _LOGGER.warning(f"New column '{new_col_name}' already exists and will be overwritten.")
+
+        if new_col_name == source_col:
+            _LOGGER.error(f"New column name '{new_col_name}' cannot be the same as source column '{source_col}'.")
+            raise ValueError()
+
+        # --- 2. Reconstruction ---
+        # .map() handles 0, 1, preserves NaNs, and converts any other value to NaN.
+        mapping_dict = {0: label_for_0, 1: label_for_1}
+        new_df[new_col_name] = new_df[source_col].map(mapping_dict)
+
+        # --- 3. Logging/Tracking ---
+        source_cols_to_drop.append(source_col)
+        reconstructed_count += 1
+        if verbose:
+            print(f"  - Reconstructed '{new_col_name}' from '{source_col}' (0='{label_for_0}', 1='{label_for_1}').")
+
+    # --- 4. Cleanup ---
+    if drop_original and source_cols_to_drop:
+        # Use set() to avoid duplicates if the same source col was used
+        unique_cols_to_drop = list(set(source_cols_to_drop))
+        new_df.drop(columns=unique_cols_to_drop, inplace=True)
+        _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original binary source column(s).")
+
     _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
 
     return new_df
