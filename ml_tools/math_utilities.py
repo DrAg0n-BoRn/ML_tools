@@ -174,16 +174,18 @@ def threshold_binary_values_batch(
 def discretize_categorical_values(
     input_array: np.ndarray,
     categorical_info: dict[int, int],
-    start_at_zero: bool = False
+    start_at_zero: bool = True
 ) -> np.ndarray:
     """
     Rounds specified columns of a 2D NumPy array to the nearest integer and
     clamps the result to a valid categorical range.
+    
+    If a 1D array is provided, it is treated as a single batch.
 
     Parameters
     ----------
     input_array : np.ndarray
-        2D array with shape (batch_size, n_features) containing continuous values.
+        1D array (n_features,) or 2D array with shape (batch_size, n_features) containing continuous values.
     categorical_info : dict[int, int]
         A dictionary mapping column indices to their cardinality (number of categories).
         Example: {3: 4} means column 3 will be clamped to its 4 valid categories.
@@ -195,10 +197,22 @@ def discretize_categorical_values(
     -------
     np.ndarray
         A new array with the specified columns converted to integer categories.
+        Shape matches the input array's original shape.
     """
     # --- Input Validation ---
-    if input_array.ndim != 2:
-        _LOGGER.error(f"Expected 2D array, got {input_array.ndim}D array.")
+    if not isinstance(input_array, np.ndarray):
+         _LOGGER.error(f"Expected np.ndarray, got {type(input_array)}.")
+         raise ValueError()
+    
+    if input_array.ndim == 1:
+        # Reshape 1D array (n_features,) to 2D (1, n_features)
+        working_array = input_array.reshape(1, -1)
+        original_was_1d = True
+    elif input_array.ndim == 2:
+        working_array = input_array
+        original_was_1d = False
+    else:
+        _LOGGER.error(f"Expected 1D or 2D array, got {input_array.ndim}D array.")
         raise ValueError()
 
     if not isinstance(categorical_info, dict) or not categorical_info:
@@ -207,6 +221,9 @@ def discretize_categorical_values(
 
     _, total_features = input_array.shape
     for col_idx, cardinality in categorical_info.items():
+        if not isinstance(col_idx, int):
+             _LOGGER.error(f"Column index key {col_idx} is not an integer.")
+             raise TypeError()
         if not (0 <= col_idx < total_features):
             _LOGGER.error(f"Column index {col_idx} is out of bounds for an array with {total_features} features.")
             raise ValueError()
@@ -215,7 +232,7 @@ def discretize_categorical_values(
             raise ValueError()
 
     # --- Core Logic ---
-    output_array = input_array.copy()
+    output_array = working_array.copy()
 
     for col_idx, cardinality in categorical_info.items():
         # 1. Round the column values using "round half up"
@@ -228,7 +245,14 @@ def discretize_categorical_values(
         # 3. Clamp the values and update the output array
         output_array[:, col_idx] = np.clip(rounded_col, min_bound, max_bound)
     
-    return output_array.astype(np.int32)
+    final_output = output_array.astype(np.int32)
+    
+    # --- Output Shape Handling ---
+    if original_was_1d:
+        # Squeeze the batch dimension to return a 1D array
+        return final_output.squeeze(axis=0)
+    else:
+        return final_output
 
 
 def info():

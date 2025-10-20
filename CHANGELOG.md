@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.1.0] 2025-10-20
+
+### Added
+
+- data_exploration: `drop_outlier_samples()`, for dropping outlier samples (rows) from a DataFrame.
+- optimization_tools: `create_optimization_bounds()`, generates the lower and upper bounds lists for the ML optimizer.
+
+### Changed 
+
+- math_utilities: `discretize_categorical_value()`, support for 1D arrays added.
+- ML_optimization: 
+    - Brand new algorithm logic to handle categorical features properly.
+    - Old implementations renamed to "ML_simple_optimization", useful when there is only binary features and no one-hot or other categorical features. Deprecated.
+- optimization_tools: `plot_optimal_feature_distributions()`, modified to support new categorical handling.
+
 ## [12.0.1] 2025-10-18
 
 - Minor fix for conda-forge release.

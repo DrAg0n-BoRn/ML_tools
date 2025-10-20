@@ -29,6 +29,7 @@ __all__ = [
     "plot_value_distributions", 
     "clip_outliers_single", 
     "clip_outliers_multi",
+    "drop_outlier_samples",
     "match_and_filter_columns_by_regex",
     "standardize_percentages",
     "create_transformer_categorical_map",
@@ -358,8 +359,8 @@ def encode_categorical_features(
         df (pd.DataFrame): The input DataFrame.
         columns_to_encode (List[str]): A list of column names to be encoded.
         encode_nulls (bool): If True, encodes Null values as a distinct category
-            "Other" with a value of 0. Other categories start from 1.
-            If False, Nulls are ignored.
+            "Other" with a value of 0. Other categories start from 1. 
+            If False, Nulls are ignored and categories start from 0.
         split_resulting_dataset (bool): If True, returns two separate DataFrames:
             one with non-categorical columns and one with the encoded columns.
             If False, returns a single DataFrame with all columns.
@@ -758,7 +759,99 @@ def clip_outliers_multi(
     if skipped_columns:
         _LOGGER.warning("Skipped columns:")
         for col, msg in skipped_columns:
-            print(f" - {col}: {msg}")
+            print(f" - {col}")
+
+    return new_df
+
+
+def drop_outlier_samples(
+    df: pd.DataFrame,
+    bounds_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    drop_on_nulls: bool = False,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Drops entire rows where values in specified numeric columns fall outside
+    a given [min, max] range.
+
+    This function processes a copy of the DataFrame, ensuring the original is
+    not modified. It skips columns with invalid specifications.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        bounds_dict (dict): A dictionary where keys are column names and values
+                            are (min_val, max_val) tuples defining the valid range.
+        drop_on_nulls (bool): If True, rows with NaN/None in a checked column
+                           will also be dropped. If False, NaN/None are ignored.
+        verbose (bool): If True, prints the number of rows dropped for each column.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the outlier rows removed.
+
+    Notes:
+        - Invalid specifications (e.g., missing column, non-numeric type,
+          incorrectly formatted bounds) will be reported and skipped.
+    """
+    new_df = df.copy()
+    skipped_columns: List[Tuple[str, str]] = []
+    initial_rows = len(new_df)
+
+    for col, bounds in bounds_dict.items():
+        try:
+            # --- Validation Checks ---
+            if col not in df.columns:
+                _LOGGER.error(f"Column '{col}' not found in DataFrame.")
+                raise ValueError()
+
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                _LOGGER.error(f"Column '{col}' is not of a numeric data type.")
+                raise TypeError()
+
+            if not (isinstance(bounds, tuple) and len(bounds) == 2):
+                _LOGGER.error(f"Bounds for '{col}' must be a tuple of (min, max).")
+                raise ValueError()
+
+            # --- Filtering Logic ---
+            min_val, max_val = bounds
+            rows_before_drop = len(new_df)
+            
+            # Create the base mask for values within the specified range
+            # .between() is inclusive and evaluates to False for NaN
+            mask_in_bounds = new_df[col].between(min_val, max_val)
+
+            if drop_on_nulls:
+                # Keep only rows that are within bounds.
+                # Since mask_in_bounds is False for NaN, nulls are dropped.
+                final_mask = mask_in_bounds
+            else:
+                # Keep rows that are within bounds OR are null.
+                mask_is_null = new_df[col].isnull()
+                final_mask = mask_in_bounds | mask_is_null
+            
+            # Apply the final mask
+            new_df = new_df[final_mask]
+            
+            rows_after_drop = len(new_df)
+
+            if verbose:
+                dropped_count = rows_before_drop - rows_after_drop
+                if dropped_count > 0:
+                    print(
+                        f"  - Column '{col}': Dropped {dropped_count} rows with values outside range [{min_val}, {max_val}]."
+                    )
+
+        except (ValueError, TypeError) as e:
+            skipped_columns.append((col, str(e)))
+            continue
+
+    total_dropped = initial_rows - len(new_df)
+    _LOGGER.info(f"Finished processing. Total rows dropped: {total_dropped}.")
+
+    if skipped_columns:
+        _LOGGER.warning("Skipped the following columns due to errors:")
+        for col, msg in skipped_columns:
+            # Only print the column name for cleaner output as the error was already logged
+            print(f" - {col}")
 
     return new_df
 

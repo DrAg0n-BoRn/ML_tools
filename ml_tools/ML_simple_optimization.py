@@ -5,7 +5,7 @@ import evotorch
 from evotorch.algorithms import SNES, CEM, GeneticAlgorithm
 from evotorch.logging import PandasLogger
 from evotorch.operators import SimulatedBinaryCrossOver, GaussianMutation
-from typing import Literal, Union, Tuple, List, Optional, Any, Callable, Dict
+from typing import Literal, Union, Tuple, List, Optional, Any, Callable
 from pathlib import Path
 from tqdm.auto import trange
 from contextlib import nullcontext
@@ -19,17 +19,20 @@ from .keys import PyTorchInferenceKeys
 from .SQL import DatabaseManager
 from .optimization_tools import _save_result
 from .utilities import save_dataframe
-from .math_utilities import discretize_categorical_values
+from .math_utilities import threshold_binary_values
 
+"""
+DEPRECATED
+"""
 
 __all__ = [
-    "MLOptimizer",
-    "create_pytorch_problem",
-    "run_optimization"
+    "s_MLOptimizer",
+    "s_create_pytorch_problem",
+    "s_run_optimization"
 ]
 
 
-class MLOptimizer:
+class s_MLOptimizer:
     """
     A wrapper class for setting up and running EvoTorch optimization tasks.
 
@@ -39,23 +42,15 @@ class MLOptimizer:
     SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
 
     Example:
-        >>> # 1. Get categorical info from preprocessing steps
-        >>> # e.g., from data_exploration.encode_categorical_features
-        >>> cat_mappings = {'feature_C': {'A': 0, 'B': 1}, 'feature_D': {'X': 0, 'Y': 1}}
-        >>> # e.g., from data_exploration.create_transformer_categorical_map
-        >>> # Assumes feature_C is at index 2 (cardinality 2) and feature_D is at index 3 (cardinality 2)
-        >>> cat_index_map = {2: 2, 3: 2}
-        >>>
-        >>> # 2. Initialize the optimizer
+        >>> # 1. Initialize the optimizer with model and search parameters
         >>> optimizer = MLOptimizer(
         ...     inference_handler=my_handler,
-        ...     bounds=(lower_bounds, upper_bounds), # Bounds for ALL features
+        ...     bounds=(lower_bounds, upper_bounds),
+        ...     number_binary_features=2,
         ...     task="max",
-        ...     algorithm="Genetic",
-        ...     categorical_index_map=cat_index_map,
-        ...     categorical_mappings=cat_mappings,
+        ...     algorithm="Genetic"
         ... )
-        >>> # 3. Run the optimization
+        >>> # 2. Run the optimization and save the results
         >>> best_result = optimizer.run(
         ...     num_generations=100,
         ...     target_name="my_target",
@@ -67,43 +62,35 @@ class MLOptimizer:
     def __init__(self,
                  inference_handler: PyTorchInferenceHandler,
                  bounds: Tuple[List[float], List[float]],
+                 number_binary_features: int,
                  task: Literal["min", "max"],
                  algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
                  population_size: int = 200,
-                 categorical_index_map: Optional[Dict[int, int]] = None,
-                 categorical_mappings: Optional[Dict[str, Dict[str, int]]] = None,
-                 discretize_start_at_zero: bool = True,
                  **searcher_kwargs):
         """
         Initializes the optimizer by creating the EvoTorch problem and searcher.
 
         Args:
             inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
-            bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for ALL solution features. 
-                Use the `optimization_tools.create_optimization_bounds()` helper to easily generate this and ensure unbiased categorical bounds.
+            bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for the solution features.
+            number_binary_features (int): Number of binary features located at the END of the feature vector.
             task (str): The optimization goal, either "min" or "max".
             algorithm (str): The search algorithm to use ("SNES", "CEM", "Genetic").
             population_size (int): Population size for CEM and GeneticAlgorithm.
-            categorical_index_map (Dict[int, int] | None): Used to discretize values after optimization. Maps {column_index: cardinality}.
-            categorical_mappings (Dict[str, Dict[str, int]] | None): Used to map discrete integer values back to strings (e.g., {0: 'Category_A'}) before saving.
-            discretize_start_at_zero (bool): 
-                True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
-                False if it starts at 1 (e.g., [1, 2, 3]).
             **searcher_kwargs: Additional keyword arguments for the selected search algorithm's constructor.
         """
         # Call the existing factory function to get the problem and searcher factory
-        self.problem, self.searcher_factory = create_pytorch_problem(
+        self.problem, self.searcher_factory = s_create_pytorch_problem(
             inference_handler=inference_handler,
             bounds=bounds,
+            binary_features=number_binary_features,
             task=task,
             algorithm=algorithm,
             population_size=population_size,
             **searcher_kwargs
         )
-        # Store categorical info to pass to the run function
-        self.categorical_map = categorical_index_map
-        self.categorical_mappings = categorical_mappings
-        self.discretize_start_at_zero = discretize_start_at_zero
+        # Store binary_features count to pass it to the run function later
+        self._binary_features = number_binary_features
 
     def run(self,
             num_generations: int,
@@ -120,8 +107,7 @@ class MLOptimizer:
             num_generations (int): The total number of generations for each repetition.
             target_name (str): Target name used for the CSV filename and/or SQL table.
             save_dir (str | Path): The directory where result files will be saved.
-            feature_names (List[str] | None): Names of the solution features for labeling output.
-                If None, generic names like 'feature_0', 'feature_1', ... , will be created.
+            feature_names (List[str] | None): Names of the solution features for labeling output. If None, generic names like 'feature_0', 'feature_1', ... , will be created.
             save_format (Literal['csv', 'sqlite', 'both']): The format for saving results.
             repetitions (int): The number of independent times to run the optimization.
             verbose (bool): If True, enables detailed logging.
@@ -129,26 +115,25 @@ class MLOptimizer:
         Returns:
             Optional[dict]: A dictionary with the best result if repetitions is 1, otherwise None.
         """
-        # Call the existing run function with the stored problem, searcher, and categorical info
-        return run_optimization(
+        # Call the existing run function with the stored problem, searcher, and binary feature count
+        return s_run_optimization(
             problem=self.problem,
             searcher_factory=self.searcher_factory,
             num_generations=num_generations,
             target_name=target_name,
+            binary_features=self._binary_features,
             save_dir=save_dir,
             save_format=save_format,
             feature_names=feature_names,
             repetitions=repetitions,
-            verbose=verbose,
-            categorical_map=self.categorical_map,
-            categorical_mappings=self.categorical_mappings,
-            discretize_start_at_zero=self.discretize_start_at_zero
+            verbose=verbose
         )
 
 
-def create_pytorch_problem(
+def s_create_pytorch_problem(
     inference_handler: PyTorchInferenceHandler,
     bounds: Tuple[List[float], List[float]],
+    binary_features: int,
     task: Literal["min", "max"],
     algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
     population_size: int = 200,
@@ -164,7 +149,7 @@ def create_pytorch_problem(
     Args:
         inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
         bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for the solution features.
-            Use the `optimization_tools.create_optimization_bounds()` helper to easily generate this and ensure unbiased categorical bounds.
+        binary_features (int): Number of binary features located at the END of the feature vector. Will be automatically added to the bounds.
         task (str): The optimization goal, either "minimize" or "maximize".
         algorithm (str): The search algorithm to use.
         population_size (int): Used for CEM and GeneticAlgorithm.
@@ -178,6 +163,11 @@ def create_pytorch_problem(
     # Create copies to avoid modifying the original lists passed in the `bounds` tuple
     lower_bounds = list(bounds[0])
     upper_bounds = list(bounds[1])
+    
+    # add binary bounds
+    if binary_features > 0:
+        lower_bounds.extend([0.48] * binary_features)
+        upper_bounds.extend([0.52] * binary_features)
     
     solution_length = len(lower_bounds)
     device = inference_handler.device
@@ -250,19 +240,17 @@ def create_pytorch_problem(
     return problem, searcher_factory
 
 
-def run_optimization(
+def s_run_optimization(
     problem: evotorch.Problem,
     searcher_factory: Callable[[],Any],
     num_generations: int,
     target_name: str,
+    binary_features: int,
     save_dir: Union[str, Path],
     save_format: Literal['csv', 'sqlite', 'both'],
     feature_names: Optional[List[str]],
     repetitions: int = 1,
-    verbose: bool = True,
-    categorical_map: Optional[Dict[int, int]] = None,
-    categorical_mappings: Optional[Dict[str, Dict[str, int]]] = None,
-    discretize_start_at_zero: bool = True
+    verbose: bool = True
 ) -> Optional[dict]:
     """
     Runs the evolutionary optimization process, with support for multiple repetitions.
@@ -285,6 +273,7 @@ def run_optimization(
         searcher_factory (Callable): The searcher factory to generate fresh evolutionary algorithms.
         num_generations (int): The total number of generations to run the search algorithm for in each repetition.
         target_name (str): Target name that will also be used for the CSV filename and SQL table.
+        binary_features (int): Number of binary features located at the END of the feature vector.
         save_dir (str | Path): The directory where the result file(s) will be saved.
         save_format (Literal['csv', 'sqlite', 'both'], optional): The format for
             saving results during iterative analysis.
@@ -294,18 +283,13 @@ def run_optimization(
         repetitions (int, optional): The number of independent times to run the
             entire optimization process.
         verbose (bool): Add an Evotorch Pandas logger saved as a csv. Only for the first repetition.
-        categorical_index_map (Dict[int, int] | None): Used to discretize values after optimization. Maps {column_index: cardinality}.
-        categorical_mappings (Dict[str, Dict[str, int]] | None): Used to map discrete integer values back to strings (e.g., {0: 'Category_A'}) before saving.
-        discretize_start_at_zero (bool): 
-            True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
-            False if it starts at 1 (e.g., [1, 2, 3]).
 
     Returns:
         Optional[dict]: A dictionary containing the best feature values and the
         fitness score if `repetitions` is 1. Returns `None` if `repetitions`
         is greater than 1, as results are streamed to files instead.
     """
-    # --- 1. Setup Paths and Feature Names ---
+    # preprocess paths
     save_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     sanitized_target_name = sanitize_filename(target_name)
@@ -313,38 +297,54 @@ def run_optimization(
         sanitized_target_name = sanitized_target_name + ".csv"
     
     csv_path = save_path / sanitized_target_name
+    
     db_path = save_path / "Optimization.db"
     db_table_name = target_name
     
-    # Use problem's solution_length to create default names if none provided
+    # preprocess feature names
     if feature_names is None:
-        feat_len = problem.solution_length
-        feature_names = [f"feature_{i}" for i in range(feat_len)] # type: ignore
+        feature_names = [f"feature_{i}" for i in range(problem.solution_length)] # type: ignore
     
-    # --- 2. Run Optimization ---
     # --- SINGLE RUN LOGIC ---
     if repetitions <= 1:
-        _LOGGER.info(f"🤖 Starting optimization for {num_generations} generations...")
+        searcher = searcher_factory()
+        _LOGGER.info(f"🤖 Starting optimization with {searcher.__class__.__name__} Algorithm for {num_generations} generations...")
+        # for _ in trange(num_generations, desc="Optimizing"):
+        #     searcher.step()
         
-        result_dict, pandas_logger = _run_single_optimization_rep(
-            searcher_factory=searcher_factory,
-            num_generations=num_generations,
-            feature_names=feature_names,
-            target_name=target_name,
-            categorical_map=categorical_map,
-            discretize_start_at_zero=discretize_start_at_zero,
-            attach_logger=verbose
-        )
+        # Attach logger if requested
+        if verbose:
+            pandas_logger = PandasLogger(searcher)
+            
+        searcher.run(num_generations) # Use the built-in run method for simplicity
+            
+        # # DEBUG new searcher objects
+        # for status_key in searcher.iter_status_keys():
+        #     print("===", status_key, "===")
+        #     print(searcher.status[status_key])
+        #     print()
         
-        # Single run defaults to CSV, pass mappings for reverse mapping
-        _save_result(
-            result_dict=result_dict, 
-            save_format='csv', 
-            csv_path=csv_path,
-            categorical_mappings=categorical_mappings
-        )
+        # Get results from the .status dictionary 
+        # SNES and CEM use the key 'center' to get mean values if needed    best_solution_tensor = searcher.status["center"]
+        best_solution_container = searcher.status["pop_best"]
+        best_solution_tensor = best_solution_container.values
+        best_fitness = best_solution_container.evals
+
+        best_solution_np = best_solution_tensor.cpu().numpy()
         
-        if pandas_logger:
+        # threshold binary features
+        if binary_features > 0:
+            best_solution_thresholded = threshold_binary_values(input_array=best_solution_np, binary_values=binary_features)
+        else:
+            best_solution_thresholded = best_solution_np
+
+        result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
+        result_dict[target_name] = best_fitness.item()
+        
+        _save_result(result_dict, 'csv', csv_path) # Single run defaults to CSV
+        
+        # Process logger
+        if verbose:
             _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)
         
         _LOGGER.info(f"Optimization complete. Best solution saved to '{csv_path.name}'")
@@ -353,104 +353,55 @@ def run_optimization(
     # --- MULTIPLE REPETITIONS LOGIC ---
     else:
         _LOGGER.info(f"🏁 Starting optimal solution space analysis with {repetitions} repetitions...")
-        
-        first_run_logger = None # To store the logger from the first rep
+
         db_context = DatabaseManager(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
         
         with db_context as db_manager:
-            # --- Setup Database Schema (if applicable) ---
             if db_manager:
-                schema = {}
-                categorical_cols = set(categorical_mappings.keys()) if categorical_mappings else set()
-                
-                for name in feature_names:
-                    schema[name] = "TEXT" if name in categorical_cols else "REAL"
+                schema = {name: "REAL" for name in feature_names}
                 schema[target_name] = "REAL"
-                
                 db_manager.create_table(db_table_name, schema)
             
-            # --- Repetitions Loop ---
             print("")
+            # Repetitions loop
+            pandas_logger = None
             for i in trange(repetitions, desc="Repetitions"):
+                # CRITICAL: Create a fresh searcher for each run using the factory
+                searcher = searcher_factory()
                 
-                # Only attach a logger for the first repetition if verbose
-                attach_logger = verbose and (i == 0)
+                # Attach logger if requested
+                if verbose and i==0:
+                    pandas_logger = PandasLogger(searcher)
                 
-                result_dict, pandas_logger = _run_single_optimization_rep(
-                    searcher_factory=searcher_factory,
-                    num_generations=num_generations,
-                    feature_names=feature_names,
-                    target_name=target_name,
-                    categorical_map=categorical_map,
-                    discretize_start_at_zero=discretize_start_at_zero,
-                    attach_logger=attach_logger
-                )
+                searcher.run(num_generations) # Use the built-in run method for simplicity
                 
-                if pandas_logger:
-                    first_run_logger = pandas_logger
+                # Get results from the .status dictionary 
+                # SNES and CEM use the key 'center' to get mean values if needed    best_solution_tensor = searcher.status["center"]
+                best_solution_container = searcher.status["pop_best"]
+                best_solution_tensor = best_solution_container.values
+                best_fitness = best_solution_container.evals
+             
+                best_solution_np = best_solution_tensor.cpu().numpy()
+                
+                # threshold binary features
+                if binary_features > 0:
+                    best_solution_thresholded = threshold_binary_values(input_array=best_solution_np, binary_values=binary_features)
+                else:
+                    best_solution_thresholded = best_solution_np
+                
+                # make results dictionary
+                result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
+                result_dict[target_name] = best_fitness.item()
                 
                 # Save each result incrementally
-                _save_result(
-                    result_dict=result_dict, 
-                    save_format=save_format, 
-                    csv_path=csv_path, 
-                    db_manager=db_manager, 
-                    db_table_name=db_table_name, 
-                    categorical_mappings=categorical_mappings
-                )
+                _save_result(result_dict, save_format, csv_path, db_manager, db_table_name)
             
-        if first_run_logger:
-            _handle_pandas_log(first_run_logger, save_path=save_path, target_name=target_name)      
+        # Process logger
+        if pandas_logger is not None:
+            _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)      
         
         _LOGGER.info(f"Optimal solution space complete. Results saved to '{save_path}'")
         return None
-
-
-def _run_single_optimization_rep(
-    searcher_factory: Callable[[],Any],
-    num_generations: int,
-    feature_names: List[str],
-    target_name: str,
-    categorical_map: Optional[Dict[int, int]],
-    discretize_start_at_zero: bool,
-    attach_logger: bool
-) -> Tuple[dict, Optional[PandasLogger]]:
-    """
-    Internal helper to run one full optimization repetition.
-    
-    Handles searcher creation, logging, running, and result post-processing.
-    """
-    # CRITICAL: Create a fresh searcher for each run using the factory
-    searcher = searcher_factory()
-    
-    # Attach logger if requested
-    pandas_logger = PandasLogger(searcher) if attach_logger else None
-    
-    # Run the optimization
-    searcher.run(num_generations)
-    
-    # Get the best result
-    best_solution_container = searcher.status["pop_best"]
-    best_solution_tensor = best_solution_container.values
-    best_fitness = best_solution_container.evals
- 
-    best_solution_np = best_solution_tensor.cpu().numpy()
-    
-    # Discretize categorical/binary features
-    if categorical_map:
-        best_solution_thresholded = discretize_categorical_values(
-            input_array=best_solution_np,
-            categorical_info=categorical_map,
-            start_at_zero=discretize_start_at_zero
-        )
-    else:
-        best_solution_thresholded = best_solution_np
-    
-    # Format results into a dictionary
-    result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
-    result_dict[target_name] = best_fitness.item()
-    
-    return result_dict, pandas_logger
 
 
 def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str):
