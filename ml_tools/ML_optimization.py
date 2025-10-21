@@ -24,6 +24,7 @@ from .math_utilities import discretize_categorical_values
 
 __all__ = [
     "MLOptimizer",
+    "FitnessEvaluator",
     "create_pytorch_problem",
     "run_optimization"
 ]
@@ -33,8 +34,8 @@ class MLOptimizer:
     """
     A wrapper class for setting up and running EvoTorch optimization tasks.
 
-    This class combines the functionality of `create_pytorch_problem` and
-    `run_optimization` functions into a single, streamlined workflow. 
+    This class combines the functionality of `FitnessEvaluator`, `create_pytorch_problem`, and
+    `run_optimization` into a single, streamlined workflow. 
     
     SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
 
@@ -91,9 +92,16 @@ class MLOptimizer:
                 False if it starts at 1 (e.g., [1, 2, 3]).
             **searcher_kwargs: Additional keyword arguments for the selected search algorithm's constructor.
         """
+        # Make a fitness function
+        self.evaluator = FitnessEvaluator(
+            inference_handler=inference_handler,
+            categorical_index_map=categorical_index_map,
+            discretize_start_at_zero=discretize_start_at_zero
+        )
+        
         # Call the existing factory function to get the problem and searcher factory
         self.problem, self.searcher_factory = create_pytorch_problem(
-            inference_handler=inference_handler,
+            evaluator=self.evaluator,
             bounds=bounds,
             task=task,
             algorithm=algorithm,
@@ -144,10 +152,67 @@ class MLOptimizer:
             categorical_mappings=self.categorical_mappings,
             discretize_start_at_zero=self.discretize_start_at_zero
         )
+        
+        
+class FitnessEvaluator:
+    """
+    A callable class that wraps the PyTorch model inference handler and performs
+    on-the-fly discretization for the EvoTorch fitness function.
+
+    This class is automatically instantiated by MLOptimizer and passed to
+    create_pytorch_problem, encapsulating the evaluation logic.
+    """
+    def __init__(self,
+                 inference_handler: PyTorchInferenceHandler,
+                 categorical_index_map: Optional[Dict[int, int]] = None,
+                 discretize_start_at_zero: bool = True):
+        """
+        Initializes the fitness evaluator.
+
+        Args:
+            inference_handler (PyTorchInferenceHandler): 
+                An initialized inference handler containing the model.
+            categorical_index_map (Dict[int, int] | None): 
+                Maps {column_index: cardinality} for discretization.
+            discretize_start_at_zero (bool): 
+                True if discrete encoding starts at 0.
+        """
+        self.inference_handler = inference_handler
+        self.categorical_index_map = categorical_index_map
+        self.discretize_start_at_zero = discretize_start_at_zero
+        
+        # Expose the device
+        self.device = self.inference_handler.device
+
+    def __call__(self, solution_tensor: torch.Tensor) -> torch.Tensor:
+        """
+        This is the fitness function EvoTorch will call.
+
+        It receives a batch of continuous solutions, discretizes the
+        categorical ones, and returns the model's predictions.
+        """
+        # Clone to avoid modifying the optimizer's internal state (SNES, CEM, GA)
+        processed_tensor = solution_tensor.clone()
+        
+        if self.categorical_index_map:
+            for col_idx, cardinality in self.categorical_index_map.items():
+                # 1. Round (using torch.floor(x + 0.5) for "round half up" behavior)
+                rounded_col = torch.floor(processed_tensor[:, col_idx] + 0.5)
+                
+                # 2. Determine clamping bounds
+                min_bound = 0 if self.discretize_start_at_zero else 1
+                max_bound = cardinality - 1 if self.discretize_start_at_zero else cardinality
+                
+                # 3. Clamp the values and update the processed tensor
+                processed_tensor[:, col_idx] = torch.clamp(rounded_col, min_bound, max_bound)
+
+        # Use the *processed_tensor* for prediction
+        predictions = self.inference_handler.predict_batch(processed_tensor)[PyTorchInferenceKeys.PREDICTIONS]
+        return predictions.flatten()
 
 
 def create_pytorch_problem(
-    inference_handler: PyTorchInferenceHandler,
+    evaluator: FitnessEvaluator,
     bounds: Tuple[List[float], List[float]],
     task: Literal["min", "max"],
     algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
@@ -162,7 +227,7 @@ def create_pytorch_problem(
     The Genetic Algorithm works directly with the bounds, and operators such as SimulatedBinaryCrossOver and GaussianMutation.
     
     Args:
-        inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
+        evaluator (FitnessEvaluator): A callable class that wraps the model inference and handles on-the-fly discretization.
         bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for the solution features.
             Use the `optimization_tools.create_optimization_bounds()` helper to easily generate this and ensure unbiased categorical bounds.
         task (str): The optimization goal, either "minimize" or "maximize".
@@ -180,20 +245,13 @@ def create_pytorch_problem(
     upper_bounds = list(bounds[1])
     
     solution_length = len(lower_bounds)
-    device = inference_handler.device
+    device = evaluator.device
 
-    # Define the fitness function that EvoTorch will call.
-    def fitness_func(solution_tensor: torch.Tensor) -> torch.Tensor:
-        # Directly use the continuous-valued tensor from the optimizer for prediction
-        predictions = inference_handler.predict_batch(solution_tensor)[PyTorchInferenceKeys.PREDICTIONS]
-        return predictions.flatten()
-    
-    
     # Create the Problem instance.
     if algorithm == "CEM" or algorithm == "SNES":
         problem = evotorch.Problem(
             objective_sense=task,
-            objective_func=fitness_func,
+            objective_func=evaluator,
             solution_length=solution_length,
             initial_bounds=(lower_bounds, upper_bounds),
             device=device,
@@ -219,7 +277,7 @@ def create_pytorch_problem(
     elif algorithm == "Genetic":
         problem = evotorch.Problem(
             objective_sense=task,
-            objective_func=fitness_func,
+            objective_func=evaluator,
             solution_length=solution_length,
             bounds=(lower_bounds, upper_bounds),
             device=device,

@@ -66,7 +66,7 @@ def create_optimization_bounds(
     # 1. Read header and determine feature names
     full_csv_path = make_fullpath(csv_path, enforce="file")
     try:
-        df_header = pd.read_csv(full_csv_path, nrows=0)
+        df_header = pd.read_csv(full_csv_path, nrows=0, encoding="utf-8")
     except Exception as e:
         _LOGGER.error(f"Failed to read header from CSV: {e}")
         raise
