@@ -6,7 +6,7 @@ import numpy as np
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
 from typing import Optional, Union
 
-from .utilities import load_dataframe, merge_dataframes, save_dataframe
+from .utilities import load_dataframe, merge_dataframes, save_dataframe_filename
 from .math_utilities import threshold_binary_values
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
 from ._logger import _LOGGER
@@ -75,7 +75,7 @@ def apply_mice(df: pd.DataFrame, df_name: str, binary_columns: Optional[list[str
 def save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
         merged_df = merge_dataframes(imputed_df, df_targets, direction="horizontal", verbose=False)
-        save_dataframe(df=merged_df, save_dir=save_dir, filename=subname)
+        save_dataframe_filename(df=merged_df, save_dir=save_dir, filename=subname)
 
 
 #Get names of features that had missing values before imputation

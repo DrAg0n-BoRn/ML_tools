@@ -7,7 +7,7 @@ from statsmodels.tools.tools import add_constant
 import warnings
 from pathlib import Path
 
-from .utilities import yield_dataframes_from_dir, save_dataframe
+from .utilities import yield_dataframes_from_dir, save_dataframe_filename
 from .path_manager import sanitize_filename, make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
@@ -229,7 +229,7 @@ def compute_vif_multi(input_directory: Union[str, Path],
             result_df, dropped_cols = drop_vif_based(df=df, vif_df=vif_dataframe)
             
             if len(dropped_cols) > 0:
-                save_dataframe(df=result_df, save_dir=output_dataset_path, filename=new_filename)
+                save_dataframe_filename(df=result_df, save_dir=output_dataset_path, filename=new_filename)
 
 
 def info():

@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.base import clone
 
 from .utilities import yield_dataframes_from_dir, train_dataset_yielder
-from .serde import serialize_object
+from .serde import serialize_object_filename
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from .keys import EnsembleKeys
@@ -411,7 +411,7 @@ def _save_model(trained_model, model_name: str, target_name:str, feature_names: 
                EnsembleKeys.FEATURES: feature_names,
                EnsembleKeys.TARGET: target_name}
 
-    serialize_object(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
+    serialize_object_filename(obj=to_save, save_dir=save_directory, filename=filename, verbose=False, raise_on_error=True)
 
 
 # TRAIN EVALUATE PIPELINE

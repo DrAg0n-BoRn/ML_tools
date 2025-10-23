@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Literal, Union, Optional, Any, Callable, List, Dict, Tuple
 
-from .utilities import load_dataframe, save_dataframe
+from .utilities import load_dataframe, save_dataframe_filename
 from .path_manager import make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
@@ -230,7 +230,7 @@ class DataProcessor:
         df_processed = self.transform(df)
         
         # save processed df
-        save_dataframe(df=df_processed, save_dir=out_path.parent, filename=out_path.name)
+        save_dataframe_filename(df=df_processed, save_dir=out_path.parent, filename=out_path.name)
         
     def __str__(self) -> str:
         """

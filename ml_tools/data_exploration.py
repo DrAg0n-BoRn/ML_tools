@@ -10,7 +10,7 @@ import re
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .utilities import save_dataframe
+from .utilities import save_dataframe_filename
 
 
 # Keep track of all available tools, show using `info()`
@@ -269,7 +269,7 @@ def drop_macro(df: pd.DataFrame,
     
     # Log initial state
     missing_data = show_null_columns(df=df_clean)
-    save_dataframe(df=missing_data.reset_index(drop=False),
+    save_dataframe_filename(df=missing_data.reset_index(drop=False),
                    save_dir=log_directory,
                    filename="Missing_Data_start")
     
@@ -298,7 +298,7 @@ def drop_macro(df: pd.DataFrame,
     
     # log final state
     missing_data = show_null_columns(df=df_clean)
-    save_dataframe(df=missing_data.reset_index(drop=False),
+    save_dataframe_filename(df=missing_data.reset_index(drop=False),
                    save_dir=log_directory,
                    filename="Missing_Data_final")
     

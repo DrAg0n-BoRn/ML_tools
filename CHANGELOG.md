@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.6.0] 2025-10-23
+
+### Changed
+
+- utilities: 
+    - `save_dataframe()`, renamed to `save_dataframe_filename()` to better reflect that it constructs the output path from a separate directory and filename.
+    - `save_dataframe_path()`, renamed to `save_dataframe()`, saves a dataframe directly to a path.
+
+### Fixed
+
+- Use the correct form of helper functions in all scripts.
+
 ## [12.5.0] 2025-10-23
 
 ### Changed

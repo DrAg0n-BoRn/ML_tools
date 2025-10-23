@@ -18,7 +18,7 @@ from .ML_inference import PyTorchInferenceHandler
 from .keys import PyTorchInferenceKeys
 from .SQL import DatabaseManager
 from .optimization_tools import _save_result
-from .utilities import save_dataframe
+from .utilities import save_dataframe_filename
 from .math_utilities import discretize_categorical_values
 
 
@@ -513,7 +513,7 @@ def _run_single_optimization_rep(
 
 def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str):
     log_dataframe = logger.to_dataframe()
-    save_dataframe(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name)
+    save_dataframe_filename(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name)
 
 
 def info():

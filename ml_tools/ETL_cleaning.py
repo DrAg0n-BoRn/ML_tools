@@ -5,7 +5,7 @@ from typing import Union, List, Dict
 
 from .path_manager import sanitize_filename, make_fullpath
 from .data_exploration import drop_macro
-from .utilities import save_dataframe, load_dataframe
+from .utilities import save_dataframe_filename, load_dataframe
 from ._script_info import _script_info
 from ._logger import _LOGGER
 
@@ -263,7 +263,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     df_final = _cleaner_core(df_in=df, all_lowercase=all_lowercase)
     
     # Save cleaned dataframe
-    save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
+    save_dataframe_filename(df=df_final, save_dir=output_path.parent, filename=output_path.name)
     
     _LOGGER.info(f"Data successfully cleaned.")
     
@@ -329,7 +329,7 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
                           threshold=threshold)
     
     # Save cleaned dataframe
-    save_dataframe(df=df_final, save_dir=output_path.parent, filename=output_path.name)
+    save_dataframe_filename(df=df_final, save_dir=output_path.parent, filename=output_path.name)
     
     _LOGGER.info(f"Data successfully cleaned.")
 
@@ -494,7 +494,7 @@ class DataFrameCleaner:
         if isinstance(output_filepath, str):
             output_filepath = make_fullpath(input_path=output_filepath, enforce="file")
         
-        save_dataframe(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
+        save_dataframe_filename(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
         
         return None
 

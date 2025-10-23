@@ -14,8 +14,8 @@ __all__ = [
     "load_dataframe",
     "yield_dataframes_from_dir",
     "merge_dataframes",
+    "save_dataframe_filename",
     "save_dataframe",
-    "save_dataframe_path",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder"
@@ -210,7 +210,7 @@ def merge_dataframes(
     return merged_df
 
 
-def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str) -> None:
+def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str) -> None:
     """
     Saves a pandas or polars DataFrame to a CSV file.
 
@@ -250,11 +250,11 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Pa
     _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df.shape}")
 
 
-def save_dataframe_path(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
+def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
     """
     Saves a DataFrame to a specified full path.
 
-    This function is a convenience wrapper for `save_dataframe()`. It takes a
+    This function is a wrapper for `save_dataframe_filename()`. It takes a
     single `pathlib.Path` object pointing to a `.csv` file.
 
     Args:
@@ -265,9 +265,9 @@ def save_dataframe_path(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
         _LOGGER.error('A path object pointing to a .csv file must be provided.')
         raise ValueError()
         
-    save_dataframe(df=df, 
-                   save_dir=full_path.parent,
-                   filename=full_path.name)
+    save_dataframe_filename(df=df, 
+                            save_dir=full_path.parent,
+                            filename=full_path.name)
 
 
 def distribute_dataset_by_target(
@@ -351,7 +351,7 @@ def train_dataset_orchestrator(list_of_dirs: list[Union[str,Path]],
                         filename = df_dir.name + '_' + target_name + '_' + df_name
                     else:
                         filename = target_name + '_' + df_name
-                    save_dataframe(df=df, save_dir=save_dir, filename=filename)
+                    save_dataframe_filename(df=df, save_dir=save_dir, filename=filename)
                     total_saved += 1
             except Exception as e:
                 _LOGGER.error(f"Failed to process file '{df_path}'. Reason: {e}")
