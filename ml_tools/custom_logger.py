@@ -172,7 +172,7 @@ def load_list_strings(text_file: Union[str,Path], verbose: bool=True) -> list[st
         raise ValueError()
     
     if verbose:
-        _LOGGER.info(f"Text file loaded as list of strings.")
+        _LOGGER.info(f"Loaded '{target_path.name}' as list of strings.")
         
     return loaded_strings
 

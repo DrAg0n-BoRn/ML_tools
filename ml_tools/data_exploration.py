@@ -891,7 +891,8 @@ def standardize_percentages(
     df: pd.DataFrame,
     columns: list[str],
     treat_one_as_proportion: bool = True,
-    round_digits: int = 2
+    round_digits: int = 2,
+    verbose: bool=True
 ) -> pd.DataFrame:
     """
     Standardizes numeric columns containing mixed-format percentages.
@@ -932,6 +933,8 @@ def standardize_percentages(
 
         # Otherwise, the value is assumed to be a correctly formatted percentage
         return x
+    
+    fixed_columns: list[str] = list()
 
     for col in columns:
         # --- Robustness Checks ---
@@ -949,6 +952,13 @@ def standardize_percentages(
 
         # Round the result
         df_copy[col] = df_copy[col].round(round_digits)
+        
+        fixed_columns.append(col)
+        
+    if verbose:
+        _LOGGER.info(f"Columns standardized:")
+        for fixed_col in fixed_columns:
+            print(f"  '{fixed_col}'")
 
     return df_copy
 
