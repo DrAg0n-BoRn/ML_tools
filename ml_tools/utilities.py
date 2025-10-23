@@ -12,6 +12,7 @@ from ._logger import _LOGGER
 # Keep track of available tools
 __all__ = [
     "load_dataframe",
+    "load_dataframe_greedy",
     "yield_dataframes_from_dir",
     "merge_dataframes",
     "save_dataframe_filename",
@@ -122,6 +123,54 @@ def load_dataframe(
         _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
     return df, df_name # type: ignore
+
+
+def load_dataframe_greedy(directory: Union[str, Path],
+                          use_columns: Optional[list[str]] = None,
+                          all_strings: bool = False,
+                          verbose: bool = True) -> pd.DataFrame:
+    """
+    Greedily loads the first found CSV file from a directory into a Pandas DataFrame.
+
+    This function scans the specified directory for any CSV files. It will
+    attempt to load the *first* CSV file it finds using the `load_dataframe`
+    function as a Pandas DataFrame.
+
+    Args:
+        directory (str, Path): 
+            The path to the directory to search for a CSV file.
+        use_columns (list[str] | None):
+            A list of column names to load. If None, all columns are loaded.
+        all_strings (bool): 
+            If True, loads all columns as string data types.
+
+    Returns:
+        pd.DataFrame: 
+            A pandas DataFrame loaded from the first CSV file found.
+
+    Raises:
+        FileNotFoundError: 
+            If the specified directory does not exist or the CSV file path
+            found is invalid.
+        ValueError: 
+            If the loaded DataFrame is empty or `use_columns` contains
+            invalid column names.
+    """
+    # validate directory
+    dir_path = make_fullpath(directory, enforce="directory")
+    
+    # list all csv files and grab one (should be the only one)
+    csv_dict = list_csv_paths(directory=dir_path, verbose=False)
+    
+    for df_path in csv_dict.values():
+        df , _df_name = load_dataframe(df_path=df_path,
+                                    use_columns=use_columns,
+                                    kind="pandas",
+                                    all_strings=all_strings,
+                                    verbose=verbose)
+        break
+    
+    return df
 
 
 def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
