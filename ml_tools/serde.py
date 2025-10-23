@@ -9,12 +9,13 @@ from ._logger import _LOGGER
 
 
 __all__ = [
+    "serialize_object_filename",
     "serialize_object",
     "deserialize_object",
 ]
 
 
-def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> None:
+def serialize_object_filename(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> None:
     """
     Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
 
@@ -39,6 +40,41 @@ def serialize_object(obj: Any, save_dir: Union[str,Path], filename: str, verbose
         if verbose:
             _LOGGER.info(f"Object of type '{type(obj)}' saved to '{full_path}'")
         return None
+
+
+def serialize_object(obj: Any, file_path: Path, verbose: bool = True, raise_on_error: bool = False) -> None:
+    """
+    Serializes a Python object using joblib to a specific file path.
+
+    Suitable for Python built-ins, numpy, and pandas.
+
+    Parameters:
+        obj (Any) : The Python object to serialize.
+        file_path (Path) : The full file path to save the object to.
+                           '.joblib' extension will be appended if missing.
+        raise_on_error (bool) : If True, raises exceptions on failure.
+    """
+    try:
+        # Ensure the extension is correct
+        if file_path.suffix != '.joblib':
+            file_path = file_path.with_suffix(file_path.suffix + '.joblib')
+
+        # Ensure the parent directory exists
+        _save_dir = make_fullpath(file_path.parent, make=True, enforce="directory")
+
+        # Dump the object
+        joblib.dump(obj, file_path)
+
+    except (IOError, OSError, TypeError, TerminatedWorkerError) as e:
+        _LOGGER.error(f"Failed to serialize object of type '{type(obj)}' to '{file_path}'. Error: {e}")
+        if raise_on_error:
+            raise e
+        return None
+    else:
+        if verbose:
+            _LOGGER.info(f"Object of type '{type(obj)}' saved to '{file_path}'")
+        return None
+
 
 # Define a TypeVar to link the expected type to the return type of deserialization
 T = TypeVar('T')

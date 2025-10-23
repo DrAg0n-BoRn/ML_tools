@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.5.0] 2025-10-23
+
+### Changed
+
+- serde: `serialize_object()`, renamed to `serialize_object_filename()` to better reflect that it constructs the output path from a separate directory and filename.
+
+### Added
+
+- serde: `serialize_object()`, serializes a Python object using joblib to a specific file path.
+
 ## [12.4.0] 2025-10-23
 
 ### Changed
