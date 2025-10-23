@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.8.0] 2025-10-23
+
+### Changed
+
+- ML_utilities: `select_features_by_shap()`, added option to save resulting feature names as a txt file to a directory.
+- optimization_tools: `create_optimization_bounds()`, continuous column names provided but not found in the dataset will be skipped with a warning instead of raising an error.
+
 ## [12.7.0] 2025-10-23
 
 ### Added

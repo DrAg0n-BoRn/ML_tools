@@ -1,12 +1,13 @@
 import pandas as pd
 from pathlib import Path
-from typing import Union, Any
+from typing import Union, Any, Optional
 
 from .path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys
 from .utilities import load_dataframe
+from .custom_logger import save_list_strings
 
 
 __all__ = [
@@ -139,6 +140,7 @@ def find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, v
 def select_features_by_shap(
     root_directory: Union[str, Path],
     shap_threshold: float,
+    log_feature_names_directory: Optional[Union[str, Path]],
     verbose: bool = True) -> list[str]:
     """
     Scans subdirectories to find SHAP summary CSVs, then extracts feature
@@ -148,11 +150,13 @@ def select_features_by_shap(
     importance scores aggregated from multiple models.
 
     Args:
-        root_directory (Union[str, Path]):
+        root_directory (str | Path):
             The path to the root directory that contains model subdirectories.
         shap_threshold (float):
             The minimum mean absolute SHAP value for a feature to be included
             in the final list.
+        log_feature_names_directory (str | Path | None):
+            If given, saves the chosen feature names as a .txt file in this directory.
 
     Returns:
         list[str]:
@@ -211,6 +215,13 @@ def select_features_by_shap(
     final_features = sorted(list(master_feature_set))
     if verbose:
         _LOGGER.info(f"Selected {len(final_features)} unique features across all files.")
+        
+    if log_feature_names_directory is not None:
+        save_names_path = make_fullpath(log_feature_names_directory, make=True, enforce="directory")
+        save_list_strings(list_strings=final_features,
+                          directory=save_names_path,
+                          filename=DatasetKeys.FEATURE_NAMES,
+                          verbose=verbose)
     
     return final_features
 

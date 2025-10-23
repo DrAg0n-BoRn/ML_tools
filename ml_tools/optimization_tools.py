@@ -98,7 +98,7 @@ def create_optimization_bounds(
 
     # 3. Populate categorical bounds (Index-based)
     # The indices in categorical_map (e.g., {2: 4}) directly correspond
-    # to the indices in our new `feature_names` list.
+    # to the indices in the `feature_names` list.
     for index, cardinality in categorical_map.items():
         if not (0 <= index < total_features):
             _LOGGER.error(f"Categorical index {index} is out of range for the {total_features} features.")
@@ -125,8 +125,8 @@ def create_optimization_bounds(
             # Map name to its index in the *feature-only* list
             index = feature_names.index(name)
         except ValueError:
-            _LOGGER.error(f"Feature name '{name}' from 'continuous_bounds_map' not found in the CSV's feature columns.")
-            raise ValueError()
+            _LOGGER.warning(f"Feature name '{name}' from 'continuous_bounds_map' not found in the CSV's feature columns.")
+            continue
             
         if lower_bounds[index] is not None:
             # This index was already set by the categorical map

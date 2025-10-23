@@ -362,6 +362,7 @@ def encode_categorical_features(
         encode_nulls (bool): If True, encodes Null values as a distinct category
             "Other" with a value of 0. Other categories start from 1. 
             If False, Nulls are ignored and categories start from 0.
+            Note: Use False when encoding binary values with missing entries.
         split_resulting_dataset (bool): If True, returns two separate DataFrames:
             one with non-categorical columns and one with the encoded columns.
             If False, returns a single DataFrame with all columns.
