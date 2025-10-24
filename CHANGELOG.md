@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.10.0] 2025-10-24
+
+### Added
+
+- custom_logger: `compare_lists()`, compares two lists and saves a JSON report of the differences.
+
 ## [12.9.2] 2025-10-24
 
 ### Changed
