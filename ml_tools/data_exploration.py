@@ -364,7 +364,6 @@ def encode_categorical_features(
             - If True, encodes Null values as a distinct category 'null_label' with a value of 0. Other categories start from 1. 
             - If False, Nulls are ignored and categories start from 0. 
             
-        
         null_label (str): Category to encode Nulls to if `encode_nulls` is True. If a name collision with `null_label` occurs, the fallback key will be "__NULL__".
         split_resulting_dataset (bool): 
             - If True, returns two separate DataFrames, one with non-categorical columns and one with the encoded columns.
@@ -1025,6 +1024,7 @@ def reconstruct_one_hot(
     df: pd.DataFrame,
     features_to_reconstruct: List[Union[str, Tuple[str, Optional[str]]]],
     separator: str = '_',
+    baseline_category_name: str = "Other",
     drop_original: bool = True,
     verbose: bool = True
 ) -> pd.DataFrame:
@@ -1042,19 +1042,22 @@ def reconstruct_one_hot(
             A list defining the features to reconstruct. This list can contain:
             
             - A string: (e.g., "Color")
-              This reconstructs the feature 'Color' and assumes all-zero rows represent missing data NaN.
+              This reconstructs the feature 'Color' and assumes all-zero rows represent the baseline category ("Other" by default).
             - A tuple: (e.g., ("Pet", "Dog"))
-              This reconstructs 'Pet' and maps all-zero rows to the baseline category "Dog" (handling 'drop_first=True' scenarios).
+              This reconstructs 'Pet' and maps all-zero rows to the baseline category "Dog".
             - A tuple with None: (e.g., ("Size", None))
-              This is explicit and behaves identically to just passing "Size". All-zero rows will be mapped to NaN.
+              This reconstructs 'Size' and maps all-zero rows to the NaN value.
             Example:
             [
-                "Mood",                      # All-zeros -> NaN
+                "Mood",                      # All-zeros -> "Other"
                 ("Color", "Red"),            # All-zeros -> "Red"
+                ("Size", None)               # All-zeros -> NaN
             ]
         separator (str): 
             The character separating the base name from the categorical value in 
             the column names (e.g., '_' in 'B_a').
+        baseline_category_name (str):
+            The baseline category name to use by default if it is not explicitly provided.
         drop_original (bool): 
             If True, the original one-hot encoded columns will be dropped from 
             the returned DataFrame.
@@ -1077,6 +1080,10 @@ def reconstruct_one_hot(
     if not isinstance(df, pd.DataFrame):
         _LOGGER.error("Input must be a pandas DataFrame.")
         raise TypeError()
+    
+    if not isinstance(baseline_category_name, str):
+        _LOGGER.error("The baseline_category must be a string.")
+        raise TypeError()
 
     new_df = df.copy()
     all_ohe_cols_to_drop = []
@@ -1090,7 +1097,7 @@ def reconstruct_one_hot(
             if isinstance(item, str):
                 # Case 1: "Color"
                 base_name = item
-                baseline_val = None
+                baseline_val = baseline_category_name
             elif isinstance(item, tuple) and len(item) == 2:
                 # Case 2: ("Pet", "dog") or ("Size", None)
                 base_name, baseline_val = item
