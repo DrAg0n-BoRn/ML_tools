@@ -1024,7 +1024,7 @@ def reconstruct_one_hot(
     df: pd.DataFrame,
     features_to_reconstruct: List[Union[str, Tuple[str, Optional[str]]]],
     separator: str = '_',
-    baseline_category_name: str = "Other",
+    baseline_category_name: Optional[str] = "Other",
     drop_original: bool = True,
     verbose: bool = True
 ) -> pd.DataFrame:
@@ -1056,7 +1056,7 @@ def reconstruct_one_hot(
         separator (str): 
             The character separating the base name from the categorical value in 
             the column names (e.g., '_' in 'B_a').
-        baseline_category_name (str):
+        baseline_category_name (str | None):
             The baseline category name to use by default if it is not explicitly provided.
         drop_original (bool): 
             If True, the original one-hot encoded columns will be dropped from 
@@ -1081,8 +1081,8 @@ def reconstruct_one_hot(
         _LOGGER.error("Input must be a pandas DataFrame.")
         raise TypeError()
     
-    if not isinstance(baseline_category_name, str):
-        _LOGGER.error("The baseline_category must be a string.")
+    if not (baseline_category_name is None or isinstance(baseline_category_name, str)):
+        _LOGGER.error("The baseline_category must be None or a string.")
         raise TypeError()
 
     new_df = df.copy()

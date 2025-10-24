@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.9.2] 2025-10-24
+
+### Changed
+
+- data_exploration: `reconstruct_one_hot()`, the baseline category name can also be set to None. Default is still "Other".
+
 ## [12.9.1] 2025-10-24
 
 ### Changed
