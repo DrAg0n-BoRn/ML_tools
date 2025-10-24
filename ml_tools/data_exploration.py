@@ -346,6 +346,7 @@ def encode_categorical_features(
     df: pd.DataFrame,
     columns_to_encode: List[str],
     encode_nulls: bool,
+    null_label: str = "Other",
     split_resulting_dataset: bool = True,
     verbose: bool = True
 ) -> Tuple[Dict[str, Dict[str, int]], pd.DataFrame, Optional[pd.DataFrame]]:
@@ -359,13 +360,15 @@ def encode_categorical_features(
     Args:
         df (pd.DataFrame): The input DataFrame.
         columns_to_encode (List[str]): A list of column names to be encoded.
-        encode_nulls (bool): If True, encodes Null values as a distinct category
-            "Other" with a value of 0. Other categories start from 1. 
-            If False, Nulls are ignored and categories start from 0.
-            Note: Use False when encoding binary values with missing entries.
-        split_resulting_dataset (bool): If True, returns two separate DataFrames:
-            one with non-categorical columns and one with the encoded columns.
-            If False, returns a single DataFrame with all columns.
+        encode_nulls (bool): 
+            - If True, encodes Null values as a distinct category 'null_label' with a value of 0. Other categories start from 1. 
+            - If False, Nulls are ignored and categories start from 0. 
+            
+        
+        null_label (str): Category to encode Nulls to if `encode_nulls` is True. If a name collision with `null_label` occurs, the fallback key will be "__NULL__".
+        split_resulting_dataset (bool): 
+            - If True, returns two separate DataFrames, one with non-categorical columns and one with the encoded columns.
+            - If False, returns a single DataFrame with all columns.
         verbose (bool): If True, prints encoding progress.
 
     Returns:
@@ -376,6 +379,9 @@ def encode_categorical_features(
         - pd.DataFrame: The original dataframe with or without encoded columns (see `split_resulting_dataset`).
         
         - pd.DataFrame | None: If `split_resulting_dataset` is True, the encoded columns as a new dataframe.
+        
+    ## **Note:** 
+    Use `encode_nulls=False` when encoding binary values with missing entries or a malformed encoding will be returned silently.
     """
     df_encoded = df.copy()
     
@@ -401,8 +407,16 @@ def encode_categorical_features(
             mapped_series = df_encoded[col_name].astype(str).map(mapping)
             df_encoded[col_name] = mapped_series.fillna(0).astype(int)
             
+            # --- Validate nulls category---
+            # Ensure the key for 0 doesn't collide with a real category.
+            if null_label in mapping.keys():
+                # COLLISION! null_label is a real category 
+                original_label = null_label
+                null_label = "__NULL__" # fallback
+                _LOGGER.warning(f"Column '{col_name}': '{original_label}' is a real category. Mapping nulls (0) to '{null_label}' instead.")
+            
             # Create the complete user-facing map including "Other"
-            user_mapping = {**mapping, "Other": 0}
+            user_mapping = {**mapping, null_label: 0}
             mappings[col_name] = user_mapping
         else:
             # ignore nulls
@@ -1009,9 +1023,10 @@ def create_transformer_categorical_map(
 
 def reconstruct_one_hot(
     df: pd.DataFrame,
-    base_feature_names: List[str],
+    features_to_reconstruct: List[Union[str, Tuple[str, Optional[str]]]],
     separator: str = '_',
-    drop_original: bool = True
+    drop_original: bool = True,
+    verbose: bool = True
 ) -> pd.DataFrame:
     """
     Reconstructs original categorical columns from a one-hot encoded DataFrame.
@@ -1023,9 +1038,20 @@ def reconstruct_one_hot(
     Args:
         df (pd.DataFrame): 
             The input DataFrame with one-hot encoded columns.
-        base_features (List[str]): 
-            A list of base feature names to reconstruct. For example, if you have 
-            columns 'B_a', 'B_b', 'B_c', you would pass `['B']`.
+        features_to_reconstruct (List[str | Tuple[str, str | None]]):
+            A list defining the features to reconstruct. This list can contain:
+            
+            - A string: (e.g., "Color")
+              This reconstructs the feature 'Color' and assumes all-zero rows represent missing data NaN.
+            - A tuple: (e.g., ("Pet", "Dog"))
+              This reconstructs 'Pet' and maps all-zero rows to the baseline category "Dog" (handling 'drop_first=True' scenarios).
+            - A tuple with None: (e.g., ("Size", None))
+              This is explicit and behaves identically to just passing "Size". All-zero rows will be mapped to NaN.
+            Example:
+            [
+                "Mood",                      # All-zeros -> NaN
+                ("Color", "Red"),            # All-zeros -> "Red"
+            ]
         separator (str): 
             The character separating the base name from the categorical value in 
             the column names (e.g., '_' in 'B_a').
@@ -1055,10 +1081,39 @@ def reconstruct_one_hot(
     new_df = df.copy()
     all_ohe_cols_to_drop = []
     reconstructed_count = 0
-
-    _LOGGER.info(f"Attempting to reconstruct {len(base_feature_names)} one-hot encoded feature(s).")
-
-    for base_name in base_feature_names:
+    
+    # --- 1. Parse and validate the reconstruction config ---
+    # This normalizes the input into a clean {base_name: baseline_val} dict
+    reconstruction_config: Dict[str, Optional[str]] = {}
+    try:
+        for item in features_to_reconstruct:
+            if isinstance(item, str):
+                # Case 1: "Color"
+                base_name = item
+                baseline_val = None
+            elif isinstance(item, tuple) and len(item) == 2:
+                # Case 2: ("Pet", "dog") or ("Size", None)
+                base_name, baseline_val = item
+                if not (isinstance(base_name, str) and (isinstance(baseline_val, str) or baseline_val is None)):
+                    _LOGGER.error(f"Invalid tuple format for '{item}'. Must be (str, str|None).")
+                    raise ValueError()
+            else:
+                _LOGGER.error(f"Invalid item '{item}'. Must be str or (str, str|None) tuple.")
+                raise ValueError()
+            
+            if base_name in reconstruction_config and verbose:
+                _LOGGER.warning(f"Duplicate entry for '{base_name}' found. Using the last provided configuration.")
+            
+            reconstruction_config[base_name] = baseline_val
+    
+    except Exception as e:
+        _LOGGER.error(f"Failed to parse 'features_to_reconstruct' argument: {e}")
+        raise ValueError("Invalid configuration for 'features_to_reconstruct'.") from e
+    
+    _LOGGER.info(f"Attempting to reconstruct {len(reconstruction_config)} one-hot encoded feature(s).")
+    
+    # Main logic
+    for base_name, baseline_category in reconstruction_config.items():
         # Regex to find all columns belonging to this base feature.
         pattern = f"^{re.escape(base_name)}{re.escape(separator)}"
         
@@ -1070,24 +1125,34 @@ def reconstruct_one_hot(
             continue
 
         # For each row, find the column name with the maximum value (which is 1)
-        reconstructed_series = new_df[ohe_cols].idxmax(axis=1)
+        reconstructed_series = new_df[ohe_cols].idxmax(axis=1) # type: ignore
 
         # Extract the categorical value (the suffix) from the column name
         # Use n=1 in split to handle cases where the category itself might contain the separator
         new_column_values = reconstructed_series.str.split(separator, n=1).str[1]
         
-        # Handle rows where all OHE columns were 0 (e.g., original value was NaN).
-        # In these cases, idxmax returns the first column name, but the sum of values is 0.
-        all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0
-        new_column_values.loc[all_zero_mask] = np.nan # type: ignore
+        # Handle rows where all OHE columns were 0 (e.g., original value was NaN or a dropped baseline).
+        all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0 # type: ignore
+        
+        if baseline_category is not None:
+            # A baseline category was provided
+            new_column_values.loc[all_zero_mask] = baseline_category
+        else:
+            # No baseline provided: assign NaN
+            new_column_values.loc[all_zero_mask] = np.nan # type: ignore
+            
+        if verbose:
+            print(f"  - Mapped 'all-zero' rows for '{base_name}' to baseline: '{baseline_category}'.")
 
         # Assign the new reconstructed column to the DataFrame
         new_df[base_name] = new_column_values
         
         all_ohe_cols_to_drop.extend(ohe_cols)
         reconstructed_count += 1
-        print(f"  - Reconstructed '{base_name}' from {len(ohe_cols)} columns.")
+        if verbose:
+            print(f"  - Reconstructed '{base_name}' from {len(ohe_cols)} columns.")
 
+    # Cleanup
     if drop_original and all_ohe_cols_to_drop:
         # Drop the original OHE columns, ensuring no duplicates in the drop list
         unique_cols_to_drop = list(set(all_ohe_cols_to_drop))

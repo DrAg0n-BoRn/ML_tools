@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.9.0] 2025-10-24
+
+### Changed
+
+- data_exploration: 
+    - `encode_categorical_features()`, the function now safely handles null-label collisions when encode_nulls=True.
+    - `reconstruct_one_hot()`, The function signature has been fundamentally changed to support the reversal of drop_first=True (baseline) encodings.
+
 ## [12.8.0] 2025-10-23
 
 ### Changed
