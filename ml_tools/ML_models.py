@@ -304,7 +304,7 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     def __init__(self, *,
                  in_features: int,
                  out_targets: int,
-                 categorical_map: Dict[int, int],
+                 categorical_index_map: Dict[int, int],
                  embedding_dim: int = 32,
                  num_heads: int = 8,
                  num_layers: int = 6,
@@ -313,7 +313,7 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         Args:
             in_features (int): The total number of columns in the input data (features).
             out_targets (int): Number of output targets (1 for regression).
-            categorical_map (Dict[int, int]): Maps categorical column index to its cardinality (number of unique categories).
+            categorical_index_map (Dict[int, int]): Maps categorical column index to its cardinality (number of unique categories).
             embedding_dim (int): The dimension for all feature embeddings. Must be divisible by num_heads.
             num_heads (int): The number of heads in the multi-head attention mechanism.
             num_layers (int): The number of sub-encoder-layers in the transformer encoder.
@@ -340,20 +340,20 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         super().__init__()
         
          # --- Validation ---
-        if categorical_map and max(categorical_map.keys()) >= in_features:
-            _LOGGER.error(f"A categorical index ({max(categorical_map.keys())}) is out of bounds for the provided input features ({in_features}).")
+        if categorical_index_map and max(categorical_index_map.keys()) >= in_features:
+            _LOGGER.error(f"A categorical index ({max(categorical_index_map.keys())}) is out of bounds for the provided input features ({in_features}).")
             raise ValueError()
         
         # --- Derive numerical indices ---
         all_indices = set(range(in_features))
-        categorical_indices_set = set(categorical_map.keys())
+        categorical_indices_set = set(categorical_index_map.keys())
         numerical_indices = sorted(list(all_indices - categorical_indices_set))
         
         # --- Save configuration ---
         self.in_features = in_features
         self.out_targets = out_targets
         self.numerical_indices = numerical_indices
-        self.categorical_map = categorical_map
+        self.categorical_map = categorical_index_map
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -362,7 +362,7 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         # --- 1. Feature Tokenizer ---
         self.tokenizer = _FeatureTokenizer(
             numerical_indices=numerical_indices,
-            categorical_map=categorical_map,
+            categorical_map=categorical_index_map,
             embedding_dim=embedding_dim
         )
         

@@ -113,18 +113,19 @@ class TqdmProgressBar(Callback):
 class EarlyStopping(Callback):
     """
     Stop training when a monitored metric has stopped improving.
-    
-    Args:
-        monitor (str): Quantity to be monitored. Defaults to 'val_loss'.
-        min_delta (float): Minimum change in the monitored quantity to qualify as an improvement.
-        patience (int): Number of epochs with no improvement after which training will be stopped.
-        mode (str): One of {'auto', 'min', 'max'}. In 'min' mode, training will stop when the quantity
-                    monitored has stopped decreasing; in 'max' mode it will stop when the quantity
-                    monitored has stopped increasing; in 'auto' mode, the direction is automatically
-                    inferred from the name of the monitored quantity.
-        verbose (int): Verbosity mode.
     """
     def __init__(self, monitor: str=PyTorchLogKeys.VAL_LOSS, min_delta: float=0.0, patience: int=5, mode: Literal['auto', 'min', 'max']='auto', verbose: int=1):
+        """
+        Args:
+            monitor (str): Quantity to be monitored. Defaults to 'val_loss'.
+            min_delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+            patience (int): Number of epochs with no improvement after which training will be stopped.
+            mode (str): One of {'auto', 'min', 'max'}. In 'min' mode, training will stop when the quantity
+                        monitored has stopped decreasing; in 'max' mode it will stop when the quantity
+                        monitored has stopped increasing; in 'auto' mode, the direction is automatically
+                        inferred from the name of the monitored quantity.
+            verbose (int): Verbosity mode.
+        """
         super().__init__()
         self.monitor = monitor
         self.patience = patience
@@ -188,22 +189,23 @@ class EarlyStopping(Callback):
 
 class ModelCheckpoint(Callback):
     """
-    Saves the model to a directory with automated filename generation and rotation. The filename includes the epoch and score.
-
-    - If `save_best_only` is True, it saves the single best model, deleting the
-      previous best. 
-    - If `save_best_only` is False, it keeps the 3 most recent checkpoints,
-      deleting the oldest ones automatically.
-
-    Args:
-        save_dir (str): Directory where checkpoint files will be saved.
-        monitor (str): Metric to monitor for `save_best_only=True`.
-        save_best_only (bool): If true, save only the best model.
-        mode (str): One of {'auto', 'min', 'max'}.
-        verbose (int): Verbosity mode.
+    Saves the model weights to a directory with automated filename generation and rotation. 
     """
     def __init__(self, save_dir: Union[str,Path], checkpoint_name: Optional[str]=None, monitor: str = PyTorchLogKeys.VAL_LOSS,
                  save_best_only: bool = True, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 0):
+        """
+        - If `save_best_only` is True, it saves the single best model, deleting the previous best. 
+        - If `save_best_only` is False, it keeps the 3 most recent checkpoints, deleting the oldest ones automatically.
+
+        Args:
+            save_dir (str): Directory where checkpoint files will be saved.
+            checkpoint_name (str| None): If None, the filename will include the epoch and score.
+            monitor (str): Metric to monitor for `save_best_only=True`.
+            save_best_only (bool): If true, save only the best model.
+            mode (str): One of {'auto', 'min', 'max'}.
+            verbose (int): Verbosity mode.
+        """
+        
         super().__init__()
         self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")
         if not self.save_dir.is_dir():
@@ -306,17 +308,16 @@ class ModelCheckpoint(Callback):
 class LRScheduler(Callback):
     """
     Callback to manage a PyTorch learning rate scheduler.
-
-    This callback automatically calls the scheduler's `step()` method at the
-    end of each epoch. It also logs a message when the learning rate changes.
-
-    Args:
-        scheduler: An initialized PyTorch learning rate scheduler.
-        monitor (str, optional): The metric to monitor for schedulers that
-                                 require it, like `ReduceLROnPlateau`.
-                                 Should match a key in the logs (e.g., 'val_loss').
     """
     def __init__(self, scheduler, monitor: Optional[str] = None):
+        """
+        This callback automatically calls the scheduler's `step()` method at the
+        end of each epoch. It also logs a message when the learning rate changes.
+
+        Args:
+            scheduler: An initialized PyTorch learning rate scheduler.
+            monitor (str, optional): The metric to monitor for schedulers that require it, like `ReduceLROnPlateau`. Should match a key in the logs (e.g., 'val_loss').
+        """
         super().__init__()
         self.scheduler = scheduler
         self.monitor = monitor

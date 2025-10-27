@@ -81,8 +81,7 @@ class _PytorchDataset(Dataset):
             _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
 
 
-# --- Abstract Base Class (New) ---
-# --- Abstract Base Class (Corrected) ---
+# --- Abstract Base Class ---
 class _BaseDatasetMaker(ABC):
     """
     Abstract base class for dataset makers. Contains shared logic for
@@ -150,6 +149,14 @@ class _BaseDatasetMaker(ABC):
     @property
     def target_names(self) -> list[str]:
         return self._target_names
+    
+    @property
+    def number_of_features(self) -> int:
+        return len(self._feature_names)
+    
+    @property
+    def number_of_targets(self) -> int:
+        return len(self._target_names)
 
     @property
     def id(self) -> Optional[str]:
@@ -180,14 +187,14 @@ class _BaseDatasetMaker(ABC):
                           filename=DatasetKeys.TARGET_NAMES,
                           verbose=verbose)
 
-    def save_scaler(self, save_dir: Union[str, Path], verbose: bool=True) -> None:
+    def save_scaler(self, directory: Union[str, Path], verbose: bool=True) -> None:
         """
         Saves the fitted PytorchScaler's state to a .pth file.
 
         The filename is automatically generated based on the dataset id.
         
         Args:
-            save_dir (str | Path): The directory where the scaler will be saved.
+            directory (str | Path): The directory where the scaler will be saved.
         """
         if not self.scaler: 
             _LOGGER.error("No scaler was fitted or provided.")
@@ -195,13 +202,22 @@ class _BaseDatasetMaker(ABC):
         if not self.id: 
             _LOGGER.error("Must set the dataset `id` before saving scaler.")
             raise ValueError()
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        save_path = make_fullpath(directory, make=True, enforce="directory")
         sanitized_id = sanitize_filename(self.id)
         filename = f"{DatasetKeys.SCALER_PREFIX}{sanitized_id}.pth"
         filepath = save_path / filename
         self.scaler.save(filepath, verbose=False)
         if verbose:
             _LOGGER.info(f"Scaler for dataset '{self.id}' saved as '{filepath.name}'.")
+
+    def save_artifacts(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """
+        Convenience method to save feature names, target names, and the scaler (if a scaler was fitted)
+        """
+        self.save_feature_names(directory=directory, verbose=verbose)
+        self.save_target_names(directory=directory, verbose=verbose)
+        if self.scaler is not None:
+            self.save_scaler(directory=directory, verbose=verbose)
 
 
 # Single target dataset

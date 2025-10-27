@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.12.0] 2025-10-27
+
+### Changed
+
+- ML_datasetmaster: Parameter "save_dir" renamed to "directory" for consistency in the method `save_scaler()`. Affecting the classes `DatasetMaker` and `DatasetMakerMulti`.
+- ML_models: `TabularTransformer`'s parameter "categorical_map" renamed to "categorical_index_map" for clarity.
+- ML_callbacks: Enhanced docstring for callback classes: `ModelCheckpoint`, `EarlyStopping`, and `LRScheduler`.
+
+### Added
+
+- ML_datasetmaster: 
+    - `DatasetMaker` and `DatasetMakerMulti`:
+        - New method `save_artifacts()`, saves feature names, target names, and scaler if any.
+        - New methods as properties: `number_of_features`, `number_of_targets`. 
+
 ## [12.11.0] 2025-10-27
 
 ### Changed
