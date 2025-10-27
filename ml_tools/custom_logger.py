@@ -221,7 +221,7 @@ def compare_lists(
             - If True: Compares only the `type()` of the items.
 
     Returns:
-        A dictionary detailing the differences. (saved to `save_dir`).
+        dict: A dictionary detailing the differences. (saved to `save_dir`).
     """
     MISSING_A_KEY = "missing_in_A"
     MISSING_B_KEY = "missing_in_B"

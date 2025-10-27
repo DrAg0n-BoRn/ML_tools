@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.11.0] 2025-10-27
+
+### Changed
+
+- serde: `deserialize_object()`, will always raise an exception in case of an error.
+
 ## [12.10.0] 2025-10-24
 
 ### Added

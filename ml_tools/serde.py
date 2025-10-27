@@ -83,8 +83,7 @@ def deserialize_object(
     filepath: Union[str, Path],
     expected_type: Optional[Type[T]] = None,
     verbose: bool = True,
-    raise_on_error: bool = True
-    ) -> Optional[T]:
+    ) -> T:
     """
     Loads a serialized object from a .joblib file.
 
@@ -96,22 +95,17 @@ def deserialize_object(
             like `list[str]` by checking the base type (e.g., `list`).
             Defaults to None, which skips the type check.
         verbose (bool): If True, logs success messages.
-        raise_on_error (bool): If True, raises exceptions on errors. If False, returns None instead.
 
     Returns:
-        (Any | None): The deserialized Python object, which will match the
-            `expected_type` if provided. Returns None if an error
-            occurs and `raise_on_error` is False.
+        (Any): The deserialized Python object, which will match the `expected_type` if provided.
     """
-    true_filepath = make_fullpath(filepath)
+    true_filepath = make_fullpath(filepath, enforce="file")
     
     try:
         obj = joblib.load(true_filepath)
     except (IOError, OSError, EOFError, TypeError, ValueError) as e:
         _LOGGER.error(f"Failed to deserialize object from '{true_filepath}'.")
-        if raise_on_error:
-            raise e
-        return None
+        raise e
     else:
         # --- Type Validation Step ---
         if expected_type:
@@ -126,9 +120,7 @@ def deserialize_object(
                     f"but found '{type(obj)}' in '{true_filepath}'."
                 )
                 _LOGGER.error(error_msg)
-                if raise_on_error:
-                    raise TypeError()
-                return None
+                raise TypeError()
         
         if verbose:
             _LOGGER.info(f"Loaded object of type '{type(obj)}' from '{true_filepath}'.")
