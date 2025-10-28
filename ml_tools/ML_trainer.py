@@ -5,12 +5,13 @@ import torch
 from torch import nn
 import numpy as np
 
-from .ML_callbacks import Callback, History, TqdmProgressBar
+from .ML_callbacks import Callback, History, TqdmProgressBar, ModelCheckpoint
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._script_info import _script_info
-from .keys import PyTorchLogKeys
+from .keys import PyTorchLogKeys, PyTorchCheckpointKeys
 from ._logger import _LOGGER
+from .path_manager import make_fullpath
 
 
 __all__ = [
@@ -55,6 +56,7 @@ class MLTrainer:
         self.kind = kind
         self.criterion = criterion
         self.optimizer = optimizer
+        self.scheduler = None
         self.device = self._validate_device(device)
         self.dataloader_workers = dataloader_workers
         
@@ -70,6 +72,7 @@ class MLTrainer:
         self.history = {}
         self.epoch = 0
         self.epochs = 0 # Total epochs for the fit run
+        self.start_epoch = 1
         self.stop_training = False
 
     def _validate_device(self, device: str) -> torch.device:
@@ -109,8 +112,66 @@ class MLTrainer:
             num_workers=loader_workers, 
             pin_memory=("cuda" in self.device.type)
         )
+        
+    def _load_checkpoint(self, path: Union[str, Path]):
+        """Loads a training checkpoint to resume training."""
+        p = make_fullpath(path, enforce="file")
+        _LOGGER.info(f"Loading checkpoint from '{p.name}' to resume training...")
+        
+        try:
+            checkpoint = torch.load(p, map_location=self.device)
+            
+            if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
+                _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
+                raise KeyError()
 
-    def fit(self, epochs: int = 10, batch_size: int = 10, shuffle: bool = True):
+            self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
+            self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
+            self.start_epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) + 1 # Resume on the *next* epoch
+            
+            # --- Scheduler State Loading Logic ---
+            scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
+            scheduler_object_exists = self.scheduler is not None
+
+            if scheduler_object_exists and scheduler_state_exists:
+                # Case 1: Both exist. Attempt to load.
+                try:
+                    self.scheduler.load_state_dict(checkpoint[PyTorchCheckpointKeys.SCHEDULER_STATE]) # type: ignore
+                    scheduler_name = self.scheduler.__class__.__name__
+                    _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
+                except Exception as e:
+                    # Loading failed, likely a mismatch
+                    scheduler_name = self.scheduler.__class__.__name__
+                    _LOGGER.error(f"Failed to load scheduler state for '{scheduler_name}'. A different scheduler type might have been used.")
+                    raise e
+
+            elif scheduler_object_exists and not scheduler_state_exists:
+                # Case 2: Scheduler provided, but no state in checkpoint.
+                scheduler_name = self.scheduler.__class__.__name__
+                _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
+            
+            elif not scheduler_object_exists and scheduler_state_exists:
+                # Case 3: State in checkpoint, but no scheduler provided.
+                _LOGGER.error("Checkpoint contains an LR scheduler state, but no LRScheduler callback was provided.")
+                raise ValueError()
+            
+            # Restore callback states
+            for cb in self.callbacks:
+                if isinstance(cb, ModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
+                    cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
+                    _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
+            
+            _LOGGER.info(f"Checkpoint loaded. Resuming training from epoch {self.start_epoch}.")
+            
+        except Exception as e:
+            _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
+            raise
+
+    def fit(self, 
+            epochs: int = 10, 
+            batch_size: int = 10, 
+            shuffle: bool = True,
+            resume_from_checkpoint: Optional[Union[str, Path]] = None):
         """
         Starts the training-validation process of the model.
         
@@ -120,6 +181,7 @@ class MLTrainer:
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
+            resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
             
         Note:
             For regression tasks using `nn.MSELoss` or `nn.L1Loss`, the trainer
@@ -132,15 +194,18 @@ class MLTrainer:
         self._create_dataloaders(batch_size, shuffle)
         self.model.to(self.device)
         
+        if resume_from_checkpoint:
+            self._load_checkpoint(resume_from_checkpoint)
+        
         # Reset stop_training flag on the trainer
         self.stop_training = False
 
-        self.callbacks_hook('on_train_begin')
+        self._callbacks_hook('on_train_begin')
         
-        for epoch in range(1, self.epochs + 1):
+        for epoch in range(self.start_epoch, self.epochs + 1):
             self.epoch = epoch
             epoch_logs = {}
-            self.callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
+            self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
 
             train_logs = self._train_step()
             epoch_logs.update(train_logs)
@@ -148,13 +213,13 @@ class MLTrainer:
             val_logs = self._validation_step()
             epoch_logs.update(val_logs)
             
-            self.callbacks_hook('on_epoch_end', epoch, logs=epoch_logs)
+            self._callbacks_hook('on_epoch_end', epoch, logs=epoch_logs)
             
             # Check the early stopping flag
             if self.stop_training:
                 break
 
-        self.callbacks_hook('on_train_end')
+        self._callbacks_hook('on_train_end')
         return self.history
     
     def _train_step(self):
@@ -166,7 +231,7 @@ class MLTrainer:
                 PyTorchLogKeys.BATCH_INDEX: batch_idx, 
                 PyTorchLogKeys.BATCH_SIZE: features.size(0)
             }
-            self.callbacks_hook('on_batch_begin', batch_idx, logs=batch_logs)
+            self._callbacks_hook('on_batch_begin', batch_idx, logs=batch_logs)
 
             features, target = features.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
@@ -188,7 +253,7 @@ class MLTrainer:
             
             # Add the batch loss to the logs and call the end-of-batch hook
             batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss
-            self.callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+            self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
 
         return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
 
@@ -538,11 +603,33 @@ class MLTrainer:
         else:
             _LOGGER.error("No attention weights were collected from the model.")
     
-    def callbacks_hook(self, method_name: str, *args, **kwargs):
+    def _callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""
         for callback in self.callbacks:
             method = getattr(callback, method_name)
             method(*args, **kwargs)
+            
+    def to_cpu(self):
+        """
+        Moves the model to the CPU and updates the trainer's device setting.
+        
+        This is useful for running operations that require the CPU.
+        """
+        self.device = torch.device('cpu')
+        self.model.to(self.device)
+        _LOGGER.info("Trainer and model moved to CPU.")
+    
+    def to_device(self, device: str):
+        """
+        Moves the model to the specified device and updates the trainer's device setting.
+
+        Args:
+            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
+        """
+        self.device = self._validate_device(device)
+        self.model.to(self.device)
+        _LOGGER.info(f"Trainer and model moved to {self.device}.")
+    
 
 def info():
     _script_info(__all__)

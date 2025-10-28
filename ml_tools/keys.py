@@ -68,6 +68,15 @@ class SHAPKeys:
     SAVENAME = "shap_summary"
 
 
+class PyTorchCheckpointKeys:
+    """Keys for saving/loading a training checkpoint dictionary."""
+    MODEL_STATE = "model_state_dict"
+    OPTIMIZER_STATE = "optimizer_state_dict"
+    SCHEDULER_STATE = "scheduler_state_dict"
+    EPOCH = "epoch"
+    BEST_SCORE = "best_score"
+
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"

@@ -19,6 +19,7 @@ import torch
 import shap
 from pathlib import Path
 from typing import Union, Optional, List, Literal
+import warnings
 
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
@@ -298,8 +299,11 @@ def shap_summary_plot(model,
 
         background_data = background_data.to(device)
         instances_to_explain = instances_to_explain.to(device)
-
-        explainer = shap.DeepExplainer(model, background_data)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            explainer = shap.DeepExplainer(model, background_data)
+            
         # print("Calculating SHAP values with DeepExplainer...")
         shap_values = explainer.shap_values(instances_to_explain)
         instances_to_explain_np = instances_to_explain.cpu().numpy()

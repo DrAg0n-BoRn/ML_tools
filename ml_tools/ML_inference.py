@@ -9,7 +9,7 @@ from .ML_scaler import PytorchScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from .keys import PyTorchInferenceKeys
+from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys
 
 
 __all__ = [
@@ -56,11 +56,21 @@ class _BaseInferenceHandler(ABC):
         model_p = make_fullpath(state_dict, enforce="file")
 
         try:
-            # Load the state dictionary and apply it to the model structure
-            self.model.load_state_dict(torch.load(model_p, map_location=self.device))
+            # Load whatever is in the file
+            loaded_data = torch.load(model_p, map_location=self.device)
+
+            # Check if it's the new checkpoint dictionary or an old weights-only file
+            if isinstance(loaded_data, dict) and PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
+                # It's a new training checkpoint, extract the weights
+                self.model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
+            else:
+                # It's an old-style file (or just a state_dict), load it directly
+                self.model.load_state_dict(loaded_data)
+            
+            _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
+                
             self.model.to(self.device)
             self.model.eval()  # Set the model to evaluation mode
-            _LOGGER.info(f"Model state loaded from '{model_p.name}' and set to evaluation mode.")
         except Exception as e:
             _LOGGER.error(f"Failed to load model state from '{model_p}': {e}")
             raise

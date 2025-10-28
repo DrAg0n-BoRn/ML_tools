@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.0.0] 2025-10-28
+
+### Added
+
+- ML_trainer: 
+    - `MLTrainer.to_cpu()`, moves the model to the CPU and updates the trainer's device setting.
+    - `MLTrainer.to_device()`, moves the model to the specified device and updates the trainer's device setting.
+
+### Changed
+
+- ML_trainer: `MLTrainer.fit()`, allows training to be resumed from a previously saved checkpoint.
+- ML_callbacks: `ModelCheckpoint`, Now saves a comprehensive training checkpoint as a dictionary including model state, optimizer state, LR scheduler, epoch, and best score.
+- ML_inference: Inference Handler classes updated to be backward-compatible and also use the new comprehensive checkpoints.
+
+### Fixed
+
+- ML_evaluation_multi, ML_evaluation: Ignore UserWarning when using SHAP Deep Explainer.
+
 ## [12.13.0] 2025-10-28
 
 ### Changed

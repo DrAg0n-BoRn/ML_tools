@@ -20,6 +20,7 @@ from sklearn.metrics import (
 )
 from pathlib import Path
 from typing import Union, List, Literal
+import warnings
 
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
@@ -273,9 +274,12 @@ def multi_target_shap_summary_plot(
 
         background_data = background_data.to(device)
         instances_to_explain = instances_to_explain.to(device)
-
-        explainer = shap.DeepExplainer(model, background_data)
-        print("Calculating SHAP values with DeepExplainer...")
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            explainer = shap.DeepExplainer(model, background_data)
+            
+        # print("Calculating SHAP values with DeepExplainer...")
         # DeepExplainer returns a list of arrays for multi-output models
         shap_values_list = explainer.shap_values(instances_to_explain)
         instances_to_explain_np = instances_to_explain.cpu().numpy()
@@ -304,7 +308,7 @@ def multi_target_shap_summary_plot(
             return output.cpu().numpy() # Return full multi-output array
 
         explainer = shap.KernelExplainer(prediction_wrapper, background_summary)
-        print("Calculating SHAP values with KernelExplainer...")
+        # print("Calculating SHAP values with KernelExplainer...")
         # KernelExplainer also returns a list of arrays for multi-output models
         shap_values_list = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
         # instances_to_explain_np is already set
