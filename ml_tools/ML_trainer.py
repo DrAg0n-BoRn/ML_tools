@@ -340,9 +340,10 @@ class MLTrainer:
     def explain(self,
                 save_dir: Union[str,Path], 
                 explain_dataset: Optional[Dataset] = None, 
-                n_samples: int = 1000,
+                n_samples: int = 300,
                 feature_names: Optional[List[str]] = None,
-                target_names: Optional[List[str]] = None):
+                target_names: Optional[List[str]] = None,
+                explainer_type: Literal['deep', 'kernel'] = 'deep'):
         """
         Explains model predictions using SHAP and saves all artifacts.
 
@@ -359,6 +360,9 @@ class MLTrainer:
             feature_names (list[str] | None): Feature names.
             target_names (list[str] | None): Target names for multi-target tasks.
             save_dir (str | Path): Directory to save all SHAP artifacts.
+            explainer_type (Literal['deep', 'kernel']): The explainer to use.
+                - 'deep': (Default) Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
+                - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY slow and memory-intensive. Use with a very low 'n_samples'< 100.
         """
         # Internal helper to create a dataloader and get a random sample
         def _get_random_sample(dataset: Dataset, num_samples: int):
@@ -410,6 +414,9 @@ class MLTrainer:
             else:
                 _LOGGER.error("Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a `feature_names` attribute.")
                 raise ValueError()
+            
+        # move model to device
+        self.model.to(self.device)
 
         # 3. Call the plotting function
         if self.kind in ["regression", "classification"]:
@@ -418,7 +425,9 @@ class MLTrainer:
                 background_data=background_data,
                 instances_to_explain=instances_to_explain,
                 feature_names=feature_names,
-                save_dir=save_dir
+                save_dir=save_dir,
+                explainer_type=explainer_type,
+                device=self.device
             )
         elif self.kind in ["multi_target_regression", "multi_label_classification"]:
             # try to get target names
@@ -442,7 +451,9 @@ class MLTrainer:
                 instances_to_explain=instances_to_explain,
                 feature_names=feature_names, # type: ignore
                 target_names=target_names, # type: ignore
-                save_dir=save_dir
+                save_dir=save_dir,
+                explainer_type=explainer_type,
+                device=self.device
             )
 
     def _attention_helper(self, dataloader: DataLoader):

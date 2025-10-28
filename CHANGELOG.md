@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [12.13.0] 2025-10-28
+
+### Changed
+
+- ML_evaluation_multi, ML_evaluation: Changed the default SHAP explainer from KernelExplainer to DeepExplainer. SHAP explanations will now run on the provided `torch.device`.
+- ML_trainer: `MLTrainer.explain()`, updated to reflect the changes on the SHAP explanation functions.
+
 ## [12.12.0] 2025-10-27
 
 ### Changed

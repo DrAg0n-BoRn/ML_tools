@@ -18,7 +18,7 @@ from sklearn.metrics import (
 import torch
 import shap
 from pathlib import Path
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Literal
 
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
@@ -249,13 +249,15 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     plt.savefig(hist_path)
     _LOGGER.info(f"📊 Residuals histogram saved as '{hist_path.name}'")
     plt.close(fig_hist)
-
+    
 
 def shap_summary_plot(model, 
                       background_data: Union[torch.Tensor,np.ndarray], 
                       instances_to_explain: Union[torch.Tensor,np.ndarray], 
                       feature_names: Optional[list[str]], 
-                      save_dir: Union[str, Path]):
+                      save_dir: Union[str, Path],
+                      device: torch.device = torch.device('cpu'),
+                      explainer_type: Literal['deep', 'kernel'] = 'deep'):
     """
     Calculates SHAP values and saves summary plots and data.
 
@@ -265,48 +267,85 @@ def shap_summary_plot(model,
         instances_to_explain (torch.Tensor): The specific data instances to explain.
         feature_names (list of str | None): Names of the features for plot labeling.
         save_dir (str | Path): Directory to save SHAP artifacts.
+        device (torch.device): The torch device for SHAP calculations.
+        explainer_type (Literal['deep', 'kernel']): The explainer to use.
+            - 'deep': (Default) Uses shap.DeepExplainer. Fast and efficient for
+              PyTorch models.
+            - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY
+              slow and memory-intensive.
     """
-    # everything to numpy
-    if isinstance(background_data, np.ndarray):
-        background_data_np = background_data
-    else:
-        background_data_np = background_data.numpy()
-        
-    if isinstance(instances_to_explain, np.ndarray):
-        instances_to_explain_np = instances_to_explain
-    else:
-        instances_to_explain_np = instances_to_explain.numpy()
     
-    # --- Data Validation Step ---
-    if np.isnan(background_data_np).any() or np.isnan(instances_to_explain_np).any():
-        _LOGGER.error("Input data for SHAP contains NaN values. Aborting explanation.")
-        return
-    
-    print("\n--- SHAP Value Explanation ---")
+    print(f"\n--- SHAP Value Explanation Using {explainer_type.upper()} Explainer ---")
     
     model.eval()
-    model.cpu()
+    # model.cpu() # Run explanations on CPU
     
-    # 1. Summarize the background data.
-    # Summarize the background data using k-means. 10-50 clusters is a good starting point.
-    background_summary = shap.kmeans(background_data_np, 30) 
-    
-    # 2. Define a prediction function wrapper that SHAP can use. It must take a numpy array and return a numpy array.
-    def prediction_wrapper(x_np: np.ndarray) -> np.ndarray:
-        # Convert numpy data to torch tensor
-        x_torch = torch.from_numpy(x_np).float()
-        with torch.no_grad():
-            # Get model output
-            output = model(x_torch)
-        # Return as numpy array
-        return output.cpu().numpy().flatten()
+    shap_values = None
+    instances_to_explain_np = None
 
-    # 3. Create the KernelExplainer
-    explainer = shap.KernelExplainer(prediction_wrapper, background_summary)
+    if explainer_type == 'deep':
+        # --- 1. Use DeepExplainer (Preferred) ---
+        
+        # Ensure data is torch.Tensor
+        if isinstance(background_data, np.ndarray):
+            background_data = torch.from_numpy(background_data).float()
+        if isinstance(instances_to_explain, np.ndarray):
+            instances_to_explain = torch.from_numpy(instances_to_explain).float()
+            
+        if torch.isnan(background_data).any() or torch.isnan(instances_to_explain).any():
+            _LOGGER.error("Input data for SHAP contains NaN values. Aborting explanation.")
+            return
+
+        background_data = background_data.to(device)
+        instances_to_explain = instances_to_explain.to(device)
+
+        explainer = shap.DeepExplainer(model, background_data)
+        # print("Calculating SHAP values with DeepExplainer...")
+        shap_values = explainer.shap_values(instances_to_explain)
+        instances_to_explain_np = instances_to_explain.cpu().numpy()
+
+    elif explainer_type == 'kernel':
+        # --- 2. Use KernelExplainer (Slow Fallback) ---
+        _LOGGER.warning(
+            "Using KernelExplainer. This is memory-intensive and slow. "
+            "Consider reducing 'n_samples' if the process terminates unexpectedly."
+        )
+
+        # Ensure data is np.ndarray
+        if isinstance(background_data, torch.Tensor):
+            background_data_np = background_data.cpu().numpy()
+        else:
+            background_data_np = background_data
+            
+        if isinstance(instances_to_explain, torch.Tensor):
+            instances_to_explain_np = instances_to_explain.cpu().numpy()
+        else:
+            instances_to_explain_np = instances_to_explain
+        
+        if np.isnan(background_data_np).any() or np.isnan(instances_to_explain_np).any():
+            _LOGGER.error("Input data for SHAP contains NaN values. Aborting explanation.")
+            return
+        
+        # Summarize background data
+        background_summary = shap.kmeans(background_data_np, 30) 
+        
+        def prediction_wrapper(x_np: np.ndarray) -> np.ndarray:
+            x_torch = torch.from_numpy(x_np).float().to(device)
+            with torch.no_grad():
+                output = model(x_torch)
+            # Return as numpy array
+            return output.cpu().numpy()
+
+        explainer = shap.KernelExplainer(prediction_wrapper, background_summary)
+        # print("Calculating SHAP values with KernelExplainer...")
+        shap_values = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
+        # instances_to_explain_np is already set
     
-    print("Calculating SHAP values with KernelExplainer...")
-    shap_values = explainer.shap_values(instances_to_explain_np, l1_reg="aic")
-    
+    else:
+        _LOGGER.error(f"Invalid explainer_type: '{explainer_type}'. Must be 'deep' or 'kernel'.")
+        raise ValueError()
+
+    # --- 3. Plotting and Saving ---
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     plt.ioff()
     
@@ -326,8 +365,9 @@ def shap_summary_plot(model,
     shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
     ax = plt.gca()
     ax.set_xlabel("SHAP Value Impact", labelpad=10)
-    cb = plt.gcf().axes[-1]
-    cb.set_ylabel("", size=1)
+    if plt.gcf().axes and len(plt.gcf().axes) > 1:
+        cb = plt.gcf().axes[-1]
+        cb.set_ylabel("", size=1)
     plt.title("SHAP Feature Importance")
     plt.tight_layout()
     plt.savefig(dot_path)
@@ -337,8 +377,14 @@ def shap_summary_plot(model,
     # Save Summary Data to CSV
     shap_summary_filename = SHAPKeys.SAVENAME + ".csv"
     summary_path = save_dir_path / shap_summary_filename
-    # Ensure the array is 1D before creating the DataFrame
-    mean_abs_shap = np.abs(shap_values).mean(axis=0).flatten()
+    
+    # Handle multi-class (list of arrays) vs. regression (single array)
+    if isinstance(shap_values, list):
+        mean_abs_shap = np.abs(np.stack(shap_values)).mean(axis=0).mean(axis=0)
+    else:
+        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+
+    mean_abs_shap = mean_abs_shap.flatten()
     
     if feature_names is None:
         feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
@@ -351,7 +397,7 @@ def shap_summary_plot(model,
     summary_df.to_csv(summary_path, index=False)
     
     _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
-    plt.ion()
+    plt.ion()    
 
 
 def plot_attention_importance(weights: List[torch.Tensor], feature_names: Optional[List[str]], save_dir: Union[str, Path], top_n: int = 10):
