@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.1.0] 2025-10-28
+
+### Added
+
+- data_exploration: `finalize_feature_schema()`, Analyzes the final features DataFrame to create a definitive "single source of truth" for column order and type (categorical vs. continuous) for the entire ML pipeline. Returns a `FeatureSchema` NamedTuple instance.
+
+### Changed
+
+- ML_models: `TabularTransformer`, overhauled to make use of a `FeatureSchema` instance.
+- optimization_tools: `create_optimization_bounds()`, overhauled to make use of a `FeatureSchema` instance.
+- ML_optimization: `MLOptimizer`, overhauled to make use of a `FeatureSchema` instance. Automatically uses `create_optimization_bounds()` under the hood.
+- ML_datasetmaster: `DatasetMakerMulti`, `DatasetMaker`, overhauled to make use of a `FeatureSchema` instance.
+
+### Removed
+
+- data_exploration: `create_transformer_categorical_map()` in favor of the `FeatureSchema` class implementation.
+- Module: "ML_simple_optimization", incompatible with new robust pipeline.
+- Jupyter notebook examples, outdated.
+
+### Deprecated
+
+- PSO_optimization: legacy module for simple optimizations using ensemble models.
+
 ## [13.0.0] 2025-10-28
 
 ### Added

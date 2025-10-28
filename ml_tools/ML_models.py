@@ -8,6 +8,7 @@ from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from ._script_info import _script_info
 from .keys import PytorchModelArchitectureKeys
+from ._schema import FeatureSchema
 
 
 __all__ = [
@@ -298,76 +299,59 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     """
     A Transformer-based model for tabular data tasks.
     
-    This model uses a Feature Tokenizer to convert all input features into a sequence of embeddings, prepends a [CLS] token, and processes the
+    This model uses a Feature Tokenizer to convert all input features into a
+    sequence of embeddings, prepends a [CLS] token, and processes the
     sequence with a standard Transformer Encoder.
     """
     def __init__(self, *,
-                 in_features: int,
+                 schema: FeatureSchema,
                  out_targets: int,
-                 categorical_index_map: Dict[int, int],
                  embedding_dim: int = 32,
                  num_heads: int = 8,
                  num_layers: int = 6,
                  dropout: float = 0.1):
         """
         Args:
-            in_features (int): The total number of columns in the input data (features).
-            out_targets (int): Number of output targets (1 for regression).
-            categorical_index_map (Dict[int, int]): Maps categorical column index to its cardinality (number of unique categories).
-            embedding_dim (int): The dimension for all feature embeddings. Must be divisible by num_heads.
-            num_heads (int): The number of heads in the multi-head attention mechanism.
-            num_layers (int): The number of sub-encoder-layers in the transformer encoder.
-            dropout (float): The dropout value.
-            
-        Note: 
-        - All arguments are keyword-only to promote clarity.
-        - Column indices start at 0.
-        
-        ### Data Preparation
-        The model requires a specific input format. All columns in the input DataFrame must be numerical, but they are treated differently based on the 
-        provided index lists.
-
-        **Nominal Categorical Features** (e.g., 'City', 'Color'): Should **NOT** be one-hot encoded. 
-        Instead, convert them to integer codes (label encoding). You must then provide a dictionary mapping their column indices to 
-        their cardinality (the number of unique categories) via the `categorical_map` parameter.
-
-        **Ordinal & Binary Features** (e.g., 'Low/Medium/High', 'True/False'): Should be treated as **numerical**. Map them to numbers that 
-        represent their state (e.g., `{'Low': 0, 'Medium': 1}` or `{False: 0, True: 1}`). Their column indices should **NOT** be included in the 
-        `categorical_map` parameter.
-
-        **Standard Numerical and Continuous Features** (e.g., 'Age', 'Price'): It is highly recommended to scale them before training.
+            schema (FeatureSchema): 
+                The definitive schema object created by `data_exploration.finalize_feature_schema()`.
+            out_targets (int): 
+                Number of output targets (1 for regression).
+            embedding_dim (int): 
+                The dimension for all feature embeddings. Must be divisible 
+                by num_heads.
+            num_heads (int): 
+                The number of heads in the multi-head attention mechanism.
+            num_layers (int): 
+                The number of sub-encoder-layers in the transformer encoder.
+            dropout (float): 
+                The dropout value.
         """
         super().__init__()
         
+         # --- Get info from schema ---
+        in_features = len(schema.feature_names)
+        categorical_index_map = schema.categorical_index_map
+
          # --- Validation ---
-        if categorical_index_map and max(categorical_index_map.keys()) >= in_features:
+        if categorical_index_map and (max(categorical_index_map.keys()) >= in_features):
             _LOGGER.error(f"A categorical index ({max(categorical_index_map.keys())}) is out of bounds for the provided input features ({in_features}).")
             raise ValueError()
         
-        # --- Derive numerical indices ---
-        all_indices = set(range(in_features))
-        categorical_indices_set = set(categorical_index_map.keys())
-        numerical_indices = sorted(list(all_indices - categorical_indices_set))
-        
         # --- Save configuration ---
-        self.in_features = in_features
+        self.schema = schema # <-- Save the whole schema
         self.out_targets = out_targets
-        self.numerical_indices = numerical_indices
-        self.categorical_map = categorical_index_map
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
 
-        # --- 1. Feature Tokenizer ---
+        # --- 1. Feature Tokenizer (now takes the schema) ---
         self.tokenizer = _FeatureTokenizer(
-            numerical_indices=numerical_indices,
-            categorical_map=categorical_index_map,
+            schema=schema,
             embedding_dim=embedding_dim
         )
         
         # --- 2. CLS Token ---
-        # A learnable token that will be prepended to the sequence.
         self.cls_token = nn.Parameter(torch.randn(1, 1, embedding_dim))
         
         # --- 3. Transformer Encoder ---
@@ -416,21 +400,87 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     
     def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""
+        # Deconstruct schema into a JSON-friendly dict
+        # Tuples are saved as lists
+        schema_dict = {
+            'feature_names': self.schema.feature_names,
+            'continuous_feature_names': self.schema.continuous_feature_names,
+            'categorical_feature_names': self.schema.categorical_feature_names,
+            'categorical_index_map': self.schema.categorical_index_map,
+            'categorical_mappings': self.schema.categorical_mappings
+        }
+
         return {
-            'in_features': self.in_features,
+            'schema_dict': schema_dict,
             'out_targets': self.out_targets,
-            'categorical_map': self.categorical_map,
             'embedding_dim': self.embedding_dim,
             'num_heads': self.num_heads,
             'num_layers': self.num_layers,
             'dropout': self.dropout
         }
+    
+    @classmethod
+    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
+        """Loads a model architecture from a JSON file."""
+        user_path = make_fullpath(file_or_dir)
+        
+        if user_path.is_dir():
+            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
+            target_path = make_fullpath(user_path / json_filename, enforce="file")
+        elif user_path.is_file():
+            target_path = user_path
+        else:
+            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
+            raise IOError()
+
+        with open(target_path, 'r') as f:
+            saved_data = json.load(f)
+
+        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
+        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
+
+        if saved_class_name != cls.__name__:
+            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
+            raise ValueError()
+
+        # --- RECONSTRUCTION LOGIC ---
+        if 'schema_dict' not in config:
+            _LOGGER.error("Invalid architecture file: missing 'schema_dict'. This file may be from an older version.")
+            raise ValueError("Missing 'schema_dict' in config.")
+            
+        schema_data = config.pop('schema_dict')
+        
+        # Re-hydrate the categorical_index_map
+        # JSON saves all dict keys as strings, so we must convert them back to int.
+        raw_index_map = schema_data['categorical_index_map']
+        if raw_index_map is not None:
+            rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
+        else:
+            rehydrated_index_map = None
+
+        # Re-hydrate the FeatureSchema object
+        # JSON deserializes tuples as lists, so we must convert them back.
+        schema = FeatureSchema(
+            feature_names=tuple(schema_data['feature_names']),
+            continuous_feature_names=tuple(schema_data['continuous_feature_names']),
+            categorical_feature_names=tuple(schema_data['categorical_feature_names']),
+            categorical_index_map=rehydrated_index_map,
+            categorical_mappings=schema_data['categorical_mappings']
+        )
+        
+        config['schema'] = schema
+        # --- End Reconstruction ---
+
+        model = cls(**config)
+        if verbose:
+            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
+        return model
         
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
         # Build the architecture string part-by-part
         parts = [
-            f"Tokenizer(features={self.in_features}, dim={self.embedding_dim})",
+            f"Tokenizer(features={len(self.schema.feature_names)}, dim={self.embedding_dim})",
             "[CLS]",
             f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads})",
             f"PredictionHead(outputs={self.out_targets})"
@@ -443,29 +493,41 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
 
 class _FeatureTokenizer(nn.Module):
     """
-    Transforms raw numerical and categorical features from any column order into a sequence of embeddings.
+    Transforms raw numerical and categorical features from any column order 
+    into a sequence of embeddings.
     """
     def __init__(self,
-                 numerical_indices: List[int],
-                 categorical_map: Dict[int, int],
+                 schema: FeatureSchema,
                  embedding_dim: int):
         """
         Args:
-            numerical_indices (List[int]): A list of column indices for the numerical features.
-            categorical_map (Dict[int, int]): A dictionary mapping each categorical column index to its cardinality (number of unique categories).
-            embedding_dim (int): The dimension for all feature embeddings.
+            schema (FeatureSchema): 
+                The definitive schema object from data_exploration.
+            embedding_dim (int): 
+                The dimension for all feature embeddings.
         """
         super().__init__()
         
-        # Unpack the dictionary into separate lists for indices and cardinalities
-        self.categorical_indices = list(categorical_map.keys())
-        cardinalities = list(categorical_map.values())
+        # --- Get info from schema ---
+        categorical_map = schema.categorical_index_map
         
-        self.numerical_indices = numerical_indices
+        if categorical_map:
+            # Unpack the dictionary into separate lists
+            self.categorical_indices = list(categorical_map.keys())
+            cardinalities = list(categorical_map.values())
+        else:
+            self.categorical_indices = []
+            cardinalities = []
+        
+        # Derive numerical indices by finding what's not categorical
+        all_indices = set(range(len(schema.feature_names)))
+        categorical_indices_set = set(self.categorical_indices)
+        self.numerical_indices = sorted(list(all_indices - categorical_indices_set))
+        
         self.embedding_dim = embedding_dim
         
         # A learnable embedding for each numerical feature
-        self.numerical_embeddings = nn.Parameter(torch.randn(len(numerical_indices), embedding_dim))
+        self.numerical_embeddings = nn.Parameter(torch.randn(len(self.numerical_indices), embedding_dim))
         
         # A standard embedding layer for each categorical feature
         self.categorical_embeddings = nn.ModuleList(
@@ -487,6 +549,8 @@ class _FeatureTokenizer(nn.Module):
         # Process categorical features
         categorical_tokens = []
         for i, embed_layer in enumerate(self.categorical_embeddings):
+            # x_categorical[:, i] selects the i-th categorical column
+            # (e.g., all values for the 'color' feature)
             token = embed_layer(x_categorical[:, i]).unsqueeze(1)
             categorical_tokens.append(token)
         

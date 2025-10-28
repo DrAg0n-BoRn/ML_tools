@@ -9,6 +9,7 @@ from .utilities import yield_dataframes_from_dir
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .SQL import DatabaseManager
+from ._schema import FeatureSchema
 
 
 __all__ = [
@@ -19,35 +20,25 @@ __all__ = [
 
 
 def create_optimization_bounds(
-    csv_path: Union[str, Path],
+    schema: FeatureSchema,
     continuous_bounds_map: Dict[str, Tuple[float, float]],
-    categorical_map: Dict[int, int],
-    target_column: Optional[str] = None,
     start_at_zero: bool = True
 ) -> Tuple[List[float], List[float]]:
     """
-    Generates the lower and upper bounds lists for the optimizer from a CSV header.
+    Generates the lower and upper bounds lists for the optimizer from a FeatureSchema.
 
     This helper function automates the creation of unbiased bounds for
     categorical features and combines them with user-defined bounds for
-    continuous features.
-
-    It reads *only* the header of the provided CSV to determine the full
-    list of feature columns and their order, excluding the specified target.
-    This is memory-efficient as the full dataset is not loaded.
+    continuous features, using the schema as the single source of truth
+    for feature order and type.
 
     Args:
-        csv_path (Union[str, Path]):
-            Path to the final, preprocessed CSV file. The column order in
-            this file must match the order expected by the model.
+        schema (FeatureSchema):
+            The definitive schema object created by 
+            `data_exploration.finalize_feature_schema()`.
         continuous_bounds_map (Dict[str, Tuple[float, float]]):
             A dictionary mapping the *name* of each **continuous** feature
             to its (min_bound, max_bound) tuple.
-        categorical_map (Dict[int, int]):
-            The map from the *index* of each **categorical** feature to its cardinality.
-            (e.g., {2: 4} for a feature at index 2 with 4 categories).
-        target_column (Optional[str], optional):
-            The name of the target column to exclude. If None (default), the *last column* in the CSV is assumed to be the target.
         start_at_zero (bool):
             - If True, assumes categorical encoding is [0, 1, ..., k-1].
               Bounds will be set as [-0.5, k - 0.5].
@@ -59,98 +50,86 @@ def create_optimization_bounds(
             A tuple containing two lists: (lower_bounds, upper_bounds).
 
     Raises:
-        ValueError: If a feature is defined in both maps, is missing from
-                    both maps, or if a name in `continuous_bounds_map`
-                    or `target_column` is not found in the CSV columns.
+        ValueError: If a feature is missing from `continuous_bounds_map`
+                    or if a feature name in the map is not a
+                    continuous feature according to the schema.
     """
-    # 1. Read header and determine feature names
-    full_csv_path = make_fullpath(csv_path, enforce="file")
-    try:
-        df_header = pd.read_csv(full_csv_path, nrows=0, encoding="utf-8")
-    except Exception as e:
-        _LOGGER.error(f"Failed to read header from CSV: {e}")
-        raise
-        
-    all_column_names = df_header.columns.to_list()
-    feature_names: List[str] = []
-
-    if target_column is None:
-        feature_names = all_column_names[:-1]
-        excluded_target = all_column_names[-1]
-        _LOGGER.info(f"No target_column provided. Assuming last column '{excluded_target}' is the target.")
-    else:
-        if target_column not in all_column_names:
-            _LOGGER.error(f"Target column '{target_column}' not found in CSV header.")
-            raise ValueError()
-        feature_names = [name for name in all_column_names if name != target_column]
-        _LOGGER.info(f"Excluding target column '{target_column}'.")
-    
-    # 2. Initialize bound lists
+    # 1. Get feature names and map from schema
+    feature_names = schema.feature_names
+    categorical_index_map = schema.categorical_index_map
     total_features = len(feature_names)
-    if total_features <= 0:
-        _LOGGER.error("No feature columns remain after excluding the target.")
-        raise ValueError()
 
-    lower_bounds: List[Optional[float]] = [None] * total_features
-    upper_bounds: List[Optional[float]] = [None] * total_features
-    
+    if total_features <= 0:
+        _LOGGER.error("Schema contains no features.")
+        raise ValueError()
+        
     _LOGGER.info(f"Generating bounds for {total_features} total features...")
 
+    # 2. Initialize bound lists
+    lower_bounds: List[Optional[float]] = [None] * total_features
+    upper_bounds: List[Optional[float]] = [None] * total_features
+
     # 3. Populate categorical bounds (Index-based)
-    # The indices in categorical_map (e.g., {2: 4}) directly correspond
-    # to the indices in the `feature_names` list.
-    for index, cardinality in categorical_map.items():
-        if not (0 <= index < total_features):
-            _LOGGER.error(f"Categorical index {index} is out of range for the {total_features} features.")
-            raise ValueError()
-            
-        if start_at_zero:
-            # Rule for [0, k-1]: bounds are [-0.5, k - 0.5]
-            low = -0.5
-            high = float(cardinality) - 0.5
-        else:
-            # Rule for [1, k]: bounds are [0.5, k + 0.5]
-            low = 0.5
-            high = float(cardinality) + 0.5
-            
-        lower_bounds[index] = low
-        upper_bounds[index] = high
+    if categorical_index_map:
+        for index, cardinality in categorical_index_map.items():
+            if not (0 <= index < total_features):
+                _LOGGER.error(f"Categorical index {index} is out of range for the {total_features} features.")
+                raise ValueError()
+                
+            if start_at_zero:
+                # Rule for [0, k-1]: bounds are [-0.5, k - 0.5]
+                low = -0.5
+                high = float(cardinality) - 0.5
+            else:
+                # Rule for [1, k]: bounds are [0.5, k + 0.5]
+                low = 0.5
+                high = float(cardinality) + 0.5
+                
+            lower_bounds[index] = low
+            upper_bounds[index] = high
         
-    _LOGGER.info(f"Automatically set bounds for {len(categorical_map)} categorical features.")
+        _LOGGER.info(f"Automatically set bounds for {len(categorical_index_map)} categorical features.")
+    else:
+        _LOGGER.info("No categorical features found in schema.")
 
     # 4. Populate continuous bounds (Name-based)
+    # Use schema.continuous_feature_names for robust checking
+    continuous_names_set = set(schema.continuous_feature_names)
+    
+    if continuous_names_set != set(continuous_bounds_map.keys()):
+        missing_in_map = continuous_names_set - set(continuous_bounds_map.keys())
+        if missing_in_map:
+            _LOGGER.error(f"The following continuous features are missing from 'continuous_bounds_map': {list(missing_in_map)}")
+        
+        extra_in_map = set(continuous_bounds_map.keys()) - continuous_names_set
+        if extra_in_map:
+            _LOGGER.error(f"The following features in 'continuous_bounds_map' are not defined as continuous in the schema: {list(extra_in_map)}")
+            
+        raise ValueError("Mismatch between 'continuous_bounds_map' and schema's continuous features.")
+
     count_continuous = 0
     for name, (low, high) in continuous_bounds_map.items():
-        try:
-            # Map name to its index in the *feature-only* list
-            index = feature_names.index(name)
-        except ValueError:
-            _LOGGER.warning(f"Feature name '{name}' from 'continuous_bounds_map' not found in the CSV's feature columns.")
-            continue
-            
+        # Map name to its index in the *feature-only* list
+        # This is guaranteed to be correct by the schema
+        index = feature_names.index(name)
+
         if lower_bounds[index] is not None:
-            # This index was already set by the categorical map
-            _LOGGER.error(f"Feature '{name}' (at index {index}) is defined in both 'categorical_map' and 'continuous_bounds_map'.")
+            # This should be impossible if schema is correct, but good to check
+            _LOGGER.error(f"Schema conflict: Feature '{name}' (at index {index}) is defined as both continuous and categorical.")
             raise ValueError()
-            
+
         lower_bounds[index] = float(low)
         upper_bounds[index] = float(high)
         count_continuous += 1
         
     _LOGGER.info(f"Manually set bounds for {count_continuous} continuous features.")
 
-    # 5. Validation: Check for any remaining None values
-    missing_indices = []
-    for i in range(total_features):
-        if lower_bounds[i] is None:
-            missing_indices.append(i)
-            
-    if missing_indices:
+    # 5. Final Validation (all Nones should be filled)
+    if None in lower_bounds:
+        missing_indices = [i for i, b in enumerate(lower_bounds) if b is None]
         missing_names = [feature_names[i] for i in missing_indices]
-        _LOGGER.error(f"Bounds not defined for all features. Missing: {missing_names}")
-        raise ValueError()
-
-    # _LOGGER.info("All bounds successfully created.")
+        _LOGGER.error(f"Failed to create all bounds. This indicates an internal logic error. Missing: {missing_names}")
+        raise RuntimeError("Internal error: Not all bounds were populated.")
     
     # Cast to float lists, as 'None' sentinels are gone
     return (

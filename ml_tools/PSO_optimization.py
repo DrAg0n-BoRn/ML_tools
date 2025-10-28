@@ -17,6 +17,10 @@ from ._script_info import _script_info
 from .SQL import DatabaseManager
 from .optimization_tools import _save_result
 
+"""
+DEPRECATED
+"""
+
 
 __all__ = [
     "ObjectiveFunction",
@@ -46,7 +50,7 @@ class ObjectiveFunction():
         self.binary_features = binary_features
         self.is_hybrid = False if binary_features <= 0 else True
         self.use_noise = add_noise
-        self._artifact = deserialize_object(trained_model_path, verbose=False, raise_on_error=True)
+        self._artifact = deserialize_object(trained_model_path, verbose=False)
         self.model = self._get_from_artifact(EnsembleKeys.MODEL)
         self.feature_names: Optional[list[str]] = self._get_from_artifact(EnsembleKeys.FEATURES) # type: ignore
         self.target_name: Optional[str] = self._get_from_artifact(EnsembleKeys.TARGET) # type: ignore

@@ -17,6 +17,7 @@ from ._script_info import _script_info
 from .custom_logger import save_list_strings
 from .ML_scaler import PytorchScaler
 from .keys import DatasetKeys
+from ._schema import FeatureSchema
 
 
 __all__ = [
@@ -35,7 +36,7 @@ class _PytorchDataset(Dataset):
     Converts numpy/pandas data into tensors for model consumption.
     """
     def __init__(self, features: Union[numpy.ndarray, pandas.DataFrame], 
-                 labels: Union[numpy.ndarray, pandas.Series],
+                 labels: Union[numpy.ndarray, pandas.Series, pandas.DataFrame],
                  labels_dtype: torch.dtype,
                  features_dtype: torch.dtype = torch.float32,
                  feature_names: Optional[List[str]] = None,
@@ -48,13 +49,16 @@ class _PytorchDataset(Dataset):
         
         if isinstance(features, numpy.ndarray):
             self.features = torch.tensor(features, dtype=features_dtype)
-        else:
-            self.features = torch.tensor(features.values, dtype=features_dtype)
+        else: # It's a pandas.DataFrame
+            self.features = torch.tensor(features.to_numpy(), dtype=features_dtype)
 
         if isinstance(labels, numpy.ndarray):
             self.labels = torch.tensor(labels, dtype=labels_dtype)
+        elif isinstance(labels, (pandas.Series, pandas.DataFrame)):
+            self.labels = torch.tensor(labels.to_numpy(), dtype=labels_dtype)
         else:
-            self.labels = torch.tensor(labels.values, dtype=labels_dtype)
+             # Fallback for other types (though your type hints don't cover this)
+            self.labels = torch.tensor(labels, dtype=labels_dtype)
             
         self._feature_names = feature_names
         self._target_names = target_names
@@ -98,27 +102,34 @@ class _BaseDatasetMaker(ABC):
         self._X_test_shape = (0,0)
         self._y_train_shape = (0,)
         self._y_test_shape = (0,)
-
-    def _prepare_scaler(self, X_train: pandas.DataFrame, y_train: Union[pandas.Series, pandas.DataFrame], X_test: pandas.DataFrame, label_dtype: torch.dtype, continuous_feature_columns: Optional[Union[List[int], List[str]]]):
-        """Internal helper to fit and apply a PytorchScaler."""
+        
+    def _prepare_scaler(self, 
+                        X_train: pandas.DataFrame, 
+                        y_train: Union[pandas.Series, pandas.DataFrame], 
+                        X_test: pandas.DataFrame, 
+                        label_dtype: torch.dtype, 
+                        schema: FeatureSchema):
+        """Internal helper to fit and apply a PytorchScaler using a FeatureSchema."""
         continuous_feature_indices: Optional[List[int]] = None
-        if continuous_feature_columns:
-            if all(isinstance(c, str) for c in continuous_feature_columns):
-                name_to_idx = {name: i for i, name in enumerate(self._feature_names)}
-                try:
-                    continuous_feature_indices = [name_to_idx[name] for name in continuous_feature_columns] # type: ignore
-                except KeyError as e:
-                    _LOGGER.error(f"Feature column '{e.args[0]}' not found.")
-                    raise ValueError()
-            elif all(isinstance(c, int) for c in continuous_feature_columns):
-                continuous_feature_indices = continuous_feature_columns # type: ignore
-            else:
-                _LOGGER.error("'continuous_feature_columns' must be a list of all strings or all integers.")
-                raise TypeError()
+
+        # Get continuous feature indices *from the schema*
+        if schema.continuous_feature_names:
+            _LOGGER.info("Getting continuous feature indices from schema.")
+            try:
+                # Convert columns to a standard list for .index()
+                train_cols_list = X_train.columns.to_list()
+                # Map names from schema to column indices in the training DataFrame
+                continuous_feature_indices = [train_cols_list.index(name) for name in schema.continuous_feature_names]
+            except ValueError as e: #
+                _LOGGER.error(f"Feature name from schema not found in training data columns:\n{e}")
+                raise ValueError()
+        else:
+            _LOGGER.info("No continuous features listed in schema. Scaler will not be fitted.")
 
         X_train_values = X_train.values
         X_test_values = X_test.values
 
+        # continuous_feature_indices is derived
         if self.scaler is None and continuous_feature_indices:
             _LOGGER.info("Fitting a new PytorchScaler on training data.")
             temp_train_ds = _PytorchDataset(X_train_values, y_train, label_dtype) # type: ignore
@@ -225,10 +236,8 @@ class DatasetMaker(_BaseDatasetMaker):
     """
     Dataset maker for pre-processed, numerical pandas DataFrames with a single target column.
 
-    This class takes a DataFrame, automatically splits it into training and
-    testing sets, and converts them into PyTorch Datasets. It assumes the
-    target variable is the last column. It can also create, apply, and
-    save a PytorchScaler for standardizing continuous features.
+    This class takes a DataFrame, and a FeatureSchema, automatically splits and converts them into PyTorch Datasets.
+    It can also create and apply a PytorchScaler using the schema.
     
     Attributes:
         `scaler` -> PytorchScaler | None
@@ -242,92 +251,164 @@ class DatasetMaker(_BaseDatasetMaker):
     """
     def __init__(self,
                  pandas_df: pandas.DataFrame,
+                 schema: FeatureSchema,
                  kind: Literal["regression", "classification"],
                  test_size: float = 0.2,
                  random_state: int = 42,
-                 scaler: Optional[PytorchScaler] = None,
-                 continuous_feature_columns: Optional[Union[List[int], List[str]]] = None):
+                 scaler: Optional[PytorchScaler] = None):
         """
         Args:
-            pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
-            kind (Literal["regression", "classification"]): The type of ML task. This determines the data type of the labels.
-            test_size (float): The proportion of the dataset to allocate to the test split.
-            random_state (int): The seed for the random number generator for reproducibility.
-            scaler (PytorchScaler | None): A pre-fitted PytorchScaler instance.
-            continuous_feature_columns (List[int] | List[str] | None): Column indices or names of continuous features to scale. If provided creates a new PytorchScaler.
+            pandas_df (pandas.DataFrame): 
+                The pre-processed input DataFrame containing all columns. (features and single target).
+            schema (FeatureSchema): 
+                The definitive schema object from data_exploration.
+            kind (Literal["regression", "classification"]): 
+                The type of ML task. This determines the data type of the labels.
+            test_size (float): 
+                The proportion of the dataset to allocate to the test split.
+            random_state (int): 
+                The seed for the random number of generator for reproducibility.
+            scaler (PytorchScaler | None): 
+                A pre-fitted PytorchScaler instance, if None a new scaler will be created.
         """
         super().__init__()
         self.scaler = scaler
         
-        # --- 1. Identify features and target (single-target logic) ---
-        features = pandas_df.iloc[:, :-1]
-        target = pandas_df.iloc[:, -1]
-        self._feature_names = features.columns.tolist()
-        self._target_names = [str(target.name)]
-        self._id = self._target_names[0]
+        # --- 1. Identify features (from schema) ---
+        self._feature_names = list(schema.feature_names)
+        
+        # --- 2. Infer target (by set difference) ---
+        all_cols_set = set(pandas_df.columns)
+        feature_cols_set = set(self._feature_names)
+        
+        target_cols_set = all_cols_set - feature_cols_set
+        
+        if len(target_cols_set) == 0:
+            _LOGGER.error("No target column found. The schema's features match the DataFrame's columns exactly.")
+            raise ValueError("No target column found in DataFrame.")
+        if len(target_cols_set) > 1:
+            _LOGGER.error(f"Ambiguous target. Found {len(target_cols_set)} columns not in the schema: {list(target_cols_set)}. DatasetMaker (single-target) requires exactly one.")
+            raise ValueError("Ambiguous target: More than one non-feature column found.")
+            
+        target_name = list(target_cols_set)[0]
+        self._target_names = [target_name]
+        self._id = target_name
+        
+        # --- 3. Split Data ---
+        features_df = pandas_df[self._feature_names]
+        target_series = pandas_df[target_name]
 
-        # --- 2. Split ---
         X_train, X_test, y_train, y_test = train_test_split(
-            features, target, test_size=test_size, random_state=random_state
+            features_df, 
+            target_series, 
+            test_size=test_size, 
+            random_state=random_state
         )
         self._X_train_shape, self._X_test_shape = X_train.shape, X_test.shape
         self._y_train_shape, self._y_test_shape = y_train.shape, y_test.shape
         
         label_dtype = torch.float32 if kind == "regression" else torch.int64
 
-        # --- 3. Scale ---
+        # --- 4. Scale (using the schema) ---
         X_train_final, X_test_final = self._prepare_scaler(
-            X_train, y_train, X_test, label_dtype, continuous_feature_columns
+            X_train, y_train, X_test, label_dtype, schema
         )
         
-        # --- 4. Create Datasets ---
-        self._train_ds = _PytorchDataset(X_train_final, y_train.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
-        self._test_ds = _PytorchDataset(X_test_final, y_test.values, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        # --- 5. Create Datasets ---
+        self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        
 
-
-# --- New Multi-Target Class ---
+# --- Multi-Target Class ---
 class DatasetMakerMulti(_BaseDatasetMaker):
     """
-    Dataset maker for pre-processed, numerical pandas DataFrames with a multiple target columns.
+    Dataset maker for pre-processed, numerical pandas DataFrames with 
+    multiple target columns.
 
-    This class takes a DataFrame, automatically splits it into training and testing sets, and converts them into PyTorch Datasets.
+    This class takes a *full* DataFrame, a *FeatureSchema*, and a list of
+    *target_columns*. It validates that the schema's features and the
+    target columns are mutually exclusive and together account for all
+    columns in the DataFrame.
+    
+    Targets dtype is torch.float32
     """
     def __init__(self,
                  pandas_df: pandas.DataFrame,
                  target_columns: List[str],
+                 schema: FeatureSchema,
                  test_size: float = 0.2,
                  random_state: int = 42,
-                 scaler: Optional[PytorchScaler] = None,
-                 continuous_feature_columns: Optional[Union[List[int], List[str]]] = None):
+                 scaler: Optional[PytorchScaler] = None):
         """
         Args:
-            pandas_df (pandas.DataFrame): The pre-processed input DataFrame with numerical data.
-            target_columns (list[str]): List of target column names.
-            test_size (float): The proportion of the dataset to allocate to the test split.
-            random_state (int): The seed for the random number generator for reproducibility.
-            scaler (PytorchScaler | None): A pre-fitted PytorchScaler instance.
-            continuous_feature_columns (List[int] | List[str] | None): Column indices or names of continuous features to scale. If provided creates a new PytorchScaler.
+            pandas_df (pandas.DataFrame): 
+                The pre-processed input DataFrame with *all* columns
+                (features and targets).
+            target_columns (list[str]): 
+                List of target column names.
+            schema (FeatureSchema): 
+                The definitive schema object from data_exploration.
+            test_size (float): 
+                The proportion of the dataset to allocate to the test split.
+            random_state (int): 
+                The seed for the random number generator for reproducibility.
+            scaler (PytorchScaler | None): 
+                A pre-fitted PytorchScaler instance.
+                
+        ## Note:
+        For multi-binary classification, the most common PyTorch loss function is nn.BCEWithLogitsLoss. 
+        This loss function requires the labels to be torch.float32 which is the same type required for regression (multi-regression) tasks.
         """
         super().__init__()
         self.scaler = scaler
 
+        # --- 1. Get features and targets from schema/args ---
+        self._feature_names = list(schema.feature_names)
         self._target_names = target_columns
-        self._feature_names = [col for col in pandas_df.columns if col not in target_columns]
-        features = pandas_df[self._feature_names]
-        target = pandas_df[self._target_names]
+        
+        # --- 2. Validation ---
+        all_cols_set = set(pandas_df.columns)
+        feature_cols_set = set(self._feature_names)
+        target_cols_set = set(self._target_names)
+
+        overlap = feature_cols_set.intersection(target_cols_set)
+        if overlap:
+            _LOGGER.error(f"Features and targets are not mutually exclusive. Overlap: {list(overlap)}")
+            raise ValueError("Features and targets overlap.")
+
+        schema_plus_targets = feature_cols_set.union(target_cols_set)
+        missing_cols = all_cols_set - schema_plus_targets
+        if missing_cols:
+            _LOGGER.warning(f"Columns in DataFrame but not in schema or targets: {list(missing_cols)}")
+            
+        extra_cols = schema_plus_targets - all_cols_set
+        if extra_cols:
+            _LOGGER.error(f"Columns in schema/targets but not in DataFrame: {list(extra_cols)}")
+            raise ValueError("Schema/target definition mismatch with DataFrame.")
+
+        # --- 3. Split Data ---
+        features_df = pandas_df[self._feature_names]
+        target_df = pandas_df[self._target_names]
 
         X_train, X_test, y_train, y_test = train_test_split(
-            features, target, test_size=test_size, random_state=random_state
+            features_df,
+            target_df, 
+            test_size=test_size, 
+            random_state=random_state
         )
         self._X_train_shape, self._X_test_shape = X_train.shape, X_test.shape
         self._y_train_shape, self._y_test_shape = y_train.shape, y_test.shape
         
-        label_dtype = torch.float32
+        # Multi-target for regression or multi-binary
+        label_dtype = torch.float32 
 
+        # --- 4. Scale (using the schema) ---
         X_train_final, X_test_final = self._prepare_scaler(
-            X_train, y_train, X_test, label_dtype, continuous_feature_columns
+            X_train, y_train, X_test, label_dtype, schema
         )
         
+        # --- 5. Create Datasets ---
+        # _PytorchDataset now correctly handles y_train (a DataFrame)
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
 

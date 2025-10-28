@@ -17,9 +17,10 @@ from ._script_info import _script_info
 from .ML_inference import PyTorchInferenceHandler
 from .keys import PyTorchInferenceKeys
 from .SQL import DatabaseManager
-from .optimization_tools import _save_result
+from .optimization_tools import _save_result, create_optimization_bounds
 from .utilities import save_dataframe_filename
 from .math_utilities import discretize_categorical_values
+from ._schema import FeatureSchema
 
 
 __all__ = [
@@ -40,66 +41,76 @@ class MLOptimizer:
     SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
 
     Example:
-        >>> # 1. Get categorical info from preprocessing steps
-        >>> # e.g., from data_exploration.encode_categorical_features
-        >>> cat_mappings = {'feature_C': {'A': 0, 'B': 1}, 'feature_D': {'X': 0, 'Y': 1}}
-        >>> # e.g., from data_exploration.create_transformer_categorical_map
-        >>> # Assumes feature_C is at index 2 (cardinality 2) and feature_D is at index 3 (cardinality 2)
-        >>> cat_index_map = {2: 2, 3: 2}
+        >>> # 1. Get the final schema from data exploration
+        >>> schema = data_exploration.finalize_feature_schema(...)
+        >>> # 2. Define bounds for continuous features
+        >>> cont_bounds = {'feature_A': (0, 100), 'feature_B': (-10, 10)}
         >>>
-        >>> # 2. Initialize the optimizer
+        >>> # 3. Initialize the optimizer
         >>> optimizer = MLOptimizer(
         ...     inference_handler=my_handler,
-        ...     bounds=(lower_bounds, upper_bounds), # Bounds for ALL features
+        ...     schema=schema,
+        ...     continuous_bounds_map=cont_bounds,
         ...     task="max",
         ...     algorithm="Genetic",
-        ...     categorical_index_map=cat_index_map,
-        ...     categorical_mappings=cat_mappings,
         ... )
-        >>> # 3. Run the optimization
+        >>> # 4. Run the optimization
         >>> best_result = optimizer.run(
         ...     num_generations=100,
         ...     target_name="my_target",
-        ...     feature_names=my_feature_names,
         ...     save_dir="/path/to/results",
         ...     save_format="csv"
         ... )
     """
     def __init__(self,
                  inference_handler: PyTorchInferenceHandler,
-                 bounds: Tuple[List[float], List[float]],
+                 schema: FeatureSchema,
+                 continuous_bounds_map: Dict[str, Tuple[float, float]],
                  task: Literal["min", "max"],
                  algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
                  population_size: int = 200,
-                 categorical_index_map: Optional[Dict[int, int]] = None,
-                 categorical_mappings: Optional[Dict[str, Dict[str, int]]] = None,
                  discretize_start_at_zero: bool = True,
                  **searcher_kwargs):
         """
         Initializes the optimizer by creating the EvoTorch problem and searcher.
 
         Args:
-            inference_handler (PyTorchInferenceHandler): An initialized inference handler containing the model and weights.
-            bounds (tuple[list[float], list[float]]): A tuple containing the lower and upper bounds for ALL solution features. 
-                Use the `optimization_tools.create_optimization_bounds()` helper to easily generate this and ensure unbiased categorical bounds.
+            inference_handler (PyTorchInferenceHandler): 
+                An initialized inference handler containing the model.
+            schema (FeatureSchema): 
+                The definitive schema object from data_exploration.
+            continuous_bounds_map (Dict[str, Tuple[float, float]]):
+                A dictionary mapping the *name* of each **continuous** feature
+                to its (min_bound, max_bound) tuple.
             task (str): The optimization goal, either "min" or "max".
             algorithm (str): The search algorithm to use ("SNES", "CEM", "Genetic").
             population_size (int): Population size for CEM and GeneticAlgorithm.
-            categorical_index_map (Dict[int, int] | None): Used to discretize values after optimization. Maps {column_index: cardinality}.
-            categorical_mappings (Dict[str, Dict[str, int]] | None): Used to map discrete integer values back to strings (e.g., {0: 'Category_A'}) before saving.
             discretize_start_at_zero (bool): 
                 True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
                 False if it starts at 1 (e.g., [1, 2, 3]).
-            **searcher_kwargs: Additional keyword arguments for the selected search algorithm's constructor.
+            **searcher_kwargs: Additional keyword arguments for the selected 
+                               search algorithm's constructor.
         """
-        # Make a fitness function
+        # --- Store schema ---
+        self.schema = schema
+        
+        # --- 1. Create bounds from schema ---
+        # This is the new, robust way to get bounds
+        bounds = create_optimization_bounds(
+            schema=schema,
+            continuous_bounds_map=continuous_bounds_map,
+            start_at_zero=discretize_start_at_zero
+        )
+
+        # --- 2. Make a fitness function ---
         self.evaluator = FitnessEvaluator(
             inference_handler=inference_handler,
-            categorical_index_map=categorical_index_map,
+            # Get categorical info from the schema
+            categorical_index_map=schema.categorical_index_map,
             discretize_start_at_zero=discretize_start_at_zero
         )
         
-        # Call the existing factory function to get the problem and searcher factory
+        # --- 3. Create the problem and searcher factory ---
         self.problem, self.searcher_factory = create_pytorch_problem(
             evaluator=self.evaluator,
             bounds=bounds,
@@ -108,36 +119,36 @@ class MLOptimizer:
             population_size=population_size,
             **searcher_kwargs
         )
-        # Store categorical info to pass to the run function
-        self.categorical_map = categorical_index_map
-        self.categorical_mappings = categorical_mappings
+        
+        # --- 4. Store other info needed by run() ---
         self.discretize_start_at_zero = discretize_start_at_zero
 
     def run(self,
             num_generations: int,
             target_name: str,
             save_dir: Union[str, Path],
-            feature_names: Optional[List[str]],
             save_format: Literal['csv', 'sqlite', 'both'],
             repetitions: int = 1,
             verbose: bool = True) -> Optional[dict]:
         """
         Runs the evolutionary optimization process using the pre-configured settings.
 
+        The `feature_names` are automatically pulled from the `FeatureSchema`
+        provided during initialization.
+
         Args:
             num_generations (int): The total number of generations for each repetition.
             target_name (str): Target name used for the CSV filename and/or SQL table.
             save_dir (str | Path): The directory where result files will be saved.
-            feature_names (List[str] | None): Names of the solution features for labeling output.
-                If None, generic names like 'feature_0', 'feature_1', ... , will be created.
             save_format (Literal['csv', 'sqlite', 'both']): The format for saving results.
             repetitions (int): The number of independent times to run the optimization.
             verbose (bool): If True, enables detailed logging.
 
         Returns:
-            Optional[dict]: A dictionary with the best result if repetitions is 1, otherwise None.
+            Optional[dict]: A dictionary with the best result if repetitions is 1, 
+                            otherwise None.
         """
-        # Call the existing run function with the stored problem, searcher, and categorical info
+        # Call the existing run function, passing info from the schema
         return run_optimization(
             problem=self.problem,
             searcher_factory=self.searcher_factory,
@@ -145,11 +156,13 @@ class MLOptimizer:
             target_name=target_name,
             save_dir=save_dir,
             save_format=save_format,
-            feature_names=feature_names,
+            # Get the definitive feature names (as a list) from the schema
+            feature_names=list(self.schema.feature_names),
+            # Get categorical info from the schema
+            categorical_map=self.schema.categorical_index_map,
+            categorical_mappings=self.schema.categorical_mappings,
             repetitions=repetitions,
             verbose=verbose,
-            categorical_map=self.categorical_map,
-            categorical_mappings=self.categorical_mappings,
             discretize_start_at_zero=self.discretize_start_at_zero
         )
         

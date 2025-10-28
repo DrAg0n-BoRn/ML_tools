@@ -116,8 +116,7 @@ def deserialize_object(
             # Can't do an isinstance check on 'Any', skip it.
             if type_to_check is not Any and not isinstance(obj, type_to_check):
                 error_msg = (
-                    f"Type mismatch: Expected an instance of '{expected_type}', "
-                    f"but found '{type(obj)}' in '{true_filepath}'."
+                    f"Type mismatch: Expected an instance of '{expected_type}', but found '{type(obj)}' in '{true_filepath}'."
                 )
                 _LOGGER.error(error_msg)
                 raise TypeError()
