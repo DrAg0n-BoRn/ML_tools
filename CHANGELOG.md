@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.4.0] 2025-10-29
+
+### Changed
+
+- ML_datasetmaster: `DatasetMaker` and `DatasetMakerMulti`'s parameter `scaler` now must be explicitly provided with the options "fit", "none", or a `ML_scaler.PytorchScaler` instance.
+
 ## [13.3.2] 2025-10-29
 
 ### Fixed

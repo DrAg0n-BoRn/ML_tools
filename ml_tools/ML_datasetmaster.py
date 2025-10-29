@@ -126,8 +126,8 @@ class _BaseDatasetMaker(ABC):
         else:
             _LOGGER.info("No continuous features listed in schema. Scaler will not be fitted.")
 
-        X_train_values = X_train.values
-        X_test_values = X_test.values
+        X_train_values = X_train.to_numpy()
+        X_test_values = X_test.to_numpy()
 
         # continuous_feature_indices is derived
         if self.scaler is None and continuous_feature_indices:
@@ -253,26 +253,42 @@ class DatasetMaker(_BaseDatasetMaker):
                  pandas_df: pandas.DataFrame,
                  schema: FeatureSchema,
                  kind: Literal["regression", "classification"],
+                 scaler: Union[Literal["fit"], Literal["none"], PytorchScaler],
                  test_size: float = 0.2,
-                 random_state: int = 42,
-                 scaler: Optional[PytorchScaler] = None):
+                 random_state: int = 42):
         """
         Args:
             pandas_df (pandas.DataFrame): 
                 The pre-processed input DataFrame containing all columns. (features and single target).
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
-            kind (Literal["regression", "classification"]): 
+            kind ("regression" | "classification"): 
                 The type of ML task. This determines the data type of the labels.
+            scaler ("fit" | "none" | PytorchScaler): 
+                Strategy for data scaling:
+                - "fit": Fit a new PytorchScaler on continuous features.
+                - "none": Do not scale data (e.g., for TabularTransformer).
+                - PytorchScaler instance: Use a pre-fitted scaler to transform data.
             test_size (float): 
                 The proportion of the dataset to allocate to the test split.
             random_state (int): 
                 The seed for the random number of generator for reproducibility.
-            scaler (PytorchScaler | None): 
-                A pre-fitted PytorchScaler instance, if None a new scaler will be created.
+            
         """
         super().__init__()
-        self.scaler = scaler
+        
+        _apply_scaling: bool = False
+        if scaler == "fit":
+            self.scaler = None # To be created
+            _apply_scaling = True
+        elif scaler == "none":
+            self.scaler = None
+        elif isinstance(scaler, PytorchScaler):
+            self.scaler = scaler # Use the provided one
+            _apply_scaling = True
+        else:
+            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a PytorchScaler instance.")
+            raise ValueError()
         
         # --- 1. Identify features (from schema) ---
         self._feature_names = list(schema.feature_names)
@@ -310,9 +326,14 @@ class DatasetMaker(_BaseDatasetMaker):
         label_dtype = torch.float32 if kind == "regression" else torch.int64
 
         # --- 4. Scale (using the schema) ---
-        X_train_final, X_test_final = self._prepare_scaler(
-            X_train, y_train, X_test, label_dtype, schema
-        )
+        if _apply_scaling:
+            X_train_final, X_test_final = self._prepare_scaler(
+                X_train, y_train, X_test, label_dtype, schema
+            )
+        else:
+            _LOGGER.info("Features have not been scaled as specified.")
+            X_train_final = X_train.to_numpy()
+            X_test_final = X_test.to_numpy()
         
         # --- 5. Create Datasets ---
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
@@ -336,9 +357,9 @@ class DatasetMakerMulti(_BaseDatasetMaker):
                  pandas_df: pandas.DataFrame,
                  target_columns: List[str],
                  schema: FeatureSchema,
+                 scaler: Union[Literal["fit"], Literal["none"], PytorchScaler],
                  test_size: float = 0.2,
-                 random_state: int = 42,
-                 scaler: Optional[PytorchScaler] = None):
+                 random_state: int = 42):
         """
         Args:
             pandas_df (pandas.DataFrame): 
@@ -348,20 +369,35 @@ class DatasetMakerMulti(_BaseDatasetMaker):
                 List of target column names.
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
+            scaler ("fit" | "none" | PytorchScaler): 
+                Strategy for data scaling:
+                - "fit": Fit a new PytorchScaler on continuous features.
+                - "none": Do not scale data (e.g., for TabularTransformer).
+                - PytorchScaler instance: Use a pre-fitted scaler to transform data.
             test_size (float): 
                 The proportion of the dataset to allocate to the test split.
             random_state (int): 
                 The seed for the random number generator for reproducibility.
-            scaler (PytorchScaler | None): 
-                A pre-fitted PytorchScaler instance.
                 
         ## Note:
         For multi-binary classification, the most common PyTorch loss function is nn.BCEWithLogitsLoss. 
         This loss function requires the labels to be torch.float32 which is the same type required for regression (multi-regression) tasks.
         """
         super().__init__()
-        self.scaler = scaler
-
+        
+        _apply_scaling: bool = False
+        if scaler == "fit":
+            self.scaler = None
+            _apply_scaling = True
+        elif scaler == "none":
+            self.scaler = None
+        elif isinstance(scaler, PytorchScaler):
+            self.scaler = scaler # Use the provided one
+            _apply_scaling = True
+        else:
+            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a PytorchScaler instance.")
+            raise ValueError()
+        
         # --- 1. Get features and targets from schema/args ---
         self._feature_names = list(schema.feature_names)
         self._target_names = target_columns
@@ -403,9 +439,14 @@ class DatasetMakerMulti(_BaseDatasetMaker):
         label_dtype = torch.float32 
 
         # --- 4. Scale (using the schema) ---
-        X_train_final, X_test_final = self._prepare_scaler(
-            X_train, y_train, X_test, label_dtype, schema
-        )
+        if _apply_scaling:
+            X_train_final, X_test_final = self._prepare_scaler(
+                X_train, y_train, X_test, label_dtype, schema
+            )
+        else:
+            _LOGGER.info("Features have not been scaled as specified.")
+            X_train_final = X_train.to_numpy()
+            X_test_final = X_test.to_numpy()
         
         # --- 5. Create Datasets ---
         # _PytorchDataset now correctly handles y_train (a DataFrame)
