@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.3.2] 2025-10-29
+
+### Fixed
+
+- math_utilities: `discretize_categorical_values()`, fixed bug in the implementation.
+
+### Changed
+
+- ML_models: `TabularTransformer` default parameter values adjusted. Added description.
+
 ## [13.3.1] 2025-10-29
 
 ### Fixed

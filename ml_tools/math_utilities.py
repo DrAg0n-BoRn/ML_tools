@@ -219,7 +219,7 @@ def discretize_categorical_values(
         _LOGGER.error(f"'categorical_info' is not a dictionary, or is empty.")
         raise ValueError()
 
-    _, total_features = input_array.shape
+    _, total_features = working_array.shape
     for col_idx, cardinality in categorical_info.items():
         if not isinstance(col_idx, int):
              _LOGGER.error(f"Column index key {col_idx} is not an integer.")

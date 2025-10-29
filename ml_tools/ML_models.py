@@ -306,10 +306,10 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
-                 embedding_dim: int = 32,
+                 embedding_dim: int = 256,
                  num_heads: int = 8,
                  num_layers: int = 6,
-                 dropout: float = 0.1):
+                 dropout: float = 0.2):
         """
         Args:
             schema (FeatureSchema): 
@@ -317,14 +317,28 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
             out_targets (int): 
                 Number of output targets (1 for regression).
             embedding_dim (int): 
-                The dimension for all feature embeddings. Must be divisible 
-                by num_heads.
+                The dimension for all feature embeddings. Must be divisible by num_heads. Common values: (64, 128, 192, 256, etc.)
             num_heads (int): 
-                The number of heads in the multi-head attention mechanism.
+                The number of heads in the multi-head attention mechanism. Common values: (4, 8, 16)
             num_layers (int): 
-                The number of sub-encoder-layers in the transformer encoder.
+                The number of sub-encoder-layers in the transformer encoder. Common values: (4, 8, 12)
             dropout (float): 
                 The dropout value.
+                
+        ## Note:
+        
+        **Embedding Dimension:** "Width" of the model. It's the N-dimension vector that will be used to represent each one of the features.
+            - Each continuous feature gets its own learnable N-dimension vector.
+            - Each categorical feature gets an embedding table that maps every category (e.g., "color=red", "color=blue") to a unique N-dimension vector.
+            
+        **Attention Heads:** Controls the "Multi-Head Attention" mechanism. Instead of looking at all the feature interactions at once, the model splits its attention into N parallel heads.
+            - Embedding Dimensions get divided by the number of Attention Heads, resulting in the dimensions assigned per head.
+
+        **Number of Layers:** "Depth" of the model. Number of identical `TransformerEncoderLayer` blocks that are stacked on top of each other.
+            - Layer 1: The attention heads find simple, direct interactions between the features.
+            - Layer 2: Takes the output of Layer 1 and finds interactions between those interactions and so on.
+            - Trade-off: More layers are more powerful but are slower to train and more prone to overfitting. If the training loss goes down but the validation loss goes up, you might have too many layers (or need more dropout).
+            
         """
         super().__init__()
         
