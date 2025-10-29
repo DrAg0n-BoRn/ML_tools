@@ -83,3 +83,14 @@ class FeatureSchema(NamedTuple):
         self.save_all_features(directory=directory, verbose=True)
         self.save_continuous_features(directory=directory, verbose=True)
         self.save_categorical_features(directory=directory, verbose=True)
+        
+    def __repr__(self) -> str:
+        """Returns a concise representation of the schema's contents."""
+        total = len(self.feature_names)
+        cont = len(self.continuous_feature_names)
+        cat = len(self.categorical_feature_names)
+        index_map = self.categorical_index_map is not None
+        cat_map = self.categorical_mappings is not None
+        return (
+            f"<FeatureSchema(total={total}, continuous={cont}, categorical={cat}, index_map={index_map}, categorical_map={cat_map})>"
+        )

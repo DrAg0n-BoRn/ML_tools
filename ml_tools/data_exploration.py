@@ -1262,7 +1262,7 @@ def finalize_feature_schema(
     categorical_feature_names_list: List[str] = []
     categorical_index_map_dict: Dict[int, int] = {}
 
-    _LOGGER.info("Finalizing feature schema...")
+    # _LOGGER.info("Finalizing feature schema...")
 
     if categorical_mappings:
         # --- Categorical features are present ---

@@ -18,6 +18,10 @@ __all__ = [
 ]
 
 
+# Base types that have a generic `type()` log.
+_SIMPLE_TYPES = (list, dict, tuple, set, str, int, float, bool)
+
+
 def serialize_object_filename(obj: Any, save_dir: Union[str,Path], filename: str, verbose: bool=True, raise_on_error: bool=False) -> None:
     """
     Serializes a Python object using joblib; suitable for Python built-ins, numpy, and pandas.
@@ -27,6 +31,10 @@ def serialize_object_filename(obj: Any, save_dir: Union[str,Path], filename: str
         save_dir (str | Path) : Directory path where the serialized object will be saved.
         filename (str) : Name for the output file, extension will be appended if needed.
     """
+    if obj is None:
+        _LOGGER.warning(f"Attempted to serialize a None object. Skipping save for '{filename}'.")
+        return
+    
     try:
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         sanitized_name = sanitize_filename(filename)
@@ -56,6 +64,10 @@ def serialize_object(obj: Any, file_path: Path, verbose: bool = True, raise_on_e
                            '.joblib' extension will be appended if missing.
         raise_on_error (bool) : If True, raises exceptions on failure.
     """
+    if obj is None:
+        _LOGGER.warning(f"Attempted to serialize a None object. Skipping save for '{file_path}'.")
+        return
+    
     try:
         # Ensure the extension is correct
         file_path = file_path.with_suffix('.joblib')
@@ -73,7 +85,11 @@ def serialize_object(obj: Any, file_path: Path, verbose: bool = True, raise_on_e
         return None
     else:
         if verbose:
-            _LOGGER.info(f"Object of type '{type(obj)}' saved to '{file_path}'")
+            if isinstance(obj, _SIMPLE_TYPES):
+                _LOGGER.info(f"Object of type '{type(obj)}' saved to '{file_path}'")
+            else:
+                _LOGGER.info(f"Object '{obj}' saved to '{file_path}'")
+
         return None
 
 
@@ -123,9 +139,13 @@ def deserialize_object(
                 raise TypeError()
         
         if verbose:
-            _LOGGER.info(f"Loaded object of type '{type(obj)}' from '{true_filepath}'.")
+            # log special objects
+            if isinstance(obj, _SIMPLE_TYPES):
+                _LOGGER.info(f"Loaded object of type '{type(obj)}' from '{true_filepath}'.")
+            else:
+                _LOGGER.info(f"Loaded object '{obj}' from '{true_filepath}'.")
         
-        return obj
+        return obj # type: ignore
 
 
 def serialize_schema(schema: FeatureSchema, file_path: Path):
