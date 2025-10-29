@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.2.1] 2025-10-29
+
+### Added
+
+- `FeatureSchema`: `save_artifacts()`, wrapper to save all feature names, continuous feature names, and categorical feature names to separate text files.
+
+### Changed
+
+- `FeatureSchema`: The save methods will fail with a warning if the value is empty.
+
 ## [13.2.0] 2025-10-29
 
 ### Added

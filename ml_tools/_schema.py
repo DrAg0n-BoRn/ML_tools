@@ -3,6 +3,7 @@ from pathlib import Path
 
 from .custom_logger import save_list_strings
 from .keys import DatasetKeys
+from ._logger import _LOGGER
 
 
 class FeatureSchema(NamedTuple):
@@ -25,6 +26,12 @@ class FeatureSchema(NamedTuple):
 
     def _save_helper(self, artifact: Tuple[str, ...], directory: Union[str,Path], filename: str, verbose: bool):
         to_save = list(artifact)
+        
+        # empty check
+        if not to_save:
+            _LOGGER.warning(f"Skipping save for '{filename}': The feature list is empty.")
+            return
+        
         save_list_strings(list_strings=to_save,
                           directory=directory,
                           filename=filename,
@@ -68,3 +75,11 @@ class FeatureSchema(NamedTuple):
                           directory=directory,
                           filename=DatasetKeys.CATEGORICAL_NAMES,
                           verbose=verbose)
+        
+    def save_artifacts(self, directory: Union[str,Path]):
+        """
+        Saves feature names, categorical feature names, continuous feature names to separate text files.
+        """
+        self.save_all_features(directory=directory, verbose=True)
+        self.save_continuous_features(directory=directory, verbose=True)
+        self.save_categorical_features(directory=directory, verbose=True)
