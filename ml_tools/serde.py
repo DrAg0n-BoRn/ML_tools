@@ -85,7 +85,7 @@ def serialize_object(obj: Any, file_path: Path, verbose: bool = True, raise_on_e
         return None
     else:
         if verbose:
-            if isinstance(obj, _SIMPLE_TYPES):
+            if type(obj) in _SIMPLE_TYPES:
                 _LOGGER.info(f"Object of type '{type(obj)}' saved to '{file_path}'")
             else:
                 _LOGGER.info(f"Object '{obj}' saved to '{file_path}'")
@@ -140,7 +140,7 @@ def deserialize_object(
         
         if verbose:
             # log special objects
-            if isinstance(obj, _SIMPLE_TYPES):
+            if type(obj) in _SIMPLE_TYPES:
                 _LOGGER.info(f"Loaded object of type '{type(obj)}' from '{true_filepath}'.")
             else:
                 _LOGGER.info(f"Loaded object '{obj}' from '{true_filepath}'.")
