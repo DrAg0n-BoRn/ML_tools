@@ -1,4 +1,9 @@
-from typing import NamedTuple, Tuple, Optional, Dict
+from typing import NamedTuple, Tuple, Optional, Dict, Union
+from pathlib import Path
+
+from .custom_logger import save_list_strings
+from .keys import DatasetKeys
+
 
 class FeatureSchema(NamedTuple):
     """Holds the final, definitive schema for the model pipeline."""
@@ -15,5 +20,51 @@ class FeatureSchema(NamedTuple):
     # Map of {column_index: cardinality} for categorical features
     categorical_index_map: Optional[Dict[int, int]]
     
-    # The original string-to-int mappings (e.g., {'color': {'red': 0, 'blue': 1}})
+    # Map string-to-int category values (e.g., {'color': {'red': 0, 'blue': 1}})
     categorical_mappings: Optional[Dict[str, Dict[str, int]]]
+
+    def _save_helper(self, artifact: Tuple[str, ...], directory: Union[str,Path], filename: str, verbose: bool):
+        to_save = list(artifact)
+        save_list_strings(list_strings=to_save,
+                          directory=directory,
+                          filename=filename,
+                          verbose=verbose)
+
+    def save_all_features(self, directory: Union[str,Path], verbose: bool=True):
+        """
+        Saves all feature names to a text file.
+
+        Args:
+            directory: The directory where the file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+        """
+        self._save_helper(artifact=self.feature_names,
+                          directory=directory,
+                          filename=DatasetKeys.FEATURE_NAMES,
+                          verbose=verbose)
+        
+    def save_continuous_features(self, directory: Union[str,Path], verbose: bool=True):
+        """
+        Saves continuous feature names to a text file.
+
+        Args:
+            directory: The directory where the file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+        """
+        self._save_helper(artifact=self.continuous_feature_names,
+                          directory=directory,
+                          filename=DatasetKeys.CONTINUOUS_NAMES,
+                          verbose=verbose)
+    
+    def save_categorical_features(self, directory: Union[str,Path], verbose: bool=True):
+        """
+        Saves categorical feature names to a text file.
+
+        Args:
+            directory: The directory where the file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+        """
+        self._save_helper(artifact=self.categorical_feature_names,
+                          directory=directory,
+                          filename=DatasetKeys.CATEGORICAL_NAMES,
+                          verbose=verbose)

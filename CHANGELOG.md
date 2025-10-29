@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.2.0] 2025-10-29
+
+### Added
+
+- `FeatureSchema` can directly be called from main module as `from ml_tools import FeatureSchema`
+- `FeatureSchema`:
+    - `save_all_features()`, Saves all feature names to a text file.
+    - `save_continuous_features()`, Saves continuous feature names to a text file.
+    - `save_categorical_features()`, Saves categorical feature names to a text file.
+
+- serde:
+    - `serialize_schema`, serializes a `FeatureSchema` object to a .joblib file.
+    - `deserialize_schema`, deserializes a `FeatureSchema` object from a .joblib file.
+
 ## [13.1.0] 2025-10-28
 
 ### Added

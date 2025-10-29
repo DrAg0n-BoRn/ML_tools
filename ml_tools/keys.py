@@ -55,10 +55,13 @@ class PytorchArtifactPathKeys:
 
 
 class DatasetKeys:
-    """Keys for saving dataset artifacts"""
+    """Keys for saving dataset artifacts. Also used by FeatureSchema"""
     FEATURE_NAMES = "feature_names"
     TARGET_NAMES = "target_names"
     SCALER_PREFIX = "scaler_"
+    # Feature Schema
+    CONTINUOUS_NAMES = "continuous_feature_names"
+    CATEGORICAL_NAMES = "categorical_feature_names"
 
 
 class SHAPKeys:
