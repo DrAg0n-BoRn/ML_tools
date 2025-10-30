@@ -258,7 +258,7 @@ def shap_summary_plot(model,
                       feature_names: Optional[list[str]], 
                       save_dir: Union[str, Path],
                       device: torch.device = torch.device('cpu'),
-                      explainer_type: Literal['deep', 'kernel'] = 'deep'):
+                      explainer_type: Literal['deep', 'kernel'] = 'kernel'):
     """
     Calculates SHAP values and saves summary plots and data.
 
@@ -270,7 +270,7 @@ def shap_summary_plot(model,
         save_dir (str | Path): Directory to save SHAP artifacts.
         device (torch.device): The torch device for SHAP calculations.
         explainer_type (Literal['deep', 'kernel']): The explainer to use.
-            - 'deep': (Default) Uses shap.DeepExplainer. Fast and efficient for
+            - 'deep': Uses shap.DeepExplainer. Fast and efficient for
               PyTorch models.
             - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY
               slow and memory-intensive.
@@ -285,7 +285,7 @@ def shap_summary_plot(model,
     instances_to_explain_np = None
 
     if explainer_type == 'deep':
-        # --- 1. Use DeepExplainer (Preferred) ---
+        # --- 1. Use DeepExplainer  ---
         
         # Ensure data is torch.Tensor
         if isinstance(background_data, np.ndarray):
@@ -309,10 +309,9 @@ def shap_summary_plot(model,
         instances_to_explain_np = instances_to_explain.cpu().numpy()
 
     elif explainer_type == 'kernel':
-        # --- 2. Use KernelExplainer (Slow Fallback) ---
+        # --- 2. Use KernelExplainer ---
         _LOGGER.warning(
-            "Using KernelExplainer. This is memory-intensive and slow. "
-            "Consider reducing 'n_samples' if the process terminates unexpectedly."
+            "KernelExplainer is memory-intensive and slow. Consider reducing the number of instances to explain if the process terminates unexpectedly."
         )
 
         # Ensure data is np.ndarray
@@ -348,14 +347,26 @@ def shap_summary_plot(model,
     else:
         _LOGGER.error(f"Invalid explainer_type: '{explainer_type}'. Must be 'deep' or 'kernel'.")
         raise ValueError()
+    
+    if not isinstance(shap_values, list) and shap_values.ndim == 3 and shap_values.shape[2] == 1:
+        # _LOGGER.info("Squeezing SHAP values from (N, F, 1) to (N, F) for regression plot.")
+        shap_values = shap_values.squeeze(-1)
 
     # --- 3. Plotting and Saving ---
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     plt.ioff()
     
+    # Convert instances to a DataFrame. robust way to ensure SHAP correctly maps values to feature names.
+    if feature_names is None:
+        # Create generic names if none were provided
+        num_features = instances_to_explain_np.shape[1]
+        feature_names = [f'feature_{i}' for i in range(num_features)]
+        
+    instances_df = pd.DataFrame(instances_to_explain_np, columns=feature_names)
+    
     # Save Bar Plot
     bar_path = save_dir_path / "shap_bar_plot.svg"
-    shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
+    shap.summary_plot(shap_values, instances_df, plot_type="bar", show=False)
     ax = plt.gca()
     ax.set_xlabel("SHAP Value Impact", labelpad=10)
     plt.title("SHAP Feature Importance")
@@ -366,7 +377,7 @@ def shap_summary_plot(model,
 
     # Save Dot Plot
     dot_path = save_dir_path / "shap_dot_plot.svg"
-    shap.summary_plot(shap_values, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
+    shap.summary_plot(shap_values, instances_df, plot_type="dot", show=False)
     ax = plt.gca()
     ax.set_xlabel("SHAP Value Impact", labelpad=10)
     if plt.gcf().axes and len(plt.gcf().axes) > 1:
@@ -389,9 +400,6 @@ def shap_summary_plot(model,
         mean_abs_shap = np.abs(shap_values).mean(axis=0)
 
     mean_abs_shap = mean_abs_shap.flatten()
-    
-    if feature_names is None:
-        feature_names = [f'feature_{i}' for i in range(len(mean_abs_shap))]
         
     summary_df = pd.DataFrame({
         SHAPKeys.FEATURE_COLUMN: feature_names,
@@ -401,7 +409,7 @@ def shap_summary_plot(model,
     summary_df.to_csv(summary_path, index=False)
     
     _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
-    plt.ion()    
+    plt.ion()
 
 
 def plot_attention_importance(weights: List[torch.Tensor], feature_names: Optional[List[str]], save_dir: Union[str, Path], top_n: int = 10):

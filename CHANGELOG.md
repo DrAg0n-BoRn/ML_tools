@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.5.0] 2025-10-30
+
+### Changed
+
+- ML_evaluation: `shap_summary_plot()`, fix a numpy shape error for plotting values. Set default explainer to KernelExplainer for better compatibility with all models.
+- ML_evaluation_multi: `multi_target_shap_summary_plot()`, Set default explainer to KernelExplainer for better compatibility with all models.
+- ML_trainer: `MLTrainer.explain_attention()`, will attempt to obtain feature names from the dataset if not explicitly provided.
+
 ## [13.4.0] 2025-10-29
 
 ### Changed

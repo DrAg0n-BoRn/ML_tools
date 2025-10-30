@@ -9,7 +9,7 @@ from .ML_callbacks import Callback, History, TqdmProgressBar, ModelCheckpoint
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._script_info import _script_info
-from .keys import PyTorchLogKeys, PyTorchCheckpointKeys
+from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 
@@ -408,7 +408,7 @@ class MLTrainer:
                 n_samples: int = 300,
                 feature_names: Optional[List[str]] = None,
                 target_names: Optional[List[str]] = None,
-                explainer_type: Literal['deep', 'kernel'] = 'deep'):
+                explainer_type: Literal['deep', 'kernel'] = 'kernel'):
         """
         Explains model predictions using SHAP and saves all artifacts.
 
@@ -422,11 +422,11 @@ class MLTrainer:
             explain_dataset (Dataset | None): A specific dataset to explain. 
                                                  If None, the trainer's test dataset is used.
             n_samples (int): The number of samples to use for both background and explanation.
-            feature_names (list[str] | None): Feature names.
+            feature_names (list[str] | None): Feature names. If None, the names will be extracted from the Dataset and raise an error on failure.
             target_names (list[str] | None): Target names for multi-target tasks.
             save_dir (str | Path): Directory to save all SHAP artifacts.
             explainer_type (Literal['deep', 'kernel']): The explainer to use.
-                - 'deep': (Default) Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
+                - 'deep': Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
                 - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY slow and memory-intensive. Use with a very low 'n_samples'< 100.
         """
         # Internal helper to create a dataloader and get a random sample
@@ -474,10 +474,10 @@ class MLTrainer:
         # attempt to get feature names
         if feature_names is None:
             # _LOGGER.info("`feature_names` not provided. Attempting to extract from dataset...")
-            if hasattr(target_dataset, "feature_names"):
+            if hasattr(target_dataset, DatasetKeys.FEATURE_NAMES):
                 feature_names = target_dataset.feature_names # type: ignore
             else:
-                _LOGGER.error("Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a `feature_names` attribute.")
+                _LOGGER.error(f"Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a '{DatasetKeys.FEATURE_NAMES}' attribute.")
                 raise ValueError()
             
         # move model to device
@@ -498,7 +498,7 @@ class MLTrainer:
             # try to get target names
             if target_names is None:
                 target_names = []
-                if hasattr(target_dataset, 'target_names'):
+                if hasattr(target_dataset, DatasetKeys.TARGET_NAMES):
                     target_names = target_dataset.target_names # type: ignore
                 else:
                     # Infer number of targets from the model's output layer
@@ -549,7 +549,7 @@ class MLTrainer:
                 yield attention_weights
     
     def explain_attention(self, save_dir: Union[str, Path], 
-                          feature_names: Optional[List[str]], 
+                          feature_names: Optional[List[str]] = None, 
                           explain_dataset: Optional[Dataset] = None,
                           plot_n_features: int = 10):
         """
@@ -559,7 +559,7 @@ class MLTrainer:
 
         Args:
             save_dir (str | Path): Directory to save the plot and summary data.
-            feature_names (List[str] | None): Names for the features for plot labeling. If not given, generic names will be used.
+            feature_names (List[str] | None): Names for the features for plot labeling. If None, the names will be extracted from the Dataset and raise an error on failure.
             explain_dataset (Dataset, optional): A specific dataset to explain. If None, the trainer's test dataset is used.
             plot_n_features (int): Number of top features to plot.
         """
@@ -579,6 +579,14 @@ class MLTrainer:
         if not isinstance(dataset_to_use, Dataset):
             _LOGGER.error("The explanation dataset is empty or invalid. Skipping attention analysis.")
             return
+        
+        # Get feature names
+        if feature_names is None:
+            if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
+                feature_names = dataset_to_use.feature_names # type: ignore
+            else:
+                _LOGGER.error(f"Could not extract `feature_names` from the dataset for attention plot. It must be provided if the dataset object does not have a '{DatasetKeys.FEATURE_NAMES}' attribute.")
+                raise ValueError()
         
         explain_loader = DataLoader(
             dataset=dataset_to_use, batch_size=32, shuffle=False,

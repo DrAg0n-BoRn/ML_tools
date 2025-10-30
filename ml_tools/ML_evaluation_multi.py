@@ -235,7 +235,7 @@ def multi_target_shap_summary_plot(
     target_names: List[str],
     save_dir: Union[str, Path],
     device: torch.device = torch.device('cpu'),
-    explainer_type: Literal['deep', 'kernel'] = 'deep'
+    explainer_type: Literal['deep', 'kernel'] = 'kernel'
 ):
     """
     Calculates SHAP values for a multi-target model and saves summary plots and data for each target.
@@ -249,7 +249,7 @@ def multi_target_shap_summary_plot(
         save_dir (str | Path): Directory to save SHAP artifacts.
         device (torch.device): The torch device for SHAP calculations.
         explainer_type (Literal['deep', 'kernel']): The explainer to use.
-            - 'deep': (Default) Uses shap.DeepExplainer. Fast and efficient.
+            - 'deep': Uses shap.DeepExplainer. Fast and efficient.
             - 'kernel': Uses shap.KernelExplainer. Model-agnostic but slow and memory-intensive.
     """
     _LOGGER.info(f"--- Multi-Target SHAP Value Explanation (Using: {explainer_type.upper()}Explainer) ---")
@@ -260,7 +260,7 @@ def multi_target_shap_summary_plot(
     instances_to_explain_np = None
 
     if explainer_type == 'deep':
-        # --- 1. Use DeepExplainer (Preferred) ---
+        # --- 1. Use DeepExplainer ---
         
         # Ensure data is torch.Tensor
         if isinstance(background_data, np.ndarray):
@@ -285,10 +285,9 @@ def multi_target_shap_summary_plot(
         instances_to_explain_np = instances_to_explain.cpu().numpy()
 
     elif explainer_type == 'kernel':
-        # --- 2. Use KernelExplainer (Slow Fallback) ---
+        # --- 2. Use KernelExplainer  ---
         _LOGGER.warning(
-            "Using KernelExplainer. This is memory-intensive and slow. "
-            "Consider reducing 'n_samples' if the process terminates."
+            "KernelExplainer is memory-intensive and slow. Consider reducing the number of instances to explain if the process terminates unexpectedly."
         )
         
         # Convert all data to numpy
