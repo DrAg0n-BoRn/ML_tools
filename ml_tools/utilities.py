@@ -96,6 +96,7 @@ def load_dataframe(
         elif kind == "polars":
             pl_kwargs: dict[str,Any]
             pl_kwargs = {}
+            pl_kwargs['null_values'] = ["", " "]
             if use_columns:
                 pl_kwargs['columns'] = use_columns
                 
@@ -288,15 +289,25 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
         
     # --- Type-specific saving logic ---
     if isinstance(df, pd.DataFrame):
-        df.to_csv(output_path, index=False, encoding='utf-8')
+        # Transform "" to np.nan before saving
+        df_to_save = df.replace(r'^\s*$', np.nan, regex=True)
+        # Save
+        df_to_save.to_csv(output_path, index=False, encoding='utf-8')
     elif isinstance(df, pl.DataFrame):
-        df.write_csv(output_path) # Polars defaults to utf8 and no index
+        # Transform empty strings to Null
+        df_to_save = df.with_columns(
+            pl.when(pl.col(pl.Utf8).str.strip() == "")
+            .then(None)
+            .otherwise(pl.col(pl.Utf8))
+        )
+        # Save
+        df_to_save.write_csv(output_path)
     else:
         # This error handles cases where an unsupported type is passed
         _LOGGER.error(f"Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
         raise TypeError()
     
-    _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df.shape}")
+    _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df_to_save.shape}")
 
 
 def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):

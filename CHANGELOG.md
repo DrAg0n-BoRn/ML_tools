@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.6.0] 2025-10-30
+
+### Changed
+
+- utilities:
+    - `save_dataframe_filename()`, converts empty strings to None before saving the CSV file.
+    - `load_dataframe()`, loads empty strings as None values.
+
 ## [13.5.0] 2025-10-30
 
 ### Changed
