@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.7.0] 2025-10-30
+
+### Added
+
+- MICE_imputation: `MiceImputer`, a modern MICE imputation pipeline that uses a FeatureSchema to correctly discretize categorical features after imputation.
+- utilities:
+    - `save_dataframe_with_schema()`, saves a Pandas Dataframe into a CSV file, strictly validating its feature columns against a FeatureSchema.
+    - `load_dataframe_with_schema()`, loads a CSV file into a Pandas DataFrame, strictly validating its feature columns against a FeatureSchema.
+
 ## [13.6.0] 2025-10-30
 
 ### Changed

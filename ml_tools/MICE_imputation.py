@@ -7,19 +7,20 @@ from plotnine import ggplot, labs, theme, element_blank # type: ignore
 from typing import Optional, Union
 
 from .utilities import load_dataframe, merge_dataframes, save_dataframe_filename
-from .math_utilities import threshold_binary_values
+from .math_utilities import threshold_binary_values, discretize_categorical_values
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
 from ._logger import _LOGGER
 from ._script_info import _script_info
+from ._schema import FeatureSchema
 
 
 __all__ = [
+    "MiceImputer",
     "apply_mice",
     "save_imputed_datasets",
-    "get_na_column_names",
     "get_convergence_diagnostic",
     "get_imputed_distributions",
-    "run_mice_pipeline"
+    "run_mice_pipeline",
 ]
 
 
@@ -79,7 +80,7 @@ def save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df
 
 
 #Get names of features that had missing values before imputation
-def get_na_column_names(df: pd.DataFrame):
+def _get_na_column_names(df: pd.DataFrame):
     return [col for col in df.columns if df[col].isna().any()]
 
 
@@ -264,7 +265,7 @@ def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str]
         
         save_imputed_datasets(save_dir=save_datasets_path, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
         
-        imputed_column_names = get_na_column_names(df=df)
+        imputed_column_names = _get_na_column_names(df=df)
         
         get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_path)
         
@@ -276,6 +277,207 @@ def _skip_targets(df: pd.DataFrame, target_cols: list[str]):
     df_targets = df[valid_targets]
     df_feats = df.drop(columns=valid_targets)
     return df_feats, df_targets
+
+
+# modern implementation
+class MiceImputer:
+    """
+    A modern MICE imputation pipeline that uses a FeatureSchema
+    to correctly discretize categorical features after imputation.
+    """
+    def __init__(self, 
+                 schema: FeatureSchema,
+                 iterations: int=20,
+                 resulting_datasets: int = 1,
+                 random_state: int = 101):
+        
+        self.schema = schema
+        self.random_state = random_state
+        self.iterations = iterations
+        self.resulting_datasets = resulting_datasets
+        
+        # --- Store schema info ---
+        
+        # 1. Categorical info
+        if not self.schema.categorical_index_map:
+            _LOGGER.warning("FeatureSchema has no 'categorical_index_map'. No discretization will be applied.")
+            self.cat_info = {}
+        else:
+            self.cat_info = self.schema.categorical_index_map
+            
+        # 2. Ordered feature names (critical for index mapping)
+        self.ordered_features = list(self.schema.feature_names)
+        
+        # 3. Names of categorical features
+        self.categorical_features = list(self.schema.categorical_feature_names)
+
+        _LOGGER.info(f"MiceImputer initialized. Found {len(self.cat_info)} categorical features to discretize.")
+        
+    def _post_process(self, imputed_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Applies schema-based discretization to a completed dataframe.
+        
+        This method works around the behavior of `discretize_categorical_values`
+        (which returns a full int32 array) by:
+        1. Calling it on the full, ordered feature array.
+        2. Extracting *only* the valid discretized categorical columns.
+        3. Updating the original float dataframe with these integer values.
+        """
+        # If no categorical features are defined, return the df as-is.
+        if not self.cat_info:
+            return imputed_df
+
+        try:
+            # 1. Ensure DataFrame columns match the schema order
+            # This is critical for the index-based categorical_info
+            df_ordered: pd.DataFrame = imputed_df[self.ordered_features] # type: ignore
+            
+            # 2. Convert to NumPy array
+            array_ordered = df_ordered.to_numpy()
+
+            # 3. Apply discretization utility (which returns a full int32 array)
+            # This array has *correct* categorical values but *truncated* continuous values.
+            discretized_array_int32 = discretize_categorical_values(
+                array_ordered,
+                self.cat_info,
+                start_at_zero=True  # Assuming 0-based indexing
+            )
+
+            # 4. Create a new DF from the int32 array, keeping the categorical columns.
+            df_discretized_cats = pd.DataFrame(
+                discretized_array_int32,
+                columns=self.ordered_features,
+                index=df_ordered.index  # <-- Critical: align index
+            )[self.categorical_features] # <-- Select only cat features
+
+            # 5. "Rejoin": Start with a fresh copy of the *original* imputed DF (which has correct continuous floats).
+            final_df = df_ordered.copy()
+            
+            # 6. Use .update() to "paste" the integer categorical values
+            # over the old float categorical values. Continuous floats are unaffected.
+            final_df.update(df_discretized_cats)
+            
+            return final_df
+
+        except Exception as e:
+            _LOGGER.error(f"Failed during post-processing discretization:\n\tInput DF shape: {imputed_df.shape}\n\tSchema features: {len(self.ordered_features)}\n\tCategorical info keys: {list(self.cat_info.keys())}\n{e}")
+            raise
+        
+    def _run_mice(self, 
+                  df: pd.DataFrame, 
+                  df_name: str) -> tuple[mf.ImputationKernel, list[pd.DataFrame], list[str]]:
+        """
+        Runs the MICE kernel and applies schema-based post-processing.
+        
+        Parameters:
+            df (pd.DataFrame): The input dataframe *with NaNs*. Should only contain feature columns.
+            df_name (str): The base name for the dataset.
+
+        Returns:
+            tuple[mf.ImputationKernel, list[pd.DataFrame], list[str]]:
+                - The trained MICE kernel
+                - A list of imputed and processed DataFrames
+                - A list of names for the new DataFrames
+        """
+        # Ensure input df only contains features from the schema and is in the correct order.
+        try:
+            df_feats = df[self.ordered_features]
+        except KeyError as e:
+            _LOGGER.error(f"Input DataFrame is missing required schema columns: {e}")
+            raise
+        
+        # 1. Initialize kernel
+        kernel = mf.ImputationKernel(
+            data=df_feats,
+            num_datasets=self.resulting_datasets,
+            random_state=self.random_state
+        )
+        
+        _LOGGER.info("➡️ Schema-based MICE imputation running...")
+        
+        # 2. Perform MICE
+        kernel.mice(self.iterations)
+        
+        # 3. Retrieve, process, and collect datasets
+        imputed_datasets = []
+        for i in range(self.resulting_datasets):
+            # complete_data returns a pd.DataFrame
+            completed_df = kernel.complete_data(dataset=i)
+            
+            # Apply our new discretization and ordering
+            processed_df = self._post_process(completed_df)
+            imputed_datasets.append(processed_df)
+
+        if not imputed_datasets:
+            _LOGGER.error("No imputed datasets were generated.")
+            raise ValueError()
+
+        # 4. Generate names
+        if self.resulting_datasets == 1:
+            imputed_dataset_names = [f"{df_name}_MICE"]
+        else:
+            imputed_dataset_names = [f"{df_name}_MICE_{i+1}" for i in range(self.resulting_datasets)]
+        
+        # 5. Validate indexes 
+        for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
+            assert imputed_df.shape[0] == df.shape[0], f"❌ Row count mismatch in dataset {subname}"
+            assert all(imputed_df.index == df.index), f"❌ Index mismatch in dataset {subname}"
+        
+        _LOGGER.info("Schema-based MICE imputation complete.")
+        
+        return kernel, imputed_datasets, imputed_dataset_names
+        
+    def run_pipeline(self, 
+                     df_path_or_dir: Union[str,Path],
+                     save_datasets_dir: Union[str,Path], 
+                     save_metrics_dir: Union[str,Path],
+                     ):
+        """
+        Runs the complete MICE imputation pipeline.
+
+        This method automates the entire workflow:
+            1. Loads data from a CSV file path or a directory with CSV files.
+            2. Separates features and targets based on the `FeatureSchema`.
+            3. Runs the MICE algorithm on the feature set.
+            4. Applies schema-based post-processing to discretize categorical features.
+            5. Saves the final, processed, and imputed dataset(s) (re-joined with targets) to `save_datasets_dir`.
+            6. Generates and saves convergence and distribution plots for all imputed columns to `save_metrics_dir`.
+
+        Parameters
+        ----------
+        df_path_or_dir :[str,Path]
+            Path to a single CSV file or a directory containing multiple CSV files to impute.
+        save_datasets_dir : [str,Path]
+            Directory where the final imputed and processed dataset(s) will be saved as CSVs.
+        save_metrics_dir : [str,Path]
+            Directory where convergence and distribution plots will be saved.
+        """
+        # Check paths
+        save_datasets_path = make_fullpath(save_datasets_dir, make=True)
+        save_metrics_path = make_fullpath(save_metrics_dir, make=True)
+        
+        input_path = make_fullpath(df_path_or_dir)
+        if input_path.is_file():
+            all_file_paths = [input_path]
+        else:
+            all_file_paths = list(list_csv_paths(input_path).values())
+        
+        for df_path in all_file_paths:
+            
+            df, df_name = load_dataframe(df_path=df_path, kind="pandas")
+            
+            df_features: pd.DataFrame = df[self.schema.feature_names] # type: ignore
+            df_targets = df.drop(columns=self.schema.feature_names)
+            
+            imputed_column_names = _get_na_column_names(df=df_features)
+            
+            kernel, imputed_datasets, imputed_dataset_names = self._run_mice(df=df_features, df_name=df_name)
+            
+            save_imputed_datasets(save_dir=save_datasets_path, imputed_datasets=imputed_datasets, df_targets=df_targets, imputed_dataset_names=imputed_dataset_names)
+            
+            get_convergence_diagnostic(kernel=kernel, imputed_dataset_names=imputed_dataset_names, column_names=imputed_column_names, root_dir=save_metrics_path)
+            
+            get_imputed_distributions(kernel=kernel, df_name=df_name, root_dir=save_metrics_path, column_names=imputed_column_names)
 
 
 def info():

@@ -7,16 +7,19 @@ from typing import Literal, Union, Optional, Any, Iterator, Tuple, overload
 from .path_manager import sanitize_filename, make_fullpath, list_csv_paths
 from ._script_info import _script_info
 from ._logger import _LOGGER
+from ._schema import FeatureSchema
 
 
 # Keep track of available tools
 __all__ = [
     "load_dataframe",
     "load_dataframe_greedy",
+    "load_dataframe_with_schema",
     "yield_dataframes_from_dir",
     "merge_dataframes",
     "save_dataframe_filename",
     "save_dataframe",
+    "save_dataframe_with_schema",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder"
@@ -172,6 +175,68 @@ def load_dataframe_greedy(directory: Union[str, Path],
         break
     
     return df
+
+
+def load_dataframe_with_schema(
+    df_path: Union[str, Path], 
+    schema: "FeatureSchema",
+    all_strings: bool = False,
+) -> Tuple[pd.DataFrame, str]:
+    """
+    Loads a CSV file into a Pandas DataFrame, strictly validating its
+    feature columns against a FeatureSchema.
+
+    This function wraps `load_dataframe`. After loading, it validates
+    that the first N columns of the DataFrame (where N =
+    len(schema.feature_names)) contain *exactly* the set of features
+    specified in the schema.
+
+    - If the columns are present but out of order, they are reordered.
+    - If any required feature is missing from the first N columns, it fails.
+    - If any extra column is found within the first N columns, it fails.
+
+    Columns *after* the first N are considered target columns and are
+    logged for verification.
+
+    Args:
+        df_path (str, Path): 
+            The path to the CSV file.
+        schema (FeatureSchema): 
+            The schema object to validate against.
+        all_strings (bool): 
+            If True, loads all columns as string data types.
+
+    Returns:
+        (Tuple[pd.DataFrame, str]):
+            A tuple containing the loaded, validated (and possibly
+            reordered) pandas DataFrame and the base name of the file.
+            
+    Raises:
+        ValueError: 
+            - If the DataFrame is missing columns required by the schema
+              within its first N columns.
+            - If the DataFrame's first N columns contain unexpected
+              columns that are not in the schema.
+        FileNotFoundError: 
+            If the file does not exist at the given path.
+    """
+    # Step 1: Load the dataframe using the original function
+    try:
+        df, df_name = load_dataframe(
+            df_path=df_path, 
+            use_columns=None,  # Load all columns for validation
+            kind="pandas", 
+            all_strings=all_strings,
+            verbose=True
+        )
+    except Exception as e:
+        _LOGGER.error(f"Failed during initial load for schema validation: {e}")
+        raise e
+    
+    # Step 2: Call the helper to validate and reorder
+    df_validated = _validate_and_reorder_schema(df=df, schema=schema)
+
+    return df_validated, df_name
 
 
 def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
@@ -330,6 +395,52 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
                             filename=full_path.name)
 
 
+def save_dataframe_with_schema(
+    df: pd.DataFrame, 
+    full_path: Path,
+    schema: "FeatureSchema"
+) -> None:
+    """
+    Saves a pandas DataFrame to a CSV, strictly enforcing that the
+    first N columns match the FeatureSchema.
+
+    This function validates that the first N columns of the DataFrame
+    (where N = len(schema.feature_names)) contain *exactly* the set
+    of features specified in the schema.
+    
+    - If the columns are present but out of order, they are reordered.
+    - If any required feature is missing from the first N columns, it fails.
+    - If any extra column is found within the first N columns, it fails.
+
+    Columns *after* the first N are considered target columns and are
+    logged for verification.
+
+    Args:
+        df (pd.DataFrame): 
+            The DataFrame to save.
+        full_path (Path): 
+            The complete file path where the DataFrame will be saved.
+        schema (FeatureSchema): 
+            The schema object to validate against.
+
+    Raises:
+        ValueError: 
+            - If the DataFrame is missing columns required by the schema
+              within its first N columns.
+            - If the DataFrame's first N columns contain unexpected
+              columns that are not in the schema.
+    """
+    if not isinstance(full_path, Path) or not full_path.suffix.endswith(".csv"):
+        _LOGGER.error('A path object pointing to a .csv file must be provided.')
+        raise ValueError()
+    
+    # Call the helper to validate and reorder
+    df_to_save = _validate_and_reorder_schema(df=df, schema=schema)
+    
+    # Call the original save function
+    save_dataframe(df=df_to_save, full_path=full_path)
+
+
 def distribute_dataset_by_target(
     df_or_path: Union[pd.DataFrame, str, Path],
     target_columns: list[str],
@@ -440,6 +551,73 @@ def train_dataset_yielder(
     for target_col in valid_targets:
         df_target = df[target_col]
         yield (df_features, df_target, feature_names, target_col)
+
+
+def _validate_and_reorder_schema(
+    df: pd.DataFrame, 
+    schema: "FeatureSchema"
+) -> pd.DataFrame:
+    """
+    Internal helper to validate and reorder a DataFrame against a schema.
+
+    Checks for missing, extra, and out-of-order feature columns
+    (the first N columns). Returns a reordered DataFrame if necessary.
+    Logs all actions.
+
+    Raises:
+        ValueError: If validation fails.
+    """
+    # Get schema and DataFrame column info
+    expected_features = list(schema.feature_names)
+    expected_set = set(expected_features)
+    n_features = len(expected_features)
+    
+    all_df_columns = df.columns.to_list()
+
+    # --- Strict Validation ---
+
+    # 0. Check if DataFrame is long enough
+    if len(all_df_columns) < n_features:
+        _LOGGER.error(f"DataFrame has only {len(all_df_columns)} columns, but schema requires {n_features} features.")
+        raise ValueError()
+    
+    df_feature_cols = all_df_columns[:n_features]
+    df_feature_set = set(df_feature_cols)
+    df_target_cols = all_df_columns[n_features:]
+
+    # 1. Check for missing features
+    missing_from_df = expected_set - df_feature_set
+    if missing_from_df:
+        _LOGGER.error(f"DataFrame's first {n_features} columns are missing required schema features: {missing_from_df}")
+        raise ValueError()
+
+    # 2. Check for extra (unexpected) features
+    extra_in_df = df_feature_set - expected_set
+    if extra_in_df:
+        _LOGGER.error(f"DataFrame's first {n_features} columns contain unexpected columns: {extra_in_df}")
+        raise ValueError()
+
+    # --- Reordering ---
+    
+    df_to_process = df
+
+    # If we pass validation, the sets are equal. Now check order.
+    if df_feature_cols == expected_features:
+        _LOGGER.info("DataFrame feature columns already match schema order.")
+    else:
+        _LOGGER.warning("DataFrame feature columns do not match schema order. Reordering...")
+        
+        # Rebuild the DataFrame with the correct feature order + target columns
+        new_order = expected_features + df_target_cols
+        df_to_process = df[new_order]
+
+    # Log the presumed target columns for user verification
+    if not df_target_cols:
+        _LOGGER.warning(f"No target columns were found after index {n_features-1}.")
+    else:
+        _LOGGER.info(f"Presumed Target Columns: {df_target_cols}")
+    
+    return df_to_process # type: ignore
 
 
 def info():
