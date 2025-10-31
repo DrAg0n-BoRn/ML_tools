@@ -80,6 +80,14 @@ class PyTorchCheckpointKeys:
     BEST_SCORE = "best_score"
 
 
+class UtilityKeys:
+    """Keys used for utility modules"""
+    MODEL_PARAMS_FILE = "model_parameters"
+    TOTAL_PARAMS = "Total Parameters"
+    TRAINABLE_PARAMS = "Trainable Parameters"
+    PTH_FILE = "pth report "
+
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"

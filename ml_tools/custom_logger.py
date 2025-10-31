@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict, Any, Literal
 import traceback
 import json
 import csv
@@ -29,6 +29,7 @@ def custom_logger(
     ],
     save_directory: Union[str, Path],
     log_name: str,
+    dict_as: Literal['auto', 'json', 'csv'] = 'auto',
 ) -> None:
     """
     Logs various data types to corresponding output formats:
@@ -36,10 +37,10 @@ def custom_logger(
     - list[Any]                    → .txt
         Each element is written on a new line.
 
-    - dict[str, list[Any]]        → .csv
+    - dict[str, list[Any]]        → .csv    (if dict_as='auto' or 'csv')
         Dictionary is treated as tabular data; keys become columns, values become rows.
 
-    - dict[str, scalar]           → .json
+    - dict[str, scalar]           → .json   (if dict_as='auto' or 'json')
         Dictionary is treated as structured data and serialized as JSON.
 
     - str                         → .log
@@ -52,26 +53,43 @@ def custom_logger(
         data: The data to be logged. Must be one of the supported types.
         save_directory: Directory where the log will be saved. Created if it does not exist.
         log_name: Base name for the log file. Timestamp will be appended automatically.
+        dict_as ('auto'|'json'|'csv'): 
+            - 'auto': Guesses format (JSON or CSV) based on dictionary content.
+            - 'json': Forces .json format for any dictionary.
+            - 'csv': Forces .csv format. Will fail if dict values are not all lists.
 
     Raises:
         ValueError: If the data type is unsupported.
     """
     try:
+        if not isinstance(data, BaseException) and not data:
+            _LOGGER.warning("Empty data received. No log file will be saved.")
+            return
+        
         save_path = make_fullpath(save_directory, make=True)
         
         timestamp = datetime.now().strftime(r"%Y%m%d_%H%M%S")
         log_name = sanitize_filename(log_name)
         
         base_path = save_path / f"{log_name}_{timestamp}"
-
+        
+        # Router
         if isinstance(data, list):
             _log_list_to_txt(data, base_path.with_suffix(".txt"))
 
         elif isinstance(data, dict):
-            if all(isinstance(v, list) for v in data.values()):
-                _log_dict_to_csv(data, base_path.with_suffix(".csv"))
-            else:
+            if dict_as == 'json':
                 _log_dict_to_json(data, base_path.with_suffix(".json"))
+            
+            elif dict_as == 'csv':
+                # This will raise a ValueError if data is not all lists
+                _log_dict_to_csv(data, base_path.with_suffix(".csv"))
+            
+            else: # 'auto' mode
+                if all(isinstance(v, list) for v in data.values()):
+                    _log_dict_to_csv(data, base_path.with_suffix(".csv"))
+                else:
+                    _log_dict_to_json(data, base_path.with_suffix(".json"))
 
         elif isinstance(data, str):
             _log_string_to_log(data, base_path.with_suffix(".log"))
@@ -83,7 +101,7 @@ def custom_logger(
             _LOGGER.error("Unsupported data type. Must be list, dict, str, or BaseException.")
             raise ValueError()
 
-        _LOGGER.info(f"Log saved to: '{base_path}'")
+        _LOGGER.info(f"Log saved as: '{base_path.name}'")
 
     except Exception:
         _LOGGER.exception(f"Log not saved.")

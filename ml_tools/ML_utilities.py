@@ -1,18 +1,24 @@
 import pandas as pd
 from pathlib import Path
-from typing import Union, Any, Optional
+from typing import Union, Any, Optional, Dict, List, Iterable
+import torch
+from torch import nn
+
 
 from .path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys
+from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from .utilities import load_dataframe
-from .custom_logger import save_list_strings
+from .custom_logger import save_list_strings, custom_logger
 
 
 __all__ = [
     "find_model_artifacts",
-    "select_features_by_shap"
+    "select_features_by_shap",
+    "get_model_parameters",
+    "inspect_pth_file",
+    "set_parameter_requires_grad"
 ]
 
 
@@ -225,6 +231,249 @@ def select_features_by_shap(
     
     return final_features
 
+
+def get_model_parameters(model: nn.Module, save_dir: Optional[Union[str,Path]]=None) -> Dict[str, int]:
+    """
+    Calculates the total and trainable parameters of a PyTorch model.
+
+    Args:
+        model (nn.Module): The PyTorch model to inspect.
+        save_dir: Optional directory to save the output as a JSON file.
+
+    Returns:
+        Dict[str, int]: A dictionary containing:
+            - "total_params": The total number of parameters.
+            - "trainable_params": The number of trainable parameters (where requires_grad=True).
+    """
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    report = {
+        UtilityKeys.TOTAL_PARAMS: total_params,
+        UtilityKeys.TRAINABLE_PARAMS: trainable_params
+    }
+    
+    if save_dir is not None:
+        output_dir = make_fullpath(save_dir, make=True, enforce="directory")
+        custom_logger(data=report,
+                      save_directory=output_dir,
+                      log_name=UtilityKeys.MODEL_PARAMS_FILE,
+                      dict_as="json")
+
+    return report
+
+
+def inspect_pth_file(
+    pth_path: Union[str, Path],
+    save_dir: Union[str, Path],
+) -> None:
+    """
+    Inspects a .pth file (e.g., checkpoint) and saves a human-readable
+    JSON summary of its contents.
+
+    Args:
+        pth_path (str | Path): The path to the .pth file to inspect.
+        save_dir (str | Path): The directory to save the JSON report.
+
+    Returns:
+        Dict (str, Any): A dictionary containing the inspection report.
+
+    Raises:
+        ValueError: If the .pth file is empty or in an unrecognized format.
+    """
+    # --- 1. Validate paths ---
+    pth_file = make_fullpath(pth_path, enforce="file")
+    output_dir = make_fullpath(save_dir, make=True, enforce="directory")
+    pth_name = pth_file.stem
+
+    # --- 2. Load data ---
+    try:
+        # Load onto CPU to avoid GPU memory issues
+        loaded_data = torch.load(pth_file, map_location=torch.device('cpu'))
+    except Exception as e:
+        _LOGGER.error(f"Failed to load .pth file '{pth_file}': {e}")
+        raise
+
+    # --- 3. Initialize Report ---
+    report = {
+        "top_level_type": str(type(loaded_data)),
+        "top_level_summary": {},
+        "model_state_analysis": None,
+        "notes": []
+    }
+
+    # --- 4. Parse loaded data ---
+    if isinstance(loaded_data, dict):
+        # --- Case 1: Loaded data is a dictionary (most common case) ---
+        # "main loop" that iterates over *everything* first.
+        for key, value in loaded_data.items():
+            key_summary = {}
+            val_type = str(type(value))
+            key_summary["type"] = val_type
+            
+            if isinstance(value, torch.Tensor):
+                key_summary["shape"] = list(value.shape)
+                key_summary["dtype"] = str(value.dtype)
+            elif isinstance(value, dict):
+                key_summary["key_count"] = len(value)
+                key_summary["key_preview"] = list(value.keys())[:5]
+            elif isinstance(value, (int, float, str, bool)):
+                key_summary["value_preview"] = str(value)
+            elif isinstance(value, (list, tuple)):
+                 key_summary["value_preview"] = str(value)[:100]
+            
+            report["top_level_summary"][key] = key_summary
+
+        # Now, try to find the model state_dict within the dict
+        if PyTorchCheckpointKeys.MODEL_STATE in loaded_data and isinstance(loaded_data[PyTorchCheckpointKeys.MODEL_STATE], dict):
+            report["notes"].append(f"Found standard checkpoint key: '{PyTorchCheckpointKeys.MODEL_STATE}'. Analyzing as model state_dict.")
+            state_dict = loaded_data[PyTorchCheckpointKeys.MODEL_STATE]
+            report["model_state_analysis"] = _generate_weight_report(state_dict)
+        
+        elif all(isinstance(v, torch.Tensor) for v in loaded_data.values()):
+            report["notes"].append("File dictionary contains only tensors. Analyzing entire dictionary as model state_dict.")
+            state_dict = loaded_data
+            report["model_state_analysis"] = _generate_weight_report(state_dict)
+        
+        else:
+            report["notes"].append("Could not identify a single model state_dict. See top_level_summary for all contents. No detailed weight analysis will be performed.")
+
+    elif isinstance(loaded_data, nn.Module):
+        # --- Case 2: Loaded data is a full pickled model ---
+        # _LOGGER.warning("Loading a full, pickled nn.Module is not recommended. Inspecting its state_dict().")
+        report["notes"].append("File is a full, pickled nn.Module. This is not recommended. Extracting state_dict() for analysis.")
+        state_dict = loaded_data.state_dict()
+        report["model_state_analysis"] = _generate_weight_report(state_dict)
+
+    else:
+        # --- Case 3: Unrecognized format (e.g., single tensor, list) ---
+        _LOGGER.error(f"Could not parse .pth file. Loaded data is of type {type(loaded_data)}, not a dict or nn.Module.")
+        raise ValueError()
+
+    # --- 5. Save Report ---
+    custom_logger(data=report,
+                  save_directory=output_dir,
+                  log_name=UtilityKeys.PTH_FILE + pth_name,
+                  dict_as="json")
+
+
+def _generate_weight_report(state_dict: dict) -> dict:
+    """
+    Internal helper to analyze a state_dict and return a structured report.
+    
+    Args:
+        state_dict (dict): The model state_dict to analyze.
+
+    Returns:
+        dict: A report containing total parameters and a per-parameter breakdown.
+    """
+    weight_report = {}
+    total_params = 0
+    if not isinstance(state_dict, dict):
+        _LOGGER.warning(f"Attempted to generate weight report on non-dict type: {type(state_dict)}")
+        return {"error": "Input was not a dictionary."}
+
+    for key, tensor in state_dict.items():
+        if not isinstance(tensor, torch.Tensor):
+             _LOGGER.warning(f"Skipping key '{key}' in state_dict: value is not a tensor (type: {type(tensor)}).")
+             weight_report[key] = {
+                 "type": str(type(tensor)),
+                 "value_preview": str(tensor)[:50] # Show a preview
+             }
+             continue
+        weight_report[key] = {
+            "shape": list(tensor.shape),
+            "dtype": str(tensor.dtype),
+            "requires_grad": tensor.requires_grad,
+            "num_elements": tensor.numel()
+        }
+        total_params += tensor.numel()
+
+    return {
+        "total_parameters": total_params,
+        "parameter_key_count": len(weight_report),
+        "parameters": weight_report
+    }
+
+
+def set_parameter_requires_grad(
+    model: nn.Module,
+    unfreeze_last_n_params: int,
+) -> int:
+    """
+    Freezes or unfreezes parameters in a model based on unfreeze_last_n_params.
+
+    - N = 0: Freezes ALL parameters.
+    - N > 0 and N < total: Freezes ALL parameters, then unfreezes the last N.
+    - N >= total: Unfreezes ALL parameters.
+
+    Note: 'N' refers to individual parameter tensors (e.g., `layer.weight`
+    or `layer.bias`), not modules or layers. For example, to unfreeze
+    the final nn.Linear layer, you would use N=2 (for its weight and bias).
+
+    Args:
+        model (nn.Module): The model to modify.
+        unfreeze_last_n_params (int):
+            The number of parameter tensors to unfreeze, starting from
+            the end of the model.
+
+    Returns:
+        int: The total number of individual parameters (elements) that were set to `requires_grad=True`.
+    """
+    if unfreeze_last_n_params < 0:
+        _LOGGER.error(f"unfreeze_last_n_params must be >= 0, but got {unfreeze_last_n_params}")
+        raise ValueError()
+
+    # --- Step 1: Get all parameter tensors ---
+    all_params = list(model.parameters())
+    total_param_tensors = len(all_params)
+
+    # --- Case 1: N = 0 (Freeze ALL parameters) ---
+    # early exit for the "freeze all" case.
+    if unfreeze_last_n_params == 0:
+        params_frozen = _set_params_grad(all_params, requires_grad=False)
+        _LOGGER.warning(f"Froze all {total_param_tensors} parameter tensors ({params_frozen} total elements).")
+        return 0  # 0 parameters unfrozen
+
+    # --- Case 2: N >= total (Unfreeze ALL parameters) ---
+    if unfreeze_last_n_params >= total_param_tensors:
+        if unfreeze_last_n_params > total_param_tensors:
+            _LOGGER.warning(f"Requested to unfreeze {unfreeze_last_n_params} params, but model only has {total_param_tensors}. Unfreezing all.")
+        
+        params_unfrozen = _set_params_grad(all_params, requires_grad=True)
+        _LOGGER.info(f"Unfroze all {total_param_tensors} parameter tensors ({params_unfrozen} total elements) for training.")
+        return params_unfrozen
+
+    # --- Case 3: 0 < N < total (Standard: Freeze all, unfreeze last N) ---
+    # Freeze ALL
+    params_frozen = _set_params_grad(all_params, requires_grad=False)
+    _LOGGER.info(f"Froze {params_frozen} parameters.")
+
+    # Unfreeze the last N
+    params_to_unfreeze = all_params[-unfreeze_last_n_params:]
+    
+    # these are all False, so the helper will set them to True
+    params_unfrozen = _set_params_grad(params_to_unfreeze, requires_grad=True)
+
+    _LOGGER.info(f"Unfroze the last {unfreeze_last_n_params} parameter tensors ({params_unfrozen} total elements) for training.")
+
+    return params_unfrozen
+
+
+def _set_params_grad(
+    params: Iterable[nn.Parameter], 
+    requires_grad: bool
+) -> int:
+    """
+    A helper function to set the `requires_grad` attribute for an iterable
+    of parameters and return the total number of elements changed.
+    """
+    params_changed = 0
+    for param in params:
+        if param.requires_grad != requires_grad:
+            param.requires_grad = requires_grad
+            params_changed += param.numel()
+    return params_changed
 
 def info():
     _script_info(__all__)

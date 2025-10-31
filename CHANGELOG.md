@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [13.8.0] 2025-10-31
+
+### Changed
+
+- custom_logger: `custom_logger()`, new parameter to enforce dictionary output as JSON or CSV.
+
+### Added
+
+- ML_utilities:
+    - `get_model_parameters()`, calculates the total and trainable parameters of a PyTorch model.
+    - `inspect_pth_file()`, inspects a .pth file (e.g., checkpoint) and saves a human-readable JSON summary of its contents.
+    - `set_parameter_requires_grad()`, freezes or unfreezes parameters in a model.
+
 ## [13.7.0] 2025-10-30
 
 ### Added
