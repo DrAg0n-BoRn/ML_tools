@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from typing import List, Union, Tuple, Dict, Any
+from typing import List, Union, Tuple, Dict, Any, Literal, Optional
 from pathlib import Path
 import json
 
@@ -747,6 +747,8 @@ class SequencePredictorLSTM(nn.Module, _ArchitectureHandlerMixin):
             f"recurrent_layers={self.lstm.num_layers})"
         )
 
+
+# ---- PyTorch models ---
 
 def info():
     _script_info(__all__)

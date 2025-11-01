@@ -82,7 +82,6 @@ class _BaseInferenceHandler(ABC):
             _LOGGER.warning("CUDA not available, switching to CPU.")
             device_lower = "cpu"
         elif device_lower == "mps" and not torch.backends.mps.is_available():
-            # Your M-series Mac will appreciate this check!
             _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device_lower = "cpu"
         return torch.device(device_lower)

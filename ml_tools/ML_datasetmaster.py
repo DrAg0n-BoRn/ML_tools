@@ -1,13 +1,10 @@
 import torch
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset
 import pandas
 import numpy
 from sklearn.model_selection import train_test_split
 from typing import Literal, Union, Tuple, List, Optional
 from abc import ABC, abstractmethod
-from PIL import Image, ImageOps
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -23,9 +20,7 @@ from ._schema import FeatureSchema
 __all__ = [
     "DatasetMaker",
     "DatasetMakerMulti",
-    "VisionDatasetMaker",
-    "SequenceMaker",
-    "ResizeAspectFill",
+    "SequenceMaker"
 ]
 
 
@@ -473,149 +468,6 @@ class _BaseMaker(ABC):
         pass
 
 
-# --- VisionDatasetMaker ---
-class VisionDatasetMaker(_BaseMaker):
-    """
-    Creates processed PyTorch datasets for computer vision tasks from an
-    image folder directory.
-    
-    Uses online augmentations per epoch (image augmentation without creating new files).
-    """
-    def __init__(self, full_dataset: ImageFolder):
-        super().__init__()
-        self.full_dataset = full_dataset
-        self.labels = [s[1] for s in self.full_dataset.samples]
-        self.class_map = full_dataset.class_to_idx
-        
-        self._is_split = False
-        self._are_transforms_configured = False
-
-    @classmethod
-    def from_folder(cls, root_dir: str) -> 'VisionDatasetMaker':
-        """Creates a maker instance from a root directory of images."""
-        initial_transform = transforms.Compose([transforms.ToTensor()])
-        full_dataset = ImageFolder(root=root_dir, transform=initial_transform)
-        _LOGGER.info(f"Found {len(full_dataset)} images in {len(full_dataset.classes)} classes.")
-        return cls(full_dataset)
-        
-    @staticmethod
-    def inspect_folder(path: Union[str, Path]):
-        """
-        Logs a report of the types, sizes, and channels of image files
-        found in the directory and its subdirectories.
-        """
-        path_obj = make_fullpath(path)
-
-        non_image_files = set()
-        img_types = set()
-        img_sizes = set()
-        img_channels = set()
-        img_counter = 0
-
-        _LOGGER.info(f"Inspecting folder: {path_obj}...")
-        # Use rglob to recursively find all files
-        for filepath in path_obj.rglob('*'):
-            if filepath.is_file():
-                try:
-                    # Using PIL to open is a more reliable check
-                    with Image.open(filepath) as img:
-                        img_types.add(img.format)
-                        img_sizes.add(img.size)
-                        img_channels.update(img.getbands())
-                        img_counter += 1
-                except (IOError, SyntaxError):
-                    non_image_files.add(filepath.name)
-
-        if non_image_files:
-            _LOGGER.warning(f"Non-image or corrupted files found and ignored: {non_image_files}")
-
-        report = (
-            f"\n--- Inspection Report for '{path_obj.name}' ---\n"
-            f"Total images found: {img_counter}\n"
-            f"Image formats: {img_types or 'None'}\n"
-            f"Image sizes (WxH): {img_sizes or 'None'}\n"
-            f"Image channels (bands): {img_channels or 'None'}\n"
-            f"--------------------------------------"
-        )
-        print(report)
-
-    def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
-                   stratify: bool = True, random_state: Optional[int] = None) -> 'VisionDatasetMaker':
-        """Splits the dataset into training, validation, and optional test sets."""
-        if self._is_split:
-            _LOGGER.warning("Data has already been split.")
-            return self
-
-        if val_size + test_size >= 1.0:
-            _LOGGER.error("The sum of val_size and test_size must be less than 1.")
-            raise ValueError()
-
-        indices = list(range(len(self.full_dataset)))
-        labels_for_split = self.labels if stratify else None
-
-        train_indices, val_test_indices = train_test_split(
-            indices, test_size=(val_size + test_size), random_state=random_state, stratify=labels_for_split
-        )
-
-        if test_size > 0:
-            val_test_labels = [self.labels[i] for i in val_test_indices]
-            stratify_val_test = val_test_labels if stratify else None
-            val_indices, test_indices = train_test_split(
-                val_test_indices, test_size=(test_size / (val_size + test_size)), 
-                random_state=random_state, stratify=stratify_val_test
-            )
-            self._test_dataset = Subset(self.full_dataset, test_indices)
-            _LOGGER.info(f"Test set created with {len(self._test_dataset)} images.")
-        else:
-            val_indices = val_test_indices
-        
-        self._train_dataset = Subset(self.full_dataset, train_indices)
-        self._val_dataset = Subset(self.full_dataset, val_indices)
-        self._is_split = True
-        
-        _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
-        return self
-
-    def configure_transforms(self, resize_size: int = 256, crop_size: int = 224, 
-                             mean: List[float] = [0.485, 0.456, 0.406], 
-                             std: List[float] = [0.229, 0.224, 0.225],
-                             extra_train_transforms: Optional[List] = None) -> 'VisionDatasetMaker':
-        """Configures and applies the image transformations (augmentations)."""
-        if not self._is_split:
-            _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
-            raise RuntimeError()
-
-        base_train_transforms = [transforms.RandomResizedCrop(crop_size), transforms.RandomHorizontalFlip()]
-        if extra_train_transforms:
-            base_train_transforms.extend(extra_train_transforms)
-        
-        final_transforms = [transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)]
-
-        val_transform = transforms.Compose([transforms.Resize(resize_size), transforms.CenterCrop(crop_size), *final_transforms])
-        train_transform = transforms.Compose([*base_train_transforms, *final_transforms])
-
-        self._train_dataset.dataset.transform = train_transform # type: ignore
-        self._val_dataset.dataset.transform = val_transform # type: ignore
-        if self._test_dataset:
-            self._test_dataset.dataset.transform = val_transform # type: ignore
-        
-        self._are_transforms_configured = True
-        _LOGGER.info("Image transforms configured and applied.")
-        return self
-
-    def get_datasets(self) -> Tuple[Dataset, ...]:
-        """Returns the final train, validation, and optional test datasets."""
-        if not self._is_split:
-            _LOGGER.error("Data has not been split. Call .split_data() first.")
-            raise RuntimeError()
-        if not self._are_transforms_configured:
-            _LOGGER.warning("Transforms have not been configured. Using default ToTensor only.")
-
-        if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset
-        return self._train_dataset, self._val_dataset
-
-
 # --- SequenceMaker ---
 class SequenceMaker(_BaseMaker):
     """
@@ -802,41 +654,6 @@ class SequenceMaker(_BaseMaker):
             _LOGGER.error("Windows have not been generated. Call .generate_windows() first.")
             raise RuntimeError()
         return self._train_dataset, self._test_dataset
-
-
-# --- Custom Vision Transform Class ---
-class ResizeAspectFill:
-    """
-    Custom transformation to make an image square by padding it to match the
-    longest side, preserving the aspect ratio. The image is finally centered.
-
-    Args:
-        pad_color (Union[str, int]): Color to use for the padding.
-                                     Defaults to "black".
-    """
-    def __init__(self, pad_color: Union[str, int] = "black") -> None:
-        self.pad_color = pad_color
-
-    def __call__(self, image: Image.Image) -> Image.Image:
-        if not isinstance(image, Image.Image):
-            _LOGGER.error(f"Expected PIL.Image.Image, got {type(image).__name__}")
-            raise TypeError()
-
-        w, h = image.size
-        if w == h:
-            return image
-
-        # Determine padding to center the image
-        if w > h:
-            top_padding = (w - h) // 2
-            bottom_padding = w - h - top_padding
-            padding = (0, top_padding, 0, bottom_padding)
-        else: # h > w
-            left_padding = (h - w) // 2
-            right_padding = h - w - left_padding
-            padding = (left_padding, 0, right_padding, 0)
-
-        return ImageOps.expand(image, padding, fill=self.pad_color)
 
 
 def info():

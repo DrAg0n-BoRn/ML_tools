@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [Unreleased]
+
+- New project optional dependency: \[py-tab\], an API for pytorch_tabular. 
+
+## [14.0.0] 2025-11-01
+
+### Changed
+
+- ML_trainer: `MLTrainer`, modified logic to handle segmentation tasks.
+- custom_logger: `custom_logger()`, adding a timestamp to the log is optional.
+- ML_datasetmaster: 
+    - `VisionDatasetMaker`, revamped to improve conciseness. Supports loading images from a single directory or several directories. Moved to "ML_vision_datasetmaster"
+    - `ResizeAspectFill`, moved to "ML_vision_transformers"
+
+### Added
+
+- New project dependency: `torchmetrics`
+- New module: "ML_vision_transformers"
+- New module: "ML_vision_evaluation"
+- New module: "ML_vision_models"
+- New module: "ML_vision_inference"
+- New Module: "ML_vision_datasetmaster"
+- ML_utilities: `inspect_model_architecture()`, Saves a human-readable text summary of a model's instantiated architecture, including parameter counts.
+- ML_trainer: `ObjectDetectionTrainer`, Automates the training process of an Object Detection Model
+- ML_vision_inference: `PyTorchVisionInferenceHandler`, Handles loading a PyTorch vision model's state dictionary and performing inference.
+- ML_vision_datasetmaster: 
+    - `SegmentationDatasetMaker`, Creates processed PyTorch datasets for segmentation from image and mask folders.
+    - `ObjectDetectionDatasetMaker`, Creates processed PyTorch datasets for object detection from image and JSON annotation folders.
+- ML_vision_evaluation:
+    - `segmentation_metrics()`, Calculates and saves pixel-level metrics for segmentation tasks.
+    - `object_detection_metrics()`, Calculates and saves object detection metrics (mAP) using the torchmetrics library.
+- ML_vision_models:
+    - `DragonResNet`, A customizable wrapper for the torchvision ResNet family.
+    - `DragonEfficientNet`, A customizable wrapper for the torchvision EfficientNet family.
+    - `DragonVGG`, A customizable wrapper for the torchvision DragonVGG family.
+    - `DragonFCN`, A customizable wrapper for the torchvision FCN family.
+    - `DragonDeepLabv3`, A customizable wrapper for the torchvision DeepLabv3 family.
+    - `DragonFastRCNN`, A customizable wrapper for the torchvision Faster RCNN family.
+
 ## [13.8.0] 2025-10-31
 
 ### Changed

@@ -4,7 +4,6 @@ from typing import Union, Any, Optional, Dict, List, Iterable
 import torch
 from torch import nn
 
-
 from .path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from ._script_info import _script_info
 from ._logger import _LOGGER
@@ -17,6 +16,7 @@ __all__ = [
     "find_model_artifacts",
     "select_features_by_shap",
     "get_model_parameters",
+    "inspect_model_architecture",
     "inspect_pth_file",
     "set_parameter_requires_grad"
 ]
@@ -258,9 +258,56 @@ def get_model_parameters(model: nn.Module, save_dir: Optional[Union[str,Path]]=N
         custom_logger(data=report,
                       save_directory=output_dir,
                       log_name=UtilityKeys.MODEL_PARAMS_FILE,
+                      add_timestamp=False,
                       dict_as="json")
 
     return report
+
+
+def inspect_model_architecture(
+    model: nn.Module,
+    save_dir: Union[str, Path]
+) -> None:
+    """
+    Saves a human-readable text summary of a model's instantiated
+    architecture, including parameter counts.
+
+    Args:
+        model (nn.Module): The PyTorch model to inspect.
+        save_dir (str | Path): Directory to save the text file.
+    """
+    # --- 1. Validate path ---
+    output_dir = make_fullpath(save_dir, make=True, enforce="directory")
+    architecture_filename = UtilityKeys.MODEL_ARCHITECTURE_FILE + ".txt"
+    filepath = output_dir / architecture_filename
+
+    # --- 2. Get parameter counts from existing function ---
+    try:
+        params_report = get_model_parameters(model) # Get dict, don't save
+        total = params_report.get(UtilityKeys.TOTAL_PARAMS, 'N/A')
+        trainable = params_report.get(UtilityKeys.TRAINABLE_PARAMS, 'N/A')
+        header = (
+            f"Model: {model.__class__.__name__}\n"
+            f"Total Parameters: {total:,}\n"
+            f"Trainable Parameters: {trainable:,}\n"
+            f"{'='*80}\n\n"
+        )
+    except Exception as e:
+        _LOGGER.warning(f"Could not get model parameters: {e}")
+        header = f"Model: {model.__class__.__name__}\n{'='*80}\n\n"
+
+    # --- 3. Get architecture string ---
+    arch_string = str(model)
+
+    # --- 4. Write to file ---
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(header)
+            f.write(arch_string)
+        _LOGGER.info(f"Model architecture summary saved to '{filepath.name}'")
+    except Exception as e:
+        _LOGGER.error(f"Failed to write model architecture file: {e}")
+        raise
 
 
 def inspect_pth_file(
@@ -354,6 +401,7 @@ def inspect_pth_file(
     custom_logger(data=report,
                   save_directory=output_dir,
                   log_name=UtilityKeys.PTH_FILE + pth_name,
+                  add_timestamp=False,
                   dict_as="json")
 
 
@@ -474,6 +522,7 @@ def _set_params_grad(
             param.requires_grad = requires_grad
             params_changed += param.numel()
     return params_changed
+
 
 def info():
     _script_info(__all__)

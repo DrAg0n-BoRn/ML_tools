@@ -29,6 +29,7 @@ def custom_logger(
     ],
     save_directory: Union[str, Path],
     log_name: str,
+    add_timestamp: bool=True,
     dict_as: Literal['auto', 'json', 'csv'] = 'auto',
 ) -> None:
     """
@@ -50,9 +51,10 @@ def custom_logger(
         Full traceback is logged for debugging purposes.
 
     Args:
-        data: The data to be logged. Must be one of the supported types.
-        save_directory: Directory where the log will be saved. Created if it does not exist.
-        log_name: Base name for the log file. Timestamp will be appended automatically.
+        data (Any): The data to be logged. Must be one of the supported types.
+        save_directory (str | Path): Directory where the log will be saved. Created if it does not exist.
+        log_name (str): Base name for the log file.
+        add_timestamp (bool): Whether to add a timestamp to the filename.
         dict_as ('auto'|'json'|'csv'): 
             - 'auto': Guesses format (JSON or CSV) based on dictionary content.
             - 'json': Forces .json format for any dictionary.
@@ -68,10 +70,13 @@ def custom_logger(
         
         save_path = make_fullpath(save_directory, make=True)
         
-        timestamp = datetime.now().strftime(r"%Y%m%d_%H%M%S")
-        log_name = sanitize_filename(log_name)
+        sanitized_log_name = sanitize_filename(log_name)
         
-        base_path = save_path / f"{log_name}_{timestamp}"
+        if add_timestamp:
+            timestamp = datetime.now().strftime(r"%Y%m%d_%H%M%S")
+            base_path = save_path / f"{sanitized_log_name}_{timestamp}"
+        else:
+            base_path = save_path / sanitized_log_name
         
         # Router
         if isinstance(data, list):

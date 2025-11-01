@@ -1,4 +1,4 @@
-from typing import List, Literal, Union, Optional
+from typing import List, Literal, Union, Optional, Callable, Dict, Any, Tuple
 from pathlib import Path
 from torch.utils.data import DataLoader, Dataset
 import torch
@@ -12,16 +12,18 @@ from ._script_info import _script_info
 from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
+from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
 
 
 __all__ = [
-    "MLTrainer"
+    "MLTrainer",
+    "ObjectDetectionTrainer"
 ]
 
 
 class MLTrainer:
     def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
-                 kind: Literal["regression", "classification", "multi_target_regression", "multi_label_classification"],
+                 kind: Literal["regression", "classification", "multi_target_regression", "multi_label_classification", "segmentation"],
                  criterion: nn.Module, optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], dataloader_workers: int = 2, callbacks: Optional[List[Callback]] = None):
         """
@@ -33,7 +35,7 @@ class MLTrainer:
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
             test_dataset (Dataset): The testing/validation dataset.
-            kind (str): Can be 'regression', 'classification', 'multi_target_regression', or 'multi_label_classification'.
+            kind (str): Can be 'regression', 'classification', 'multi_target_regression', 'multi_label_classification', or 'segmentation'.
             criterion (nn.Module): The loss function.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
@@ -46,8 +48,10 @@ class MLTrainer:
             - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice.
     
             - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem.
+        
+            - For **segmentation** tasks, `nn.CrossEntropyLoss` (for multi-class) or `nn.BCEWithLogitsLoss` (for binary) are common.
         """
-        if kind not in ["regression", "classification", "multi_target_regression", "multi_label_classification"]:
+        if kind not in ["regression", "classification", "multi_target_regression", "multi_label_classification", "segmentation"]:
             raise ValueError(f"'{kind}' is not a valid task type.")
 
         self.model = model
@@ -74,6 +78,7 @@ class MLTrainer:
         self.epochs = 0 # Total epochs for the fit run
         self.start_epoch = 1
         self.stop_training = False
+        self._batch_size = 10
 
     def _validate_device(self, device: str) -> torch.device:
         """Validates the selected device and returns a torch.device object."""
@@ -191,7 +196,8 @@ class MLTrainer:
             shape of `[batch_size]`.
         """
         self.epochs = epochs
-        self._create_dataloaders(batch_size, shuffle)
+        self._batch_size = batch_size
+        self._create_dataloaders(self._batch_size, shuffle)
         self.model.to(self.device)
         
         if resume_from_checkpoint:
@@ -291,25 +297,40 @@ class MLTrainer:
             for features, target in dataloader:
                 features = features.to(self.device)
                 output = self.model(features).cpu()
-                y_true_batch = target.numpy()
 
                 y_pred_batch = None
                 y_prob_batch = None
+                y_true_batch = None
 
                 if self.kind in ["regression", "multi_target_regression"]:
                     y_pred_batch = output.numpy()
+                    y_true_batch = target.numpy()
 
                 elif self.kind == "classification":
                     probs = torch.softmax(output, dim=1)
                     preds = torch.argmax(probs, dim=1)
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
+                    y_true_batch = target.numpy()
 
                 elif self.kind == "multi_label_classification":
                     probs = torch.sigmoid(output)
                     preds = (probs >= classification_threshold).int()
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
+                    y_true_batch = target.numpy()
+                    
+                elif self.kind == "segmentation":
+                    # output shape [N, C, H, W]
+                    probs = torch.softmax(output, dim=1)
+                    preds = torch.argmax(probs, dim=1) # shape [N, H, W]
+                    y_pred_batch = preds.numpy()
+                    y_prob_batch = probs.numpy() # Probs are [N, C, H, W]
+                    
+                    # Handle target shape [N, 1, H, W] -> [N, H, W]
+                    if target.ndim == 4 and target.shape[1] == 1:
+                        target = target.squeeze(1)
+                    y_true_batch = target.numpy()
 
                 yield y_pred_batch, y_prob_batch, y_true_batch
 
@@ -333,7 +354,7 @@ class MLTrainer:
         elif isinstance(data, Dataset):
             # Create a new loader from the provided dataset
             eval_loader = DataLoader(data, 
-                                     batch_size=32, 
+                                     batch_size=self._batch_size, 
                                      shuffle=False, 
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"))
@@ -344,10 +365,11 @@ class MLTrainer:
                 raise ValueError()
             # Create a fresh DataLoader from the test_dataset
             eval_loader = DataLoader(self.test_dataset, 
-                                     batch_size=32, 
+                                     batch_size=self._batch_size, 
                                      shuffle=False, 
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"))
+            
             dataset_for_names = self.test_dataset
 
         if eval_loader is None:
@@ -398,7 +420,31 @@ class MLTrainer:
                 _LOGGER.error("Evaluation for multi_label_classification requires probabilities (y_prob).")
                 return
             multi_label_classification_metrics(y_true, y_prob, target_names, save_dir, classification_threshold)
+            
+        elif self.kind == "segmentation":
+            class_names = None
+            try:
+                # Try to get 'classes' from VisionDatasetMaker
+                if hasattr(dataset_for_names, 'classes'):
+                    class_names = dataset_for_names.classes # type: ignore
+                # Fallback for Subset
+                elif hasattr(dataset_for_names, 'dataset') and hasattr(dataset_for_names.dataset, 'classes'): # type: ignore
+                     class_names = dataset_for_names.dataset.classes # type: ignore
+            except AttributeError:
+                pass # class_names is still None
 
+            if class_names is None:
+                try:
+                    # Fallback to 'target_names'
+                    class_names = dataset_for_names.target_names # type: ignore
+                except AttributeError:
+                    # Fallback to inferring from labels
+                    labels = np.unique(y_true)
+                    class_names = [f"Class {i}" for i in labels]
+                    _LOGGER.warning(f"Dataset has no 'classes' or 'target_names' attribute. Using generic names.")
+            
+            segmentation_metrics(y_true, y_pred, save_dir, class_names=class_names)
+        
         print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
@@ -569,8 +615,7 @@ class MLTrainer:
         # --- Step 1: Check if the model supports this explanation ---
         if not getattr(self.model, 'has_interpretable_attention', False):
             _LOGGER.warning(
-                "Model is not flagged for interpretable attention analysis. "
-                "Skipping. This is the correct behavior for models like MultiHeadAttentionMLP."
+                "Model is not flagged for interpretable attention analysis. Skipping. This is the correct behavior for models like MultiHeadAttentionMLP."
             )
             return
 
@@ -637,7 +682,397 @@ class MLTrainer:
         self.device = self._validate_device(device)
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
+
+
+# Object Detection Trainer
+class ObjectDetectionTrainer:
+    def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
+                 collate_fn: Callable, optimizer: torch.optim.Optimizer, 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str], dataloader_workers: int = 2, callbacks: Optional[List[Callback]] = None):
+        """
+        Automates the training process of an Object Detection Model (e.g., DragonFastRCNN).
+        
+        Built-in Callbacks: `History`, `TqdmProgressBar`
+
+        Args:
+            model (nn.Module): The PyTorch object detection model to train.
+            train_dataset (Dataset): The training dataset.
+            test_dataset (Dataset): The testing/validation dataset.
+            collate_fn (Callable): The collate function from `ObjectDetectionDatasetMaker.collate_fn`.
+            optimizer (torch.optim.Optimizer): The optimizer.
+            device (str): The device to run training on ('cpu', 'cuda', 'mps').
+            dataloader_workers (int): Subprocesses for data loading.
+            callbacks (List[Callback] | None): A list of callbacks to use during training.
+            
+        ## Note:
+            This trainer is specialized. It does not take a `criterion` because object detection models like Faster R-CNN return a dictionary of losses directly from their forward pass during training.
+        """
+        self.model = model
+        self.train_dataset = train_dataset
+        self.test_dataset = test_dataset
+        self.kind = "object_detection"
+        self.collate_fn = collate_fn
+        self.criterion = None # Criterion is handled inside the model
+        self.optimizer = optimizer
+        self.scheduler = None
+        self.device = self._validate_device(device)
+        self.dataloader_workers = dataloader_workers
+        
+        # Callback handler - History and TqdmProgressBar are added by default
+        default_callbacks = [History(), TqdmProgressBar()]
+        user_callbacks = callbacks if callbacks is not None else []
+        self.callbacks = default_callbacks + user_callbacks
+        self._set_trainer_on_callbacks()
+
+        # Internal state
+        self.train_loader = None
+        self.test_loader = None
+        self.history = {}
+        self.epoch = 0
+        self.epochs = 0 # Total epochs for the fit run
+        self.start_epoch = 1
+        self.stop_training = False
+        self._batch_size = 10
+
+    def _validate_device(self, device: str) -> torch.device:
+        """Validates the selected device and returns a torch.device object."""
+        device_lower = device.lower()
+        if "cuda" in device_lower and not torch.cuda.is_available():
+            _LOGGER.warning("CUDA not available, switching to CPU.")
+            device = "cpu"
+        elif device_lower == "mps" and not torch.backends.mps.is_available():
+            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
+            device = "cpu"
+        return torch.device(device)
+
+    def _set_trainer_on_callbacks(self):
+        """Gives each callback a reference to this trainer instance."""
+        for callback in self.callbacks:
+            callback.set_trainer(self)
+
+    def _create_dataloaders(self, batch_size: int, shuffle: bool):
+        """Initializes the DataLoaders with the object detection collate_fn."""
+        # Ensure stability on MPS devices by setting num_workers to 0
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        
+        self.train_loader = DataLoader(
+            dataset=self.train_dataset, 
+            batch_size=batch_size, 
+            shuffle=shuffle, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type),
+            collate_fn=self.collate_fn # Use the provided collate function
+        )
+        
+        self.test_loader = DataLoader(
+            dataset=self.test_dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type),
+            collate_fn=self.collate_fn # Use the provided collate function
+        )
+        
+    def _load_checkpoint(self, path: Union[str, Path]):
+        """Loads a training checkpoint to resume training."""
+        p = make_fullpath(path, enforce="file")
+        _LOGGER.info(f"Loading checkpoint from '{p.name}' to resume training...")
+        
+        try:
+            checkpoint = torch.load(p, map_location=self.device)
+            
+            if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
+                _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
+                raise KeyError()
+
+            self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
+            self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
+            self.start_epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) + 1 # Resume on the *next* epoch
+            
+            # --- Scheduler State Loading Logic ---
+            scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
+            scheduler_object_exists = self.scheduler is not None
+
+            if scheduler_object_exists and scheduler_state_exists:
+                # Case 1: Both exist. Attempt to load.
+                try:
+                    self.scheduler.load_state_dict(checkpoint[PyTorchCheckpointKeys.SCHEDULER_STATE]) # type: ignore
+                    scheduler_name = self.scheduler.__class__.__name__
+                    _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
+                except Exception as e:
+                    # Loading failed, likely a mismatch
+                    scheduler_name = self.scheduler.__class__.__name__
+                    _LOGGER.error(f"Failed to load scheduler state for '{scheduler_name}'. A different scheduler type might have been used.")
+                    raise e
+
+            elif scheduler_object_exists and not scheduler_state_exists:
+                # Case 2: Scheduler provided, but no state in checkpoint.
+                scheduler_name = self.scheduler.__class__.__name__
+                _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
+            
+            elif not scheduler_object_exists and scheduler_state_exists:
+                # Case 3: State in checkpoint, but no scheduler provided.
+                _LOGGER.error("Checkpoint contains an LR scheduler state, but no LRScheduler callback was provided.")
+                raise ValueError()
+            
+            # Restore callback states
+            for cb in self.callbacks:
+                if isinstance(cb, ModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
+                    cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
+                    _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
+            
+            _LOGGER.info(f"Checkpoint loaded. Resuming training from epoch {self.start_epoch}.")
+            
+        except Exception as e:
+            _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
+            raise
+
+    def fit(self, 
+            epochs: int = 10, 
+            batch_size: int = 10, 
+            shuffle: bool = True,
+            resume_from_checkpoint: Optional[Union[str, Path]] = None):
+        """
+        Starts the training-validation process of the model.
+        
+        Returns the "History" callback dictionary.
+
+        Args:
+            epochs (int): The total number of epochs to train for.
+            batch_size (int): The number of samples per batch.
+            shuffle (bool): Whether to shuffle the training data at each epoch.
+            resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
+        """
+        self.epochs = epochs
+        self._batch_size = batch_size
+        self._create_dataloaders(self._batch_size, shuffle)
+        self.model.to(self.device)
+        
+        if resume_from_checkpoint:
+            self._load_checkpoint(resume_from_checkpoint)
+        
+        # Reset stop_training flag on the trainer
+        self.stop_training = False
+
+        self._callbacks_hook('on_train_begin')
+        
+        for epoch in range(self.start_epoch, self.epochs + 1):
+            self.epoch = epoch
+            epoch_logs = {}
+            self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
+
+            train_logs = self._train_step()
+            epoch_logs.update(train_logs)
+
+            val_logs = self._validation_step()
+            epoch_logs.update(val_logs)
+            
+            self._callbacks_hook('on_epoch_end', epoch, logs=epoch_logs)
+            
+            # Check the early stopping flag
+            if self.stop_training:
+                break
+
+        self._callbacks_hook('on_train_end')
+        return self.history
     
+    def _train_step(self):
+        self.model.train()
+        running_loss = 0.0
+        for batch_idx, (images, targets) in enumerate(self.train_loader): # type: ignore
+            # images is a tuple of tensors, targets is a tuple of dicts
+            batch_size = len(images)
+            
+            # Create a log dictionary for the batch
+            batch_logs = {
+                PyTorchLogKeys.BATCH_INDEX: batch_idx, 
+                PyTorchLogKeys.BATCH_SIZE: batch_size
+            }
+            self._callbacks_hook('on_batch_begin', batch_idx, logs=batch_logs)
+
+            # Move data to device
+            images = list(img.to(self.device) for img in images)
+            targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
+            
+            self.optimizer.zero_grad()
+            
+            # Model returns a loss dict when in train() mode and targets are passed
+            loss_dict = self.model(images, targets)
+            
+            if not loss_dict:
+                # No losses returned, skip batch
+                _LOGGER.warning(f"Model returned no losses for batch {batch_idx}. Skipping.")
+                batch_logs[PyTorchLogKeys.BATCH_LOSS] = 0
+                self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+                continue
+            
+            # Sum all losses
+            loss: torch.Tensor = sum(l for l in loss_dict.values()) # type: ignore
+            
+            loss.backward()
+            self.optimizer.step()
+
+            # Calculate batch loss and update running loss for the epoch
+            batch_loss = loss.item()
+            running_loss += batch_loss * batch_size
+            
+            # Add the batch loss to the logs and call the end-of-batch hook
+            batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss # type: ignore
+            self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+
+        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
+
+    def _validation_step(self):
+        self.model.train() # Set to train mode even for validation loss calculation
+                           # as model internals (e.g., proposals) might differ,
+                           # but we still need loss_dict.
+                           # We use torch.no_grad() to prevent gradient updates.
+        running_loss = 0.0
+        with torch.no_grad():
+            for images, targets in self.test_loader: # type: ignore
+                batch_size = len(images)
+                
+                # Move data to device
+                images = list(img.to(self.device) for img in images)
+                targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
+                
+                # Get loss dict
+                loss_dict = self.model(images, targets)
+                
+                if not loss_dict:
+                    _LOGGER.warning("Model returned no losses during validation step. Skipping batch.")
+                    continue # Skip if no losses
+                
+                # Sum all losses
+                loss: torch.Tensor = sum(l for l in loss_dict.values()) # type: ignore
+                
+                running_loss += loss.item() * batch_size
+        
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
+        return logs
+
+    def evaluate(self, save_dir: Union[str, Path], data: Optional[Union[DataLoader, Dataset]] = None):
+        """
+        Evaluates the model using object detection mAP metrics.
+
+        Args:
+            save_dir (str | Path): Directory to save all reports and plots.
+            data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
+        """
+        dataset_for_names = None
+        eval_loader = None
+
+        if isinstance(data, DataLoader):
+            eval_loader = data
+            if hasattr(data, 'dataset'):
+                dataset_for_names = data.dataset
+        elif isinstance(data, Dataset):
+            # Create a new loader from the provided dataset
+            eval_loader = DataLoader(data, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                                     pin_memory=(self.device.type == "cuda"),
+                                     collate_fn=self.collate_fn)
+            dataset_for_names = data
+        else: # data is None, use the trainer's default test dataset
+            if self.test_dataset is None:
+                _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
+                raise ValueError()
+            # Create a fresh DataLoader from the test_dataset
+            eval_loader = DataLoader(
+                self.test_dataset, 
+                batch_size=self._batch_size, 
+                shuffle=False, 
+                num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                pin_memory=(self.device.type == "cuda"),
+                collate_fn=self.collate_fn
+            )
+            dataset_for_names = self.test_dataset
+
+        if eval_loader is None:
+            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
+            raise ValueError()
+
+        print("\n--- Model Evaluation ---")
+
+        all_predictions = []
+        all_targets = []
+        
+        self.model.eval() # Set model to evaluation mode
+        self.model.to(self.device)
+        
+        with torch.no_grad():
+            for images, targets in eval_loader:
+                # Move images to device
+                images = list(img.to(self.device) for img in images)
+                
+                # Model returns predictions when in eval() mode
+                predictions = self.model(images)
+                
+                # Move predictions and targets to CPU for aggregation
+                cpu_preds = [{k: v.to('cpu') for k, v in p.items()} for p in predictions]
+                cpu_targets = [{k: v.to('cpu') for k, v in t.items()} for t in targets]
+                
+                all_predictions.extend(cpu_preds)
+                all_targets.extend(cpu_targets)
+
+        if not all_targets:
+            _LOGGER.error("Evaluation failed: No data was processed.")
+            return
+        
+        # Get class names from the dataset for the report
+        class_names = None
+        try:
+            # Try to get 'classes' from ObjectDetectionDatasetMaker
+            if hasattr(dataset_for_names, 'classes'):
+                class_names = dataset_for_names.classes # type: ignore
+            # Fallback for Subset
+            elif hasattr(dataset_for_names, 'dataset') and hasattr(dataset_for_names.dataset, 'classes'): # type: ignore
+                 class_names = dataset_for_names.dataset.classes # type: ignore
+        except AttributeError:
+            _LOGGER.warning("Could not find 'classes' attribute on dataset. Per-class metrics will not be named.")
+            pass # class_names is still None
+
+        # --- Routing Logic ---
+        object_detection_metrics(
+            preds=all_predictions, 
+            targets=all_targets, 
+            save_dir=save_dir,
+            class_names=class_names,
+            print_output=False
+        )
+        
+        print("\n--- Training History ---")
+        plot_losses(self.history, save_dir=save_dir)
+    
+    def _callbacks_hook(self, method_name: str, *args, **kwargs):
+        """Calls the specified method on all callbacks."""
+        for callback in self.callbacks:
+            method = getattr(callback, method_name)
+            method(*args, **kwargs)
+            
+    def to_cpu(self):
+        """
+        Moves the model to the CPU and updates the trainer's device setting.
+        
+        This is useful for running operations that require the CPU.
+        """
+        self.device = torch.device('cpu')
+        self.model.to(self.device)
+        _LOGGER.info("Trainer and model moved to CPU.")
+    
+    def to_device(self, device: str):
+        """
+        Moves the model to the specified device and updates the trainer's device setting.
+
+        Args:
+            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
+        """
+        self.device = self._validate_device(device)
+        self.model.to(self.device)
+        _LOGGER.info(f"Trainer and model moved to {self.device}.")
+
 
 def info():
     _script_info(__all__)

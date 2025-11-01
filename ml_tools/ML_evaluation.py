@@ -24,7 +24,7 @@ import warnings
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .keys import SHAPKeys
+from .keys import SHAPKeys, PyTorchLogKeys
 
 
 __all__ = [
@@ -44,8 +44,8 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
         history (dict): A dictionary containing 'train_loss' and 'val_loss'.
         save_dir (str | Path): Directory to save the plot image.
     """
-    train_loss = history.get('train_loss', [])
-    val_loss = history.get('val_loss', [])
+    train_loss = history.get(PyTorchLogKeys.TRAIN_LOSS, [])
+    val_loss = history.get(PyTorchLogKeys.VAL_LOSS, [])
     
     if not train_loss and not val_loss:
         print("Warning: Loss history is empty or incomplete. Cannot plot.")

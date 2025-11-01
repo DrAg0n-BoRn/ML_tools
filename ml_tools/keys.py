@@ -36,6 +36,7 @@ class PyTorchInferenceKeys:
     # For classification tasks
     LABELS = "labels"
     PROBABILITIES = "probabilities"
+    LABEL_NAMES = "label_names"
 
 
 class PytorchModelArchitectureKeys:
@@ -86,6 +87,35 @@ class UtilityKeys:
     TOTAL_PARAMS = "Total Parameters"
     TRAINABLE_PARAMS = "Trainable Parameters"
     PTH_FILE = "pth report "
+    MODEL_ARCHITECTURE_FILE = "model_architecture_summary"
+
+
+class VisionKeys:
+    """For vision ML metrics"""
+    SEGMENTATION_REPORT = "segmentation_report"
+    SEGMENTATION_HEATMAP = "segmentation_metrics_heatmap"
+    SEGMENTATION_CONFUSION_MATRIX = "segmentation_confusion_matrix"
+    # Object detection
+    OBJECT_DETECTION_REPORT = "object_detection_report"
+
+
+class VisionTransformRecipeKeys:
+    """Defines the key names for the transform recipe JSON file."""
+    TASK = "task"
+    PIPELINE = "pipeline"
+    NAME = "name"
+    KWARGS = "_kwargs"
+    PRE_TRANSFORMS = "pre_transforms"
+    RESIZE_SIZE = "resize_size"
+    CROP_SIZE = "crop_size"
+    MEAN = "mean"
+    STD = "std"
+
+
+class ObjectDetectionKeys:
+    """Used by the object detection dataset"""
+    BOXES = "boxes"
+    LABELS = "labels"
 
 
 class _OneHotOtherPlaceholder:
