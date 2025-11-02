@@ -1,5 +1,5 @@
 import pandas as pd
-from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_numeric_dtype, is_object_dtype
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,14 +22,16 @@ __all__ = [
     "drop_columns_with_missing_data",
     "drop_macro",
     "clean_column_names",
+    "plot_value_distributions", 
+    "plot_continuous_vs_target",
+    "plot_categorical_vs_target",
     "encode_categorical_features",
     "split_features_targets", 
     "split_continuous_binary", 
-    "plot_correlation_heatmap", 
-    "plot_value_distributions", 
     "clip_outliers_single", 
     "clip_outliers_multi",
     "drop_outlier_samples",
+    "plot_correlation_heatmap", 
     "match_and_filter_columns_by_regex",
     "standardize_percentages",
     "reconstruct_one_hot",
@@ -342,6 +344,413 @@ def clean_column_names(df: pd.DataFrame, replacement_char: str = '-', replacemen
     return new_df
 
 
+def plot_value_distributions(
+    df: pd.DataFrame,
+    save_dir: Union[str, Path],
+    categorical_columns: Optional[List[str]] = None,
+    categorical_cardinality_threshold: int = 10,
+    max_categories: int = 50,
+    fill_na_with: str = "Missing"
+):
+    """
+    Plots and saves the value distributions for all columns in a DataFrame,
+    using the best plot type for each column (histogram or count plot).
+
+    Plots are saved as SVG files under two subdirectories in `save_dir`:
+    - "Distribution_Continuous" for continuous numeric features (histograms).
+    - "Distribution_Categorical" for categorical features (count plots).
+
+    Args:
+        df (pd.DataFrame): The input DataFrame to analyze.
+        save_dir (str | Path): Directory path to save the plots.
+        categorical_columns (List[str] | None): If provided, this list
+            of column names will be treated as categorical, and all other columns will be treated as continuous. This
+            overrides the `continuous_cardinality_threshold` logic.
+        categorical_cardinality_threshold (int): A numeric column will be treated
+            as 'categorical' if its number of unique values is less than or equal to this threshold. (Ignored if `categorical_columns` is set).
+        max_categories (int): The maximum number of unique categories a
+            categorical feature can have to be plotted. Features exceeding this limit will be skipped.
+        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its
+            own category. Defaults to "Missing".
+
+    Notes:
+        - `seaborn.histplot` with KDE is used for continuous features.
+        - `seaborn.countplot` is used for categorical features.
+    """
+    # 1. Setup save directories
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    numeric_dir = base_save_path / "Distribution_Continuous"
+    categorical_dir = base_save_path / "Distribution_Categorical"
+    numeric_dir.mkdir(parents=True, exist_ok=True)
+    categorical_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2. Filter columns to plot
+    columns_to_plot = df.columns.to_list()
+
+    # Setup for forced categorical logic
+    categorical_set = set(categorical_columns) if categorical_columns is not None else None
+
+    numeric_plots_saved = 0
+    categorical_plots_saved = 0
+
+    for col_name in columns_to_plot:
+        try:
+            is_numeric = is_numeric_dtype(df[col_name])
+            n_unique = df[col_name].nunique()
+
+            # --- 3. Determine Plot Type ---
+            is_continuous = False
+            if categorical_set is not None:
+                # Use the explicit list
+                if col_name not in categorical_set:
+                    is_continuous = True
+            else:
+                # Use auto-detection
+                if is_numeric and n_unique > categorical_cardinality_threshold:
+                    is_continuous = True
+            
+            # --- Case 1: Continuous Numeric (Histogram) ---
+            if is_continuous:
+                plt.figure(figsize=(10, 6))
+                # Drop NaNs for histogram, as they can't be plotted on a numeric axis
+                sns.histplot(x=df[col_name].dropna(), kde=True, bins=30)
+                plt.title(f"Distribution of '{col_name}' (Continuous)")
+                plt.xlabel(col_name)
+                plt.ylabel("Count")
+                
+                save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
+                numeric_plots_saved += 1
+
+            # --- Case 2: Categorical or Low-Cardinality Numeric (Count Plot) ---
+            else:
+                # Check max categories
+                if n_unique > max_categories:
+                    _LOGGER.warning(f"Skipping plot for '{col_name}': {n_unique} unique values > {max_categories} max_categories.")
+                    continue
+
+                # Adaptive figure size
+                fig_width = max(10, n_unique * 0.5)
+                plt.figure(figsize=(fig_width, 7))
+                
+                # Make a temporary copy for plotting to handle NaNs
+                temp_series = df[col_name].copy()
+                
+                # Handle NaNs by replacing them with the specified string
+                if temp_series.isnull().any():
+                    # Convert to object type first to allow string replacement
+                    temp_series = temp_series.astype(object).fillna(fill_na_with)
+                
+                # Convert all to string to be safe (handles low-card numeric)
+                temp_series = temp_series.astype(str)
+                
+                # Get category order by frequency
+                order = temp_series.value_counts().index
+                sns.countplot(x=temp_series, order=order, palette="viridis")
+                
+                plt.title(f"Distribution of '{col_name}' (Categorical)")
+                plt.xlabel(col_name)
+                plt.ylabel("Count")
+                
+                # Smart tick rotation
+                max_label_len = 0
+                if n_unique > 0:
+                    max_label_len = max(len(str(s)) for s in order)
+                
+                # Rotate if labels are long OR there are many categories
+                if max_label_len > 10 or n_unique > 25:
+                    plt.xticks(rotation=45, ha='right')
+                
+                save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
+                categorical_plots_saved += 1
+
+            # --- 4. Save Plot ---
+            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+            plt.tight_layout()
+            # Save as .svg
+            plt.savefig(save_path, format='svg', bbox_inches="tight")
+            plt.close()
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to plot distribution for '{col_name}'. Error: {e}")
+            plt.close()
+    
+    _LOGGER.info(f"Saved {numeric_plots_saved} continuous distribution plots to '{numeric_dir.name}'.")
+    _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution plots to '{categorical_dir.name}'.")
+
+
+def plot_continuous_vs_target(
+    df: pd.DataFrame,
+    targets: List[str],
+    save_dir: Union[str, Path],
+    features: Optional[List[str]] = None
+):
+    """
+    Plots each continuous feature against each target to visualize linear relationships.
+
+    This function is a common EDA step for regression tasks. It creates a
+    scatter plot for each feature-target pair, overlays a simple linear
+    regression line, and saves each plot as an individual .svg file.
+
+    Plots are saved in a structured way, with a subdirectory created for
+    each target variable.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        targets (List[str]): A list of target column names to plot (y-axis).
+        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
+        features (List[str] | None): A list of feature column names to plot (x-axis). If None, all non-target columns in the
+            DataFrame will be used.
+
+    Notes:
+        - Only numeric features and numeric targets are processed. Non-numeric
+          columns in the lists will be skipped with a warning.
+        - Rows with NaN in either the feature or the target are dropped
+          pairwise for each plot.
+    """
+    # 1. Validate the base save directory
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+
+    # 2. Validate helper
+    def _validate_numeric_cols(col_list: List[str], col_type: str) -> List[str]:
+        valid_cols = []
+        for col in col_list:
+            if col not in df.columns:
+                _LOGGER.warning(f"{col_type} column '{col}' not found. Skipping.")
+            elif not is_numeric_dtype(df[col]):
+                _LOGGER.warning(f"{col_type} column '{col}' is not numeric. Skipping.")
+            else:
+                valid_cols.append(col)
+        return valid_cols
+
+    # 3. Validate target columns FIRST
+    valid_targets = _validate_numeric_cols(targets, "Target")
+    if not valid_targets:
+        _LOGGER.error("No valid numeric target columns provided to plot.")
+        return
+    
+    # 4. Determine and validate feature columns
+    if features is None:
+        _LOGGER.info("No 'features' list provided. Using all non-target columns as features.")
+        target_set = set(valid_targets)
+        # Get all columns that are not in the valid_targets set
+        features_to_validate = [col for col in df.columns if col not in target_set]
+    else:
+        features_to_validate = features
+        
+    valid_features = _validate_numeric_cols(features_to_validate, "Feature")
+
+    if not valid_features:
+        _LOGGER.error("No valid numeric feature columns found to plot.")
+        return
+
+    # 5. Main plotting loop
+    total_plots_saved = 0
+    
+    for target_name in valid_targets:
+        # Create a sanitized subdirectory for this target
+        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Continuous")
+        target_save_dir = base_save_path / safe_target_dir_name
+        target_save_dir.mkdir(parents=True, exist_ok=True)
+        
+        _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+
+        for feature_name in valid_features:
+            
+            # Drop NaNs pairwise for this specific plot
+            temp_df = df[[feature_name, target_name]].dropna()
+
+            if temp_df.empty:
+                _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
+                continue
+
+            x = temp_df[feature_name]
+            y = temp_df[target_name]
+
+            # 6. Perform linear fit
+            try:
+                # Use numpy's polyfit to get the slope (pf[0]) and intercept (pf[1])
+                pf = np.polyfit(x, y, 1)
+                # Create a polynomial function p(x)
+                p = np.poly1d(pf)
+                plot_regression_line = True
+            except (np.linalg.LinAlgError, ValueError):
+                _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
+                plot_regression_line = False
+
+            # 7. Create the plot
+            plt.figure(figsize=(10, 6))
+            ax = plt.gca()
+            
+            # Plot the raw data points
+            ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5)
+            
+            # Plot the regression line
+            if plot_regression_line:
+                ax.plot(x, p(x), "r--", label='Linear Fit') # type: ignore
+
+            ax.set_title(f'{feature_name} vs {target_name}')
+            ax.set_xlabel(feature_name)
+            ax.set_ylabel(target_name)
+            ax.legend()
+            plt.grid(True, linestyle='--', alpha=0.6)
+            plt.tight_layout()
+
+            # 8. Save the plot
+            safe_feature_name = sanitize_filename(feature_name)
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_path = target_save_dir / plot_filename
+            
+            try:
+                plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                total_plots_saved += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+            
+            # Close the figure to free up memory
+            plt.close()
+
+    _LOGGER.info(f"Successfully saved {total_plots_saved} feature-vs-target plots to '{base_save_path}'.")
+
+
+def plot_categorical_vs_target(
+    df: pd.DataFrame,
+    targets: List[str],
+    save_dir: Union[str, Path],
+    features: Optional[List[str]] = None,
+    plot_type: Literal["box", "violin"] = "box",
+    max_categories: int = 20,
+    fill_na_with: str = "Missing"
+):
+    """
+    Plots each categorical feature against each numeric target using box or violin plots.
+
+    This function is a core EDA step for regression tasks to understand the
+    relationship between a categorical independent variable and a continuous
+    dependent variable.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        targets (List[str]): A list of numeric target column names (y-axis).
+        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
+        features (List[str] | None): A list of categorical feature column names (x-axis). If None, all non-numeric (object) columns will be used.
+        plot_type (Literal["box", "violin"]): The type of plot to generate.
+        max_categories (int): The maximum number of unique categories a feature can have to be plotted. Features exceeding this limit will be skipped.
+        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category. Defaults to "Missing".
+
+    Notes:
+        - Only numeric targets are processed.
+        - Features are automatically identified as categorical if they are 'object' dtype.
+    """
+    # 1. Validate the base save directory and inputs
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    
+    if plot_type not in ["box", "violin"]:
+        _LOGGER.error(f"Invalid plot type '{plot_type}'")
+        raise ValueError()
+
+    # 2. Validate target columns (must be numeric)
+    valid_targets = []
+    for col in targets:
+        if col not in df.columns:
+            _LOGGER.warning(f"Target column '{col}' not found. Skipping.")
+        elif not is_numeric_dtype(df[col]):
+            _LOGGER.warning(f"Target column '{col}' is not numeric. Skipping.")
+        else:
+            valid_targets.append(col)
+    
+    if not valid_targets:
+        _LOGGER.error("No valid numeric target columns provided to plot.")
+        return
+
+    # 3. Determine and validate feature columns
+    features_to_plot = []
+    if features is None:
+        _LOGGER.info("No 'features' list provided. Auto-detecting categorical features.")
+        for col in df.columns:
+            if col in valid_targets:
+                continue
+            
+            # Auto-include object dtypes
+            if is_object_dtype(df[col]):
+                features_to_plot.append(col)
+            # Auto-include low-cardinality numeric features - REMOVED
+            # elif is_numeric_dtype(df[col]) and df[col].nunique() <= max_categories:
+            #     _LOGGER.info(f"Treating low-cardinality numeric column '{col}' as categorical.")
+            #     features_to_plot.append(col)
+    else:
+        # Validate user-provided list
+        for col in features:
+            if col not in df.columns:
+                _LOGGER.warning(f"Feature column '{col}' not found in DataFrame. Skipping.")
+            else:
+                features_to_plot.append(col)
+
+    if not features_to_plot:
+        _LOGGER.error("No valid categorical feature columns found to plot.")
+        return
+
+    # 4. Main plotting loop
+    total_plots_saved = 0
+    
+    for target_name in valid_targets:
+        # Create a sanitized subdirectory for this target
+        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Categorical_{plot_type}")
+        target_save_dir = base_save_path / safe_target_dir_name
+        target_save_dir.mkdir(parents=True, exist_ok=True)
+        
+        _LOGGER.info(f"Generating '{plot_type}' plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+
+        for feature_name in features_to_plot:
+            
+            # Make a temporary copy for plotting to handle NaNs and dtypes
+            temp_df = df[[feature_name, target_name]].copy()
+
+            # Check cardinality
+            n_unique = temp_df[feature_name].nunique()
+            if n_unique > max_categories:
+                _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique values > {max_categories} max_categories.")
+                continue
+            
+            # Handle NaNs by replacing them with the specified string
+            if temp_df[feature_name].isnull().any():
+                # Convert to object type first to allow string replacement
+                temp_df[feature_name] = temp_df[feature_name].astype(object).fillna(fill_na_with)
+            
+            # Convert feature to string to ensure correct plotting order
+            temp_df[feature_name] = temp_df[feature_name].astype(str)
+
+            # 5. Create the plot
+            # Increase figure width for categories
+            plt.figure(figsize=(max(10, n_unique * 1.2), 7))
+            
+            if plot_type == "box":
+                sns.boxplot(x=feature_name, y=target_name, data=temp_df)
+            elif plot_type == "violin":
+                sns.violinplot(x=feature_name, y=target_name, data=temp_df)
+
+            plt.title(f'{target_name} vs {feature_name}')
+            plt.xlabel(feature_name)
+            plt.ylabel(target_name)
+            plt.xticks(rotation=45, ha='right')
+            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+            plt.tight_layout()
+
+            # 6. Save the plot
+            safe_feature_name = sanitize_filename(feature_name)
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_path = target_save_dir / plot_filename
+            
+            try:
+                plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                total_plots_saved += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+            
+            plt.close()
+
+    _LOGGER.info(f"Successfully saved {total_plots_saved} categorical-vs-target plots to '{base_save_path}'.")
+
+
 def encode_categorical_features(
     df: pd.DataFrame,
     columns_to_encode: List[str],
@@ -580,108 +989,108 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     plt.show()
     plt.close()
 
+# OLD IMPLEMENTATION
+# def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
+#     """
+#     Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
+#     with adaptive binning for numerical columns when appropriate.
 
-def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
-    """
-    Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
-    with adaptive binning for numerical columns when appropriate.
+#     For each column both raw counts and relative frequencies are computed and plotted.
 
-    For each column both raw counts and relative frequencies are computed and plotted.
+#     Plots are saved as PNG files under two subdirectories in `save_dir`:
+#     - "Distribution_Counts" for absolute counts.
+#     - "Distribution_Frequency" for relative frequencies.
 
-    Plots are saved as PNG files under two subdirectories in `save_dir`:
-    - "Distribution_Counts" for absolute counts.
-    - "Distribution_Frequency" for relative frequencies.
+#     Args:
+#         df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
+#         save_dir (str | Path): Directory path where the plots will be saved. Will be created if it does not exist.
+#         bin_threshold (int): Minimum number of unique values required to trigger binning
+#             for numerical columns.
+#         skip_cols_with_key (str | None): If provided, any column whose name contains this
+#             substring will be excluded from analysis.
 
-    Args:
-        df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
-        save_dir (str | Path): Directory path where the plots will be saved. Will be created if it does not exist.
-        bin_threshold (int): Minimum number of unique values required to trigger binning
-            for numerical columns.
-        skip_cols_with_key (str | None): If provided, any column whose name contains this
-            substring will be excluded from analysis.
-
-    Notes:
-        - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
-        - All non-alphanumeric characters in column names are sanitized for safe file naming.
-        - Colormap is automatically adapted based on the number of categories or bins.
-    """
-    save_path = make_fullpath(save_dir, make=True)
+#     Notes:
+#         - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
+#         - All non-alphanumeric characters in column names are sanitized for safe file naming.
+#         - Colormap is automatically adapted based on the number of categories or bins.
+#     """
+#     save_path = make_fullpath(save_dir, make=True)
     
-    dict_to_plot_std = dict()
-    dict_to_plot_freq = dict()
+#     dict_to_plot_std = dict()
+#     dict_to_plot_freq = dict()
     
-    # cherry-pick columns
-    if skip_cols_with_key is not None:
-        columns = [col for col in df.columns if skip_cols_with_key not in col]
-    else:
-        columns = df.columns.to_list()
+#     # cherry-pick columns
+#     if skip_cols_with_key is not None:
+#         columns = [col for col in df.columns if skip_cols_with_key not in col]
+#     else:
+#         columns = df.columns.to_list()
     
-    saved_plots = 0
-    for col in columns:
-        if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
-            bins_number = 10
-            binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-            while binned.nunique() <= 2:
-                bins_number -= 1
-                binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-                if bins_number <= 2:
-                    break
+#     saved_plots = 0
+#     for col in columns:
+#         if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
+#             bins_number = 10
+#             binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+#             while binned.nunique() <= 2:
+#                 bins_number -= 1
+#                 binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+#                 if bins_number <= 2:
+#                     break
             
-            if binned.nunique() <= 2:
-                view_std = df[col].value_counts(sort=False).sort_index()
-            else:
-                view_std = binned.value_counts(sort=False)
+#             if binned.nunique() <= 2:
+#                 view_std = df[col].value_counts(sort=False).sort_index()
+#             else:
+#                 view_std = binned.value_counts(sort=False)
             
-        else:
-            view_std = df[col].value_counts(sort=False).sort_index()
+#         else:
+#             view_std = df[col].value_counts(sort=False).sort_index()
 
-        # unlikely scenario where the series is empty
-        if view_std.sum() == 0:
-            view_freq = view_std
-        else:
-            view_freq = 100 * view_std / view_std.sum() # Percentage
-        # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
+#         # unlikely scenario where the series is empty
+#         if view_std.sum() == 0:
+#             view_freq = view_std
+#         else:
+#             view_freq = 100 * view_std / view_std.sum() # Percentage
+#         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
         
-        dict_to_plot_std[col] = dict(view_std)
-        dict_to_plot_freq[col] = dict(view_freq)
-        saved_plots += 1
+#         dict_to_plot_std[col] = dict(view_std)
+#         dict_to_plot_freq[col] = dict(view_freq)
+#         saved_plots += 1
     
-    # plot helper
-    def _plot_helper(dict_: dict, target_dir: Path, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
-        for col, data in dict_.items():
-            safe_col = sanitize_filename(col)
+#     # plot helper
+#     def _plot_helper(dict_: dict, target_dir: Path, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
+#         for col, data in dict_.items():
+#             safe_col = sanitize_filename(col)
             
-            if isinstance(list(data.keys())[0], pd.Interval):
-                labels = [str(interval) for interval in data.keys()]
-            else:
-                labels = data.keys()
+#             if isinstance(list(data.keys())[0], pd.Interval):
+#                 labels = [str(interval) for interval in data.keys()]
+#             else:
+#                 labels = data.keys()
                 
-            plt.figure(figsize=(10, 6))
-            colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data))) # type: ignore
+#             plt.figure(figsize=(10, 6))
+#             colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data))) # type: ignore
                 
-            plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
-            plt.xlabel("Values", fontsize=base_fontsize)
-            plt.ylabel(ylabel, fontsize=base_fontsize)
-            plt.title(f"Value Distribution for '{col}'", fontsize=base_fontsize+2)
-            plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
-            plt.yticks(fontsize=base_fontsize-2)
-            plt.grid(axis='y', linestyle='--', alpha=0.6)
-            plt.gca().set_facecolor('#f9f9f9')
-            plt.tight_layout()
+#             plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
+#             plt.xlabel("Values", fontsize=base_fontsize)
+#             plt.ylabel(ylabel, fontsize=base_fontsize)
+#             plt.title(f"Value Distribution for '{col}'", fontsize=base_fontsize+2)
+#             plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
+#             plt.yticks(fontsize=base_fontsize-2)
+#             plt.grid(axis='y', linestyle='--', alpha=0.6)
+#             plt.gca().set_facecolor('#f9f9f9')
+#             plt.tight_layout()
             
-            plot_path = target_dir / f"{safe_col}.png"
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close()
+#             plot_path = target_dir / f"{safe_col}.png"
+#             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+#             plt.close()
     
-    # Save plots
-    freq_dir = save_path / "Distribution_Frequency"
-    std_dir = save_path / "Distribution_Counts"
-    freq_dir.mkdir(parents=True, exist_ok=True)
-    std_dir.mkdir(parents=True, exist_ok=True)
-    _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
-    _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
+#     # Save plots
+#     freq_dir = save_path / "Distribution_Frequency"
+#     std_dir = save_path / "Distribution_Counts"
+#     freq_dir.mkdir(parents=True, exist_ok=True)
+#     std_dir.mkdir(parents=True, exist_ok=True)
+#     _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
+#     _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
 
-    _LOGGER.info(f"Saved {saved_plots} value distribution plots.")
+#     _LOGGER.info(f"Saved {saved_plots} value distribution plots.")
 
 
 def clip_outliers_single(

@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 - New project optional dependency: \[py-tab\], an API for pytorch_tabular. 
 
+## [14.1.0] 2025-11-02
+
+### Changed
+
+- data_exploration: `plot_value_distributions()`, new enhanced plotting logic.
+
+### Added
+
+- data_exploration:
+    - `plot_continuous_vs_target`, Plots each continuous feature against each target to visualize linear relationships.
+    - `plot_categorical_vs_target`, Plots each categorical feature against each numeric target using box or violin plots.
+
 ## [14.0.0] 2025-11-01
 
 ### Changed
