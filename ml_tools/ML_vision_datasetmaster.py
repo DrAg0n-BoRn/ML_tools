@@ -54,7 +54,7 @@ class VisionDatasetMaker(_BaseMaker):
         self._has_mean_std: bool = False
 
     @classmethod
-    def from_folder(cls, root_dir: str) -> 'VisionDatasetMaker':
+    def from_folder(cls, root_dir: Union[str,Path]) -> 'VisionDatasetMaker':
         """
         Creates a maker instance from a single root directory of images.
         
@@ -65,14 +65,14 @@ class VisionDatasetMaker(_BaseMaker):
         `.split_data()` afterward to create train/validation/test sets.
 
         Args:
-            root_dir (str): The path to the root directory containing
-                            class subfolders.
+            root_dir (str | Path): The path to the root directory containing class subfolders.
 
         Returns:
             VisionDatasetMaker: A new instance with the full dataset loaded.
         """
+        root_path = make_fullpath(root_dir, enforce="directory")
         # Load with NO transform. We get PIL Images.
-        full_dataset = ImageFolder(root=root_dir, transform=None)
+        full_dataset = ImageFolder(root=root_path, transform=None)
         _LOGGER.info(f"Found {len(full_dataset)} images in {len(full_dataset.classes)} classes.")
         
         maker = cls()
@@ -83,9 +83,9 @@ class VisionDatasetMaker(_BaseMaker):
     
     @classmethod
     def from_folders(cls, 
-                     train_dir: str, 
-                     val_dir: str, 
-                     test_dir: Optional[str] = None) -> 'VisionDatasetMaker':
+                     train_dir: Union[str,Path], 
+                     val_dir: Union[str,Path], 
+                     test_dir: Optional[Union[str,Path]] = None) -> 'VisionDatasetMaker':
         """
         Creates a maker instance from separate, pre-split directories.
         
@@ -94,9 +94,9 @@ class VisionDatasetMaker(_BaseMaker):
         It bypasses the need for `.split_data()`.
 
         Args:
-            train_dir (str): Path to the training data directory.
-            val_dir (str): Path to the validation data directory.
-            test_dir (str, None): Path to the test data directory.
+            train_dir (str | Path): Path to the training data directory.
+            val_dir (str | Path): Path to the validation data directory.
+            test_dir (str | Path | None): Path to the test data directory.
 
         Returns:
             VisionDatasetMaker: A new, pre-split instance.
@@ -104,10 +104,13 @@ class VisionDatasetMaker(_BaseMaker):
         Raises:
             ValueError: If the classes found in train, val, or test directories are inconsistent.
         """
+        train_path = make_fullpath(train_dir, enforce="directory")
+        val_path = make_fullpath(val_dir, enforce="directory")
+        
         _LOGGER.info("Loading data from separate directories.")
         # Load with NO transform. We get PIL Images.
-        train_ds = ImageFolder(root=train_dir, transform=None)
-        val_ds = ImageFolder(root=val_dir, transform=None)
+        train_ds = ImageFolder(root=train_path, transform=None)
+        val_ds = ImageFolder(root=val_path, transform=None)
         
         # Check for class consistency
         if train_ds.class_to_idx != val_ds.class_to_idx:
@@ -120,7 +123,8 @@ class VisionDatasetMaker(_BaseMaker):
         maker.class_map = train_ds.class_to_idx
         
         if test_dir:
-            test_ds = ImageFolder(root=test_dir, transform=None)
+            test_path = make_fullpath(test_dir, enforce="directory")
+            test_ds = ImageFolder(root=test_path, transform=None)
             if train_ds.class_to_idx != test_ds.class_to_idx:
                 _LOGGER.error("Train and test directories have different or inconsistent classes.")
                 raise ValueError()
