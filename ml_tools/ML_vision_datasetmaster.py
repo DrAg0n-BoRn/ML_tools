@@ -51,6 +51,7 @@ class VisionDatasetMaker(_BaseMaker):
         self._is_split = False
         self._are_transforms_configured = False
         self._val_recipe_components = None
+        self._has_mean_std: bool = False
 
     @classmethod
     def from_folder(cls, root_dir: str) -> 'VisionDatasetMaker':
@@ -243,8 +244,8 @@ class VisionDatasetMaker(_BaseMaker):
         return self
 
     def configure_transforms(self, resize_size: int = 256, crop_size: int = 224, 
-                             mean: List[float] = [0.485, 0.456, 0.406], 
-                             std: List[float] = [0.229, 0.224, 0.225],
+                             mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
+                             std: Optional[List[float]] = [0.229, 0.224, 0.225],
                              pre_transforms: Optional[List[Callable]] = None,
                              extra_train_transforms: Optional[List[Callable]] = None) -> 'VisionDatasetMaker':
         """
@@ -280,6 +281,10 @@ class VisionDatasetMaker(_BaseMaker):
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data (or using `from_folders`). Call .split_data() first if using `from_folder`.")
             raise RuntimeError()
+        
+        if (mean is None and std is not None) or (mean is not None and std is None):
+            _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
+            raise ValueError()
 
         # --- Define Transform Pipelines ---
         # These now MUST include ToTensor and Normalize, as the ImageFolder was loaded with transform=None.
@@ -289,9 +294,14 @@ class VisionDatasetMaker(_BaseMaker):
             VisionTransformRecipeKeys.PRE_TRANSFORMS: pre_transforms or [],
             VisionTransformRecipeKeys.RESIZE_SIZE: resize_size,
             VisionTransformRecipeKeys.CROP_SIZE: crop_size,
-            VisionTransformRecipeKeys.MEAN: mean,
-            VisionTransformRecipeKeys.STD: std
         }
+        
+        if mean is not None and std is not None:
+            self._val_recipe_components.update({
+                VisionTransformRecipeKeys.MEAN: mean,
+                VisionTransformRecipeKeys.STD: std
+            })
+            self._has_mean_std = True
         
         base_pipeline = []
         if pre_transforms:
@@ -307,9 +317,11 @@ class VisionDatasetMaker(_BaseMaker):
         
         # Final conversion and normalization
         final_transforms = [
-            transforms.ToTensor(), 
-            transforms.Normalize(mean=mean, std=std)
+            transforms.ToTensor()
         ]
+        
+        if self._has_mean_std:
+            final_transforms.append(transforms.Normalize(mean=mean, std=std))
 
         # Build the val/test pipeline
         val_transform_list = [
@@ -409,12 +421,16 @@ class VisionDatasetMaker(_BaseMaker):
         recipe[VisionTransformRecipeKeys.PIPELINE].extend([
             {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}},
             {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components[VisionTransformRecipeKeys.CROP_SIZE]}},
-            {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}},
-            {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
+            {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}}
+        ])
+        
+        if self._has_mean_std:
+            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+                {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
                 "mean": components[VisionTransformRecipeKeys.MEAN],
                 "std": components[VisionTransformRecipeKeys.STD]
-            }}
-        ])
+                }}
+            )
         
         # 3. Save the file
         save_recipe(recipe, file_path)
