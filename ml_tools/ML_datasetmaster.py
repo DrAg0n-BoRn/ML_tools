@@ -333,7 +333,20 @@ class DatasetMaker(_BaseDatasetMaker):
         # --- 5. Create Datasets ---
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+    
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
+        s += f"  Target: {self.target_names[0]}\n"
+        s += f"  Features: {self.number_of_features}\n"
+        s += f"  Scaler: {'Fitted' if self.scaler else 'None'}\n"
         
+        if self._train_ds:
+            s += f"  Train Samples: {len(self._train_ds)}\n" # type: ignore
+        if self._test_ds:
+            s += f"  Test Samples: {len(self._test_ds)}\n" # type: ignore
+            
+        return s
+
 
 # --- Multi-Target Class ---
 class DatasetMakerMulti(_BaseDatasetMaker):
@@ -447,6 +460,19 @@ class DatasetMakerMulti(_BaseDatasetMaker):
         # _PytorchDataset now correctly handles y_train (a DataFrame)
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
+        s += f"  Targets: {self.number_of_targets}\n"
+        s += f"  Features: {self.number_of_features}\n"
+        s += f"  Scaler: {'Fitted' if self.scaler else 'None'}\n"
+        
+        if self._train_ds:
+            s += f"  Train Samples: {len(self._train_ds)}\n" # type: ignore
+        if self._test_ds:
+            s += f"  Test Samples: {len(self._test_ds)}\n" # type: ignore
+            
+        return s
 
 
 # --- Private Base Class ---
@@ -654,6 +680,22 @@ class SequenceMaker(_BaseMaker):
             _LOGGER.error("Windows have not been generated. Call .generate_windows() first.")
             raise RuntimeError()
         return self._train_dataset, self._test_dataset
+    
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__}>:\n"
+        s += f"  Sequence Length (Window): {self.sequence_length}\n"
+        s += f"  Total Data Points: {len(self.sequence)}\n"
+        s += "  --- Status ---\n"
+        s += f"  Split: {self._is_split}\n"
+        s += f"  Normalized: {self._is_normalized}\n"
+        s += f"  Windows Generated: {self._are_windows_generated}\n"
+        
+        if self._are_windows_generated:
+            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
+            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
+            s += f"  Datasets (Train/Test): {train_len} / {test_len} windows\n"
+            
+        return s
 
 
 def info():

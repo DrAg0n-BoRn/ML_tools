@@ -23,9 +23,8 @@ class ResizeAspectFill:
     """
     def __init__(self, pad_color: Union[str, int] = "black") -> None:
         self.pad_color = pad_color
-        # Store kwargs to allow for recreation
+        # Store kwargs to allow for re-creation
         self.__setattr__(VisionTransformRecipeKeys.KWARGS, {"pad_color": pad_color})
-        # self._kwargs = {"pad_color": pad_color}
 
     def __call__(self, image: Image.Image) -> Image.Image:
         if not isinstance(image, Image.Image):

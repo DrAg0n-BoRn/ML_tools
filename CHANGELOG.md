@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.5.0] 2025-11-03
+
+### Fixed
+
+- ML_vision_datasetmaster: `SegmentationDatasetMaker` and `ObjectDetectionDatasetMaker` correctly handle optional normalization transformation when the mean and std are None.
+- ML_vision_transformers: `ResizeAspectFill`, fixed attribute needed for re-creation.
+
+### Added
+
+- ML_datasetmaster: All classes implement a comprehensive `__repr__` method.
+- ML_vision_datasetmaster: All classes implement a comprehensive `__repr__` method.
+
 ## [14.4.0] 2025-11-03
 
 ### Fixed

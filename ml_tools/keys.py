@@ -104,8 +104,9 @@ class VisionTransformRecipeKeys:
     TASK = "task"
     PIPELINE = "pipeline"
     NAME = "name"
-    KWARGS = "_kwargs"
+    KWARGS = "kwargs"
     PRE_TRANSFORMS = "pre_transforms"
+    
     RESIZE_SIZE = "resize_size"
     CROP_SIZE = "crop_size"
     MEAN = "mean"

@@ -273,8 +273,8 @@ class VisionDatasetMaker(_BaseMaker):
                                for validation/testing.
             crop_size (int): The target size (square) for the final
                              cropped image.
-            mean (List[float]): The mean values for normalization (e.g., ImageNet mean).
-            std (List[float]): The standard deviation values for normalization (e.g., ImageNet std).
+            mean (List[float] | None): The mean values for normalization (e.g., ImageNet mean).
+            std (List[float] | None): The standard deviation values for normalization (e.g., ImageNet std).
             extra_train_transforms (List[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
             pre_transforms (List[Callable] | None): An list of transforms to be applied at the very beginning of the transformations for all sets.
 
@@ -499,6 +499,24 @@ class VisionDatasetMaker(_BaseMaker):
         
         return self.class_map
     
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__}>:\n"
+        s += f"  Split: {self._is_split}\n"
+        s += f"  Transforms Configured: {self._are_transforms_configured}\n"
+        
+        if self.class_map:
+            s += f"  Classes: {len(self.class_map)}\n"
+
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+        elif self._full_dataset:
+            s += f"  Full Dataset Size: {len(self._full_dataset)} images\n"
+            
+        return s
+    
 
 class _DatasetTransformer(Dataset):
     """
@@ -686,6 +704,7 @@ class SegmentationDatasetMaker(_BaseMaker):
         self._are_transforms_configured = False
         self.train_transform: Optional[Callable] = None
         self.val_transform: Optional[Callable] = None
+        self._has_mean_std: bool = False
 
     @classmethod
     def from_folders(cls, image_dir: Union[str, Path], mask_dir: Union[str, Path]) -> 'SegmentationDatasetMaker':
@@ -849,8 +868,8 @@ class SegmentationDatasetMaker(_BaseMaker):
     def configure_transforms(self, 
                              resize_size: int = 256, 
                              crop_size: int = 224, 
-                             mean: List[float] = [0.485, 0.456, 0.406], 
-                             std: List[float] = [0.229, 0.224, 0.225]) -> 'SegmentationDatasetMaker':
+                             mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
+                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'SegmentationDatasetMaker':
         """
         Configures and applies the image and mask transformations.
         
@@ -861,8 +880,8 @@ class SegmentationDatasetMaker(_BaseMaker):
                                for validation/testing.
             crop_size (int): The target size (square) for the final
                              cropped image.
-            mean (List[float]): The mean values for image normalization.
-            std (List[float]): The std dev values for image normalization.
+            mean (List[float] | None): The mean values for image normalization.
+            std (List[float] | None): The std dev values for image normalization.
 
         Returns:
             SegmentationDatasetMaker: The same instance, with transforms applied.
@@ -871,29 +890,50 @@ class SegmentationDatasetMaker(_BaseMaker):
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
             raise RuntimeError()
         
+        if (mean is None and std is not None) or (mean is not None and std is None):
+            _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
+            raise ValueError()
+        
         # --- Store components for validation recipe ---
-        self.val_recipe_components = {
+        self.val_recipe_components: dict[str,Any] = {
             VisionTransformRecipeKeys.RESIZE_SIZE: resize_size,
             VisionTransformRecipeKeys.CROP_SIZE: crop_size,
-            VisionTransformRecipeKeys.MEAN: mean,
-            VisionTransformRecipeKeys.STD: std
         }
+    
+        if mean is not None and std is not None:
+            self.val_recipe_components.update({
+                VisionTransformRecipeKeys.MEAN: mean,
+                VisionTransformRecipeKeys.STD: std
+            })
+            self._has_mean_std = True
 
         # --- Validation/Test Pipeline (Deterministic) ---
-        self.val_transform = _PairedCompose([
-            _PairedResize(resize_size),
-            _PairedCenterCrop(crop_size),
-            _PairedToTensor(),
-            _PairedNormalize(mean, std)
-        ])
-        
-        # --- Training Pipeline (Augmentation) ---
-        self.train_transform = _PairedCompose([
-            _PairedRandomResizedCrop(crop_size),
-            _PairedRandomHorizontalFlip(p=0.5),
-            _PairedToTensor(),
-            _PairedNormalize(mean, std)
-        ])
+        if self._has_mean_std:
+            self.val_transform = _PairedCompose([
+                _PairedResize(resize_size),
+                _PairedCenterCrop(crop_size),
+                _PairedToTensor(),
+                _PairedNormalize(mean, std) # type: ignore
+            ])
+            # --- Training Pipeline (Augmentation) ---
+            self.train_transform = _PairedCompose([
+                _PairedRandomResizedCrop(crop_size),
+                _PairedRandomHorizontalFlip(p=0.5),
+                _PairedToTensor(),
+                _PairedNormalize(mean, std) # type: ignore
+            ])
+        else:
+            self.val_transform = _PairedCompose([
+                _PairedResize(resize_size),
+                _PairedCenterCrop(crop_size),
+                _PairedToTensor()
+            ])
+            # --- Training Pipeline (Augmentation) ---
+            self.train_transform = _PairedCompose([
+                _PairedRandomResizedCrop(crop_size),
+                _PairedRandomHorizontalFlip(p=0.5),
+                _PairedToTensor()
+            ])
 
         # --- Apply Transforms to the Datasets ---
         self._train_dataset.transform = self.train_transform # type: ignore
@@ -946,23 +986,44 @@ class SegmentationDatasetMaker(_BaseMaker):
         
         # validate path
         file_path = make_fullpath(filepath, make=True, enforce="file")
-
+        
         # Add standard transforms
         recipe: Dict[str, Any] = {
             VisionTransformRecipeKeys.TASK: "segmentation",
             VisionTransformRecipeKeys.PIPELINE: [
-                {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components["resize_size"]}},
-                {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components["crop_size"]}},
-                {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}},
-                {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
-                    "mean": components["mean"],
-                    "std": components["std"]
-                }}
+                {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}},
+                {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components[VisionTransformRecipeKeys.CROP_SIZE]}},
+                {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}}
             ]
         }
         
+        if self._has_mean_std:
+            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+                {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
+                    "mean": components[VisionTransformRecipeKeys.MEAN],
+                    "std": components[VisionTransformRecipeKeys.STD]
+                }}
+            )
+        
         # Save the file
         save_recipe(recipe, file_path)
+        
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__}>:\n"
+        s += f"  Total Image-Mask Pairs: {len(self.image_paths)}\n"
+        s += f"  Split: {self._is_split}\n"
+        s += f"  Transforms Configured: {self._are_transforms_configured}\n"
+        
+        if self.class_map:
+            s += f"  Classes: {list(self.class_map.keys())}\n"
+
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+            
+        return s
 
 
 # Object detection
@@ -1114,6 +1175,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         self.train_transform: Optional[Callable] = None
         self.val_transform: Optional[Callable] = None
         self._val_recipe_components: Optional[Dict[str, Any]] = None
+        self._has_mean_std: bool = False
 
     @classmethod
     def from_folders(cls, image_dir: Union[str, Path], annotation_dir: Union[str, Path]) -> 'ObjectDetectionDatasetMaker':
@@ -1273,8 +1335,8 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         return self
 
     def configure_transforms(self, 
-                             mean: List[float] = [0.485, 0.456, 0.406], 
-                             std: List[float] = [0.229, 0.224, 0.225]) -> 'ObjectDetectionDatasetMaker':
+                             mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
+                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'ObjectDetectionDatasetMaker':
         """
         Configures and applies the image and target transformations.
         
@@ -1285,8 +1347,8 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         Transforms are limited to augmentation (flip), ToTensor, and Normalize.
 
         Args:
-            mean (List[float]): The mean values for image normalization.
-            std (List[float]): The std dev values for image normalization.
+            mean (List[float] | None): The mean values for image normalization.
+            std (List[float] | None): The std dev values for image normalization.
 
         Returns:
             ObjectDetectionDatasetMaker: The same instance, with transforms applied.
@@ -1295,24 +1357,42 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
             raise RuntimeError()
         
-        # --- Store components for validation recipe ---
-        self._val_recipe_components = {
-            VisionTransformRecipeKeys.MEAN: mean,
-            VisionTransformRecipeKeys.STD: std
-        }
-
-        # --- Validation/Test Pipeline (Deterministic) ---
-        self.val_transform = _OD_PairedCompose([
-            _OD_PairedToTensor(),
-            _OD_PairedNormalize(mean, std)
-        ])
+        if (mean is None and std is not None) or (mean is not None and std is None):
+            _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
+            raise ValueError()
         
-        # --- Training Pipeline (Augmentation) ---
-        self.train_transform = _OD_PairedCompose([
-            _OD_PairedRandomHorizontalFlip(p=0.5),
-            _OD_PairedToTensor(),
-            _OD_PairedNormalize(mean, std)
-        ])
+        if mean is not None and std is not None:
+            # --- Store components for validation recipe ---
+            self._val_recipe_components = {
+                VisionTransformRecipeKeys.MEAN: mean,
+                VisionTransformRecipeKeys.STD: std
+            }
+            self._has_mean_std = True
+            
+        if self._has_mean_std:
+            # --- Validation/Test Pipeline (Deterministic) ---
+            self.val_transform = _OD_PairedCompose([
+                _OD_PairedToTensor(),
+                _OD_PairedNormalize(mean, std) # type: ignore
+            ])
+            
+            # --- Training Pipeline (Augmentation) ---
+            self.train_transform = _OD_PairedCompose([
+                _OD_PairedRandomHorizontalFlip(p=0.5),
+                _OD_PairedToTensor(),
+                _OD_PairedNormalize(mean, std) # type: ignore
+            ])
+        else:
+            # --- Validation/Test Pipeline (Deterministic) ---
+            self.val_transform = _OD_PairedCompose([
+                _OD_PairedToTensor()
+            ])
+            
+            # --- Training Pipeline (Augmentation) ---
+            self.train_transform = _OD_PairedCompose([
+                _OD_PairedRandomHorizontalFlip(p=0.5),
+                _OD_PairedToTensor()
+            ])
 
         # --- Apply Transforms to the Datasets ---
         self._train_dataset.transform = self.train_transform # type: ignore
@@ -1368,10 +1448,6 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         
         components = self._val_recipe_components
         
-        if not components:
-            _LOGGER.error(f"Error getting the transformers recipe for validation set.")
-            raise ValueError()
-        
         # validate path
         file_path = make_fullpath(filepath, make=True, enforce="file")
 
@@ -1380,15 +1456,36 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             VisionTransformRecipeKeys.TASK: "object_detection",
             VisionTransformRecipeKeys.PIPELINE: [
                 {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}},
-                {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
-                    "mean": components["mean"],
-                    "std": components["std"]
-                }}
             ]
         }
         
+        if self._has_mean_std and components:
+            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+                {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
+                    "mean": components[VisionTransformRecipeKeys.MEAN],
+                    "std": components[VisionTransformRecipeKeys.STD]
+                }}
+            )
+        
         # Save the file
         save_recipe(recipe, file_path)
+        
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__}>:\n"
+        s += f"  Total Image-Annotation Pairs: {len(self.image_paths)}\n"
+        s += f"  Split: {self._is_split}\n"
+        s += f"  Transforms Configured: {self._are_transforms_configured}\n"
+        
+        if self.class_map:
+            s += f"  Classes ({len(self.class_map)}): {list(self.class_map.keys())}\n"
+
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+            
+        return s
 
 
 def info():
