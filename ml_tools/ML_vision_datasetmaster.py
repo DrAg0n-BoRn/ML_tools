@@ -18,6 +18,7 @@ from ._script_info import _script_info
 from .keys import VisionTransformRecipeKeys, ObjectDetectionKeys
 from ._ML_vision_recipe import save_recipe
 from .ML_vision_transformers import TRANSFORM_REGISTRY
+from .custom_logger import custom_logger
 
 
 __all__ = [
@@ -320,7 +321,7 @@ class VisionDatasetMaker(_BaseMaker):
             base_train_transforms.extend(extra_train_transforms)
         
         # Final conversion and normalization
-        final_transforms = [
+        final_transforms: list[Callable] = [
             transforms.ToTensor()
         ]
         
@@ -438,6 +439,22 @@ class VisionDatasetMaker(_BaseMaker):
         
         # 3. Save the file
         save_recipe(recipe, file_path)
+        
+    def save_class_map(self, save_dir: Union[str,Path]) -> dict[str,int]:
+        """
+        Saves the class to index mapping {str: int} to a directory.
+        """
+        if not self.class_map:
+            _LOGGER.error(f"Class to index mapping is empty.")
+            raise ValueError()
+        
+        custom_logger(data=self.class_map,
+                      save_directory=save_dir,
+                      log_name="Class_to_Index",
+                      add_timestamp=False,
+                      dict_as="json")
+        
+        return self.class_map
     
 
 class _DatasetTransformer(Dataset):
