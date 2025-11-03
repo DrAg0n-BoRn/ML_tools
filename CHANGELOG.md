@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.4.0] 2025-11-03
+
+### Fixed
+
+- ML_vision_models: All models properly store the transformation object if initialized with pretrained weights.
+
+### Added
+
+- ML_utilities: `save_pretrained_transforms()`, serializes the transform object of pretrained models as a .joblib file.
+
 ## [14.3.1] 2025-11-03
 
 ### Fixed

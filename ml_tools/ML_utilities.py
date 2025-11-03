@@ -10,6 +10,7 @@ from ._logger import _LOGGER
 from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from .utilities import load_dataframe
 from .custom_logger import save_list_strings, custom_logger
+from .serde import serialize_object_filename
 
 
 __all__ = [
@@ -18,7 +19,8 @@ __all__ = [
     "get_model_parameters",
     "inspect_model_architecture",
     "inspect_pth_file",
-    "set_parameter_requires_grad"
+    "set_parameter_requires_grad",
+    "save_pretrained_transforms"
 ]
 
 
@@ -522,6 +524,53 @@ def _set_params_grad(
             param.requires_grad = requires_grad
             params_changed += param.numel()
     return params_changed
+
+
+def save_pretrained_transforms(model: nn.Module, output_dir: Union[str, Path]):
+    """
+    Checks a model for the 'self._pretrained_default_transforms' attribute, if found,
+    serializes the returned transform object as a .joblib file.
+
+    This saves the callable transform object itself for
+    later use, such as passing it directly to the 'transform_source'
+    argument of the PyTorchVisionInferenceHandler.
+
+    Args:
+        model (nn.Module): The model instance to check.
+        output_dir (str | Path): The directory where the transform file will be saved.
+    """
+    output_filename = "pretrained_model_transformations"
+
+    # 1. Check for the "secret attribute"
+    if not hasattr(model, '_pretrained_default_transforms'):
+        _LOGGER.warning(f"Model of type {type(model).__name__} does not have the required attribute. No transformations saved.")
+        return
+
+    # 2. Get the transform object
+    try:
+        transform_obj = model._pretrained_default_transforms
+    except Exception as e:
+        _LOGGER.error(f"Error calling the required attribute on model: {e}")
+        return
+
+    # 3. Check if the object is actually there
+    if transform_obj is None:
+        _LOGGER.warning(f"Model {type(model).__name__} has the required attribute but returned None. No transforms saved.")
+        return
+
+    # 4. Serialize and save using serde
+    try:
+        serialize_object_filename(
+            obj=transform_obj,
+            save_dir=output_dir,
+            filename=output_filename,
+            verbose=True,
+            raise_on_error=True
+        )
+        # _LOGGER.info(f"Successfully saved pretrained transforms to '{output_dir}'.")
+    except Exception as e:
+        _LOGGER.error(f"Failed to serialize transformations: {e}")
+        raise
 
 
 def info():

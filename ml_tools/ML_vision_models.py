@@ -47,11 +47,16 @@ class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
         self.num_classes = num_classes
         self.in_channels = in_channels
         self.model_name = model_name
+        self._pretrained_default_transforms = None
 
         # --- 2. Instantiate the base model ---
         if init_with_pretrained:
             weights_enum = getattr(vision_models, weights_enum_name, None) if weights_enum_name else None
             weights = weights_enum.IMAGENET1K_V1 if weights_enum else None
+            
+            # Save transformations for pretrained models
+            if weights:
+                self._pretrained_default_transforms = weights.transforms()
             
             if weights is None and init_with_pretrained:
                  _LOGGER.warning(f"Could not find modern weights for {model_name}. Using 'pretrained=True' legacy fallback.")
@@ -331,6 +336,7 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
         self.num_classes = num_classes
         self.in_channels = in_channels
         self.model_name = model_name
+        self._pretrained_default_transforms = None
 
         # --- 2. Instantiate the base model ---
         model_kwargs = {
@@ -342,6 +348,10 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
         if init_with_pretrained:
             weights_enum = getattr(vision_models.segmentation, weights_enum_name, None) if weights_enum_name else None
             weights = weights_enum.DEFAULT if weights_enum else None
+            
+            # save pretrained model transformations
+            if weights:
+                self._pretrained_default_transforms = weights.transforms()
             
             if weights is None:
                  _LOGGER.warning(f"Could not find modern weights for {model_name}. Using 'pretrained=True' legacy fallback.")
@@ -520,7 +530,7 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.
 
-    NOTE: This model is NOT compatible with the MLTrainer class.
+    NOTE: This model is NOT compatible with the MLTrainer class. Use the ObjectDetectionTrainer instead.
     """
     def __init__(self,
                  num_classes: int,
@@ -550,6 +560,7 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
         self.num_classes = num_classes
         self.in_channels = in_channels
         self.model_name = model_name
+        self._pretrained_default_transforms = None
 
         # --- 2. Instantiate the base model ---
         model_constructor = getattr(detection_models, model_name)
@@ -560,6 +571,9 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
         
         weights_enum = getattr(detection_models, weights_enum_name, None) if weights_enum_name else None
         weights = weights_enum.DEFAULT if weights_enum and init_with_pretrained else None
+        
+        if weights:
+            self._pretrained_default_transforms = weights.transforms()
 
         self.model = model_constructor(weights=weights, weights_backbone=weights)
         
