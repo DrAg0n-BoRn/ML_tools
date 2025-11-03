@@ -10,6 +10,7 @@ import torchvision.transforms.functional as TF
 from pathlib import Path
 import random
 import json
+import inspect
 
 from .ML_datasetmaster import _BaseMaker
 from .path_manager import make_fullpath
@@ -411,16 +412,58 @@ class VisionDatasetMaker(_BaseMaker):
         # validate path
         file_path = make_fullpath(filepath, make=True, enforce="file")
 
-        # 1. Handle pre_transforms
+        # Handle pre_transforms
         for t in components[VisionTransformRecipeKeys.PRE_TRANSFORMS]:
             t_name = t.__class__.__name__
+            t_class = t.__class__
+            kwargs = {}
+            
+            # 1. Check custom registry first
             if t_name in TRANSFORM_REGISTRY:
-                recipe[VisionTransformRecipeKeys.PIPELINE].append({
-                    VisionTransformRecipeKeys.NAME: t_name,
-                    VisionTransformRecipeKeys.KWARGS: getattr(t, VisionTransformRecipeKeys.KWARGS, {})
-                })
+                _LOGGER.debug(f"Found '{t_name}' in TRANSFORM_REGISTRY.")
+                kwargs = getattr(t, VisionTransformRecipeKeys.KWARGS, {})
+
+            # 2. Else, try to introspect for standard torchvision transforms
             else:
-                _LOGGER.warning(f"Skipping unknown pre_transform '{t_name}' in recipe. Not in TRANSFORM_REGISTRY.")
+                _LOGGER.debug(f"'{t_name}' not in registry. Attempting introspection...")
+                try:
+                    # Get the __init__ signature of the transform's class
+                    sig = inspect.signature(t_class.__init__)
+                    
+                    # Iterate over its __init__ parameters (e.g., 'num_output_channels')
+                    for param in sig.parameters.values():
+                        if param.name == 'self':
+                            continue
+                        
+                        # Check if the *instance* 't' has that parameter as an attribute
+                        attr_name_public = param.name
+                        attr_name_private = '_' + param.name
+                        
+                        attr_to_get = ""
+                        
+                        if hasattr(t, attr_name_public):
+                            attr_to_get = attr_name_public
+                        elif hasattr(t, attr_name_private):
+                            attr_to_get = attr_name_private
+                        else:
+                            # Parameter in __init__ has no matching attribute
+                            continue 
+                        
+                        # Store the value under the __init__ parameter's name
+                        kwargs[param.name] = getattr(t, attr_to_get)
+                            
+                    _LOGGER.debug(f"Introspection for '{t_name}' found kwargs: {kwargs}")
+
+                except (ValueError, TypeError):
+                    # Fails on some built-ins or C-implemented __init__
+                    _LOGGER.warning(f"Could not introspect parameters for '{t_name}'. If this transform has parameters, they will not be saved.")
+                    kwargs = {}
+
+            # 3. Add to pipeline
+            recipe[VisionTransformRecipeKeys.PIPELINE].append({
+                VisionTransformRecipeKeys.NAME: t_name,
+                VisionTransformRecipeKeys.KWARGS: kwargs
+            })
                 
         # 2. Add standard transforms
         recipe[VisionTransformRecipeKeys.PIPELINE].extend([

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.3.1] 2025-11-03
+
+### Fixed
+
+- ML_vision_datasetmaster: `VisionDatasetMaker.save_transform_recipe()`, now uses introspect to save default Torchvision transformations and possibly other custom transformations in the recipe.
+
 ## [14.3.0] 2025-11-03
 
 ### Added
