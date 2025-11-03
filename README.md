@@ -67,10 +67,16 @@ ML_evaluation_multi
 ML_evaluation
 ML_inference
 ML_models
+ML_models_advanced # Requires the extra flag [py-tab]
 ML_optimization
 ML_scaler
 ML_trainer
 ML_utilities
+ML_vision_datasetmaster
+ML_vision_evaluation
+ML_vision_inference
+ML_vision_models
+ML_vision_transformers
 optimization_tools
 path_manager
 PSO_optimization
@@ -116,7 +122,6 @@ pip install "dragon-ml-toolbox[excel]"
 #### Modules:
 
 ```Bash
-constants
 custom_logger
 handle_excel
 path_manager

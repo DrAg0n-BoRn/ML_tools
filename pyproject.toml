@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "14.1.0"
+version = "14.2.0"
 description = "A collection of tools for data science and machine learning projects."
 authors = [
     { name = "Karl L. Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -45,14 +45,11 @@ ML = [
     "torchmetrics",
 ]
 
-# pytorch-tabular API. Additionally Requires PyTorch with CUDA / MPS support
-# py-tab = [
-#     "pytorch_tabular",
-#     "pytorch-lightning",
-#     "wandb",
-#     "plotly",
-#     "captum",
-# ]
+# pytorch-tabular API for advanced models
+py-tab = [
+    "pytorch_tabular",
+    "omegaconf"
+]
 
 # MICE and VIF - Requires a new virtual-env due to dependency version conflicts
 mice = [

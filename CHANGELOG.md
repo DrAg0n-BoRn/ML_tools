@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [Unreleased]
+## [14.2.0] 2025-11-02
 
-- New project optional dependency: \[py-tab\], an API for pytorch_tabular. 
+### Added
+
+- New optional dependencies `pytorch_tabular`, and `omegaconf`. Required for the module "ML_models_advanced".
+- Updated third-party licenses.
+- ML_models_advanced: 
+    - `DragonGateModel`, Adapter for the Gated Additive Tree Ensemble (GATE) model from the 'pytorch_tabular' library.
+    - `DragonNodeModel`, Adapter for the Neural Oblivious Decision Ensembles (NODE) model from the 'pytorch_tabular' library.
 
 ## [14.1.0] 2025-11-02
 
