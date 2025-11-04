@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.8.1] 2025-11-04
+
+### Fixed
+
+- ML_vision_datasetmaster: `.images_per_dataset()` returns a string without new line character.
+
 ## [14.8.0] 2025-11-04
 
 ### Added

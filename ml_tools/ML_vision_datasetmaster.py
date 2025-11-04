@@ -507,12 +507,12 @@ class VisionDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
         elif self._full_dataset:
-            return f"Full Dataset: {len(self._full_dataset)} images\n"
+            return f"Full Dataset: {len(self._full_dataset)} images"
         else:
             _LOGGER.warning("No datasets found.")
-            return "No datasets found\n"   
+            return "No datasets found"   
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
@@ -1031,10 +1031,10 @@ class SegmentationDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
         else:
             _LOGGER.warning("No datasets found.")
-            return "No datasets found\n"   
+            return "No datasets found"   
         
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
@@ -1506,10 +1506,10 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
         else:
             _LOGGER.warning("No datasets found.")
-            return "No datasets found\n"
+            return "No datasets found"
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
