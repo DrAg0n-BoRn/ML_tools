@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Union, Optional, List, Literal
 import warnings
 
-from .path_manager import make_fullpath
+from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .keys import SHAPKeys, PyTorchLogKeys
@@ -50,7 +50,7 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     val_loss = history.get(PyTorchLogKeys.VAL_LOSS, [])
     
     if not train_loss and not val_loss:
-        print("Warning: Loss history is empty or incomplete. Cannot plot.")
+        _LOGGER.warning("Loss history is empty or incomplete. Cannot plot.")
         return
 
     fig, ax = plt.subplots(figsize=(10, 5), dpi=DPI_value)
@@ -103,7 +103,7 @@ def classification_metrics(save_dir: Union[str, Path],
     original_rc_params = plt.rcParams.copy()
     plt.rcParams.update({'font.size': font_size})
     
-    print("--- Classification Report ---")
+    # print("--- Classification Report ---")
     
     # --- Parse class_map ---
     map_labels = None
@@ -181,53 +181,102 @@ def classification_metrics(save_dir: Union[str, Path],
     _LOGGER.info(f"❇️ Confusion matrix saved as '{cm_path.name}'")
     plt.close(fig_cm)
 
-    # Plotting logic for ROC and PR Curves
-    if y_prob is not None and y_prob.ndim > 1 and y_prob.shape[1] >= 2:
-        # Use probabilities of the positive class
-        y_score = y_prob[:, 1]
-        
-        # --- Save ROC Curve ---
-        fpr, tpr, _ = roc_curve(y_true, y_score)
-        auc = roc_auc_score(y_true, y_score)
-        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
-        ax_roc.plot([0, 1], [0, 1], 'k--')
-        ax_roc.set_title('Receiver Operating Characteristic (ROC) Curve')
-        ax_roc.set_xlabel('False Positive Rate')
-        ax_roc.set_ylabel('True Positive Rate')
-        ax_roc.legend(loc='lower right')
-        ax_roc.grid(True)
-        roc_path = save_dir_path / "roc_curve.svg"
-        plt.savefig(roc_path)
-        _LOGGER.info(f"📈 ROC curve saved as '{roc_path.name}'")
-        plt.close(fig_roc)
 
-        # --- Save Precision-Recall Curve ---
-        precision, recall, _ = precision_recall_curve(y_true, y_score)
-        ap_score = average_precision_score(y_true, y_score)
-        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=ROC_PR_line)
-        ax_pr.set_title('Precision-Recall Curve')
-        ax_pr.set_xlabel('Recall')
-        ax_pr.set_ylabel('Precision')
-        ax_pr.legend(loc='lower left')
-        ax_pr.grid(True)
-        pr_path = save_dir_path / "pr_curve.svg"
-        plt.savefig(pr_path)
-        _LOGGER.info(f"📈 PR curve saved as '{pr_path.name}'")
-        plt.close(fig_pr)
+    # Plotting logic for ROC, PR, and Calibration Curves
+    if y_prob is not None and y_prob.ndim == 2:
+        num_classes = y_prob.shape[1]
         
-        # --- Save Calibration Plot ---
-        if y_prob.ndim > 1 and y_prob.shape[1] >= 2:
-            y_score = y_prob[:, 1] # Use probabilities of the positive class
+        # --- Determine which classes to loop over ---
+        class_indices_to_plot = []
+        plot_titles = []
+        save_suffixes = []
+
+        if num_classes == 2:
+            # Binary case: Only plot for the positive class (index 1)
+            class_indices_to_plot = [1]
+            plot_titles = [""] # No extra title
+            save_suffixes = [""] # No extra suffix
+            _LOGGER.info("Generating binary classification plots (ROC, PR, Calibration).")
+        
+        elif num_classes > 2:
+            _LOGGER.info(f"Generating One-vs-Rest plots for {num_classes} classes.")
+            # Multiclass case: Plot for every class (One-vs-Rest)
+            class_indices_to_plot = list(range(num_classes))
             
+            # --- Use class_map names if available ---
+            use_generic_names = True
+            if map_display_labels and len(map_display_labels) == num_classes:
+                try:
+                    # Ensure labels are safe for filenames
+                    safe_names = [sanitize_filename(name) for name in map_display_labels]
+                    plot_titles = [f" ({name} vs. Rest)" for name in map_display_labels]
+                    save_suffixes = [f"_{safe_names[i]}" for i in class_indices_to_plot]
+                    use_generic_names = False
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to use 'class_map' for plot titles: {e}. Reverting to generic names.")
+                    use_generic_names = True
+            
+            if use_generic_names:
+                plot_titles = [f" (Class {i} vs. Rest)" for i in class_indices_to_plot]
+                save_suffixes = [f"_class_{i}" for i in class_indices_to_plot]
+        
+        else:
+            # Should not happen, but good to check
+            _LOGGER.warning(f"Probability array has invalid shape {y_prob.shape}. Skipping ROC/PR/Calibration plots.")
+
+        # --- Loop and generate plots ---
+        for i, class_index in enumerate(class_indices_to_plot):
+            plot_title = plot_titles[i]
+            save_suffix = save_suffixes[i]
+
+            # Get scores for the current class
+            y_score = y_prob[:, class_index]
+            
+            # Binarize y_true for the current class
+            y_true_binary = (y_true == class_index).astype(int)
+
+            # --- Save ROC Curve ---
+            fpr, tpr, _ = roc_curve(y_true_binary, y_score)
+            
+            # Calculate AUC. 
+            # Note: For multiclass, roc_auc_score(y_true, y_prob, multi_class='ovr') could average, but plotting individual curves is more informative.
+            # Here we calculate the specific AUC for the binarized problem.
+            auc = roc_auc_score(y_true_binary, y_score) 
+            
+            fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+            ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
+            ax_roc.plot([0, 1], [0, 1], 'k--')
+            ax_roc.set_title(f'Receiver Operating Characteristic{plot_title}')
+            ax_roc.set_xlabel('False Positive Rate')
+            ax_roc.set_ylabel('True Positive Rate')
+            ax_roc.legend(loc='lower right')
+            ax_roc.grid(True)
+            roc_path = save_dir_path / f"roc_curve{save_suffix}.svg"
+            plt.savefig(roc_path)
+            plt.close(fig_roc)
+
+            # --- Save Precision-Recall Curve ---
+            precision, recall, _ = precision_recall_curve(y_true_binary, y_score)
+            ap_score = average_precision_score(y_true_binary, y_score)
+            fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+            ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=ROC_PR_line)
+            ax_pr.set_title(f'Precision-Recall Curve{plot_title}')
+            ax_pr.set_xlabel('Recall')
+            ax_pr.set_ylabel('Precision')
+            ax_pr.legend(loc='lower left')
+            ax_pr.grid(True)
+            pr_path = save_dir_path / f"pr_curve{save_suffix}.svg"
+            plt.savefig(pr_path)
+            plt.close(fig_pr)
+            
+            # --- Save Calibration Plot ---
             fig_cal, ax_cal = plt.subplots(figsize=(8, 8), dpi=DPI_value)
 
             # --- Step 1: Get binned data *without* plotting ---
             with plt.ioff(): # Suppress showing the temporary plot
                 fig_temp, ax_temp = plt.subplots()
                 cal_display_temp = CalibrationDisplay.from_predictions(
-                    y_true, 
+                    y_true_binary, # Use binarized labels
                     y_score, 
                     n_bins=calibration_bins, 
                     ax=ax_temp,
@@ -238,16 +287,13 @@ def classification_metrics(save_dir: Union[str, Path],
                 plt.close(fig_temp) # Close the temporary plot
 
             # --- Step 2: Build the plot from scratch ---
-
-            # Plot the ideal diagonal line
             ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
             
-            # Use regplot to show the binned data and the regression line
             sns.regplot(
                 x=line_x, 
                 y=line_y,
                 ax=ax_cal,
-                scatter=False, # scatter_kws={'alpha': 0.7, 'color': 'crimson'},
+                scatter=False, 
                 label=f"Calibration Curve ({calibration_bins} bins)",
                 line_kws={
                     'color': ROC_PR_line, 
@@ -256,7 +302,7 @@ def classification_metrics(save_dir: Union[str, Path],
                     }
             )
             
-            ax_cal.set_title('Reliability Curve')
+            ax_cal.set_title(f'Reliability Curve{plot_title}')
             ax_cal.set_xlabel('Mean Predicted Probability')
             ax_cal.set_ylabel('Fraction of Positives')
             
@@ -268,10 +314,11 @@ def classification_metrics(save_dir: Union[str, Path],
             ax_cal.grid(True)
             plt.tight_layout()
             
-            cal_path = save_dir_path / "calibration_plot.svg"
+            cal_path = save_dir_path / f"calibration_plot{save_suffix}.svg"
             plt.savefig(cal_path)
-            _LOGGER.info(f"📈 Calibration plot saved as '{cal_path.name}'")
             plt.close(fig_cal)
+            
+        _LOGGER.info(f"📈 Saved {len(class_indices_to_plot)} sets of ROC, Precision-Recall, and Calibration plots.")
             
     # restore RC params
     plt.rcParams.update(original_rc_params)
@@ -374,7 +421,7 @@ def shap_summary_plot(model,
               slow and memory-intensive.
     """
     
-    print(f"\n--- SHAP Value Explanation Using {explainer_type.upper()} Explainer ---")
+    _LOGGER.info(f"📊 Running SHAP Value Explanation Using {explainer_type.upper()} Explainer")
     
     model.eval()
     # model.cpu() # Run explanations on CPU

@@ -183,7 +183,7 @@ def multi_label_classification_metrics(
         f"Jaccard Score (macro): {j_score_macro:.4f}\n"
         f"--------------------------------------------------\n"
     )
-    print(overall_report)
+    # print(overall_report)
     overall_report_path = save_dir_path / "classification_report_overall.txt"
     overall_report_path.write_text(overall_report)
 

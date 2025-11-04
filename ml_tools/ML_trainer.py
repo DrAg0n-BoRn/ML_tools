@@ -379,7 +379,7 @@ class MLTrainer:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
             raise ValueError()
 
-        print("\n--- Model Evaluation ---")
+        # print("\n--- Model Evaluation ---")
 
         all_preds, all_probs, all_true = [], [], []
         for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
@@ -471,7 +471,7 @@ class MLTrainer:
             
             segmentation_metrics(y_true, y_pred, save_dir, class_names=class_names)
         
-        print("\n--- Training History ---")
+        # print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
     def explain(self,
@@ -528,7 +528,7 @@ class MLTrainer:
             rand_indices = torch.randperm(full_data.size(0))[:num_samples]
             return full_data[rand_indices]
 
-        print(f"\n--- Preparing SHAP Data (sampling up to {n_samples} instances) ---")
+        # print(f"\n--- Preparing SHAP Data (sampling up to {n_samples} instances) ---")
 
         # 1. Get background data from the trainer's train_dataset
         background_data = _get_random_sample(self.train_dataset, n_samples)
@@ -636,7 +636,7 @@ class MLTrainer:
             plot_n_features (int): Number of top features to plot.
         """
         
-        print("\n--- Attention Analysis ---")
+        # print("\n--- Attention Analysis ---")
         
         # --- Step 1: Check if the model supports this explanation ---
         if not getattr(self.model, 'has_interpretable_attention', False):
@@ -1020,7 +1020,7 @@ class ObjectDetectionTrainer:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
             raise ValueError()
 
-        print("\n--- Model Evaluation ---")
+        # print("\n--- Model Evaluation ---")
 
         all_predictions = []
         all_targets = []
@@ -1069,7 +1069,7 @@ class ObjectDetectionTrainer:
             print_output=False
         )
         
-        print("\n--- Training History ---")
+        # print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
     
     def _callbacks_hook(self, method_name: str, *args, **kwargs):
