@@ -499,6 +499,21 @@ class VisionDatasetMaker(_BaseMaker):
         
         return self.class_map
     
+    def images_per_dataset(self) -> str:
+        """
+        Get the number of images per dataset as a string.
+        """
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+        elif self._full_dataset:
+            return f"Full Dataset: {len(self._full_dataset)} images\n"
+        else:
+            _LOGGER.warning("No datasets found.")
+            return "No datasets found\n"   
+    
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Split: {self._is_split}\n"
@@ -511,7 +526,7 @@ class VisionDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+            s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
         elif self._full_dataset:
             s += f"  Full Dataset Size: {len(self._full_dataset)} images\n"
             
@@ -1008,6 +1023,19 @@ class SegmentationDatasetMaker(_BaseMaker):
         # Save the file
         save_recipe(recipe, file_path)
         
+    def images_per_dataset(self) -> str:
+        """
+        Get the number of images per dataset as a string.
+        """
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+        else:
+            _LOGGER.warning("No datasets found.")
+            return "No datasets found\n"   
+        
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Total Image-Mask Pairs: {len(self.image_paths)}\n"
@@ -1021,7 +1049,7 @@ class SegmentationDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+            s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
             
         return s
 
@@ -1469,7 +1497,20 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         
         # Save the file
         save_recipe(recipe, file_path)
-        
+    
+    def images_per_dataset(self) -> str:
+        """
+        Get the number of images per dataset as a string.
+        """
+        if self._is_split:
+            train_len = len(self._train_dataset) if self._train_dataset else 0
+            val_len = len(self._val_dataset) if self._val_dataset else 0
+            test_len = len(self._test_dataset) if self._test_dataset else 0
+            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images\n"
+        else:
+            _LOGGER.warning("No datasets found.")
+            return "No datasets found\n"
+
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Total Image-Annotation Pairs: {len(self.image_paths)}\n"
@@ -1483,7 +1524,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             train_len = len(self._train_dataset) if self._train_dataset else 0
             val_len = len(self._val_dataset) if self._val_dataset else 0
             test_len = len(self._test_dataset) if self._test_dataset else 0
-            s += f"  Datasets (Train/Val/Test): {train_len} / {val_len} / {test_len}\n"
+            s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
             
         return s
 

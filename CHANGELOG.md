@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.8.0] 2025-11-04
+
+### Added
+
+- ML_vision_datasetmaster: 
+    - `VisionDatasetMaker.images_per_dataset()`, Get the number of images per dataset as a string.
+    - `SegmentationDatasetMaker.images_per_dataset()`, Get the number of images per dataset as a string.
+    - `ObjectDetectionDatasetMaker.images_per_dataset()`, Get the number of images per dataset as a string.
+
 ## [14.7.0] 2025-11-04
 
 ### Changed

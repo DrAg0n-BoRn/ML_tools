@@ -41,6 +41,10 @@ class ClassificationMetricsFormat:
                 creating the calibration (reliability) plot. Defaults to 15.
             
             font_size (int): The base font size to apply to the plots. Defaults to 16.
+        
+        <br>
+        
+        ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
         self.cmap = cmap
         self.class_map = class_map
@@ -88,6 +92,10 @@ class MultiClassificationMetricsFormat:
                 - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
             
             font_size (int): The base font size to apply to the plots. Defaults to 16.
+            
+        <br>
+        
+        ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)    
         """
         self.threshold = threshold
         self.cmap = cmap
