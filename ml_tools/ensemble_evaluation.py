@@ -112,7 +112,7 @@ def evaluate_model_classification(
         report_df = pd.DataFrame(report_dict).iloc[:-1, :].T
         plt.figure(figsize=figsize)
         sns.heatmap(report_df, annot=True, cmap=heatmap_cmap, fmt='.2f', 
-                    annot_kws={"size": base_fontsize - 4})
+                    annot_kws={"size": base_fontsize - 4}, vmin=0.0, vmax=1.0)
         plt.title(f"{model_name} - {target_name}", fontsize=base_fontsize)
         plt.xticks(fontsize=base_fontsize - 2)
         plt.yticks(fontsize=base_fontsize - 2)
@@ -133,6 +133,7 @@ def evaluate_model_classification(
         normalize="true",
         ax=ax
     )
+    disp.im_.set_clim(vmin=0.0, vmax=1.0)
 
     ax.set_title(f"{model_name} - {target_name}", fontsize=base_fontsize)
     ax.tick_params(axis='both', labelsize=base_fontsize)
@@ -327,7 +328,8 @@ def plot_calibration_curve(
     target_name: str,
     figure_size: tuple = (10, 10),
     base_fontsize: int = 24,
-    n_bins: int = 15
+    n_bins: int = 15,
+    line_color: str = 'darkorange'
 ) -> plt.Figure: # type: ignore
     """
     Plots the calibration curve (reliability diagram) for a classifier.
@@ -348,22 +350,63 @@ def plot_calibration_curve(
     """
     fig, ax = plt.subplots(figsize=figure_size)
     
-    disp = CalibrationDisplay.from_estimator(
-        model,
-        x_test,
-        y_test,
-        n_bins=n_bins,
-        ax=ax
+    # --- Step 1: Get probabilities from the estimator ---
+    # We do this manually so we can pass them to from_predictions
+    try:
+        y_prob = model.predict_proba(x_test)
+        # Use probabilities for the positive class (assuming binary)
+        y_score = y_prob[:, 1]
+    except Exception as e:
+        _LOGGER.error(f"Could not get probabilities from model: {e}")
+        plt.close(fig)
+        return fig # Return empty figure
+
+    # --- Step 2: Get binned data *without* plotting ---
+    with plt.ioff(): 
+        fig_temp, ax_temp = plt.subplots()
+        cal_display_temp = CalibrationDisplay.from_predictions(
+            y_test, 
+            y_score, 
+            n_bins=n_bins, 
+            ax=ax_temp,
+            name="temp"
+        )
+        line_x, line_y = cal_display_temp.line_.get_data() # type: ignore
+        plt.close(fig_temp)
+
+    # --- Step 3: Build the plot from scratch on ax ---
+
+    # 3a. Plot the ideal diagonal line
+    ax.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
+
+    # 3b. Use regplot for the regression line and its CI
+    sns.regplot(
+        x=line_x, 
+        y=line_y,
+        ax=ax,
+        scatter=False,  # No scatter dots
+        label=f"Calibration Curve ({n_bins} bins)",
+        line_kws={
+            'color': line_color,
+            'linestyle': '--', 
+            'linewidth': 2
+        }
     )
 
+    # --- Step 4: Apply original formatting ---
     ax.set_title(f"{model_name} - Reliability Curve for {target_name}", fontsize=base_fontsize)
     ax.tick_params(axis='both', labelsize=base_fontsize - 2)
     ax.set_xlabel("Mean Predicted Probability", fontsize=base_fontsize)
     ax.set_ylabel("Fraction of Positives", fontsize=base_fontsize)
-    ax.legend(fontsize=base_fontsize - 4)
+    
+    # Set limits
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlim(0.0, 1.0)
+    
+    ax.legend(fontsize=base_fontsize - 4, loc='lower right')
     fig.tight_layout()
 
-    # Save figure
+    # --- Step 5: Save figure (using original logic) ---
     save_path = make_fullpath(save_dir, make=True)
     sanitized_target_name = sanitize_filename(target_name)
     full_save_path = save_path / f"Calibration_Plot_{sanitized_target_name}.svg"

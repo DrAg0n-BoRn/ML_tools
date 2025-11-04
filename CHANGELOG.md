@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [14.6.0] 2025-11-03
+
+### Changed
+
+- ML_evaluation: `classification_metrics()`, enhanced plot outputs.
+- ML_evaluation_multi: `multi_label_classification_metrics()`, enhanced plot outputs.
+- ensemble_evaluation: `plot_calibration_curve()`, enhanced plot outputs.
+- ML_trainer: `MLTrainer.evaluate()`, compatibility added for configuration classes.
+
+### Added
+
+- ML_vision_transformers: `create_offline_augmentations()`, Reads images from an input directory, applies augmentations, and saves the new images to an output directory.
+- New Module: "ML_configuration", to store configuration classes.
+- ML_configuration:
+    - `ClassificationMetricsFormat`, optional configuration for classification tasks, use in the '.evaluate()' method of the MLTrainer.
+    - `MultiClassificationMetricsFormat`, optional configuration for multi-label classification tasks, use in the '.evaluate()' method of the MLTrainer.
+
 ## [14.5.0] 2025-11-03
 
 ### Fixed

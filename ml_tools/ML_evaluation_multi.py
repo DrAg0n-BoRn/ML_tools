@@ -34,6 +34,8 @@ __all__ = [
     "multi_target_shap_summary_plot",
 ]
 
+DPI_value = 250
+
 
 def multi_target_regression_metrics(
     y_true: np.ndarray,
@@ -90,7 +92,7 @@ def multi_target_regression_metrics(
 
         # --- Save Residual Plot ---
         residuals = true_i - pred_i
-        fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=100)
+        fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
         ax_res.scatter(pred_i, residuals, alpha=0.6, edgecolors='k', s=50)
         ax_res.axhline(0, color='red', linestyle='--')
         ax_res.set_xlabel("Predicted Values")
@@ -103,7 +105,7 @@ def multi_target_regression_metrics(
         plt.close(fig_res)
 
         # --- Save True vs. Predicted Plot ---
-        fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=100)
+        fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
         ax_tvp.scatter(true_i, pred_i, alpha=0.6, edgecolors='k', s=50)
         ax_tvp.plot([true_i.min(), true_i.max()], [true_i.min(), true_i.max()], 'k--', lw=2)
         ax_tvp.set_xlabel('True Values')
@@ -127,7 +129,10 @@ def multi_label_classification_metrics(
     y_prob: np.ndarray,
     target_names: List[str],
     save_dir: Union[str, Path],
-    threshold: float = 0.5
+    threshold: float = 0.5,
+    ROC_PR_line: str='darkorange',
+    cmap: str = "Blues",
+    font_size: int = 16
 ):
     """
     Calculates and saves classification metrics for each label individually.
@@ -158,6 +163,10 @@ def multi_label_classification_metrics(
     
     # Generate binary predictions from probabilities
     y_pred = (y_prob >= threshold).astype(int)
+    
+    # --- Save current RC params and update font size ---
+    original_rc_params = plt.rcParams.copy()
+    plt.rcParams.update({'font.size': font_size})
 
     _LOGGER.info("--- Multi-Label Classification Evaluation ---")
 
@@ -192,8 +201,26 @@ def multi_label_classification_metrics(
         report_path.write_text(report_text) # type: ignore
 
         # --- Save Confusion Matrix ---
-        fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=100)
-        ConfusionMatrixDisplay.from_predictions(true_i, pred_i, cmap="Blues", ax=ax_cm)
+        fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        disp_ = ConfusionMatrixDisplay.from_predictions(true_i, 
+                                                pred_i, 
+                                                cmap=cmap, 
+                                                ax=ax_cm, 
+                                                normalize='true',
+                                                labels=[0, 1],
+                                                display_labels=["Negative", "Positive"])
+        
+        disp_.im_.set_clim(vmin=0.0, vmax=1.0)
+        
+        # Turn off gridlines
+        ax_cm.grid(False)
+        
+        # Manually update font size of cell texts
+        for text in ax_cm.texts:
+            text.set_fontsize(font_size)
+
+        fig_cm.tight_layout()
+        
         ax_cm.set_title(f"Confusion Matrix for '{name}'")
         cm_path = save_dir_path / f"confusion_matrix_{sanitized_name}.svg"
         plt.savefig(cm_path)
@@ -202,8 +229,8 @@ def multi_label_classification_metrics(
         # --- Save ROC Curve ---
         fpr, tpr, _ = roc_curve(true_i, prob_i)
         auc = roc_auc_score(true_i, prob_i)
-        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=100)
-        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}')
+        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
         ax_roc.plot([0, 1], [0, 1], 'k--')
         ax_roc.set_title(f'ROC Curve for "{name}"')
         ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
@@ -215,14 +242,17 @@ def multi_label_classification_metrics(
         # --- Save Precision-Recall Curve ---
         precision, recall, _ = precision_recall_curve(true_i, prob_i)
         ap_score = average_precision_score(true_i, prob_i)
-        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=100)
-        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}')
+        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=ROC_PR_line)
         ax_pr.set_title(f'Precision-Recall Curve for "{name}"')
         ax_pr.set_xlabel('Recall'); ax_pr.set_ylabel('Precision')
         ax_pr.legend(loc='lower left'); ax_pr.grid(True, linestyle='--', alpha=0.6)
         pr_path = save_dir_path / f"pr_curve_{sanitized_name}.svg"
         plt.savefig(pr_path)
         plt.close(fig_pr)
+        
+    # restore RC params
+    plt.rcParams.update(original_rc_params)
 
     _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")
 

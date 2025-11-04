@@ -13,11 +13,12 @@ from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
+from .ML_configuration import ClassificationMetricsFormat, MultiClassificationMetricsFormat
 
 
 __all__ = [
     "MLTrainer",
-    "ObjectDetectionTrainer"
+    "ObjectDetectionTrainer",
 ]
 
 
@@ -334,14 +335,16 @@ class MLTrainer:
 
                 yield y_pred_batch, y_prob_batch, y_true_batch
 
-    def evaluate(self, save_dir: Union[str, Path], data: Optional[Union[DataLoader, Dataset]] = None, classification_threshold: float = 0.5):
+    def evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 data: Optional[Union[DataLoader, Dataset]] = None,
+                 format_configuration: Optional[Union[ClassificationMetricsFormat, MultiClassificationMetricsFormat]]=None):
         """
         Evaluates the model, routing to the correct evaluation function based on task `kind`.
 
         Args:
             save_dir (str | Path): Directory to save all reports and plots.
             data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
-            classification_threshold (float): Probability threshold for multi-label tasks.
         """
         dataset_for_names = None
         eval_loader = None
@@ -379,7 +382,7 @@ class MLTrainer:
         print("\n--- Model Evaluation ---")
 
         all_preds, all_probs, all_true = [], [], []
-        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader, classification_threshold):
+        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
             if y_pred_b is not None: all_preds.append(y_pred_b)
             if y_prob_b is not None: all_probs.append(y_prob_b)
             if y_true_b is not None: all_true.append(y_true_b)
@@ -397,7 +400,19 @@ class MLTrainer:
             regression_metrics(y_true.flatten(), y_pred.flatten(), save_dir)
 
         elif self.kind == "classification":
-            classification_metrics(save_dir, y_true, y_pred, y_prob)
+            # Parse configuration
+            if format_configuration and isinstance(format_configuration, ClassificationMetricsFormat):
+                classification_metrics(save_dir=save_dir,
+                                       y_true=y_true, 
+                                       y_pred=y_pred, 
+                                       y_prob=y_prob,
+                                       cmap=format_configuration.cmap,
+                                       class_map=format_configuration.class_map,
+                                       ROC_PR_line=format_configuration.ROC_PR_line,
+                                       calibration_bins=format_configuration.calibration_bins,
+                                       font_size=format_configuration.font_size)
+            else:
+                classification_metrics(save_dir, y_true, y_pred, y_prob)
 
         elif self.kind == "multi_target_regression":
             try:
@@ -419,7 +434,18 @@ class MLTrainer:
             if y_prob is None:
                 _LOGGER.error("Evaluation for multi_label_classification requires probabilities (y_prob).")
                 return
-            multi_label_classification_metrics(y_true, y_prob, target_names, save_dir, classification_threshold)
+            
+            if format_configuration and isinstance(format_configuration, MultiClassificationMetricsFormat):
+                multi_label_classification_metrics(y_true=y_true,
+                                                   y_prob=y_prob,
+                                                   target_names=target_names,
+                                                   save_dir=save_dir,
+                                                   threshold=format_configuration.threshold,
+                                                   ROC_PR_line=format_configuration.ROC_PR_line,
+                                                   cmap=format_configuration.cmap,
+                                                   font_size=format_configuration.font_size)
+            else:
+                multi_label_classification_metrics(y_true, y_prob, target_names, save_dir)
             
         elif self.kind == "segmentation":
             class_names = None

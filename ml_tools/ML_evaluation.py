@@ -35,6 +35,8 @@ __all__ = [
     "plot_attention_importance"
 ]
 
+DPI_value = 250
+
 
 def plot_losses(history: dict, save_dir: Union[str, Path]):
     """
@@ -51,7 +53,7 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
         print("Warning: Loss history is empty or incomplete. Cannot plot.")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=DPI_value)
     
     # Plot training loss only if data for it exists
     if train_loss:
@@ -78,8 +80,15 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     plt.close(fig)
 
 
-def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optional[np.ndarray] = None, 
-                           cmap: str = "Blues"):
+def classification_metrics(save_dir: Union[str, Path], 
+                           y_true: np.ndarray, 
+                           y_pred: np.ndarray, 
+                           y_prob: Optional[np.ndarray] = None, 
+                           cmap: str = "Blues", 
+                           class_map: Optional[dict[str,int]]=None, 
+                           ROC_PR_line: str='darkorange', 
+                           calibration_bins: int=15, 
+                           font_size: int=16):
     """
     Saves classification metrics and plots.
 
@@ -89,12 +98,31 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         y_prob (np.ndarray, optional): Predicted probabilities for ROC curve.
         cmap (str): Colormap for the confusion matrix.
         save_dir (str | Path): Directory to save plots.
+        class_map (dict[str, int], None): A map of {class_name: index} used to order and label the confusion matrix.
     """
+    original_rc_params = plt.rcParams.copy()
+    plt.rcParams.update({'font.size': font_size})
+    
     print("--- Classification Report ---")
+    
+    # --- Parse class_map ---
+    map_labels = None
+    map_display_labels = None
+    if class_map:
+        # Sort the map by its values (the indices) to ensure correct order
+        try:
+            sorted_items = sorted(class_map.items(), key=lambda item: item[1])
+            map_labels = [item[1] for item in sorted_items]
+            map_display_labels = [item[0] for item in sorted_items]
+        except Exception as e:
+            _LOGGER.warning(f"Could not parse 'class_map': {e}")
+            map_labels = None
+            map_display_labels = None
+    
     # Generate report as both text and dictionary
-    report_text: str = classification_report(y_true, y_pred) # type: ignore
-    report_dict: dict = classification_report(y_true, y_pred, output_dict=True) # type: ignore
-    print(report_text)
+    report_text: str = classification_report(y_true, y_pred, labels=map_labels, target_names=map_display_labels) # type: ignore
+    report_dict: dict = classification_report(y_true, y_pred, output_dict=True, labels=map_labels, target_names=map_display_labels) # type: ignore
+    # print(report_text)
     
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     # Save text report
@@ -104,8 +132,15 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
 
     # --- Save Classification Report Heatmap ---
     try:
-        plt.figure(figsize=(8, 6), dpi=100)
-        sns.heatmap(pd.DataFrame(report_dict).iloc[:-1, :].T, annot=True, cmap='viridis', fmt='.2f')
+        plt.figure(figsize=(8, 6), dpi=DPI_value)
+        sns.set_theme(font_scale=1.2) # Scale seaborn font
+        sns.heatmap(pd.DataFrame(report_dict).iloc[:-1, :].T, 
+                    annot=True, 
+                    cmap=cmap, 
+                    fmt='.2f',
+                    vmin=0.0,
+                    vmax=1.0)
+        sns.set_theme(font_scale=1.0) # Reset seaborn scale
         plt.title("Classification Report")
         plt.tight_layout()
         heatmap_path = save_dir_path / "classification_report_heatmap.svg"
@@ -114,10 +149,32 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         plt.close()
     except Exception as e:
         _LOGGER.error(f"Could not generate classification report heatmap: {e}")
-
+        
+    # --- labels for Confusion Matrix ---
+    plot_labels = map_labels
+    plot_display_labels = map_display_labels
+    
     # Save Confusion Matrix
-    fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=100)
-    ConfusionMatrixDisplay.from_predictions(y_true, y_pred, cmap=cmap, ax=ax_cm)
+    fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+    disp_ = ConfusionMatrixDisplay.from_predictions(y_true, 
+                                            y_pred, 
+                                            cmap=cmap, 
+                                            ax=ax_cm, 
+                                            normalize='true',
+                                            labels=plot_labels,
+                                            display_labels=plot_display_labels)
+    
+    disp_.im_.set_clim(vmin=0.0, vmax=1.0)
+    
+    # Turn off gridlines
+    ax_cm.grid(False)
+    
+    # Manually update font size of cell texts
+    for text in ax_cm.texts:
+        text.set_fontsize(font_size)
+
+    fig_cm.tight_layout()
+    
     ax_cm.set_title("Confusion Matrix")
     cm_path = save_dir_path / "confusion_matrix.svg"
     plt.savefig(cm_path)
@@ -132,8 +189,8 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         # --- Save ROC Curve ---
         fpr, tpr, _ = roc_curve(y_true, y_score)
         auc = roc_auc_score(y_true, y_score)
-        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=100)
-        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}')
+        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
         ax_roc.plot([0, 1], [0, 1], 'k--')
         ax_roc.set_title('Receiver Operating Characteristic (ROC) Curve')
         ax_roc.set_xlabel('False Positive Rate')
@@ -148,8 +205,8 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         # --- Save Precision-Recall Curve ---
         precision, recall, _ = precision_recall_curve(y_true, y_score)
         ap_score = average_precision_score(y_true, y_score)
-        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=100)
-        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}')
+        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=ROC_PR_line)
         ax_pr.set_title('Precision-Recall Curve')
         ax_pr.set_xlabel('Recall')
         ax_pr.set_ylabel('Precision')
@@ -164,12 +221,50 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
         if y_prob.ndim > 1 and y_prob.shape[1] >= 2:
             y_score = y_prob[:, 1] # Use probabilities of the positive class
             
-            fig_cal, ax_cal = plt.subplots(figsize=(8, 8), dpi=100)
-            CalibrationDisplay.from_predictions(y_true, y_score, n_bins=15, ax=ax_cal)
+            fig_cal, ax_cal = plt.subplots(figsize=(8, 8), dpi=DPI_value)
+
+            # --- Step 1: Get binned data *without* plotting ---
+            with plt.ioff(): # Suppress showing the temporary plot
+                fig_temp, ax_temp = plt.subplots()
+                cal_display_temp = CalibrationDisplay.from_predictions(
+                    y_true, 
+                    y_score, 
+                    n_bins=calibration_bins, 
+                    ax=ax_temp,
+                    name="temp" # Add a name to suppress potential warnings
+                )
+                # Get the x, y coordinates of the binned data
+                line_x, line_y = cal_display_temp.line_.get_data() # type: ignore
+                plt.close(fig_temp) # Close the temporary plot
+
+            # --- Step 2: Build the plot from scratch ---
+
+            # Plot the ideal diagonal line
+            ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
+            
+            # Use regplot to show the binned data and the regression line
+            sns.regplot(
+                x=line_x, 
+                y=line_y,
+                ax=ax_cal,
+                scatter=False, # scatter_kws={'alpha': 0.7, 'color': 'crimson'},
+                label=f"Calibration Curve ({calibration_bins} bins)",
+                line_kws={
+                    'color': ROC_PR_line, 
+                    'linestyle': '--', 
+                    'linewidth': 2,
+                    }
+            )
             
             ax_cal.set_title('Reliability Curve')
             ax_cal.set_xlabel('Mean Predicted Probability')
             ax_cal.set_ylabel('Fraction of Positives')
+            
+            # --- Step 3: Set final limits *after* plotting ---
+            ax_cal.set_ylim(0.0, 1.0) 
+            ax_cal.set_xlim(0.0, 1.0)
+            
+            ax_cal.legend(loc='lower right')
             ax_cal.grid(True)
             plt.tight_layout()
             
@@ -177,6 +272,9 @@ def classification_metrics(save_dir: Union[str, Path], y_true: np.ndarray, y_pre
             plt.savefig(cal_path)
             _LOGGER.info(f"📈 Calibration plot saved as '{cal_path.name}'")
             plt.close(fig_cal)
+            
+    # restore RC params
+    plt.rcParams.update(original_rc_params)
 
 
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[str, Path]):
@@ -211,7 +309,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
 
     # Save residual plot
     residuals = y_true - y_pred
-    fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=100)
+    fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
     ax_res.scatter(y_pred, residuals, alpha=0.6)
     ax_res.axhline(0, color='red', linestyle='--')
     ax_res.set_xlabel("Predicted Values")
@@ -225,7 +323,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     plt.close(fig_res)
 
     # Save true vs predicted plot
-    fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=100)
+    fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
     ax_tvp.scatter(y_true, y_pred, alpha=0.6)
     ax_tvp.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'k--', lw=2)
     ax_tvp.set_xlabel('True Values')
@@ -239,7 +337,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     plt.close(fig_tvp)
     
     # Save Histogram of Residuals
-    fig_hist, ax_hist = plt.subplots(figsize=(8, 6), dpi=100)
+    fig_hist, ax_hist = plt.subplots(figsize=(8, 6), dpi=DPI_value)
     sns.histplot(residuals, kde=True, ax=ax_hist)
     ax_hist.set_xlabel("Residual Value")
     ax_hist.set_ylabel("Frequency")
@@ -348,9 +446,9 @@ def shap_summary_plot(model,
         _LOGGER.error(f"Invalid explainer_type: '{explainer_type}'. Must be 'deep' or 'kernel'.")
         raise ValueError()
     
-    if not isinstance(shap_values, list) and shap_values.ndim == 3 and shap_values.shape[2] == 1:
+    if not isinstance(shap_values, list) and shap_values.ndim == 3 and shap_values.shape[2] == 1: # type: ignore
         # _LOGGER.info("Squeezing SHAP values from (N, F, 1) to (N, F) for regression plot.")
-        shap_values = shap_values.squeeze(-1)
+        shap_values = shap_values.squeeze(-1) # type: ignore
 
     # --- 3. Plotting and Saving ---
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -455,7 +553,7 @@ def plot_attention_importance(weights: List[torch.Tensor], feature_names: Option
     # --- Step 3: Create and save the plot for top N features ---
     plot_df = summary_df.head(top_n).sort_values('mean_attention', ascending=True)
     
-    plt.figure(figsize=(10, 8), dpi=100)
+    plt.figure(figsize=(10, 8), dpi=DPI_value)
 
     # Create horizontal bar plot with error bars
     plt.barh(
