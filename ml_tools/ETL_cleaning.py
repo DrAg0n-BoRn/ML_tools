@@ -14,8 +14,8 @@ __all__ = [
     "save_unique_values",
     "basic_clean",
     "basic_clean_drop",
-    "ColumnCleaner",
-    "DataFrameCleaner"
+    "DragonColumnCleaner",
+    "DragonDataFrameCleaner"
 ]
 
 
@@ -200,11 +200,11 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         # Create a cleaner for every column in the dataframe
         all_columns = df_in.columns
         column_cleaners = [
-            ColumnCleaner(col, rules=cleaning_rules, case_insensitive=True) for col in all_columns
+            DragonColumnCleaner(col, rules=cleaning_rules, case_insensitive=True) for col in all_columns
         ]
         
         # Instantiate and run the main dataframe cleaner
-        df_cleaner = DataFrameCleaner(cleaners=column_cleaners)
+        df_cleaner = DragonDataFrameCleaner(cleaners=column_cleaners)
         df_cleaned = df_cleaner.clean(df_in, clone_df=False) # Use clone_df=False for efficiency
         
         # apply lowercase to all string columns
@@ -335,12 +335,12 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
 
 
 ########## EXTRACT and CLEAN ##########
-class ColumnCleaner:
+class DragonColumnCleaner:
     """
     A configuration object that defines cleaning rules for a single Polars DataFrame column.
 
     This class holds a dictionary of regex-to-replacement rules, the target column name,
-    and the case-sensitivity setting. It is intended to be used with the DataFrameCleaner.
+    and the case-sensitivity setting. It is intended to be used with the DragonDataFrameCleaner.
     
     Notes:
         - Define rules from most specific to more general to create a fallback system.
@@ -365,8 +365,8 @@ class ColumnCleaner:
         r'ID[- ](\\d+)': r'ID:$1'
     }
 
-    id_cleaner = ColumnCleaner(column_name='user_id', rules=id_rules)
-    # This object would then be passed to a DataFrameCleaner.
+    id_cleaner = DragonColumnCleaner(column_name='user_id', rules=id_rules)
+    # This object would then be passed to a DragonDataFrameCleaner.
     ```
     """
     def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
@@ -382,34 +382,34 @@ class ColumnCleaner:
         self.case_insensitive = case_insensitive
 
 
-class DataFrameCleaner:
+class DragonDataFrameCleaner:
     """
     Orchestrates cleaning multiple columns in a Polars DataFrame.
 
-    This class takes a list of ColumnCleaner objects and applies their defined
+    This class takes a list of DragonColumnCleaner objects and applies their defined
     rules to the corresponding columns of a DataFrame using high-performance
     Polars expressions.
 
     Args:
-        cleaners (List[ColumnCleaner]):
-            A list of ColumnCleaner configuration objects.
+        cleaners (List[DragonColumnCleaner]):
+            A list of DragonColumnCleaner configuration objects.
 
     Raises:
-        TypeError: If 'cleaners' is not a list or contains non-ColumnCleaner objects.
-        ValueError: If multiple ColumnCleaner objects target the same column.
+        TypeError: If 'cleaners' is not a list or contains non-DragonColumnCleaner objects.
+        ValueError: If multiple DragonColumnCleaner objects target the same column.
     """
-    def __init__(self, cleaners: List[ColumnCleaner]):
+    def __init__(self, cleaners: List[DragonColumnCleaner]):
         if not isinstance(cleaners, list):
-            _LOGGER.error("The 'cleaners' argument must be a list of ColumnCleaner objects.")
+            _LOGGER.error("The 'cleaners' argument must be a list of DragonColumnCleaner objects.")
             raise TypeError()
 
         seen_columns = set()
         for cleaner in cleaners:
-            if not isinstance(cleaner, ColumnCleaner):
-                _LOGGER.error(f"All items in 'cleaners' list must be ColumnCleaner objects, but found an object of type {type(cleaner).__name__}.")
+            if not isinstance(cleaner, DragonColumnCleaner):
+                _LOGGER.error(f"All items in 'cleaners' list must be DragonColumnCleaner objects, but found an object of type {type(cleaner).__name__}.")
                 raise TypeError()
             if cleaner.column_name in seen_columns:
-                _LOGGER.error(f"Duplicate ColumnCleaner found for column '{cleaner.column_name}'. Each column should only have one cleaner.")
+                _LOGGER.error(f"Duplicate DragonColumnCleaner found for column '{cleaner.column_name}'. Each column should only have one cleaner.")
                 raise ValueError()
             seen_columns.add(cleaner.column_name)
 
@@ -475,7 +475,7 @@ class DataFrameCleaner:
         """
         This convenience method encapsulates the entire cleaning process into a
         single call. It loads a DataFrame from a specified file, applies all
-        cleaning rules configured in the `DataFrameCleaner` instance, and saves
+        cleaning rules configured in the `DragonDataFrameCleaner` instance, and saves
         the resulting cleaned DataFrame to a new file.
 
         The method ensures that all data is loaded as string types to prevent

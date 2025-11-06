@@ -19,6 +19,7 @@ from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .keys import VisionKeys
+from .ML_configuration import SegmentationMetricsFormat
 
 
 __all__ = [
@@ -26,12 +27,15 @@ __all__ = [
     "object_detection_metrics"
 ]
 
+DPI_value = 250
+
 
 def segmentation_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     save_dir: Union[str, Path],
-    class_names: Optional[List[str]] = None
+    class_names: Optional[List[str]] = None,
+    config: Optional[SegmentationMetricsFormat] = None # Add config object
 ):
     """
     Calculates and saves pixel-level metrics for segmentation tasks.
@@ -48,8 +52,17 @@ def segmentation_metrics(
         y_pred (np.ndarray): Predicted masks (e.g., shape [N, H, W]).
         save_dir (str | Path): Directory to save the metrics report and plots.
         class_names (List[str] | None): Names of the classes for the report.
+        config (SegmentationMetricsFormat, optional): Formatting configuration object.
     """
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+    
+    # --- Parse Config or use defaults ---
+    if config is None:
+        config = SegmentationMetricsFormat()
+
+    # --- Set Matplotlib font size ---
+    original_rc_params = plt.rcParams.copy()
+    plt.rcParams.update({'font.size': config.font_size})
     
     # Get all unique class labels present in either true or pred
     labels = np.unique(np.concatenate((np.unique(y_true), np.unique(y_pred)))).astype(int)
@@ -110,7 +123,7 @@ def segmentation_metrics(
     report_lines.append(per_class_df.to_string(index=False, float_format="%.4f"))
 
     report_string = "\n".join(report_lines)
-    print(report_string)
+    # print(report_string) # <-- I removed the print(report_string)
     
     # Save text report
     save_filename = VisionKeys.SEGMENTATION_REPORT + ".txt"
@@ -120,11 +133,11 @@ def segmentation_metrics(
 
     # --- 3. Save Per-Class Metrics Heatmap ---
     try:
-        plt.figure(figsize=(max(8, len(labels) * 0.5), 6), dpi=100)
+        plt.figure(figsize=(max(8, len(labels) * 0.5), 6), dpi=DPI_value)
         sns.heatmap(
             per_class_df.set_index('Class').T, 
             annot=True, 
-            cmap='viridis', 
+            cmap=config.heatmap_cmap, # Use config cmap
             fmt='.3f',
             linewidths=0.5
         )
@@ -149,7 +162,11 @@ def segmentation_metrics(
             confusion_matrix=cm,
             display_labels=display_names
         )
-        disp.plot(cmap='Blues', ax=ax_cm, xticks_rotation=45)
+        disp.plot(cmap=config.cm_cmap, ax=ax_cm, xticks_rotation=45) # Use config cmap
+        
+        # Manually update font size of cell texts
+        for text in disp.text_.flatten(): # type: ignore
+            text.set_fontsize(config.font_size)
         
         ax_cm.set_title("Pixel-Level Confusion Matrix")
         plt.tight_layout()
@@ -160,6 +177,9 @@ def segmentation_metrics(
         plt.close(fig_cm)
     except Exception as e:
         _LOGGER.error(f"Could not generate confusion matrix: {e}")
+        
+    # --- Restore RC params ---
+    plt.rcParams.update(original_rc_params)
 
 
 def object_detection_metrics(

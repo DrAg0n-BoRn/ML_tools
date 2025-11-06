@@ -19,13 +19,14 @@ from sklearn.metrics import (
     jaccard_score
 )
 from pathlib import Path
-from typing import Union, List, Literal
+from typing import Union, List, Literal, Optional
 import warnings
 
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .keys import SHAPKeys
+from .ML_configuration import RegressionMetricsFormat, MultiClassificationMetricsFormat
 
 
 __all__ = [
@@ -41,7 +42,8 @@ def multi_target_regression_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     target_names: List[str],
-    save_dir: Union[str, Path]
+    save_dir: Union[str, Path],
+    config: Optional[RegressionMetricsFormat] = None
 ):
     """
     Calculates and saves regression metrics for each target individually.
@@ -55,6 +57,7 @@ def multi_target_regression_metrics(
         y_pred (np.ndarray): Predicted values, shape (n_samples, n_targets).
         target_names (List[str]): A list of names for the target variables.
         save_dir (str | Path): Directory to save plots and the report.
+        config (RegressionMetricsFormat, optional): Formatting configuration object.
     """
     if y_true.ndim != 2 or y_pred.ndim != 2:
         _LOGGER.error("y_true and y_pred must be 2D arrays for multi-target regression.")
@@ -68,8 +71,17 @@ def multi_target_regression_metrics(
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     metrics_summary = []
+    
+    # --- Parse Config or use defaults ---
+    if config is None:
+        # Create a default config if one wasn't provided
+        config = RegressionMetricsFormat()
+        
+    # --- Set Matplotlib font size ---
+    original_rc_params = plt.rcParams.copy()
+    plt.rcParams.update({'font.size': config.font_size})
 
-    _LOGGER.info("--- Multi-Target Regression Evaluation ---")
+    _LOGGER.debug("--- Multi-Target Regression Evaluation ---")
 
     for i, name in enumerate(target_names):
         print(f"  -> Evaluating target: '{name}'")
@@ -93,8 +105,12 @@ def multi_target_regression_metrics(
         # --- Save Residual Plot ---
         residuals = true_i - pred_i
         fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
-        ax_res.scatter(pred_i, residuals, alpha=0.6, edgecolors='k', s=50)
-        ax_res.axhline(0, color='red', linestyle='--')
+        ax_res.scatter(pred_i, residuals, 
+                       alpha=config.scatter_alpha, 
+                       edgecolors='k', 
+                       s=50,
+                       color=config.scatter_color) # Use config color
+        ax_res.axhline(0, color=config.residual_line_color, linestyle='--') # Use config color
         ax_res.set_xlabel("Predicted Values")
         ax_res.set_ylabel("Residuals (True - Predicted)")
         ax_res.set_title(f"Residual Plot for '{name}'")
@@ -106,8 +122,15 @@ def multi_target_regression_metrics(
 
         # --- Save True vs. Predicted Plot ---
         fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
-        ax_tvp.scatter(true_i, pred_i, alpha=0.6, edgecolors='k', s=50)
-        ax_tvp.plot([true_i.min(), true_i.max()], [true_i.min(), true_i.max()], 'k--', lw=2)
+        ax_tvp.scatter(true_i, pred_i, 
+                       alpha=config.scatter_alpha, 
+                       edgecolors='k', 
+                       s=50,
+                       color=config.scatter_color) # Use config color
+        ax_tvp.plot([true_i.min(), true_i.max()], [true_i.min(), true_i.max()], 
+                    linestyle='--', 
+                    lw=2,
+                    color=config.ideal_line_color) # Use config color
         ax_tvp.set_xlabel('True Values')
         ax_tvp.set_ylabel('Predicted Values')
         ax_tvp.set_title(f'True vs. Predicted Values for "{name}"')
@@ -122,17 +145,18 @@ def multi_target_regression_metrics(
     report_path = save_dir_path / "regression_report_multi.csv"
     summary_df.to_csv(report_path, index=False)
     _LOGGER.info(f"Full regression report saved to '{report_path.name}'")
+    
+    # --- Restore RC params ---
+    plt.rcParams.update(original_rc_params)
 
 
 def multi_label_classification_metrics(
     y_true: np.ndarray,
+    y_pred: np.ndarray,
     y_prob: np.ndarray,
     target_names: List[str],
     save_dir: Union[str, Path],
-    threshold: float = 0.5,
-    ROC_PR_line: str='darkorange',
-    cmap: str = "Blues",
-    font_size: int = 16
+    config: Optional[MultiClassificationMetricsFormat] = None # Add config object
 ):
     """
     Calculates and saves classification metrics for each label individually.
@@ -143,17 +167,17 @@ def multi_label_classification_metrics(
 
     Args:
         y_true (np.ndarray): Ground truth binary labels, shape (n_samples, n_labels).
+        y_pred (np.ndarray): Predicted binary labels, shape (n_samples, n_labels).
         y_prob (np.ndarray): Predicted probabilities, shape (n_samples, n_labels).
         target_names (List[str]): A list of names for the labels.
         save_dir (str | Path): Directory to save plots and reports.
-        threshold (float): The probability threshold to convert probabilities into
-                           binary predictions for metrics like the confusion matrix.
+        config (MultiClassificationMetricsFormat, optional): Formatting configuration object.
     """
-    if y_true.ndim != 2 or y_prob.ndim != 2:
-        _LOGGER.error("y_true and y_prob must be 2D arrays for multi-label classification.")
+    if y_true.ndim != 2 or y_prob.ndim != 2 or y_pred.ndim != 2:
+        _LOGGER.error("y_true, y_pred, and y_prob must be 2D arrays for multi-label classification.")
         raise ValueError()
-    if y_true.shape != y_prob.shape:
-        _LOGGER.error("Shapes of y_true and y_prob must match.")
+    if y_true.shape != y_prob.shape or y_true.shape != y_pred.shape:
+        _LOGGER.error("Shapes of y_true, y_pred, and y_prob must match.")
         raise ValueError()
     if y_true.shape[1] != len(target_names):
         _LOGGER.error("Number of target names must match the number of columns in y_true.")
@@ -161,22 +185,26 @@ def multi_label_classification_metrics(
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
-    # Generate binary predictions from probabilities
-    y_pred = (y_prob >= threshold).astype(int)
+    # --- Parse Config or use defaults ---
+    if config is None:
+        # Create a default config if one wasn't provided
+        config = MultiClassificationMetricsFormat()
+    
+    # y_pred is now passed in directly, no threshold needed.
     
     # --- Save current RC params and update font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': font_size})
+    plt.rcParams.update({'font.size': config.font_size})
 
-    _LOGGER.info("--- Multi-Label Classification Evaluation ---")
+    # _LOGGER.info("--- Multi-Label Classification Evaluation ---")
 
-    # --- Calculate and Save Overall Metrics ---
+    # --- Calculate and Save Overall Metrics (using y_pred) ---
     h_loss = hamming_loss(y_true, y_pred)
     j_score_micro = jaccard_score(y_true, y_pred, average='micro')
     j_score_macro = jaccard_score(y_true, y_pred, average='macro')
 
     overall_report = (
-        f"Overall Multi-Label Metrics (Threshold = {threshold}):\n"
+        f"Overall Multi-Label Metrics:\n" # No threshold to report here
         f"--------------------------------------------------\n"
         f"Hamming Loss: {h_loss:.4f}\n"
         f"Jaccard Score (micro): {j_score_micro:.4f}\n"
@@ -191,20 +219,20 @@ def multi_label_classification_metrics(
     for i, name in enumerate(target_names):
         print(f"  -> Evaluating label: '{name}'")
         true_i = y_true[:, i]
-        pred_i = y_pred[:, i]
-        prob_i = y_prob[:, i]
+        pred_i = y_pred[:, i] # Use passed-in y_pred
+        prob_i = y_prob[:, i] # Use passed-in y_prob
         sanitized_name = sanitize_filename(name)
 
-        # --- Save Classification Report for the label ---
+        # --- Save Classification Report for the label (uses y_pred) ---
         report_text = classification_report(true_i, pred_i)
         report_path = save_dir_path / f"classification_report_{sanitized_name}.txt"
         report_path.write_text(report_text) # type: ignore
 
-        # --- Save Confusion Matrix ---
+        # --- Save Confusion Matrix (uses y_pred) ---
         fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
         disp_ = ConfusionMatrixDisplay.from_predictions(true_i, 
                                                 pred_i, 
-                                                cmap=cmap, 
+                                                cmap=config.cmap, # Use config cmap
                                                 ax=ax_cm, 
                                                 normalize='true',
                                                 labels=[0, 1],
@@ -217,7 +245,7 @@ def multi_label_classification_metrics(
         
         # Manually update font size of cell texts
         for text in ax_cm.texts:
-            text.set_fontsize(font_size)
+            text.set_fontsize(config.font_size) # Use config font_size
 
         fig_cm.tight_layout()
         
@@ -226,11 +254,11 @@ def multi_label_classification_metrics(
         plt.savefig(cm_path)
         plt.close(fig_cm)
 
-        # --- Save ROC Curve ---
+        # --- Save ROC Curve (uses y_prob) ---
         fpr, tpr, _ = roc_curve(true_i, prob_i)
         auc = roc_auc_score(true_i, prob_i)
         fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
+        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
         ax_roc.set_title(f'ROC Curve for "{name}"')
         ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
@@ -239,11 +267,11 @@ def multi_label_classification_metrics(
         plt.savefig(roc_path)
         plt.close(fig_roc)
 
-        # --- Save Precision-Recall Curve ---
+        # --- Save Precision-Recall Curve (uses y_prob) ---
         precision, recall, _ = precision_recall_curve(true_i, prob_i)
         ap_score = average_precision_score(true_i, prob_i)
         fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=ROC_PR_line)
+        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=config.ROC_PR_line) # Use config color
         ax_pr.set_title(f'Precision-Recall Curve for "{name}"')
         ax_pr.set_xlabel('Recall'); ax_pr.set_ylabel('Precision')
         ax_pr.legend(loc='lower left'); ax_pr.grid(True, linestyle='--', alpha=0.6)

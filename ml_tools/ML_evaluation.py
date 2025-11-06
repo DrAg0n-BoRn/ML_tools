@@ -25,6 +25,7 @@ from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .keys import SHAPKeys, PyTorchLogKeys
+from .ML_configuration import RegressionMetricsFormat, ClassificationMetricsFormat
 
 
 __all__ = [
@@ -41,6 +42,7 @@ DPI_value = 250
 def plot_losses(history: dict, save_dir: Union[str, Path]):
     """
     Plots training & validation loss curves from a history object.
+    Also plots the learning rate if available in the history.
 
     Args:
         history (dict): A dictionary containing 'train_loss' and 'val_loss'.
@@ -48,6 +50,7 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     """
     train_loss = history.get(PyTorchLogKeys.TRAIN_LOSS, [])
     val_loss = history.get(PyTorchLogKeys.VAL_LOSS, [])
+    lr_history = history.get(PyTorchLogKeys.LEARNING_RATE, [])
     
     if not train_loss and not val_loss:
         _LOGGER.warning("Loss history is empty or incomplete. Cannot plot.")
@@ -55,22 +58,44 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
 
     fig, ax = plt.subplots(figsize=(10, 5), dpi=DPI_value)
     
+    # --- Plot Losses (Left Y-axis) ---
+    line_handles = [] # To store line objects for the legend
+    
     # Plot training loss only if data for it exists
     if train_loss:
         epochs = range(1, len(train_loss) + 1)
-        ax.plot(epochs, train_loss, 'o-', label='Training Loss')
+        line1, = ax.plot(epochs, train_loss, 'o-', label='Training Loss', color='tab:blue')
+        line_handles.append(line1)
     
     # Plot validation loss only if data for it exists
     if val_loss:
         epochs = range(1, len(val_loss) + 1)
-        ax.plot(epochs, val_loss, 'o-', label='Validation Loss')
+        line2, = ax.plot(epochs, val_loss, 'o-', label='Validation Loss', color='tab:orange')
+        line_handles.append(line2)
     
     ax.set_title('Training and Validation Loss')
     ax.set_xlabel('Epochs')
-    ax.set_ylabel('Loss')
-    ax.legend()
-    ax.grid(True)
-    plt.tight_layout()
+    ax.set_ylabel('Loss', color='tab:blue')
+    ax.tick_params(axis='y', labelcolor='tab:blue')
+    ax.grid(True, linestyle='--')
+    
+    # --- Plot Learning Rate (Right Y-axis) ---
+    if lr_history:
+        ax2 = ax.twinx() # Create a second y-axis
+        epochs = range(1, len(lr_history) + 1)
+        line3, = ax2.plot(epochs, lr_history, 'g--', label='Learning Rate')
+        line_handles.append(line3)
+        
+        ax2.set_ylabel('Learning Rate', color='g')
+        ax2.tick_params(axis='y', labelcolor='g')
+        # Use scientific notation if the LR is very small
+        ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    
+    # Combine legends from both axes
+    ax.legend(handles=line_handles, loc='best')
+    
+    # ax.grid(True)
+    plt.tight_layout()    
     
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     save_path = save_dir_path / "loss_plot.svg"
@@ -84,34 +109,34 @@ def classification_metrics(save_dir: Union[str, Path],
                            y_true: np.ndarray, 
                            y_pred: np.ndarray, 
                            y_prob: Optional[np.ndarray] = None, 
-                           cmap: str = "Blues", 
-                           class_map: Optional[dict[str,int]]=None, 
-                           ROC_PR_line: str='darkorange', 
-                           calibration_bins: int=15, 
-                           font_size: int=16):
+                           config: Optional[ClassificationMetricsFormat] = None):
     """
     Saves classification metrics and plots.
 
     Args:
         y_true (np.ndarray): Ground truth labels.
         y_pred (np.ndarray): Predicted labels.
-        y_prob (np.ndarray, optional): Predicted probabilities for ROC curve.
-        cmap (str): Colormap for the confusion matrix.
+        y_prob (np.ndarray): Predicted probabilities for ROC curve.
+        config (ClassificationMetricsFormat): Formatting configuration object.
         save_dir (str | Path): Directory to save plots.
-        class_map (dict[str, int], None): A map of {class_name: index} used to order and label the confusion matrix.
     """
+    # --- Parse Config or use defaults ---
+    if config is None:
+        # Create a default config if one wasn't provided
+        config = ClassificationMetricsFormat()
+    
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': font_size})
+    plt.rcParams.update({'font.size': config.font_size})
     
     # print("--- Classification Report ---")
     
     # --- Parse class_map ---
     map_labels = None
     map_display_labels = None
-    if class_map:
+    if config.class_map:
         # Sort the map by its values (the indices) to ensure correct order
         try:
-            sorted_items = sorted(class_map.items(), key=lambda item: item[1])
+            sorted_items = sorted(config.class_map.items(), key=lambda item: item[1])
             map_labels = [item[1] for item in sorted_items]
             map_display_labels = [item[0] for item in sorted_items]
         except Exception as e:
@@ -136,7 +161,7 @@ def classification_metrics(save_dir: Union[str, Path],
         sns.set_theme(font_scale=1.2) # Scale seaborn font
         sns.heatmap(pd.DataFrame(report_dict).iloc[:-1, :].T, 
                     annot=True, 
-                    cmap=cmap, 
+                    cmap=config.cmap, 
                     fmt='.2f',
                     vmin=0.0,
                     vmax=1.0)
@@ -158,7 +183,7 @@ def classification_metrics(save_dir: Union[str, Path],
     fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
     disp_ = ConfusionMatrixDisplay.from_predictions(y_true, 
                                             y_pred, 
-                                            cmap=cmap, 
+                                            cmap=config.cmap, 
                                             ax=ax_cm, 
                                             normalize='true',
                                             labels=plot_labels,
@@ -171,7 +196,7 @@ def classification_metrics(save_dir: Union[str, Path],
     
     # Manually update font size of cell texts
     for text in ax_cm.texts:
-        text.set_fontsize(font_size)
+        text.set_fontsize(config.font_size)
 
     fig_cm.tight_layout()
     
@@ -196,10 +221,10 @@ def classification_metrics(save_dir: Union[str, Path],
             class_indices_to_plot = [1]
             plot_titles = [""] # No extra title
             save_suffixes = [""] # No extra suffix
-            _LOGGER.info("Generating binary classification plots (ROC, PR, Calibration).")
+            _LOGGER.debug("Generating binary classification plots (ROC, PR, Calibration).")
         
         elif num_classes > 2:
-            _LOGGER.info(f"Generating One-vs-Rest plots for {num_classes} classes.")
+            _LOGGER.debug(f"Generating One-vs-Rest plots for {num_classes} classes.")
             # Multiclass case: Plot for every class (One-vs-Rest)
             class_indices_to_plot = list(range(num_classes))
             
@@ -244,7 +269,7 @@ def classification_metrics(save_dir: Union[str, Path],
             auc = roc_auc_score(y_true_binary, y_score) 
             
             fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-            ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=ROC_PR_line)
+            ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=config.ROC_PR_line)
             ax_roc.plot([0, 1], [0, 1], 'k--')
             ax_roc.set_title(f'Receiver Operating Characteristic{plot_title}')
             ax_roc.set_xlabel('False Positive Rate')
@@ -259,7 +284,7 @@ def classification_metrics(save_dir: Union[str, Path],
             precision, recall, _ = precision_recall_curve(y_true_binary, y_score)
             ap_score = average_precision_score(y_true_binary, y_score)
             fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-            ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=ROC_PR_line)
+            ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=config.ROC_PR_line)
             ax_pr.set_title(f'Precision-Recall Curve{plot_title}')
             ax_pr.set_xlabel('Recall')
             ax_pr.set_ylabel('Precision')
@@ -278,7 +303,7 @@ def classification_metrics(save_dir: Union[str, Path],
                 cal_display_temp = CalibrationDisplay.from_predictions(
                     y_true_binary, # Use binarized labels
                     y_score, 
-                    n_bins=calibration_bins, 
+                    n_bins=config.calibration_bins, 
                     ax=ax_temp,
                     name="temp" # Add a name to suppress potential warnings
                 )
@@ -294,9 +319,9 @@ def classification_metrics(save_dir: Union[str, Path],
                 y=line_y,
                 ax=ax_cal,
                 scatter=False, 
-                label=f"Calibration Curve ({calibration_bins} bins)",
+                label=f"Calibration Curve ({config.calibration_bins} bins)",
                 line_kws={
-                    'color': ROC_PR_line, 
+                    'color': config.ROC_PR_line, 
                     'linestyle': '--', 
                     'linewidth': 2,
                     }
@@ -324,7 +349,12 @@ def classification_metrics(save_dir: Union[str, Path],
     plt.rcParams.update(original_rc_params)
 
 
-def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[str, Path]):
+def regression_metrics(
+    y_true: np.ndarray, 
+    y_pred: np.ndarray, 
+    save_dir: Union[str, Path],
+    config: Optional[RegressionMetricsFormat] = None
+):
     """
     Saves regression metrics and plots.
 
@@ -332,7 +362,19 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
         y_true (np.ndarray): Ground truth values.
         y_pred (np.ndarray): Predicted values.
         save_dir (str | Path): Directory to save plots and report.
+        config (RegressionMetricsFormat, optional): Formatting configuration object.
     """
+    
+    # --- Parse Config or use defaults ---
+    if config is None:
+        # Create a default config if one wasn't provided
+        config = RegressionMetricsFormat()
+        
+    # --- Set Matplotlib font size ---
+    original_rc_params = plt.rcParams.copy()
+    plt.rcParams.update({'font.size': config.font_size})
+    
+    # --- Calculate Metrics ---
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
@@ -354,11 +396,13 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     report_path.write_text(report_string)
     _LOGGER.info(f"📝 Regression report saved as '{report_path.name}'")
 
-    # Save residual plot
+    # --- Save residual plot ---
     residuals = y_true - y_pred
     fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
-    ax_res.scatter(y_pred, residuals, alpha=0.6)
-    ax_res.axhline(0, color='red', linestyle='--')
+    ax_res.scatter(y_pred, residuals, 
+                   alpha=config.scatter_alpha, 
+                   color=config.scatter_color)
+    ax_res.axhline(0, color=config.residual_line_color, linestyle='--')
     ax_res.set_xlabel("Predicted Values")
     ax_res.set_ylabel("Residuals")
     ax_res.set_title("Residual Plot")
@@ -369,10 +413,15 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     _LOGGER.info(f"📈 Residual plot saved as '{res_path.name}'")
     plt.close(fig_res)
 
-    # Save true vs predicted plot
+    # --- Save true vs predicted plot ---
     fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
-    ax_tvp.scatter(y_true, y_pred, alpha=0.6)
-    ax_tvp.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'k--', lw=2)
+    ax_tvp.scatter(y_true, y_pred, 
+                   alpha=config.scatter_alpha, 
+                   color=config.scatter_color)
+    ax_tvp.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 
+                linestyle='--', 
+                lw=2,
+                color=config.ideal_line_color)
     ax_tvp.set_xlabel('True Values')
     ax_tvp.set_ylabel('Predictions')
     ax_tvp.set_title('True vs. Predicted Values')
@@ -383,9 +432,11 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     _LOGGER.info(f"📉 True vs. Predicted plot saved as '{tvp_path.name}'")
     plt.close(fig_tvp)
     
-    # Save Histogram of Residuals
+    # --- Save Histogram of Residuals ---
     fig_hist, ax_hist = plt.subplots(figsize=(8, 6), dpi=DPI_value)
-    sns.histplot(residuals, kde=True, ax=ax_hist)
+    sns.histplot(residuals, kde=True, ax=ax_hist, 
+                 bins=config.hist_bins, 
+                 color=config.scatter_color)
     ax_hist.set_xlabel("Residual Value")
     ax_hist.set_ylabel("Frequency")
     ax_hist.set_title("Distribution of Residuals")
@@ -395,6 +446,9 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, save_dir: Union[s
     plt.savefig(hist_path)
     _LOGGER.info(f"📊 Residuals histogram saved as '{hist_path.name}'")
     plt.close(fig_hist)
+    
+    # --- Restore RC params ---
+    plt.rcParams.update(original_rc_params)
     
 
 def shap_summary_plot(model, 

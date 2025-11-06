@@ -1,7 +1,6 @@
 from typing import Union, Literal, Dict, Any, Optional, List
 from pathlib import Path
 import json
-import joblib
 import numpy as np
 # Inference models
 import xgboost
@@ -11,15 +10,16 @@ from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath, list_files_by_extension
 from .keys import EnsembleKeys
+from .serde import deserialize_object
 
 
 __all__ = [
-    "InferenceHandler",
+    "DragonEnsembleInferenceHandler",
     "model_report"
 ]
 
 
-class InferenceHandler:
+class DragonEnsembleInferenceHandler:
     """
     Handles loading ensemble models and performing inference for either regression or classification tasks.
     """
@@ -44,9 +44,9 @@ class InferenceHandler:
         for fname, fpath in model_files.items():
             try:
                 full_object: dict
-                full_object = _deserialize_object(filepath=fpath, 
+                full_object = deserialize_object(filepath=fpath, 
                                                  verbose=self.verbose, 
-                                                 raise_on_error=True) # type: ignore
+                                                 expected_type=dict)
                 
                 model: Any = full_object[EnsembleKeys.MODEL]
                 target_name: str = full_object[EnsembleKeys.TARGET]
@@ -170,7 +170,7 @@ def model_report(
 
     # --- 2. Deserialize and Extract Info ---
     try:
-        full_object: dict = _deserialize_object(model_p) # type: ignore
+        full_object: dict = deserialize_object(model_p, expected_type=dict, verbose=verbose) # type: ignore
         model = full_object[EnsembleKeys.MODEL]
         target = full_object[EnsembleKeys.TARGET]
         features = full_object[EnsembleKeys.FEATURES]
@@ -216,32 +216,6 @@ def model_report(
 
     # --- 5. Return the extracted data ---
     return report_data
-
-
-# Local implementation to avoid calling utilities dependencies
-def _deserialize_object(filepath: Union[str,Path], verbose: bool=True, raise_on_error: bool=True) -> Optional[Any]:
-    """
-    Loads a serialized object from a .joblib file.
-
-    Parameters:
-        filepath (str | Path): Full path to the serialized .joblib file.
-
-    Returns:
-        (Any | None): The deserialized Python object, or None if loading fails.
-    """
-    true_filepath = make_fullpath(filepath)
-    
-    try:
-        obj = joblib.load(true_filepath)
-    except (IOError, OSError, EOFError, TypeError, ValueError) as e:
-        _LOGGER.error(f"Failed to deserialize object from '{true_filepath}'.")
-        if raise_on_error:
-            raise e
-        return None
-    else:
-        if verbose:
-            _LOGGER.info(f"Loaded object of type '{type(obj)}'")
-        return obj
 
 
 def info():

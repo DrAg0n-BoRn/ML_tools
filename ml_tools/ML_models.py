@@ -12,11 +12,11 @@ from ._schema import FeatureSchema
 
 
 __all__ = [
-    "MultilayerPerceptron",
-    "AttentionMLP",
-    "MultiHeadAttentionMLP",
-    "TabularTransformer",
-    "SequencePredictorLSTM",
+    "DragonMLP",
+    "DragonAttentionMLP",
+    "DragonMultiHeadAttentionNet",
+    "DragonTabularTransformer",
+    "DragonSequenceLSTM",
 ]
 
 
@@ -174,7 +174,7 @@ class _BaseAttention(_BaseMLP):
         return logits, attention_weights
 
 
-class MultilayerPerceptron(_BaseMLP):
+class DragonMLP(_BaseMLP):
     """
     Creates a versatile Multilayer Perceptron (MLP) for regression or classification tasks.
     """
@@ -208,10 +208,10 @@ class MultilayerPerceptron(_BaseMLP):
         # Extracts the number of neurons from each nn.Linear layer
         layer_sizes = [str(layer.in_features) for layer in self.mlp if isinstance(layer, nn.Linear)]
         
-        return self._repr_helper(name="MultilayerPerceptron", mlp_layers=layer_sizes)
+        return self._repr_helper(name="DragonMLP", mlp_layers=layer_sizes)
 
 
-class AttentionMLP(_BaseAttention):
+class DragonAttentionMLP(_BaseAttention):
     """
     A Multilayer Perceptron (MLP) that incorporates an Attention layer to dynamically weigh input features.
     
@@ -244,10 +244,10 @@ class AttentionMLP(_BaseAttention):
             if isinstance(layer, nn.Linear):
                 arch.append(str(layer.in_features))
         
-        return self._repr_helper(name="AttentionMLP", mlp_layers=arch)
+        return self._repr_helper(name="DragonAttentionMLP", mlp_layers=arch)
 
 
-class MultiHeadAttentionMLP(_BaseAttention):
+class DragonMultiHeadAttentionNet(_BaseAttention):
     """
     An MLP that incorporates a standard `nn.MultiheadAttention` layer to process
     the input features.
@@ -292,10 +292,10 @@ class MultiHeadAttentionMLP(_BaseAttention):
         )
         arch_str = f"{self.in_features} -> [MultiHead(h={self.num_heads})] -> {mlp_part}"
         
-        return f"MultiHeadAttentionMLP(arch: {arch_str})"
+        return f"DragonMultiHeadAttentionNet(arch: {arch_str})"
 
 
-class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
+class DragonTabularTransformer(nn.Module, _ArchitectureHandlerMixin):
     """
     A Transformer-based model for tabular data tasks.
     
@@ -502,7 +502,7 @@ class TabularTransformer(nn.Module, _ArchitectureHandlerMixin):
         
         arch_str = " -> ".join(parts)
         
-        return f"TabularTransformer(arch: {arch_str})"
+        return f"DragonTabularTransformer(arch: {arch_str})"
 
 
 class _FeatureTokenizer(nn.Module):
@@ -662,7 +662,7 @@ class _MultiHeadAttentionLayer(nn.Module):
         return out, attn_weights.squeeze()
 
 
-class SequencePredictorLSTM(nn.Module, _ArchitectureHandlerMixin):
+class DragonSequenceLSTM(nn.Module, _ArchitectureHandlerMixin):
     """
     A simple LSTM-based network for sequence-to-sequence prediction tasks.
 
@@ -742,7 +742,7 @@ class SequencePredictorLSTM(nn.Module, _ArchitectureHandlerMixin):
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
         return (
-            f"SequencePredictorLSTM(features={self.lstm.input_size}, "
+            f"DragonSequenceLSTM(features={self.lstm.input_size}, "
             f"hidden_size={self.lstm.hidden_size}, "
             f"recurrent_layers={self.lstm.num_layers})"
         )

@@ -8,11 +8,12 @@ from .path_manager import make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .constants import CHEMICAL_ELEMENT_SYMBOLS
+from .keys import MagicWords
 
 
 __all__ = [
-    "TransformationRecipe",
-    "DataProcessor",
+    "DragonTransformRecipe",
+    "DragonProcessor",
     "BinaryTransformer",
     "MultiBinaryDummifier",
     "AutoDummifier",
@@ -32,16 +33,13 @@ __all__ = [
 
 ############ TRANSFORM MAIN ####################
 
-# Magic word for rename-only transformation
-_RENAME = "rename"
-
-class TransformationRecipe:
+class DragonTransformRecipe:
     """
     A builder class for creating a data transformation recipe.
 
     This class provides a structured way to define a series of transformation
     steps, with validation performed at the time of addition. It is designed
-    to be passed to a `DataProcessor`.
+    to be passed to a `DragonProcessor`.
     
     Use the method `add()` to add recipes.
     """
@@ -53,7 +51,7 @@ class TransformationRecipe:
         input_col_name: str,
         transform: Union[str, Callable],
         output_col_names: Optional[Union[str, List[str]]] = None
-    ) -> "TransformationRecipe":
+    ) -> "DragonTransformRecipe":
         """
         Adds a new transformation step to the recipe.
 
@@ -77,12 +75,12 @@ class TransformationRecipe:
             _LOGGER.error("'input_col' must be a non-empty string.")
             raise TypeError()
             
-        if transform == _RENAME:
+        if transform == MagicWords.RENAME:
             if not isinstance(output_col_names, str):
                 _LOGGER.error("For a RENAME operation, 'output_col' must be a string.")
                 raise TypeError()
         elif not isinstance(transform, Callable):
-            _LOGGER.error(f"'transform' must be a callable function or the string '{_RENAME}'.")
+            _LOGGER.error(f"'transform' must be a callable function or the string '{MagicWords.RENAME}'.")
             raise TypeError()
         
         # --- Add Step ---
@@ -103,22 +101,22 @@ class TransformationRecipe:
         return len(self._steps)
 
 
-class DataProcessor:
+class DragonProcessor:
     """
-    Transforms a Polars DataFrame based on a provided `TransformationRecipe` object.
+    Transforms a Polars DataFrame based on a provided `DragonTransformRecipe` object.
     
     Use the methods `transform()` or `load_transform_save()`.
     """
-    def __init__(self, recipe: TransformationRecipe):
+    def __init__(self, recipe: DragonTransformRecipe):
         """
-        Initializes the DataProcessor with a transformation recipe.
+        Initializes the DragonProcessor with a transformation recipe.
 
         Args:
-            recipe: An instance of the `TransformationRecipe` class that has
+            recipe: An instance of the `DragonTransformRecipe` class that has
                     been populated with transformation steps.
         """
-        if not isinstance(recipe, TransformationRecipe):
-            _LOGGER.error("The recipe must be an instance of TransformationRecipe.")
+        if not isinstance(recipe, DragonTransformRecipe):
+            _LOGGER.error("The recipe must be an instance of DragonTransformRecipe.")
             raise TypeError()
         if len(recipe) == 0:
             _LOGGER.error("The recipe cannot be empty.")
@@ -142,7 +140,7 @@ class DataProcessor:
 
             input_series = df.get_column(input_col_name)
 
-            if transform_action == _RENAME:
+            if transform_action == MagicWords.RENAME:
                 processed_columns.append(input_series.alias(output_col_spec))
                 continue
 
@@ -237,7 +235,7 @@ class DataProcessor:
         Provides a detailed, human-readable string representation of the
         entire processing pipeline.
         """
-        header = "DataProcessor Pipeline"
+        header = "DragonProcessor Pipeline"
         divider = "-" * len(header)
         num_steps = len(self._recipe)
         
@@ -255,7 +253,7 @@ class DataProcessor:
             transform_action = step["transform"]
             
             # Get a clean name for the transformation action
-            if transform_action == _RENAME: # "rename"
+            if transform_action == MagicWords.RENAME: # "rename"
                 transform_name = "Rename"
             else:
                 # This works for both functions and class instances
@@ -394,7 +392,7 @@ class MultiBinaryDummifier:
 
     For each keyword provided, this transformer generates a corresponding column
     with a value of 1 if the keyword is present in the input string, and 0 otherwise.
-    It is designed to be used within the DataProcessor pipeline.
+    It is designed to be used within the DragonProcessor pipeline.
 
     Args:
         keywords (List[str]):
@@ -443,7 +441,7 @@ class MultiBinaryDummifier:
                 .when(str_column.str.contains(pattern))
                 .then(pl.lit(1, dtype=pl.UInt8))
                 .otherwise(pl.lit(0, dtype=pl.UInt8))
-                .alias(f"{column_base_name}_{keyword}") # name for DataProcessor
+                .alias(f"{column_base_name}_{keyword}") # name for DragonProcessor
             )
             output_expressions.append(expr)
 
@@ -533,7 +531,7 @@ class NumberExtractor:
     A configurable transformer that extracts a single number from a Polars string series using a regular expression.
 
     An instance can be used as a 'transform' callable within the
-    `DataProcessor` pipeline.
+    `DragonProcessor` pipeline.
 
     Args:
         regex_pattern (str):
@@ -872,7 +870,7 @@ class MultiTemperatureExtractor:
                 pl.when(column.is_not_null())
                 .then(final_expr)
                 .otherwise(None)
-                .alias(f"{column_base_name}_{i}") # Temporary name for DataProcessor
+                .alias(f"{column_base_name}_{i}") # Temporary name for DragonProcessor
             )
             
             output_expressions.append(final_expr)
@@ -1300,7 +1298,7 @@ class MolecularFormulaTransformer:
     each chemical element has its own column. The value in each column is the
     stoichiometric quantity of that element.
 
-    It is designed to be used within the DataProcessor pipeline.
+    It is designed to be used within the DragonProcessor pipeline.
     """
 
     def __init__(self):

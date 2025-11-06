@@ -1,3 +1,10 @@
+class MagicWords:
+    """General purpose keys"""
+    LATEST = "latest"
+    CURRENT = "current"
+    RENAME = "rename"
+
+
 class PyTorchLogKeys:
     """
     Used internally for ML scripts module.
@@ -7,6 +14,7 @@ class PyTorchLogKeys:
     # --- Epoch Level ---
     TRAIN_LOSS = 'train_loss'
     VAL_LOSS = 'val_loss'
+    LEARNING_RATE = 'lr'
 
     # --- Batch Level ---
     BATCH_LOSS = 'loss'
@@ -79,6 +87,10 @@ class PyTorchCheckpointKeys:
     SCHEDULER_STATE = "scheduler_state_dict"
     EPOCH = "epoch"
     BEST_SCORE = "best_score"
+    HISTORY = "history"
+    CHECKPOINT_NAME = "PyModelCheckpoint"
+    # Finalized config
+    CLASSIFICATION_THRESHOLD = "classification_threshold"
 
 
 class UtilityKeys:
@@ -117,6 +129,24 @@ class ObjectDetectionKeys:
     """Used by the object detection dataset"""
     BOXES = "boxes"
     LABELS = "labels"
+
+
+class MLTaskKeys:
+    """Used by the Trainer and InferenceHandlers"""
+    REGRESSION = "regression"
+    MULTITARGET_REGRESSION = "multitarget regression"
+    
+    BINARY_CLASSIFICATION = "binary classification"
+    MULTICLASS_CLASSIFICATION = "multiclass classification"
+    MULTILABEL_BINARY_CLASSIFICATION = "multilabel binary classification"
+    
+    BINARY_IMAGE_CLASSIFICATION = "binary image classification"
+    MULTICLASS_IMAGE_CLASSIFICATION = "multiclass image classification"
+    
+    BINARY_SEGMENTATION = "binary segmentation"
+    MULTICLASS_SEGMENTATION = "multiclass segmentation"
+    
+    OBJECT_DETECTION = "object detection"
 
 
 class _OneHotOtherPlaceholder:

@@ -9,11 +9,11 @@ from .path_manager import make_fullpath, sanitize_filename
 
 
 __all__ = [
-    "DatabaseManager",
+    "DragonSQL",
 ]
 
 
-class DatabaseManager:
+class DragonSQL:
     """
     A user-friendly context manager for handling SQLite database operations.
 
@@ -35,7 +35,7 @@ class DatabaseManager:
     ...     "feature_a": "REAL",
     ...     "score": "REAL"
     ... }
-    >>> with DatabaseManager("my_results.db") as db:
+    >>> with DragonSQL("my_results.db") as db:
     ...     db.create_table("experiments", schema)
     ...     data = {"run_name": "first_run", "feature_a": 0.123, "score": 95.5}
     ...     db.insert_row("experiments", data)
@@ -43,7 +43,7 @@ class DatabaseManager:
     ...     print(df)
     """
     def __init__(self, db_path: Union[str, Path]):
-        """Initializes the DatabaseManager with the path to the database file."""
+        """Initializes the DragonSQL with the path to the database file."""
         if isinstance(db_path, str):
             if not db_path.endswith(".db"):
                 db_path = db_path + ".db"

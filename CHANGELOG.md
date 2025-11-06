@@ -4,6 +4,75 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+### [15.0.0] 2025-11-06
+
+### Added
+
+- ML_configuration:
+    - `RegressionMetricsFormat`, Optional configuration for single-target regression and multi-target regression tasks.
+    - `SegmentationMetricsFormat`, Optional configuration for segmentation tasks.
+
+### Changed
+
+- ML_vision_evaluation: `segmentation_metrics()`, accepts its own configuration class for formatting.
+- ML_scaler: `PytorchScaler` renamed to `DragonScaler`.
+- ML_optimization: `MLOptimizer` renamed to `DragonOptimizer`.
+- path_manager: `PathManager` renamed to `DragonPathManager`.
+- MICE_imputation: `MiceImputer` renamed to `DragonMICE`.
+- SQL: `DatabaseManager` renamed to `DragonSQL`.
+- ensemble_inference: `InferenceHandler` renamed to `DragonEnsembleInferenceHandler`.
+- ETL_cleaning: renamed classes:
+    - `DragonColumnCleaner`
+    - `DragonDataFrameCleaner`
+- ETL_engineering: renamed classes:
+    - `DragonTransformRecipe`
+    - `DragonProcessor`
+- GUI_tools: renamed classes:
+    - `DragonGUIConfig` 
+    - `DragonGUIFactory`
+    - `DragonFeatureMaster`
+    - `DragonGUIHandler` 
+- ML_vision_inference:
+    - `PytorchVisionInferenceHandler` renamed to `DragonVisionInferenceHandler`,
+    - `DragonVisionInferenceHandler`, added `predict_from_pil` method. Revamped whole structure for compatibility of standardized tasks.
+- ML_inference: 
+    - `PyTorchInferenceHandler` renamed to `DragonInferenceHandler`.
+    - `DragonInferenceHandler`, functionality updated to handle single-target and multi-target tasks. Added `set_classification_threshold()` for binary-related tasks.
+- ML_callbacks: callback classes renamed to:
+    - `DragonEarlyStopping` 
+    - `DragonModelCheckpoint`, functionality updated to match updated ML_trainer module.
+    - `DragonLRScheduler`, saves learning rate history logs for plotting.
+- ML_trainer:
+    - Full revamp to enhance compatibility with callbacks and evaluation functions. 
+    - Added `finalize_model_training()` method to save the final weights of the trained model ready for inference.
+    - `MLTrainer` renamed to `DragonTrainer`.
+    - `ObjectDetectionTrainer` renamed to `DragonDetectionTrainer`.
+- ML_evaluation:
+    - `plot_losses()`, added support to plot learning rate history. 
+    - `classification_metrics()`, accepts its own configuration class for formatting.
+    - `regression_metrics()`, accepts its own configuration class for formatting.
+- ML_evaluation_multi:
+    - `multi_target_regression_metrics()`, accepts its own configuration class for formatting.
+    - `multi_label_classification_metrics()`, accepts its own configuration class for formatting.
+- ML_datasetmaster: classes renamed:
+    - `DragonDataset`, added compatibility with new tasks.
+    - `DragonDatasetMulti`, added compatibility with new tasks.
+    - `DragonDatasetSequence`
+- ML_vision_datasetmaster: classes renamed:
+    - `DragonDatasetVision`
+    - `DragonDatasetSegmentation`
+    - `DragonDatasetObjectDetection`
+- ML_models: classes renamed:
+    - `DragonMLP`
+    - `DragonAttentionMLP`
+    - `DragonMultiHeadAttentionNet`
+    - `DragonTabularTransformer`
+    - `DragonSequenceLSTM`
+
+### Deleted
+
+- ML_inference: `PyTorchInferenceHandlerMulti`, functionality merged into the `DragonInferenceHandler` class.
+
 ## [14.8.1] 2025-11-04
 
 ### Fixed

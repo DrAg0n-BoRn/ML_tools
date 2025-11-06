@@ -9,11 +9,11 @@ from .path_manager import make_fullpath
 
 
 __all__ = [
-    "PytorchScaler"
+    "DragonScaler"
 ]
 
 
-class PytorchScaler:
+class DragonScaler:
     """
     Standardizes continuous features in a PyTorch dataset by subtracting the
     mean and dividing by the standard deviation.
@@ -38,7 +38,7 @@ class PytorchScaler:
         self.continuous_feature_indices = continuous_feature_indices
 
     @classmethod
-    def fit(cls, dataset: Dataset, continuous_feature_indices: List[int], batch_size: int = 64) -> 'PytorchScaler':
+    def fit(cls, dataset: Dataset, continuous_feature_indices: List[int], batch_size: int = 64) -> 'DragonScaler':
         """
         Fits the scaler by computing the mean and std dev from a dataset using a
         fast, single-pass, vectorized algorithm.
@@ -50,7 +50,7 @@ class PytorchScaler:
             batch_size (int): The batch size for iterating through the dataset.
 
         Returns:
-            PytorchScaler: A new, fitted instance of the scaler.
+            DragonScaler: A new, fitted instance of the scaler.
         """
         if not continuous_feature_indices:
             _LOGGER.error("No continuous feature indices provided. Scaler will not be fitted.")
@@ -167,10 +167,10 @@ class PytorchScaler:
         }
         torch.save(state, path_obj)
         if verbose:
-            _LOGGER.info(f"PytorchScaler state saved as '{path_obj.name}'.")
+            _LOGGER.info(f"DragonScaler state saved as '{path_obj.name}'.")
 
     @staticmethod
-    def load(filepath: Union[str, Path], verbose: bool=True) -> 'PytorchScaler':
+    def load(filepath: Union[str, Path], verbose: bool=True) -> 'DragonScaler':
         """
         Loads a scaler's state from a .pth file.
 
@@ -178,13 +178,13 @@ class PytorchScaler:
             filepath (str | Path): The path to the saved scaler file.
 
         Returns:
-            PytorchScaler: An instance of the scaler with the loaded state.
+            DragonScaler: An instance of the scaler with the loaded state.
         """
         path_obj = make_fullpath(filepath, enforce="file")
         state = torch.load(path_obj)
         if verbose:
-            _LOGGER.info(f"PytorchScaler state loaded from '{path_obj.name}'.")
-        return PytorchScaler(
+            _LOGGER.info(f"DragonScaler state loaded from '{path_obj.name}'.")
+        return DragonScaler(
             mean=state['mean'],
             std=state['std'],
             continuous_feature_indices=state['continuous_feature_indices']
@@ -194,8 +194,8 @@ class PytorchScaler:
         """Returns the developer-friendly string representation of the scaler."""
         if self.continuous_feature_indices:
             num_features = len(self.continuous_feature_indices)
-            return f"PytorchScaler(fitted for {num_features} features)"
-        return "PytorchScaler(not fitted)"
+            return f"DragonScaler(fitted for {num_features} features)"
+        return "DragonScaler(not fitted)"
 
 
 def info():

@@ -5,16 +5,15 @@ from pathlib import Path
 from typing import Union, Literal, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
-from .ML_scaler import PytorchScaler
+from .ML_scaler import DragonScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys
+from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
 
 
 __all__ = [
-    "PyTorchInferenceHandler",
-    "PyTorchInferenceHandlerMulti",
+    "DragonInferenceHandler",
     "multi_inference_regression",
     "multi_inference_classification"
 ]
@@ -31,7 +30,7 @@ class _BaseInferenceHandler(ABC):
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  device: str = 'cpu',
-                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
+                 scaler: Optional[Union[DragonScaler, str, Path]] = None):
         """
         Initializes the handler.
 
@@ -39,15 +38,17 @@ class _BaseInferenceHandler(ABC):
             model (nn.Module): An instantiated PyTorch model.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            scaler (PytorchScaler | str | Path | None): An optional scaler or path to a saved scaler state.
+            scaler (DragonScaler | str | Path | None): An optional scaler or path to a saved scaler state.
         """
         self.model = model
         self.device = self._validate_device(device)
+        self._classification_threshold = 0.5
+        self._loaded_threshold: bool = False
 
         # Load the scaler if a path is provided
         if scaler is not None:
             if isinstance(scaler, (str, Path)):
-                self.scaler = PytorchScaler.load(scaler)
+                self.scaler = DragonScaler.load(scaler)
             else:
                 self.scaler = scaler
         else:
@@ -59,12 +60,24 @@ class _BaseInferenceHandler(ABC):
             # Load whatever is in the file
             loaded_data = torch.load(model_p, map_location=self.device)
 
-            # Check if it's the new checkpoint dictionary or an old weights-only file
+            # Check if it's dictionary or a old weights-only file
             if isinstance(loaded_data, dict) and PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
                 # It's a new training checkpoint, extract the weights
                 self.model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
+                
+                # attempt to get a custom classification threshold
+                if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
+                    try:
+                        self._classification_threshold = float(loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD])
+                    except Exception as e_int:
+                        _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
+                        self._classification_threshold = 0.5
+                    else:
+                        _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
+                        self._loaded_threshold = True
+                        
             else:
-                # It's an old-style file (or just a state_dict), load it directly
+                # It's a state_dict, load it directly
                 self.model.load_state_dict(loaded_data)
             
             _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
@@ -112,40 +125,44 @@ class _BaseInferenceHandler(ABC):
         pass
 
 
-class PyTorchInferenceHandler(_BaseInferenceHandler):
+class DragonInferenceHandler(_BaseInferenceHandler):
     """
-    Handles loading a PyTorch model's state dictionary and performing inference
-    for single-target regression or classification tasks.
+    Handles loading a PyTorch model's state dictionary and performing inference.
     """
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["classification", "regression"],
+                 task: Literal["regression", "binary classification", "multiclass classification", "multitarget regression", "multilabel binary classification"],
                  device: str = 'cpu',
-                 target_id: Optional[str] = None,
-                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
+                 target_ids: Optional[list[str]] = None,
+                 scaler: Optional[Union[DragonScaler, str, Path]] = None):
         """
         Initializes the handler for single-target tasks.
 
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
-            task (str): The type of task, 'regression' or 'classification'.
+            task (str): The type of task.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             target_id (str | None): An optional identifier for the target.
-            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
+            scaler (DragonScaler | str | Path | None): A DragonScaler instance or the file path to a saved DragonScaler state.
         """
         # Call the parent constructor to handle model loading, device, and scaler
         super().__init__(model, state_dict, device, scaler)
 
-        if task not in ["classification", "regression"]:
-            raise ValueError("`task` must be 'classification' or 'regression'.")
+        if task not in [MLTaskKeys.REGRESSION,
+                        MLTaskKeys.BINARY_CLASSIFICATION, 
+                        MLTaskKeys.MULTICLASS_CLASSIFICATION,
+                        MLTaskKeys.MULTITARGET_REGRESSION,
+                        MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+            _LOGGER.error(f"'task' not recognized: '{task}'.")
+            raise ValueError()
         self.task = task
-        self.target_id = target_id
+        self.target_ids = target_ids
 
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Core batch prediction method for single-target models.
+        Core batch prediction method.
 
         Args:
             features (np.ndarray | torch.Tensor): A 2D array/tensor of input features.
@@ -162,16 +179,48 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
         with torch.no_grad():
             output = self.model(input_tensor)
 
-            if self.task == "classification":
+            if self.task == MLTaskKeys.MULTICLASS_CLASSIFICATION:
                 probs = torch.softmax(output, dim=1)
                 labels = torch.argmax(probs, dim=1)
                 return {
                     PyTorchInferenceKeys.LABELS: labels,
                     PyTorchInferenceKeys.PROBABILITIES: probs
                 }
-            else:  # regression
+                
+            elif self.task == MLTaskKeys.BINARY_CLASSIFICATION:
+                # Assumes model output is [N, 1] (a single logit)
+                # Squeeze output from [N, 1] to [N] if necessary
+                if output.ndim == 2 and output.shape[1] == 1:
+                    output = output.squeeze(1)
+                    
+                probs = torch.sigmoid(output) # Probability of positive class
+                labels = (probs >= self._classification_threshold).int()
+                return {
+                    PyTorchInferenceKeys.LABELS: labels,
+                    PyTorchInferenceKeys.PROBABILITIES: probs
+                }
+                
+            elif self.task == MLTaskKeys.REGRESSION:
                 # For single-target regression, ensure output is flattened
                 return {PyTorchInferenceKeys.PREDICTIONS: output.flatten()}
+            
+            elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
+                probs = torch.sigmoid(output)
+                # Get binary predictions based on the threshold
+                labels = (probs >= self._classification_threshold).int()
+                return {
+                    PyTorchInferenceKeys.LABELS: labels,
+                    PyTorchInferenceKeys.PROBABILITIES: probs
+                }
+            
+            elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
+                # The output is already in the correct [batch_size, n_targets] shape
+                return {PyTorchInferenceKeys.PREDICTIONS: output}
+            
+            else:
+                # should never happen
+                _LOGGER.error(f"Unrecognized task '{self.task}'.")
+                raise ValueError()
 
     def predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -195,7 +244,7 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
         # Extract the first (and only) result from the batch output
         single_results = {key: value[0] for key, value in batch_results.items()}
         return single_results
-
+    
     # --- NumPy Convenience Wrappers (on CPU) ---
 
     def predict_batch_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, np.ndarray]:
@@ -212,150 +261,22 @@ class PyTorchInferenceHandler(_BaseInferenceHandler):
         """
         tensor_results = self.predict(features)
 
-        if self.task == "regression":
+        if self.task == MLTaskKeys.REGRESSION:
             # .item() implicitly moves to CPU and returns a Python scalar
             return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
-        else: # classification
+        elif self.task in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             return {
                 PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].item(),
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
-    
-    def quick_predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
-        """
-        Convenience wrapper to get the mapping {target_name: prediction} or {target_name: label}
-        
-        `target_id` must be implemented.
-        """
-        if self.target_id is None:
-            _LOGGER.error(f"'target_id' has not been implemented.")
-            raise AttributeError()
-        
-        if self.task == "regression":
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS]
+        elif self.task in [MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION, MLTaskKeys.MULTITARGET_REGRESSION]:
+            # For multi-target models, the output is always an array.
+            numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
+            return numpy_results
         else:
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS]
-        
-        return {self.target_id: result}
-
-
-class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
-    """
-    Handles loading a PyTorch model's state dictionary and performing inference
-    for multi-target regression or multi-label classification tasks.
-    """
-    def __init__(self,
-                 model: nn.Module,
-                 state_dict: Union[str, Path],
-                 task: Literal["multi_target_regression", "multi_label_classification"],
-                 device: str = 'cpu',
-                 target_ids: Optional[list[str]] = None,
-                 scaler: Optional[Union[PytorchScaler, str, Path]] = None):
-        """
-        Initializes the handler for multi-target tasks.
-
-        Args:
-            model (nn.Module): An instantiated PyTorch model.
-            state_dict (str | Path): Path to the saved .pth model state_dict file.
-            task (str): The type of task, 'multi_target_regression' or 'multi_label_classification'.
-            device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            target_ids (list[str] | None): An optional identifier for the targets.
-            scaler (PytorchScaler | str | Path | None): A PytorchScaler instance or the file path to a saved PytorchScaler state.
-        """
-        super().__init__(model, state_dict, device, scaler)
-
-        if task not in ["multi_target_regression", "multi_label_classification"]:
-            _LOGGER.error("`task` must be 'multi_target_regression' or 'multi_label_classification'.")
+            # should never happen
+            _LOGGER.error(f"Unrecognized task '{self.task}'.")
             raise ValueError()
-        self.task = task
-        self.target_ids = target_ids
-
-    def predict_batch(self,
-                      features: Union[np.ndarray, torch.Tensor],
-                      classification_threshold: float = 0.5
-                      ) -> Dict[str, torch.Tensor]:
-        """
-        Core batch prediction method for multi-target models.
-
-        Args:
-            features (np.ndarray | torch.Tensor): A 2D array/tensor of input features.
-            classification_threshold (float): The threshold to convert probabilities
-                into binary predictions for multi-label classification.
-
-        Returns:
-            A dictionary containing the raw output tensors from the model.
-        """
-        if features.ndim != 2:
-            _LOGGER.error("Input for batch prediction must be a 2D array or tensor.")
-            raise ValueError()
-
-        input_tensor = self._preprocess_input(features)
-
-        with torch.no_grad():
-            output = self.model(input_tensor)
-
-            if self.task == "multi_label_classification":
-                probs = torch.sigmoid(output)
-                # Get binary predictions based on the threshold
-                labels = (probs >= classification_threshold).int()
-                return {
-                    PyTorchInferenceKeys.LABELS: labels,
-                    PyTorchInferenceKeys.PROBABILITIES: probs
-                }
-            else:  # multi_target_regression
-                # The output is already in the correct [batch_size, n_targets] shape
-                return {PyTorchInferenceKeys.PREDICTIONS: output}
-
-    def predict(self,
-                features: Union[np.ndarray, torch.Tensor],
-                classification_threshold: float = 0.5
-                ) -> Dict[str, torch.Tensor]:
-        """
-        Core single-sample prediction method for multi-target models.
-
-        Args:
-            features (np.ndarray | torch.Tensor): A 1D array/tensor of input features.
-            classification_threshold (float): The threshold for multi-label tasks.
-
-        Returns:
-            A dictionary containing the raw output tensors for a single sample.
-        """
-        if features.ndim == 1:
-            features = features.reshape(1, -1)
-
-        if features.shape[0] != 1:
-            _LOGGER.error("The 'predict()' method is for a single sample. 'Use predict_batch()' for multiple samples.")
-            raise ValueError()
-
-        batch_results = self.predict_batch(features, classification_threshold)
-
-        single_results = {key: value[0] for key, value in batch_results.items()}
-        return single_results
-
-    # --- NumPy Convenience Wrappers (on CPU) ---
-
-    def predict_batch_numpy(self,
-                            features: Union[np.ndarray, torch.Tensor],
-                            classification_threshold: float = 0.5
-                            ) -> Dict[str, np.ndarray]:
-        """
-        Convenience wrapper for predict_batch that returns NumPy arrays.
-        """
-        tensor_results = self.predict_batch(features, classification_threshold)
-        numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
-        return numpy_results
-
-    def predict_numpy(self,
-                      features: Union[np.ndarray, torch.Tensor],
-                      classification_threshold: float = 0.5
-                      ) -> Dict[str, np.ndarray]:
-        """
-        Convenience wrapper for predict that returns NumPy arrays for a single sample.
-        Note: For multi-target models, the output is always an array.
-        """
-        tensor_results = self.predict(features, classification_threshold)
-        numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
-        return numpy_results
     
     def quick_predict(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
         """
@@ -364,24 +285,64 @@ class PyTorchInferenceHandlerMulti(_BaseInferenceHandler):
         `target_ids` must be implemented.
         """
         if self.target_ids is None:
-            _LOGGER.error(f"'target_id' has not been implemented.")
+            _LOGGER.error(f"'target_ids' has not been implemented.")
             raise AttributeError()
         
-        if self.task == "multi_target_regression":
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
-        else:
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS].flatten().tolist()
+        if self.task == MLTaskKeys.REGRESSION:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS]
+            return {self.target_ids[0]: result}
         
-        return {key: value for key, value in zip(self.target_ids, result)}
+        elif self.task in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS]
+            return {self.target_ids[0]: result}
+        
+        elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
+            return {key: value for key, value in zip(self.target_ids, result)}
+        
+        elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
+            result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS].flatten().tolist()
+            return {key: value for key, value in zip(self.target_ids, result)}
+        
+        else:
+            # should never happen
+            _LOGGER.error(f"Unrecognized task '{self.task}'.")
+            raise ValueError()
+        
+    def set_classification_threshold(self, threshold: float, force_overwrite: bool=False):
+        """
+        Sets the classification threshold for the current inference instance.
+        
+        If a threshold was previously loaded from a model configuration, this
+        method will log a warning and refuse to update the value. This
+        prevents accidentally overriding a setting from a loaded checkpoint.
+        
+        To bypass this safety check set `force_overwrite` to `True`.
+
+        Args:
+            threshold (float): The new classification threshold value to set.
+            force_overwrite (bool): If True, allows overwriting a threshold that was loaded from a configuration file. 
+        """
+        if self._loaded_threshold:
+            warning_message = f"The current '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}={self._classification_threshold}' was loaded and set from a model configuration file."
+            if not force_overwrite:
+                warning_message += " Use 'force_overwrite' if you are sure you want to modify it. This will not affect the value from the file."
+                _LOGGER.warning(warning_message)
+                return
+            else:
+                warning_message += f" Overwriting it to {threshold}."
+                _LOGGER.warning(warning_message)
+ 
+        self._classification_threshold = threshold
 
 
-def multi_inference_regression(handlers: list[PyTorchInferenceHandler], 
+def multi_inference_regression(handlers: list[DragonInferenceHandler], 
                                feature_vector: Union[np.ndarray, torch.Tensor], 
                                output: Literal["numpy","torch"]="numpy") -> dict[str,Any]:
     """
     Performs regression inference using multiple models on a single feature vector.
 
-    This function iterates through a list of PyTorchInferenceHandler objects,
+    This function iterates through a list of DragonInferenceHandler objects,
     each configured for a different regression target. It runs a prediction for
     each handler using the same input feature vector and returns the results
     in a dictionary.
@@ -391,7 +352,7 @@ def multi_inference_regression(handlers: list[PyTorchInferenceHandler],
     - 2D input: Returns a dictionary mapping target ID to a list of values.
 
     Args:
-        handlers (list[PyTorchInferenceHandler]): A list of initialized inference
+        handlers (list[DragonInferenceHandler]): A list of initialized inference
             handlers. Each handler must have a unique `target_id` and be configured with `task="regression"`.
         feature_vector (Union[np.ndarray, torch.Tensor]): An input sample (1D) or a batch of samples (2D) to be fed into each regression model.
         output (Literal["numpy", "torch"], optional): The desired format for the output predictions.
@@ -421,11 +382,11 @@ def multi_inference_regression(handlers: list[PyTorchInferenceHandler],
     results: dict[str,Any] = dict()
     for handler in handlers:
         # validation
-        if handler.target_id is None:
-            _LOGGER.error("All inference handlers must have a 'target_id' attribute.")
+        if handler.target_ids is None:
+            _LOGGER.error("All inference handlers must have a 'target_ids' attribute.")
             raise AttributeError()
-        if handler.task != "regression":
-            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_id}' is for '{handler.task}', but only 'regression' tasks are supported.")
+        if handler.task != MLTaskKeys.REGRESSION:
+            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_ids[0]}' is for '{handler.task}', only single target regression tasks are supported.")
             raise ValueError()
             
         # inference
@@ -434,33 +395,33 @@ def multi_inference_regression(handlers: list[PyTorchInferenceHandler],
             numpy_result = handler.predict_batch_numpy(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
             if is_single_sample:
                 # For a single sample, convert the 1-element array to a Python scalar
-                results[handler.target_id] = numpy_result.item()
+                results[handler.target_ids[0]] = numpy_result.item()
             else:
                 # For a batch, return the full NumPy array of predictions
-                results[handler.target_id] = numpy_result
+                results[handler.target_ids[0]] = numpy_result
 
         else:  # output == "torch"
             # This path returns PyTorch tensors on the model's device
             torch_result = handler.predict_batch(feature_vector)[PyTorchInferenceKeys.PREDICTIONS]
             if is_single_sample:
                 # For a single sample, return the 0-dim tensor
-                results[handler.target_id] = torch_result[0]
+                results[handler.target_ids[0]] = torch_result[0]
             else:
                 # For a batch, return the full tensor of predictions
-                results[handler.target_id] = torch_result
+                results[handler.target_ids[0]] = torch_result
 
     return results
 
 
 def multi_inference_classification(
-    handlers: list[PyTorchInferenceHandler], 
+    handlers: list[DragonInferenceHandler], 
     feature_vector: Union[np.ndarray, torch.Tensor], 
     output: Literal["numpy","torch"]="numpy"
     ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Performs classification inference on a single sample or a batch.
 
-    This function iterates through a list of PyTorchInferenceHandler objects,
+    This function iterates through a list of DragonInferenceHandler objects,
     each configured for a different classification target. It returns two
     dictionaries: one for the predicted labels and one for the probabilities.
 
@@ -469,7 +430,7 @@ def multi_inference_classification(
     - 2D input: The dictionaries map target ID to an array of labels and an array of probability arrays.
 
     Args:
-        handlers (list[PyTorchInferenceHandler]): A list of initialized inference handlers. Each must have a unique `target_id` and be configured
+        handlers (list[DragonInferenceHandler]): A list of initialized inference handlers. Each must have a unique `target_id` and be configured
             with `task="classification"`.
         feature_vector (Union[np.ndarray, torch.Tensor]): An input sample (1D)
             or a batch of samples (2D) for prediction.
@@ -502,11 +463,11 @@ def multi_inference_classification(
 
     for handler in handlers:
         # Validation
-        if handler.target_id is None:
+        if handler.target_ids is None:
             _LOGGER.error("All inference handlers must have a 'target_id' attribute.")
             raise AttributeError()
-        if handler.task != "classification":
-            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_id}' is for '{handler.task}', but this function only supports 'classification'.")
+        if handler.task not in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
+            _LOGGER.error(f"Invalid task type: The handler for target_id '{handler.target_ids[0]}' is for '{handler.task}', but this function only supports binary and multiclass classification.")
             raise ValueError()
             
         # Inference
@@ -524,15 +485,15 @@ def multi_inference_classification(
             # For "numpy", convert the single label to a Python int scalar.
             # For "torch", get the 0-dim tensor label.
             if output == "numpy":
-                labels_results[handler.target_id] = labels.item()
+                labels_results[handler.target_ids[0]] = labels.item()
             else: # torch
-                labels_results[handler.target_id] = labels[0]
+                labels_results[handler.target_ids[0]] = labels[0]
             
             # The probabilities are an array/tensor of values
-            probs_results[handler.target_id] = probabilities[0]
+            probs_results[handler.target_ids[0]] = probabilities[0]
         else:
-            labels_results[handler.target_id] = labels
-            probs_results[handler.target_id] = probabilities
+            labels_results[handler.target_ids[0]] = labels
+            probs_results[handler.target_ids[0]] = probabilities
             
     return labels_results, probs_results
 

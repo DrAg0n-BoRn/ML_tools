@@ -9,16 +9,16 @@ from torchvision import transforms
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys
-from ._ML_vision_recipe import load_recipe_and_build_transform
+from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
+from .ML_vision_transformers import _load_recipe_and_build_transform
 
 
 __all__ = [
-    "PyTorchVisionInferenceHandler"
+    "DragonVisionInferenceHandler"
 ]
 
 
-class PyTorchVisionInferenceHandler:
+class DragonVisionInferenceHandler:
     """
     Handles loading a PyTorch vision model's state dictionary and performing inference.
 
@@ -30,7 +30,7 @@ class PyTorchVisionInferenceHandler:
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["image_classification", "image_segmentation", "object_detection"],
+                 task: Literal["binary image classification", "multiclass image classification", "binary segmentation", "multiclass segmentation", "object detection"],
                  device: str = 'cpu',
                  transform_source: Optional[Union[str, Path, Callable]] = None,
                  class_map: Optional[Dict[str, int]] = None):
@@ -53,12 +53,15 @@ class PyTorchVisionInferenceHandler:
         self._transform: Optional[Callable] = None
         self._is_transformed: bool = False
         self._idx_to_class: Optional[Dict[int, str]] = None
+        self._classification_threshold = 0.5
+        self._loaded_threshold = False
+        
         if class_map is not None:
             self.set_class_map(class_map)
 
-        if task not in ["image_classification", "image_segmentation", "object_detection"]:
-            _LOGGER.error(f"`task` must be 'image_classification', 'image_segmentation', or 'object_detection'. Got '{task}'.")
-            raise ValueError("Invalid task type.")
+        if task not in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION, MLTaskKeys.OBJECT_DETECTION]:
+            _LOGGER.error(f"Unsupported task: '{task}'.")
+            raise ValueError()
         self.task = task
         
         self.expected_in_channels: int = 3 # Default to RGB
@@ -78,16 +81,26 @@ class PyTorchVisionInferenceHandler:
             # Load whatever is in the file
             loaded_data = torch.load(model_p, map_location=self._device)
 
-            # Check if it's a new checkpoint dictionary or an old weights-only file
+            # Check if it's a dictionary or a weights-only file
             if isinstance(loaded_data, dict) and PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
-                # It's a new training checkpoint, extract the weights
+                # It's a dict, extract the weights
                 self._model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
+                if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
+                    # Binary based models need a classification threshold
+                    try:
+                        self._classification_threshold = loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD]
+                    except Exception as e_int:
+                        _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
+                        self._classification_threshold = 0.5
+                    else:
+                        _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
+                        self._loaded_threshold = True
             else:
-                # It's an old-style file (or just a state_dict), load it directly
+                # It's a state_dict, load it directly
                 self._model.load_state_dict(loaded_data)
             
             _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
-                
+            
             self._model.to(self._device)
             self._model.eval()  # Set the model to evaluation mode
         except Exception as e:
@@ -111,7 +124,7 @@ class PyTorchVisionInferenceHandler:
         - For Classification/Segmentation: Expects 4D Tensor (B, C, H, W).
         - For Object Detection: Expects List[Tensor(C, H, W)].
         """
-        if self.task == "object_detection":
+        if self.task == MLTaskKeys.OBJECT_DETECTION:
             if not isinstance(inputs, list) or not all(isinstance(t, torch.Tensor) for t in inputs):
                 _LOGGER.error("Input for object_detection must be a List[torch.Tensor].")
                 raise ValueError("Invalid input type for object detection.")
@@ -123,11 +136,11 @@ class PyTorchVisionInferenceHandler:
                 _LOGGER.error(f"Input for {self.task} must be a torch.Tensor.")
                 raise ValueError(f"Invalid input type for {self.task}.")
                 
-            if inputs.ndim != 4:
-                 _LOGGER.error(f"Input tensor for {self.task} must be 4D (B, C, H, W). Got {inputs.ndim}D.")
+            if inputs.ndim != 4: # type: ignore
+                 _LOGGER.error(f"Input tensor for {self.task} must be 4D (B, C, H, W). Got {inputs.ndim}D.") # type: ignore
                  raise ValueError("Input tensor must be 4D.")
             
-            return inputs.float().to(self._device)
+            return inputs.float().to(self._device) # type: ignore
         
     def set_transform(self, transform_source: Union[str, Path, Callable]):
         """
@@ -144,8 +157,8 @@ class PyTorchVisionInferenceHandler:
         if isinstance(transform_source, (str, Path)):
             _LOGGER.info(f"Loading transform from recipe file: '{transform_source}'")
             try:
-                # Use the new loader function
-                self._transform = load_recipe_and_build_transform(transform_source)
+                # Use the loader function
+                self._transform = _load_recipe_and_build_transform(transform_source)
             except Exception as e:
                 _LOGGER.error(f"Failed to load transform from recipe '{transform_source}': {e}")
                 raise
@@ -174,12 +187,11 @@ class PyTorchVisionInferenceHandler:
     def predict_batch(self, inputs: Union[torch.Tensor, List[torch.Tensor]]) -> Dict[str, Any]:
         """
         Core batch prediction method for vision models.
-        All preprocessing (resizing, normalization) should be done *before*
-        calling this method.
+        All preprocessing (resizing, normalization) should be done *before* calling this method.
 
         Args:
             inputs (torch.Tensor | List[torch.Tensor]):
-                - For 'image_classification' or 'image_segmentation', 
+                - For binary/multiclass image classification or binary/multiclass image segmentation tasks, 
                   a 4D torch.Tensor (B, C, H, W).
                 - For 'object_detection', a List of 3D torch.Tensors 
                   [(C, H, W), ...], each with its own size.
@@ -194,45 +206,55 @@ class PyTorchVisionInferenceHandler:
         processed_inputs = self._preprocess_batch(inputs)
         
         with torch.no_grad():
-            if self.task == "image_classification":
-                # --- Image Classification ---
-                # 1. Predict
-                output = self._model(processed_inputs) # (B, num_classes)
-                
-                # 2. Post-process
+            # get outputs
+            output = self._model(processed_inputs)
+            if self.task == MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION:
+                # process
                 probs = torch.softmax(output, dim=1)
                 labels = torch.argmax(probs, dim=1)
                 return {
                     PyTorchInferenceKeys.LABELS: labels,       # (B,)
                     PyTorchInferenceKeys.PROBABILITIES: probs  # (B, num_classes)
                 }
-
-            elif self.task == "image_segmentation":
-                # --- Image Segmentation ---
-                # 1. Predict
-                output = self._model(processed_inputs) # (B, num_classes, H, W)
-                
-                # 2. Post-process
-                probs = torch.softmax(output, dim=1) # Probs across class channel
-                labels = torch.argmax(probs, dim=1)  # (B, H, W) segmentation map
+            
+            elif self.task == MLTaskKeys.BINARY_IMAGE_CLASSIFICATION:
+                # Assumes model output is [N, 1] (a single logit)
+                # Squeeze output from [N, 1] to [N] if necessary
+                if output.ndim == 2 and output.shape[1] == 1:
+                    output = output.squeeze(1)
+                    
+                probs = torch.sigmoid(output) # Probability of positive class
+                labels = (probs >= self._classification_threshold).int()
                 return {
-                    PyTorchInferenceKeys.LABELS: labels,       # (B, H, W)
-                    PyTorchInferenceKeys.PROBABILITIES: probs  # (B, num_classes, H, W)
+                    PyTorchInferenceKeys.LABELS: labels,       
+                    PyTorchInferenceKeys.PROBABILITIES: probs  
+                }
+            
+            elif self.task == MLTaskKeys.BINARY_SEGMENTATION:
+                # Assumes model output is [N, 1, H, W] (logits for positive class)
+                probs = torch.sigmoid(output) # Shape [N, 1, H, W]
+                labels = (probs >= self._classification_threshold).int() # Shape [N, 1, H, W]
+                return {
+                    PyTorchInferenceKeys.LABELS: labels,       
+                    PyTorchInferenceKeys.PROBABILITIES: probs  
+                }
+                
+            elif self.task == MLTaskKeys.MULTICLASS_SEGMENTATION:
+                # output shape [N, C, H, W]
+                probs = torch.softmax(output, dim=1)
+                labels = torch.argmax(probs, dim=1) # shape [N, H, W]
+                return {
+                    PyTorchInferenceKeys.LABELS: labels,       # (N, H, W)
+                    PyTorchInferenceKeys.PROBABILITIES: probs  # (N, num_classes, H, W)
                 }
 
-            elif self.task == "object_detection":
-                # --- Object Detection ---
-                # 1. Predict (model is in eval mode, expects only images)
-                # Output is List[Dict[str, Tensor('boxes', 'labels', 'scores')]]
-                predictions = self._model(processed_inputs) 
-                
-                # 2. Post-process: Wrap in our standard key
+            elif self.task == MLTaskKeys.OBJECT_DETECTION:
                 return {
-                    PyTorchInferenceKeys.PREDICTIONS: predictions
+                    PyTorchInferenceKeys.PREDICTIONS: output
                 }
             
             else:
-                # This should be unreachable due to __init__ check
+                # This should be unreachable due to validation
                 raise ValueError(f"Unknown task: {self.task}")
 
     def predict(self, single_input: torch.Tensor) -> Dict[str, Any]:
@@ -248,24 +270,24 @@ class PyTorchVisionInferenceHandler:
         Returns:
             A dictionary containing the output tensors for a single sample.
             - Classification: {labels, probabilities} (label is 0-dim)
-            - Segmentation: {labels, probabilities} (label is 2D mask)
+            - Segmentation: {labels, probabilities} (label is a 2D (multiclass) or 3D (binary) mask)
             - Object Detection: {boxes, labels, scores} (single dict)
         """
         if not isinstance(single_input, torch.Tensor) or single_input.ndim != 3:
              _LOGGER.error(f"Input for predict() must be a 3D tensor (C, H, W). Got {single_input.ndim}D.")
-             raise ValueError("Input must be a 3D tensor.")
+             raise ValueError()
         
         # --- 1. Batch the input based on task ---
-        if self.task == "object_detection":
+        if self.task == MLTaskKeys.OBJECT_DETECTION:
             batched_input = [single_input] # List of one tensor
         else:
-            batched_input = single_input.unsqueeze(0) # (1, C, H, W)
+            batched_input = single_input.unsqueeze(0)
 
         # --- 2. Call batch prediction ---
         batch_results = self.predict_batch(batched_input)
 
         # --- 3. Un-batch the results ---
-        if self.task == "object_detection":
+        if self.task == MLTaskKeys.OBJECT_DETECTION:
             # batch_results['predictions'] is a List[Dict]. We want the first (and only) Dict.
             return batch_results[PyTorchInferenceKeys.PREDICTIONS][0]
         else:
@@ -283,12 +305,12 @@ class PyTorchVisionInferenceHandler:
         Returns:
             Dict: A dictionary containing the outputs as NumPy arrays.
             - Obj. Detection: {predictions: List[Dict[str, np.ndarray]]}
-            - Classification: {labels: int, label_names: str, probabilities: np.ndarray}
+            - Classification: {labels: np.ndarray, label_names: List[str], probabilities: np.ndarray}
             - Segmentation: {labels: np.ndarray, probabilities: np.ndarray}
         """
         tensor_results = self.predict_batch(inputs)
         
-        if self.task == "object_detection":
+        if self.task == MLTaskKeys.OBJECT_DETECTION:
             # Output is List[Dict[str, Tensor]]
             # Convert each tensor inside each dict to numpy
             numpy_results = []
@@ -304,13 +326,19 @@ class PyTorchVisionInferenceHandler:
                     ]
                 numpy_results.append(np_dict)
             return {PyTorchInferenceKeys.PREDICTIONS: numpy_results}
+        
         else:
-            # Output is Dict[str, Tensor]
+            # Output is Dict[str, Tensor] (for Classification or Segmentation)
             numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
             
             # Add string names for classification if map exists
-            if self.task == "image_classification" and self._idx_to_class and PyTorchInferenceKeys.LABELS in numpy_results:
-                int_labels = numpy_results[PyTorchInferenceKeys.LABELS]
+            is_image_classification = self.task in [
+                MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
+                MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
+            ]
+            
+            if is_image_classification and self._idx_to_class and PyTorchInferenceKeys.LABELS in numpy_results:
+                int_labels = numpy_results[PyTorchInferenceKeys.LABELS] # This is a (B,) array
                 numpy_results[PyTorchInferenceKeys.LABEL_NAMES] = [
                     self._idx_to_class.get(label_id, "Unknown")
                     for label_id in int_labels
@@ -324,13 +352,13 @@ class PyTorchVisionInferenceHandler:
 
         Returns:
             Dict: A dictionary containing the outputs as NumPy arrays/scalars.
-            - Obj. Detection: {boxes: np.ndarray, labels: np.ndarray, scores: np.ndarray}
+            - Obj. Detection: {boxes: np.ndarray, labels: np.ndarray, scores: np.ndarray, label_names: List[str]}
             - Classification: {labels: int, label_names: str, probabilities: np.ndarray}
             - Segmentation: {labels: np.ndarray, probabilities: np.ndarray}
         """
         tensor_results = self.predict(single_input)
         
-        if self.task == "object_detection":
+        if self.task == MLTaskKeys.OBJECT_DETECTION:
             # Output is Dict[str, Tensor]
             # Convert each tensor to numpy
             numpy_results = {
@@ -348,7 +376,7 @@ class PyTorchVisionInferenceHandler:
                 
             return numpy_results
             
-        elif self.task == "image_classification":
+        elif self.task in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
             # Output is Dict[str, Tensor(0-dim) or Tensor(1-dim)]
             int_label = tensor_results[PyTorchInferenceKeys.LABELS].item()
             label_name = "Unknown"
@@ -360,16 +388,56 @@ class PyTorchVisionInferenceHandler:
                 PyTorchInferenceKeys.LABEL_NAMES: label_name,
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
-        else: # image_segmentation
+        else: # image_segmentation (binary or multiclass)
             # Output is Dict[str, Tensor(2D) or Tensor(3D)]
             return {
                 PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].cpu().numpy(),
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
             
+    def predict_from_pil(self, image: Image.Image) -> Dict[str, Any]:
+        """
+        Applies the stored transform to a single PIL image and returns the prediction.
+
+        Args:
+            image (PIL.Image.Image): The input PIL image.
+
+        Returns:
+            Dict: A dictionary containing the prediction results. See `predict_numpy()` for task-specific output structures.
+        """
+        if self._transform is None:
+            _LOGGER.error("Cannot predict from PIL image: No transform has been set. Call .set_transform() or provide transform_source in __init__.")
+            raise RuntimeError("Inference transform is not set.")
+
+        # Apply the transformation pipeline (e.g., resize, crop, ToTensor, normalize)
+        try:
+            transformed_image = self._transform(image)
+        except Exception as e:
+            _LOGGER.error(f"Error applying transform to PIL image: {e}")
+            raise
+            
+        # --- Validation ---
+        if not isinstance(transformed_image, torch.Tensor):
+            _LOGGER.error("The provided transform did not return a torch.Tensor. Does it include transforms.ToTensor()?")
+            raise ValueError("Transform pipeline must output a torch.Tensor.")
+            
+        if transformed_image.ndim != 3:
+            _LOGGER.warning(f"Expected transform to output a 3D (C, H, W) tensor, but got {transformed_image.ndim}D. Attempting to proceed.")
+            # .predict_numpy() -> .predict() which expects a 3D tensor
+            if transformed_image.ndim == 4 and transformed_image.shape[0] == 1:
+                transformed_image = transformed_image.squeeze(0) # Fix if user's transform adds a batch dim
+                _LOGGER.warning("Removed an extra batch dimension.")
+            else:
+                raise ValueError(f"Transform must output a 3D (C, H, W) tensor, got {transformed_image.shape}.")
+
+        # Use the existing single-item predict method
+        return self.predict_numpy(transformed_image)
+
     def predict_from_file(self, image_path: Union[str, Path]) -> Dict[str, Any]:
         """
         Loads a single image from a file, applies the stored transform, and returns the prediction.
+
+        This is a convenience wrapper that loads the image and calls `predict_from_pil()`.
 
         Args:
             image_path (str | Path): The file path to the input image.
@@ -377,10 +445,6 @@ class PyTorchVisionInferenceHandler:
         Returns:
             Dict: A dictionary containing the prediction results. See `predict_numpy()` for task-specific output structures.
         """
-        if self._transform is None:
-            _LOGGER.error("Cannot predict from file: No transform has been set. Call .set_transform() or provide transform_source in __init__.")
-            raise RuntimeError("Inference transform is not set.")
-        
         try:
             # --- Use expected_in_channels to set PIL mode ---
             pil_mode: str
@@ -399,29 +463,8 @@ class PyTorchVisionInferenceHandler:
             _LOGGER.error(f"Failed to load and convert image from '{image_path}': {e}")
             raise
 
-        # Apply the transformation pipeline (e.g., resize, crop, ToTensor, normalize)
-        try:
-            transformed_image = self._transform(image)
-        except Exception as e:
-            _LOGGER.error(f"Error applying transform to image: {e}")
-            raise
-            
-        # --- Validation ---
-        if not isinstance(transformed_image, torch.Tensor):
-            _LOGGER.error("The provided transform did not return a torch.Tensor. Does it include transforms.ToTensor()?")
-            raise ValueError("Transform pipeline must output a torch.Tensor.")
-            
-        if transformed_image.ndim != 3:
-            _LOGGER.warning(f"Expected transform to output a 3D (C, H, W) tensor, but got {transformed_image.ndim}D. Attempting to proceed.")
-            # .predict() which expects a 3D tensor
-            if transformed_image.ndim == 4 and transformed_image.shape[0] == 1:
-                transformed_image = transformed_image.squeeze(0) # Fix if user's transform adds a batch dim
-                _LOGGER.warning("Removed an extra batch dimension.")
-            else:
-                raise ValueError(f"Transform must output a 3D (C, H, W) tensor, got {transformed_image.shape}.")
-
-        # Use the existing single-item predict method
-        return self.predict_numpy(transformed_image)
+        # Call the PIL-based prediction method
+        return self.predict_from_pil(image)
 
 
 def info():

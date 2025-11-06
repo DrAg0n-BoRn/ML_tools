@@ -12,11 +12,11 @@ from .keys import _OneHotOtherPlaceholder
 
 
 __all__ = [
-    "ConfigManager", 
-    "GUIFactory",
+    "DragonGUIConfig", 
+    "DragonGUIFactory",
     "catch_exceptions", 
-    "FeatureMaster",
-    "GUIHandler" 
+    "DragonFeatureMaster",
+    "DragonGUIHandler" 
 ]
 
 # --- Configuration Management ---
@@ -55,14 +55,14 @@ class _SectionProxy:
         # Fallback to the original string
         return value_str
 
-class ConfigManager:
+class DragonGUIConfig:
     """
     Loads a .ini file and provides access to its values as object attributes.
     Includes a method to generate a default configuration template.
     """
     def __init__(self, config_path: str | Path):
         """
-        Initializes the ConfigManager and dynamically creates attributes
+        Initializes the DragonGUIConfig and dynamically creates attributes
         based on the .ini file's sections and options.
         """
         config_path = Path(config_path)
@@ -78,7 +78,7 @@ class ConfigManager:
     @staticmethod
     def generate_template(file_path: str | Path):
         """
-        Generates a complete, commented .ini template file that works with the GUIFactory.
+        Generates a complete, commented .ini template file that works with the DragonGUIFactory.
 
         Args:
             file_path (str | Path): The path where the .ini file will be saved.
@@ -155,12 +155,12 @@ class ConfigManager:
 
 
 # --- GUI Factory ---
-class GUIFactory:
+class DragonGUIFactory:
     """
     Builds styled FreeSimpleGUI elements and layouts using a "building block"
-    approach, driven by a ConfigManager instance.
+    approach, driven by a DragonGUIConfig instance.
     """
-    def __init__(self, config: ConfigManager):
+    def __init__(self, config: DragonGUIConfig):
         """
         Initializes the factory with a configuration object.
         """
@@ -456,7 +456,7 @@ def catch_exceptions(show_popup: bool = True):
 
 
 # --- Feature Handler ---
-class FeatureMaster:
+class DragonFeatureMaster:
     """
     Manages and organizes feature definitions for a machine learning model.
 
@@ -488,7 +488,7 @@ class FeatureMaster:
                  categorical_features: Optional[List[Tuple[str, str, Dict[str, int]]]] = None,
                  add_one_hot_other_placeholder: bool = True) -> None:
         """
-        Initializes the FeatureMaster instance by processing feature and target definitions.
+        Initializes the DragonFeatureMaster instance by processing feature and target definitions.
 
         This constructor creates internal mappings to translate between GUI-friendly names and model-specific feature names. It also
         prepares data structures needed to populate UI components.
@@ -806,17 +806,17 @@ class FeatureMaster:
 
 
 # --- GUI-Model API ---
-class GUIHandler:
+class DragonGUIHandler:
     """
     Translates data between a GUI and a machine learning model.
     
     This class acts as the primary interface between a user-facing application
-    (FreeSimpleGUI) and the model's expected data format. It uses a `FeatureMaster` instance to correctly process
+    (FreeSimpleGUI) and the model's expected data format. It uses a `DragonFeatureMaster` instance to correctly process
     and encode user inputs.
 
     Its main responsibilities are:
     1.  To take raw values from GUI elements and, using the definitions from
-        `FeatureMaster`, convert them into a single, ordered `numpy.ndarray`
+        `DragonFeatureMaster`, convert them into a single, ordered `numpy.ndarray`
         that can be fed directly into a model for inference.
     2.  To take the results of a model's inference and update the
         corresponding target fields in the GUI to display the prediction.
@@ -824,13 +824,13 @@ class GUIHandler:
     This handler ensures a clean separation of concerns, where the GUI is
     only responsible for presentation, and the model sees correctly formatted numerical data.
     """
-    def __init__(self, feature_handler: FeatureMaster, model_expected_features: list[str]) -> None:
+    def __init__(self, feature_handler: DragonFeatureMaster, model_expected_features: list[str]) -> None:
         """
-        Initializes the GUIHandler.
+        Initializes the DragonGUIHandler.
 
         Args:
-            feature_handler (FeatureMaster):
-                An initialized instance of the `FeatureMaster` class. This object
+            feature_handler (DragonFeatureMaster):
+                An initialized instance of the `DragonFeatureMaster` class. This object
                 contains all the necessary mappings and definitions for the model's
                 features and targets.
             model_expected_features (list[str]):

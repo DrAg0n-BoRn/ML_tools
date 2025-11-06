@@ -5,28 +5,36 @@ import torch
 from torch import nn
 import numpy as np
 
-from .ML_callbacks import Callback, History, TqdmProgressBar, ModelCheckpoint
+from .ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckpoint, DragonEarlyStopping, DragonLRScheduler
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._script_info import _script_info
-from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys
+from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords
 from ._logger import _LOGGER
-from .path_manager import make_fullpath
+from .path_manager import make_fullpath, sanitize_filename
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
-from .ML_configuration import ClassificationMetricsFormat, MultiClassificationMetricsFormat
+from .ML_configuration import ClassificationMetricsFormat, MultiClassificationMetricsFormat, RegressionMetricsFormat, SegmentationMetricsFormat
 
 
 __all__ = [
-    "MLTrainer",
-    "ObjectDetectionTrainer",
+    "DragonTrainer",
+    "DragonDetectionTrainer",
 ]
 
 
-class MLTrainer:
+class DragonTrainer:
     def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
-                 kind: Literal["regression", "classification", "multi_target_regression", "multi_label_classification", "segmentation"],
-                 criterion: nn.Module, optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'],str], dataloader_workers: int = 2, callbacks: Optional[List[Callback]] = None):
+                 kind: Literal["regression", "binary classification", "multiclass classification", 
+                               "multitarget regression", "multilabel binary classification", 
+                               "binary segmentation", "multiclass segmentation", "binary image classification", "multiclass image classification"],
+                 optimizer: torch.optim.Optimizer, 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
+                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 early_stopping_callback: Optional[DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 extra_callbacks: Optional[List[_Callback]] = None,
+                 criterion: Union[nn.Module,Literal["auto"]] = "auto", 
+                 dataloader_workers: int = 2):
         """
         Automates the training process of a PyTorch Model.
         
@@ -36,38 +44,71 @@ class MLTrainer:
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
             test_dataset (Dataset): The testing/validation dataset.
-            kind (str): Can be 'regression', 'classification', 'multi_target_regression', 'multi_label_classification', or 'segmentation'.
-            criterion (nn.Module): The loss function.
+            kind (str): Used to redirect to the correct process. 
+            criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
             dataloader_workers (int): Subprocesses for data loading.
-            callbacks (List[Callback] | None): A list of callbacks to use during training.
+            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
             
         Note:
-            - For **regression** and **multi_target_regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`.
+            - For **regression** and **multi_target_regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`. The model should output as many logits as existing targets.
+            
+            - For **single-label, binary classification**, `nn.BCEWithLogitsLoss` is the standard choice. The model should output a single logit.
     
-            - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice.
+            - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice. The model should output as many logits as existing classes.
     
-            - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem.
+            - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem. The model should output 1 logit per binary target.
         
-            - For **segmentation** tasks, `nn.CrossEntropyLoss` (for multi-class) or `nn.BCEWithLogitsLoss` (for binary) are common.
+            - For **binary segmentation** tasks, `nn.BCEWithLogitsLoss` is common. The model should output a single logit.
+            
+            - for **multiclass segmentation** tasks, `nn.CrossEntropyLoss` is the standard. The model should output as many logits as existing classes.
         """
-        if kind not in ["regression", "classification", "multi_target_regression", "multi_label_classification", "segmentation"]:
+        if kind not in [MLTaskKeys.REGRESSION,
+                        MLTaskKeys.BINARY_CLASSIFICATION,
+                        MLTaskKeys.MULTICLASS_CLASSIFICATION,
+                        MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION,
+                        MLTaskKeys.MULTITARGET_REGRESSION,
+                        MLTaskKeys.BINARY_SEGMENTATION,
+                        MLTaskKeys.MULTICLASS_SEGMENTATION,
+                        MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
+                        MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
             raise ValueError(f"'{kind}' is not a valid task type.")
 
         self.model = model
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self.kind = kind
-        self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = None
         self.device = self._validate_device(device)
         self.dataloader_workers = dataloader_workers
+        self._classification_threshold: float = 0.5
+        
+        # loss function
+        if criterion == "auto":
+            if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+                self.criterion = nn.MSELoss()
+            elif kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+                self.criterion = nn.BCEWithLogitsLoss()
+            elif kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
+                self.criterion = nn.CrossEntropyLoss()
+        else:
+            self.criterion = criterion
         
         # Callback handler - History and TqdmProgressBar are added by default
         default_callbacks = [History(), TqdmProgressBar()]
-        user_callbacks = callbacks if callbacks is not None else []
+        
+        self._checkpoint_callback = None
+        if checkpoint_callback:
+            default_callbacks.append(checkpoint_callback)
+            self._checkpoint_callback = checkpoint_callback
+        if early_stopping_callback:
+            default_callbacks.append(early_stopping_callback)
+        if lr_scheduler_callback:
+            default_callbacks.append(lr_scheduler_callback)
+        
+        user_callbacks = extra_callbacks if extra_callbacks is not None else []
         self.callbacks = default_callbacks + user_callbacks
         self._set_trainer_on_callbacks()
 
@@ -122,7 +163,7 @@ class MLTrainer:
     def _load_checkpoint(self, path: Union[str, Path]):
         """Loads a training checkpoint to resume training."""
         p = make_fullpath(path, enforce="file")
-        _LOGGER.info(f"Loading checkpoint from '{p.name}' to resume training...")
+        _LOGGER.info(f"Loading checkpoint from '{p.name}'...")
         
         try:
             checkpoint = torch.load(p, map_location=self.device)
@@ -133,7 +174,16 @@ class MLTrainer:
 
             self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
             self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
-            self.start_epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) + 1 # Resume on the *next* epoch
+            self.epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0)
+            self.start_epoch = self.epoch + 1 # Resume on the *next* epoch
+            
+            # --- Load History ---
+            if PyTorchCheckpointKeys.HISTORY in checkpoint:
+                self.history = checkpoint[PyTorchCheckpointKeys.HISTORY]
+                _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
+            else:
+                _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
+                self.history = {} # Ensure it's at least an empty dict
             
             # --- Scheduler State Loading Logic ---
             scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
@@ -163,7 +213,7 @@ class MLTrainer:
             
             # Restore callback states
             for cb in self.callbacks:
-                if isinstance(cb, ModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
+                if isinstance(cb, DragonModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
                     cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
                     _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
             
@@ -174,7 +224,8 @@ class MLTrainer:
             raise
 
     def fit(self, 
-            epochs: int = 10, 
+            save_dir: Union[str,Path],
+            epochs: int = 100, 
             batch_size: int = 10, 
             shuffle: bool = True,
             resume_from_checkpoint: Optional[Union[str, Path]] = None):
@@ -184,6 +235,7 @@ class MLTrainer:
         Returns the "History" callback dictionary.
 
         Args:
+            save_dir (str | Path): Directory to save the loss plot.
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
@@ -227,11 +279,16 @@ class MLTrainer:
                 break
 
         self._callbacks_hook('on_train_end')
+        
+        # Training History
+        plot_losses(self.history, save_dir=save_dir)
+        
         return self.history
     
     def _train_step(self):
         self.model.train()
         running_loss = 0.0
+        total_samples = 0
         for batch_idx, (features, target) in enumerate(self.train_loader): # type: ignore
             # Create a log dictionary for the batch
             batch_logs = {
@@ -245,9 +302,24 @@ class MLTrainer:
             
             output = self.model(features)
             
-            # Apply shape correction only for single-target regression
-            if self.kind == "regression":
-                output = output.view_as(target)
+            # --- Label Type/Shape Correction ---
+            # Cast target to float for BCE-based losses
+            if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
+                            MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
+                            MLTaskKeys.BINARY_SEGMENTATION, 
+                            MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+                target = target.float()
+
+            # Reshape output to match target for single-logit tasks
+            if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION]:
+                # If model outputs [N, 1] and target is [N], squeeze output
+                if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
+                    output = output.squeeze(1)
+            
+            if self.kind == MLTaskKeys.BINARY_SEGMENTATION:
+                # If model outputs [N, 1, H, W] and target is [N, H, W], squeeze output
+                if output.ndim == 4 and output.shape[1] == 1 and target.ndim == 3:
+                    output = output.squeeze(1)
                 
             loss = self.criterion(output, target)
             
@@ -256,13 +328,19 @@ class MLTrainer:
 
             # Calculate batch loss and update running loss for the epoch
             batch_loss = loss.item()
-            running_loss += batch_loss * features.size(0)
+            batch_size = features.size(0)
+            running_loss += batch_loss * batch_size  # Accumulate total loss
+            total_samples += batch_size # total samples
             
             # Add the batch loss to the logs and call the end-of-batch hook
             batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss
             self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+        
+        if total_samples == 0:
+            _LOGGER.warning("No samples processed in a train_step. Returning 0 loss.")
+            return {PyTorchLogKeys.TRAIN_LOSS: 0.0}
 
-        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
+        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / total_samples} # type: ignore
 
     def _validation_step(self):
         self.model.eval()
@@ -272,9 +350,25 @@ class MLTrainer:
                 features, target = features.to(self.device), target.to(self.device)
                 
                 output = self.model(features)
-                # Apply shape correction only for single-target regression
-                if self.kind == "regression":
-                    output = output.view_as(target)
+                
+                # --- Label Type/Shape Correction ---
+                # Cast target to float for BCE-based losses
+                if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
+                                MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
+                                MLTaskKeys.BINARY_SEGMENTATION, 
+                                MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+                    target = target.float()
+
+                # Reshape output to match target for single-logit tasks
+                if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION]:
+                    # If model outputs [N, 1] and target is [N], squeeze output
+                    if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
+                        output = output.squeeze(1)
+                
+                if self.kind == MLTaskKeys.BINARY_SEGMENTATION:
+                    # If model outputs [N, 1, H, W] and target is [N, H, W], squeeze output
+                    if output.ndim == 4 and output.shape[1] == 1 and target.ndim == 3:
+                        output = output.squeeze(1)
                 
                 loss = self.criterion(output, target)
                 
@@ -283,7 +377,7 @@ class MLTrainer:
         logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
         return logs
     
-    def _predict_for_eval(self, dataloader: DataLoader, classification_threshold: float = 0.5):
+    def _predict_for_eval(self, dataloader: DataLoader):
         """
         Private method to yield model predictions batch by batch for evaluation.
         
@@ -303,25 +397,64 @@ class MLTrainer:
                 y_prob_batch = None
                 y_true_batch = None
 
-                if self.kind in ["regression", "multi_target_regression"]:
+                if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
                     y_pred_batch = output.numpy()
                     y_true_batch = target.numpy()
+                    
+                elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION]:
+                    # Assumes model output is [N, 1] (a single logit)
+                    # Squeeze output from [N, 1] to [N] if necessary
+                    if output.ndim == 2 and output.shape[1] == 1:
+                        output = output.squeeze(1)
+                        
+                    probs_pos = torch.sigmoid(output) # Probability of positive class
+                    preds = (probs_pos >= self._classification_threshold).int()
+                    y_pred_batch = preds.numpy()
+                    # For metrics (like ROC AUC), we often need probs for *both* classes
+                    # Create an [N, 2] array: [prob_class_0, prob_class_1]
+                    probs_neg = 1.0 - probs_pos
+                    y_prob_batch = torch.stack([probs_neg, probs_pos], dim=1).numpy()
+                    y_true_batch = target.numpy()
 
-                elif self.kind == "classification":
+                elif self.kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
+                    num_classes = output.shape[1]
+                    if num_classes < 3:
+                        # Optional: warn the user they are using the wrong kind
+                        wrong_class = MLTaskKeys.MULTICLASS_CLASSIFICATION if self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION else MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
+                        recommended_class = MLTaskKeys.BINARY_CLASSIFICATION if self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION else MLTaskKeys.BINARY_IMAGE_CLASSIFICATION
+                        _LOGGER.warning(f"'{wrong_class}' kind used with {num_classes} classes. Consider using '{recommended_class}' instead.")
+                    
                     probs = torch.softmax(output, dim=1)
                     preds = torch.argmax(probs, dim=1)
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
                     y_true_batch = target.numpy()
 
-                elif self.kind == "multi_label_classification":
+                elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
                     probs = torch.sigmoid(output)
-                    preds = (probs >= classification_threshold).int()
+                    preds = (probs >= self._classification_threshold).int()
                     y_pred_batch = preds.numpy()
                     y_prob_batch = probs.numpy()
                     y_true_batch = target.numpy()
+                
+                elif self.kind == MLTaskKeys.BINARY_SEGMENTATION:
+                    # Assumes model output is [N, 1, H, W] (logits for positive class)
+                    probs_pos = torch.sigmoid(output) # Shape [N, 1, H, W]
+                    preds = (probs_pos >= self._classification_threshold).int() # Shape [N, 1, H, W]
                     
-                elif self.kind == "segmentation":
+                    # Squeeze preds to [N, H, W] (class indices 0 or 1)
+                    y_pred_batch = preds.squeeze(1).numpy()
+
+                    # Create [N, 2, H, W] probs for consistency
+                    probs_neg = 1.0 - probs_pos
+                    y_prob_batch = torch.cat([probs_neg, probs_pos], dim=1).numpy()
+
+                    # Handle target shape [N, 1, H, W] -> [N, H, W]
+                    if target.ndim == 4 and target.shape[1] == 1:
+                        target = target.squeeze(1)
+                    y_true_batch = target.numpy()
+                    
+                elif self.kind == MLTaskKeys.MULTICLASS_SEGMENTATION:
                     # output shape [N, C, H, W]
                     probs = torch.softmax(output, dim=1)
                     preds = torch.argmax(probs, dim=1) # shape [N, H, W]
@@ -337,23 +470,48 @@ class MLTrainer:
 
     def evaluate(self, 
                  save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 classification_threshold: float = 0.5,
                  data: Optional[Union[DataLoader, Dataset]] = None,
-                 format_configuration: Optional[Union[ClassificationMetricsFormat, MultiClassificationMetricsFormat]]=None):
+                 format_configuration: Optional[Union[ClassificationMetricsFormat, 
+                                                      MultiClassificationMetricsFormat,
+                                                      RegressionMetricsFormat,
+                                                      SegmentationMetricsFormat]]=None):
         """
         Evaluates the model, routing to the correct evaluation function based on task `kind`.
 
         Args:
+            model_checkpoint ('auto' | Path | None): 
+                - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
+                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'current', use the current state of the trained model up the latest trained epoch.
             save_dir (str | Path): Directory to save all reports and plots.
+            classification_threshold (float): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
             data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
+            format_configuration: Optional configuration for metric format output.
         """
         dataset_for_names = None
         eval_loader = None
-
+        
+        # set threshold
+        self._classification_threshold = classification_threshold
+        
+        # load model checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        
+        # Dataloader
         if isinstance(data, DataLoader):
             eval_loader = data
             # Try to get the dataset from the loader for fetching target names
             if hasattr(data, 'dataset'):
-                dataset_for_names = data.dataset
+                dataset_for_names = data.dataset # type: ignore
         elif isinstance(data, Dataset):
             # Create a new loader from the provided dataset
             eval_loader = DataLoader(data, 
@@ -396,34 +554,55 @@ class MLTrainer:
         y_prob = np.concatenate(all_probs) if all_probs else None
 
         # --- Routing Logic ---
-        if self.kind == "regression":
-            regression_metrics(y_true.flatten(), y_pred.flatten(), save_dir)
+        if self.kind == MLTaskKeys.REGRESSION:
+            # Check configuration
+            config = None
+            if format_configuration and isinstance(format_configuration, RegressionMetricsFormat):
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected RegressionMetricsFormat.")
+            
+            regression_metrics(y_true=y_true.flatten(), 
+                               y_pred=y_pred.flatten(), 
+                               save_dir=save_dir,
+                               config=config)
 
-        elif self.kind == "classification":
-            # Parse configuration
+        elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
+            # Check configuration
+            config = None
             if format_configuration and isinstance(format_configuration, ClassificationMetricsFormat):
-                classification_metrics(save_dir=save_dir,
-                                       y_true=y_true, 
-                                       y_pred=y_pred, 
-                                       y_prob=y_prob,
-                                       cmap=format_configuration.cmap,
-                                       class_map=format_configuration.class_map,
-                                       ROC_PR_line=format_configuration.ROC_PR_line,
-                                       calibration_bins=format_configuration.calibration_bins,
-                                       font_size=format_configuration.font_size)
-            else:
-                classification_metrics(save_dir, y_true, y_pred, y_prob)
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected ClassificationMetricsFormat.")
+  
+            classification_metrics(save_dir=save_dir,
+                                   y_true=y_true,
+                                   y_pred=y_pred,
+                                   y_prob=y_prob,
+                                   config=config)
 
-        elif self.kind == "multi_target_regression":
+        elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION:
             try:
                 target_names = dataset_for_names.target_names # type: ignore
             except AttributeError:
                 num_targets = y_true.shape[1]
                 target_names = [f"target_{i}" for i in range(num_targets)]
                 _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
-            multi_target_regression_metrics(y_true, y_pred, target_names, save_dir)
+                
+            # Check configuration
+            config = None
+            if format_configuration and isinstance(format_configuration, RegressionMetricsFormat):
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected RegressionMetricsFormat.")
+            
+            multi_target_regression_metrics(y_true=y_true, 
+                                            y_pred=y_pred,
+                                            target_names=target_names, 
+                                            save_dir=save_dir,
+                                            config=config)
 
-        elif self.kind == "multi_label_classification":
+        elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
             try:
                 target_names = dataset_for_names.target_names # type: ignore
             except AttributeError:
@@ -435,19 +614,21 @@ class MLTrainer:
                 _LOGGER.error("Evaluation for multi_label_classification requires probabilities (y_prob).")
                 return
             
+            # Check configuration
+            config = None
             if format_configuration and isinstance(format_configuration, MultiClassificationMetricsFormat):
-                multi_label_classification_metrics(y_true=y_true,
-                                                   y_prob=y_prob,
-                                                   target_names=target_names,
-                                                   save_dir=save_dir,
-                                                   threshold=format_configuration.threshold,
-                                                   ROC_PR_line=format_configuration.ROC_PR_line,
-                                                   cmap=format_configuration.cmap,
-                                                   font_size=format_configuration.font_size)
-            else:
-                multi_label_classification_metrics(y_true, y_prob, target_names, save_dir)
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected MultiClassificationMetricsFormat.")
+
+            multi_label_classification_metrics(y_true=y_true,
+                                               y_pred=y_pred,
+                                               y_prob=y_prob,
+                                               target_names=target_names,
+                                               save_dir=save_dir,
+                                               config=config)
             
-        elif self.kind == "segmentation":
+        elif self.kind in [MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
             class_names = None
             try:
                 # Try to get 'classes' from VisionDatasetMaker
@@ -469,10 +650,18 @@ class MLTrainer:
                     class_names = [f"Class {i}" for i in labels]
                     _LOGGER.warning(f"Dataset has no 'classes' or 'target_names' attribute. Using generic names.")
             
-            segmentation_metrics(y_true, y_pred, save_dir, class_names=class_names)
-        
-        # print("\n--- Training History ---")
-        plot_losses(self.history, save_dir=save_dir)
+            # Check configuration
+            config = None
+            if format_configuration and isinstance(format_configuration, SegmentationMetricsFormat):
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected SegmentationMetricsFormat.")
+            
+            segmentation_metrics(y_true=y_true,
+                                 y_pred=y_pred,
+                                 save_dir=save_dir,
+                                 class_names=class_names,
+                                 config=config)
     
     def explain(self,
                 save_dir: Union[str,Path], 
@@ -556,7 +745,7 @@ class MLTrainer:
         self.model.to(self.device)
 
         # 3. Call the plotting function
-        if self.kind in ["regression", "classification"]:
+        if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             shap_summary_plot(
                 model=self.model,
                 background_data=background_data,
@@ -566,7 +755,7 @@ class MLTrainer:
                 explainer_type=explainer_type,
                 device=self.device
             )
-        elif self.kind in ["multi_target_regression", "multi_label_classification"]:
+        elif self.kind in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
             # try to get target names
             if target_names is None:
                 target_names = []
@@ -708,13 +897,87 @@ class MLTrainer:
         self.device = self._validate_device(device)
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
+        
+    def finalize_model_training(self, save_dir: Union[str, Path], filename: str, model_checkpoint: Union[Path, Literal['latest', 'current']], classification_threshold: Optional[float]=None):
+        """
+        Saves a finalized, "inference-ready" model state to a .pth file.
+
+        This method saves the model's `state_dict`, the final epoch number, and
+        an optional classification threshold required for binary-based tasks (binary classification, binary segmentation,
+        multilabel binary classification).
+
+        Args:
+            save_dir (str | Path): The directory to save the finalized model.
+            filename (str): The desired filename for the saved file.
+            model_checkpoint (Path | "latest" | "current"):
+                - Path: Loads the model state from a specific checkpoint file.
+                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is at the end of the `fit()` call.
+            classification_threshold (float, None):
+                Required for `binary classification`, `binary segmentation`, and
+                `multilabel binary classification`. This is the threshold (0.0-1.0)
+                used to convert probabilities to class labels.
+        """
+        # handle save path
+        sanitized_filename = sanitize_filename(filename)
+        if not sanitized_filename.endswith(".pth"):
+            sanitized_filename = sanitized_filename + ".pth"
+            
+        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+        full_path = dir_path / sanitized_filename
+        
+        # threshold required for binary tasks
+        if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+            if classification_threshold is None:
+                _LOGGER.error(f"A classification threshold is needed for binary-based classification tasks. If unknown, use '0.5' as a default.")
+                raise ValueError()
+            elif not isinstance(classification_threshold, float):
+                _LOGGER.error(f"The classification threshold must be a float value.")
+                raise TypeError()
+            elif classification_threshold <= 0.0 or classification_threshold >= 1.0:
+                _LOGGER.error(f"The classification threshold must be in the range (0.0 - 1.0).")
+        else:
+            classification_threshold = None
+        
+        # handle checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        elif model_checkpoint == MagicWords.CURRENT:
+            pass
+        else:
+            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
+        
+        # Create finalized data
+        finalized_data = {
+            PyTorchCheckpointKeys.EPOCH: self.epoch,
+            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+        }
+        
+        if classification_threshold is not None:
+            self._classification_threshold = classification_threshold
+            finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = classification_threshold
+        
+        torch.save(finalized_data, full_path)
+        
+        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
 
 
 # Object Detection Trainer
-class ObjectDetectionTrainer:
+class DragonDetectionTrainer:
     def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
                  collate_fn: Callable, optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'],str], dataloader_workers: int = 2, callbacks: Optional[List[Callback]] = None):
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
+                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 early_stopping_callback: Optional[DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 extra_callbacks: Optional[List[_Callback]] = None,
+                 dataloader_workers: int = 2):
         """
         Automates the training process of an Object Detection Model (e.g., DragonFastRCNN).
         
@@ -728,7 +991,10 @@ class ObjectDetectionTrainer:
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
             dataloader_workers (int): Subprocesses for data loading.
-            callbacks (List[Callback] | None): A list of callbacks to use during training.
+            checkpoint_callback (DragonModelCheckpoint | None): Callback to save the model.
+            early_stopping_callback (DragonEarlyStopping | None): Callback to stop training early.
+            lr_scheduler_callback (DragonLRScheduler | None): Callback to manage the LR scheduler.
+            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
             
         ## Note:
             This trainer is specialized. It does not take a `criterion` because object detection models like Faster R-CNN return a dictionary of losses directly from their forward pass during training.
@@ -746,7 +1012,17 @@ class ObjectDetectionTrainer:
         
         # Callback handler - History and TqdmProgressBar are added by default
         default_callbacks = [History(), TqdmProgressBar()]
-        user_callbacks = callbacks if callbacks is not None else []
+        
+        self._checkpoint_callback = None
+        if checkpoint_callback:
+            default_callbacks.append(checkpoint_callback)
+            self._checkpoint_callback = checkpoint_callback
+        if early_stopping_callback:
+            default_callbacks.append(early_stopping_callback)
+        if lr_scheduler_callback:
+            default_callbacks.append(lr_scheduler_callback)
+        
+        user_callbacks = extra_callbacks if extra_callbacks is not None else []
         self.callbacks = default_callbacks + user_callbacks
         self._set_trainer_on_callbacks()
 
@@ -786,8 +1062,9 @@ class ObjectDetectionTrainer:
             batch_size=batch_size, 
             shuffle=shuffle, 
             num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type),
-            collate_fn=self.collate_fn # Use the provided collate function
+            pin_memory=("cuda" in self.device.type), # <-- Updated
+            collate_fn=self.collate_fn, # Use the provided collate function
+            drop_last=True # Added for consistency with MLTrainer
         )
         
         self.test_loader = DataLoader(
@@ -795,7 +1072,7 @@ class ObjectDetectionTrainer:
             batch_size=batch_size, 
             shuffle=False, 
             num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type),
+            pin_memory=("cuda" in self.device.type), # <-- Updated
             collate_fn=self.collate_fn # Use the provided collate function
         )
         
@@ -813,7 +1090,16 @@ class ObjectDetectionTrainer:
 
             self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
             self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
-            self.start_epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) + 1 # Resume on the *next* epoch
+            self.epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) # <-- Updated
+            self.start_epoch = self.epoch + 1 # Resume on the *next* epoch
+            
+            # --- Load History ---
+            if PyTorchCheckpointKeys.HISTORY in checkpoint:
+                self.history = checkpoint[PyTorchCheckpointKeys.HISTORY]
+                _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
+            else:
+                _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
+                self.history = {} # Ensure it's at least an empty dict
             
             # --- Scheduler State Loading Logic ---
             scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
@@ -843,7 +1129,7 @@ class ObjectDetectionTrainer:
             
             # Restore callback states
             for cb in self.callbacks:
-                if isinstance(cb, ModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
+                if isinstance(cb, DragonModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
                     cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
                     _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
             
@@ -883,7 +1169,7 @@ class ObjectDetectionTrainer:
         self._callbacks_hook('on_train_begin')
         
         for epoch in range(self.start_epoch, self.epochs + 1):
-            self.epoch = epoch
+            self.epoch = epoch # <-- Ensured this is set
             epoch_logs = {}
             self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
 
@@ -905,6 +1191,7 @@ class ObjectDetectionTrainer:
     def _train_step(self):
         self.model.train()
         running_loss = 0.0
+        total_samples = 0 # <-- Track actual samples
         for batch_idx, (images, targets) in enumerate(self.train_loader): # type: ignore
             # images is a tuple of tensors, targets is a tuple of dicts
             batch_size = len(images)
@@ -941,12 +1228,18 @@ class ObjectDetectionTrainer:
             # Calculate batch loss and update running loss for the epoch
             batch_loss = loss.item()
             running_loss += batch_loss * batch_size
+            total_samples += batch_size # <-- Accumulate total samples
             
             # Add the batch loss to the logs and call the end-of-batch hook
             batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss # type: ignore
             self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+        
+        # Calculate loss using the correct denominator
+        if total_samples == 0:
+            _LOGGER.warning("No samples processed in _train_step. Returning 0 loss.")
+            return {PyTorchLogKeys.TRAIN_LOSS: 0.0}
 
-        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / len(self.train_loader.dataset)} # type: ignore
+        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / total_samples}
 
     def _validation_step(self):
         self.model.train() # Set to train mode even for validation loss calculation
@@ -954,6 +1247,7 @@ class ObjectDetectionTrainer:
                            # but we still need loss_dict.
                            # We use torch.no_grad() to prevent gradient updates.
         running_loss = 0.0
+        total_samples = 0 # <-- Track actual samples
         with torch.no_grad():
             for images, targets in self.test_loader: # type: ignore
                 batch_size = len(images)
@@ -973,25 +1267,49 @@ class ObjectDetectionTrainer:
                 loss: torch.Tensor = sum(l for l in loss_dict.values()) # type: ignore
                 
                 running_loss += loss.item() * batch_size
+                total_samples += batch_size # <-- Accumulate total samples
         
-        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
+        # Calculate loss using the correct denominator
+        if total_samples == 0:
+            _LOGGER.warning("No samples processed in _validation_step. Returning 0 loss.")
+            return {PyTorchLogKeys.VAL_LOSS: 0.0}
+        
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / total_samples}
         return logs
-
-    def evaluate(self, save_dir: Union[str, Path], data: Optional[Union[DataLoader, Dataset]] = None):
+    
+    def evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model using object detection mAP metrics.
 
         Args:
             save_dir (str | Path): Directory to save all reports and plots.
             data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
+            model_checkpoint ('auto' | Path | None): 
+                - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
+                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'current', use the current state of the trained model up the latest trained epoch.
         """
         dataset_for_names = None
         eval_loader = None
+        
+        # load model checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
 
+        # Dataloader
         if isinstance(data, DataLoader):
             eval_loader = data
             if hasattr(data, 'dataset'):
-                dataset_for_names = data.dataset
+                dataset_for_names = data.dataset # type: ignore
         elif isinstance(data, Dataset):
             # Create a new loader from the provided dataset
             eval_loader = DataLoader(data, 
@@ -1071,7 +1389,7 @@ class ObjectDetectionTrainer:
         
         # print("\n--- Training History ---")
         plot_losses(self.history, save_dir=save_dir)
-    
+
     def _callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""
         for callback in self.callbacks:
@@ -1098,6 +1416,52 @@ class ObjectDetectionTrainer:
         self.device = self._validate_device(device)
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
+    
+    def finalize_model_training(self, save_dir: Union[str, Path], filename: str, model_checkpoint: Union[Path, Literal['latest', 'current']]):
+        """
+        Saves a finalized, "inference-ready" model state to a .pth file.
+
+        This method saves the model's `state_dict` and the final epoch number.
+
+        Args:
+            save_dir (Union[str, Path]): The directory to save the finalized model.
+            filename (str): The desired filename for the model (e.g., "final_model.pth").
+            model_checkpoint (Union[Path, Literal["latest", "current"]]):
+                - Path: Loads the model state from a specific checkpoint file.
+                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is at the end of the `fit()` call.
+        """
+        # handle save path
+        sanitized_filename = sanitize_filename(filename)
+        if not sanitized_filename.endswith(".pth"):
+            sanitized_filename = sanitized_filename + ".pth"
+            
+        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+        full_path = dir_path / sanitized_filename
+        
+        # handle checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        elif model_checkpoint == MagicWords.CURRENT:
+            pass
+        else:
+            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
+        
+        # Create finalized data
+        finalized_data = {
+            PyTorchCheckpointKeys.EPOCH: self.epoch,
+            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+        }
+        
+        torch.save(finalized_data, full_path)
+        
+        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
 
 
 def info():

@@ -1,16 +1,18 @@
-from typing import Optional
+from typing import Optional, Union
 from ._script_info import _script_info
 
 
 __all__ = [
     "ClassificationMetricsFormat",
-    "MultiClassificationMetricsFormat"
+    "MultiClassificationMetricsFormat",
+    "RegressionMetricsFormat",
+    "SegmentationMetricsFormat"
 ]
 
 
 class ClassificationMetricsFormat:
     """
-    Optional configuration for classification tasks, use in the '.evaluate()' method of the MLTrainer.
+    Optional configuration for classification tasks.
     """
     def __init__(self, 
                  cmap: str="Blues",
@@ -65,10 +67,9 @@ class ClassificationMetricsFormat:
 
 class MultiClassificationMetricsFormat:
     """
-    Optional configuration for multi-label classification tasks, use in the '.evaluate()' method of the MLTrainer.
+    Optional configuration for multi-label classification tasks.
     """
     def __init__(self,
-                 threshold: float=0.5,
                  ROC_PR_line: str='darkorange',
                  cmap: str = "Blues",
                  font_size: int = 16) -> None:
@@ -76,10 +77,6 @@ class MultiClassificationMetricsFormat:
         Initializes the formatting configuration for multi-label classification metrics.
 
         Args:
-            threshold (float): The probability threshold (0.0 to 1.0) used
-                to convert sigmoid outputs into binary (0 or 1) predictions for
-                calculating the confusion matrix and overall metrics. Defaults to 0.5.
-            
             ROC_PR_line (str): The color name or hex code for the line plotted
                 on the ROC and Precision-Recall curves (one for each label). 
                 Defaults to 'darkorange'.
@@ -97,19 +94,92 @@ class MultiClassificationMetricsFormat:
         
         ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)    
         """
-        self.threshold = threshold
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
         self.font_size = font_size
         
     def __repr__(self) -> str:
         parts = [
-            f"threshold={self.threshold}",
             f"ROC_PR_line='{self.ROC_PR_line}'",
             f"cmap='{self.cmap}'",
             f"font_size={self.font_size}"
         ]
         return f"MultiClassificationMetricsFormat({', '.join(parts)})"
+
+
+class RegressionMetricsFormat:
+    """
+    Optional configuration for single-target regression and multi-target regression tasks.
+    """
+    def __init__(self, 
+                 font_size: int=16,
+                 scatter_color: str='tab:blue',
+                 scatter_alpha: float=0.6,
+                 ideal_line_color: str='k',
+                 residual_line_color: str='red',
+                 hist_bins: Union[int, str] = 'auto') -> None:
+        """
+        Initializes the formatting configuration for regression metrics.
+
+        Args:
+            font_size (int): The base font size to apply to the plots. Defaults to 16.
+            scatter_color (str): Matplotlib color for the scatter plot points. Defaults to 'tab:blue'.
+            scatter_alpha (float): Alpha transparency for scatter plot points. Defaults to 0.6.
+            ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the 
+                True vs. Predicted plot. Defaults to 'k' (black).
+            residual_line_color (str): Matplotlib color for the y=0 line in the 
+                Residual plot. Defaults to 'red'.
+            hist_bins (int | str): The number of bins for the residuals histogram. 
+                Defaults to 'auto' to use seaborn's automatic bin selection.
+        """
+        self.font_size = font_size
+        self.scatter_color = scatter_color
+        self.scatter_alpha = scatter_alpha
+        self.ideal_line_color = ideal_line_color
+        self.residual_line_color = residual_line_color
+        self.hist_bins = hist_bins
+        
+    def __repr__(self) -> str:
+        parts = [
+            f"font_size={self.font_size}",
+            f"scatter_color='{self.scatter_color}'",
+            f"scatter_alpha={self.scatter_alpha}",
+            f"ideal_line_color='{self.ideal_line_color}'",
+            f"residual_line_color='{self.residual_line_color}'",
+            f"hist_bins='{self.hist_bins}'"
+        ]
+        return f"RegressionMetricsFormat({', '.join(parts)})"
+
+
+class SegmentationMetricsFormat:
+    """
+    Optional configuration for segmentation tasks.
+    """
+    def __init__(self,
+                 heatmap_cmap: str = 'viridis',
+                 cm_cmap: str = "Blues",
+                 font_size: int = 16) -> None:
+        """
+        Initializes the formatting configuration for segmentation metrics.
+
+        Args:
+            heatmap_cmap (str): The matplotlib colormap name for the per-class
+                metrics heatmap. Defaults to "viridis".
+            cm_cmap (str): The matplotlib colormap name for the pixel-level
+                confusion matrix. Defaults to "Blues".
+            font_size (int): The base font size to apply to the plots. Defaults to 16.
+        """
+        self.heatmap_cmap = heatmap_cmap
+        self.cm_cmap = cm_cmap
+        self.font_size = font_size
+        
+    def __repr__(self) -> str:
+        parts = [
+            f"heatmap_cmap='{self.heatmap_cmap}'",
+            f"cm_cmap='{self.cm_cmap}'",
+            f"font_size={self.font_size}"
+        ]
+        return f"SegmentationMetricsFormat({', '.join(parts)})"
 
 
 def info():

@@ -14,7 +14,7 @@ from .path_manager import sanitize_filename, make_fullpath, list_files_by_extens
 from ._logger import _LOGGER
 from .keys import EnsembleKeys
 from ._script_info import _script_info
-from .SQL import DatabaseManager
+from .SQL import DragonSQL
 from .optimization_tools import _save_result
 
 """
@@ -191,7 +191,7 @@ def _set_feature_names(size: int, names: Union[list[str], None]):
         return names
 
 
-def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, random_state: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DatabaseManager], db_table_name: str):
+def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, random_state: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DragonSQL], db_table_name: str):
     """Helper for a single PSO run that also handles saving."""
     pso_args.update({"seed": random_state})
     
@@ -213,7 +213,7 @@ def _run_single_pso(objective_function: ObjectiveFunction, pso_args: dict, featu
     return best_features_named, best_target_named
 
 
-def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, repetitions: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DatabaseManager], db_table_name: str):
+def _run_post_hoc_pso(objective_function: ObjectiveFunction, pso_args: dict, feature_names: list[str], target_name: str, repetitions: int, save_format: Literal['csv', 'sqlite', 'both'], csv_path: Path, db_manager: Optional[DragonSQL], db_table_name: str):
     """Helper for post-hoc analysis that saves results incrementally."""
     progress = trange(repetitions, desc="Post-Hoc PSO", unit="run")
     for _ in progress:
@@ -342,7 +342,7 @@ def run_pso(lower_boundaries: list[float],
         schema = {"result_id": "INTEGER PRIMARY KEY AUTOINCREMENT", **schema}
         
         # Create table
-        with DatabaseManager(db_path) as db:
+        with DragonSQL(db_path) as db:
             db.create_table(db_table_name, schema)
         
     pso_arguments = {
@@ -357,7 +357,7 @@ def run_pso(lower_boundaries: list[float],
     
     # --- Dispatcher ---
     # Use a real or dummy context manager to handle the DB connection cleanly
-    db_context = DatabaseManager(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
+    db_context = DragonSQL(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
 
     with db_context as db_manager:
         if post_hoc_analysis is None or post_hoc_analysis <= 1:

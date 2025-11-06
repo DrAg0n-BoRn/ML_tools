@@ -4,23 +4,22 @@ from tqdm.auto import tqdm
 from typing import Union, Literal, Optional
 from pathlib import Path
 
-from .path_manager import make_fullpath, sanitize_filename
+from .path_manager import make_fullpath
 from .keys import PyTorchLogKeys, PyTorchCheckpointKeys
 from ._logger import _LOGGER
 from ._script_info import _script_info
 
 
 __all__ = [
-    "Callback", 
     "History", 
     "TqdmProgressBar",
-    "EarlyStopping",  
-    "ModelCheckpoint",
-    "LRScheduler"
+    "DragonEarlyStopping",  
+    "DragonModelCheckpoint",
+    "DragonLRScheduler"
 ]
 
 
-class Callback:
+class _Callback:
     """
     Abstract base class used to build new callbacks.
     
@@ -60,7 +59,7 @@ class Callback:
         pass
 
 
-class History(Callback):
+class History(_Callback):
     """
     Callback that records events into a `history` dictionary.
     
@@ -79,7 +78,7 @@ class History(Callback):
             self.trainer.history.setdefault(k, []).append(v) # type: ignore
 
 
-class TqdmProgressBar(Callback):
+class TqdmProgressBar(_Callback):
     """Callback that provides a tqdm progress bar for training."""
     def __init__(self):
         self.epoch_bar = None
@@ -110,7 +109,7 @@ class TqdmProgressBar(Callback):
         self.epoch_bar.close() # type: ignore
 
 
-class EarlyStopping(Callback):
+class DragonEarlyStopping(_Callback):
     """
     Stop training when a monitored metric has stopped improving.
     """
@@ -187,11 +186,11 @@ class EarlyStopping(Callback):
                     _LOGGER.info(f"Epoch {epoch+1}: early stopping after {self.wait} epochs with no improvement.")
 
 
-class ModelCheckpoint(Callback):
+class DragonModelCheckpoint(_Callback):
     """
     Saves the model weights, optimizer state, LR scheduler state (if any), and epoch number to a directory with automated filename generation and rotation. 
     """
-    def __init__(self, save_dir: Union[str,Path], checkpoint_name: Optional[str]=None, monitor: str = PyTorchLogKeys.VAL_LOSS,
+    def __init__(self, save_dir: Union[str,Path], monitor: str = PyTorchLogKeys.VAL_LOSS,
                  save_best_only: bool = True, mode: Literal['auto', 'min', 'max']= 'auto', verbose: int = 0):
         """
         - If `save_best_only` is True, it saves the single best model, deleting the previous best. 
@@ -199,7 +198,6 @@ class ModelCheckpoint(Callback):
 
         Args:
             save_dir (str): Directory where checkpoint files will be saved.
-            checkpoint_name (str| None): If None, the filename will include the epoch and score.
             monitor (str): Metric to monitor.
             save_best_only (bool): If true, save only the best model.
             mode (str): One of {'auto', 'min', 'max'}.
@@ -215,9 +213,8 @@ class ModelCheckpoint(Callback):
         self.monitor = monitor
         self.save_best_only = save_best_only
         self.verbose = verbose
-        if checkpoint_name:
-            checkpoint_name = sanitize_filename(checkpoint_name)
-        self.checkpoint_name = checkpoint_name
+        self._latest_checkpoint_path = None
+        self._checkpoint_name = PyTorchCheckpointKeys.CHECKPOINT_NAME
 
         # State variables to be managed during training
         self.saved_checkpoints = []
@@ -261,10 +258,7 @@ class ModelCheckpoint(Callback):
             old_best_str = f"{self.best:.4f}" if self.best not in [np.inf, -np.inf] else "inf"
             
             # Create a descriptive filename
-            if self.checkpoint_name is None:
-                filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"
-            else:
-                filename = f"epoch{epoch}_{self.checkpoint_name}.pth"
+            filename = f"epoch{epoch}_{self._checkpoint_name}_{current:.4f}.pth"
             new_filepath = self.save_dir / filename
             
             if self.verbose > 0:
@@ -279,6 +273,7 @@ class ModelCheckpoint(Callback):
                 PyTorchCheckpointKeys.MODEL_STATE: self.trainer.model.state_dict(), # type: ignore
                 PyTorchCheckpointKeys.OPTIMIZER_STATE: self.trainer.optimizer.state_dict(), # type: ignore
                 PyTorchCheckpointKeys.BEST_SCORE: self.best, 
+                PyTorchCheckpointKeys.HISTORY: self.trainer.history, # type: ignore
             }
             
             # Check for scheduler
@@ -287,6 +282,7 @@ class ModelCheckpoint(Callback):
             
             # Save the new best model
             torch.save(checkpoint_data, new_filepath)
+            self._latest_checkpoint_path = new_filepath
 
             # Delete the old best model file
             if self.last_best_filepath and self.last_best_filepath.exists():
@@ -298,10 +294,8 @@ class ModelCheckpoint(Callback):
     def _save_rolling_checkpoints(self, epoch, logs):
         """Saves the latest model and keeps only the most recent ones."""
         current = logs.get(self.monitor)
-        if self.checkpoint_name is None:
-            filename = f"epoch_{epoch}-{self.monitor}_{current:.4f}.pth"
-        else:
-            filename = f"epoch{epoch}_{self.checkpoint_name}.pth"
+
+        filename = f"epoch{epoch}_{self._checkpoint_name}_{current:.4f}.pth"
         filepath = self.save_dir / filename
         
         if self.verbose > 0:
@@ -313,12 +307,15 @@ class ModelCheckpoint(Callback):
             PyTorchCheckpointKeys.MODEL_STATE: self.trainer.model.state_dict(), # type: ignore
             PyTorchCheckpointKeys.OPTIMIZER_STATE: self.trainer.optimizer.state_dict(), # type: ignore
             PyTorchCheckpointKeys.BEST_SCORE: self.best, # Save the current best score
+            PyTorchCheckpointKeys.HISTORY: self.trainer.history, # type: ignore
         }
         
         if hasattr(self.trainer, 'scheduler') and self.trainer.scheduler is not None: # type: ignore
             checkpoint_data[PyTorchCheckpointKeys.SCHEDULER_STATE] = self.trainer.scheduler.state_dict() # type: ignore
         
         torch.save(checkpoint_data, filepath)
+        
+        self._latest_checkpoint_path = filepath
 
         self.saved_checkpoints.append(filepath)
 
@@ -330,8 +327,16 @@ class ModelCheckpoint(Callback):
                     _LOGGER.info(f"  -> Deleting old checkpoint: {file_to_delete.name}")
                 file_to_delete.unlink()
 
+    @property
+    def best_checkpoint_path(self):
+        if self._latest_checkpoint_path:
+            return self._latest_checkpoint_path
+        else:
+            _LOGGER.error("No checkpoint paths saved.")
+            raise ValueError()
 
-class LRScheduler(Callback):
+
+class DragonLRScheduler(_Callback):
     """
     Callback to manage a PyTorch learning rate scheduler.
     """
@@ -361,6 +366,8 @@ class LRScheduler(Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         """Step the scheduler and log any change in learning rate."""
+        logs = logs or {}
+        
         # For schedulers that need a metric (e.g., val_loss)
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
             if self.monitor is None:
@@ -376,12 +383,22 @@ class LRScheduler(Callback):
         # For all other schedulers
         else:
             self.scheduler.step()
+            
+        # Get the current learning rate
+        current_lr = self.trainer.optimizer.param_groups[0]['lr'] # type: ignore
 
         # Log the change if the LR was updated
-        current_lr = self.trainer.optimizer.param_groups[0]['lr'] # type: ignore
         if current_lr != self.previous_lr:
             _LOGGER.info(f"Epoch {epoch}: Learning rate changed to {current_lr:.6f}")
             self.previous_lr = current_lr
+        
+        # --- Add LR to logs and history ---
+        # Add to the logs dict for any subsequent callbacks
+        logs[PyTorchLogKeys.LEARNING_RATE] = current_lr
+        
+        # Also add directly to the trainer's history dict
+        if hasattr(self.trainer, 'history'):
+            self.trainer.history.setdefault(PyTorchLogKeys.LEARNING_RATE, []).append(current_lr) # type: ignore
 
 
 def info():

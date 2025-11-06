@@ -10,7 +10,6 @@ from ._logger import _LOGGER
 from ._schema import FeatureSchema
 
 
-# Keep track of available tools
 __all__ = [
     "load_dataframe",
     "load_dataframe_greedy",
@@ -361,7 +360,7 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
     elif isinstance(df, pl.DataFrame):
         # Transform empty strings to Null
         df_to_save = df.with_columns(
-            pl.when(pl.col(pl.Utf8).str.strip() == "")
+            pl.when(pl.col(pl.Utf8).str.strip() == "") # type: ignore
             .then(None)
             .otherwise(pl.col(pl.Utf8))
         )

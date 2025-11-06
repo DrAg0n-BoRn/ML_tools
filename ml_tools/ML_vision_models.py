@@ -530,7 +530,7 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.
 
-    NOTE: This model is NOT compatible with the MLTrainer class. Use the ObjectDetectionTrainer instead.
+    NOTE: Use an Object Detection compatible trainer.
     """
     def __init__(self,
                  num_classes: int,

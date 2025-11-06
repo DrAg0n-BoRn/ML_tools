@@ -14,9 +14,9 @@ from functools import partial
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .ML_inference import PyTorchInferenceHandler
+from .ML_inference import DragonInferenceHandler
 from .keys import PyTorchInferenceKeys
-from .SQL import DatabaseManager
+from .SQL import DragonSQL
 from .optimization_tools import _save_result, create_optimization_bounds
 from .utilities import save_dataframe_filename
 from .math_utilities import discretize_categorical_values
@@ -24,14 +24,14 @@ from ._schema import FeatureSchema
 
 
 __all__ = [
-    "MLOptimizer",
+    "DragonOptimizer",
     "FitnessEvaluator",
     "create_pytorch_problem",
     "run_optimization"
 ]
 
 
-class MLOptimizer:
+class DragonOptimizer:
     """
     A wrapper class for setting up and running EvoTorch optimization tasks.
 
@@ -47,7 +47,7 @@ class MLOptimizer:
         >>> cont_bounds = {'feature_A': (0, 100), 'feature_B': (-10, 10)}
         >>>
         >>> # 3. Initialize the optimizer
-        >>> optimizer = MLOptimizer(
+        >>> optimizer = DragonOptimizer(
         ...     inference_handler=my_handler,
         ...     schema=schema,
         ...     continuous_bounds_map=cont_bounds,
@@ -63,7 +63,7 @@ class MLOptimizer:
         ... )
     """
     def __init__(self,
-                 inference_handler: PyTorchInferenceHandler,
+                 inference_handler: DragonInferenceHandler,
                  schema: FeatureSchema,
                  continuous_bounds_map: Dict[str, Tuple[float, float]],
                  task: Literal["min", "max"],
@@ -75,7 +75,7 @@ class MLOptimizer:
         Initializes the optimizer by creating the EvoTorch problem and searcher.
 
         Args:
-            inference_handler (PyTorchInferenceHandler): 
+            inference_handler (DragonInferenceHandler): 
                 An initialized inference handler containing the model.
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
@@ -172,18 +172,18 @@ class FitnessEvaluator:
     A callable class that wraps the PyTorch model inference handler and performs
     on-the-fly discretization for the EvoTorch fitness function.
 
-    This class is automatically instantiated by MLOptimizer and passed to
+    This class is automatically instantiated by DragonOptimizer and passed to
     create_pytorch_problem, encapsulating the evaluation logic.
     """
     def __init__(self,
-                 inference_handler: PyTorchInferenceHandler,
+                 inference_handler: DragonInferenceHandler,
                  categorical_index_map: Optional[Dict[int, int]] = None,
                  discretize_start_at_zero: bool = True):
         """
         Initializes the fitness evaluator.
 
         Args:
-            inference_handler (PyTorchInferenceHandler): 
+            inference_handler (DragonInferenceHandler): 
                 An initialized inference handler containing the model.
             categorical_index_map (Dict[int, int] | None): 
                 Maps {column_index: cardinality} for discretization.
@@ -426,7 +426,7 @@ def run_optimization(
         _LOGGER.info(f"🏁 Starting optimal solution space analysis with {repetitions} repetitions...")
         
         first_run_logger = None # To store the logger from the first rep
-        db_context = DatabaseManager(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
+        db_context = DragonSQL(db_path) if save_format in ['sqlite', 'both'] else nullcontext()
         
         with db_context as db_manager:
             # --- Setup Database Schema (if applicable) ---

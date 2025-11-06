@@ -9,7 +9,7 @@ from ._logger import _LOGGER
 
 
 __all__ = [
-    "PathManager",
+    "DragonPathManager",
     "make_fullpath",
     "sanitize_filename",
     "list_csv_paths",
@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-class PathManager:
+class DragonPathManager:
     """
     Manages and stores a project's file paths, acting as a centralized
     "path database". It supports both development mode and applications
@@ -43,7 +43,7 @@ class PathManager:
 
         Args:
             anchor_file (str): The path to a file within your package, typically
-                            the `__file__` of the script where PathManager
+                            the `__file__` of the script where DragonPathManager
                             is instantiated. This is used to locate the
                             package root directory.
             base_directories (List[str] | None): An optional list of strings,
@@ -149,7 +149,7 @@ class PathManager:
                 if key in self._paths:
                     path_items.append((key, self._paths[key]))
                 elif verbose:
-                    _LOGGER.warning(f"Key '{key}' not found in PathManager, skipping.")
+                    _LOGGER.warning(f"Key '{key}' not found in DragonPathManager, skipping.")
         else:
             path_items = self._paths.items()
 
@@ -194,7 +194,7 @@ class PathManager:
     def __repr__(self) -> str:
         """Provides a string representation of the stored paths."""
         path_list = "\n".join(f"  '{k}': '{v}'" for k, v in self._paths.items())
-        return f"PathManager(\n{path_list}\n)"
+        return f"DragonPathManager(\n{path_list}\n)"
     
     # --- Dictionary-Style Methods ---
     def __getitem__(self, key: str) -> Path:

@@ -15,7 +15,7 @@ from ._schema import FeatureSchema
 
 
 __all__ = [
-    "MiceImputer",
+    "DragonMICE",
     "apply_mice",
     "save_imputed_datasets",
     "get_convergence_diagnostic",
@@ -280,7 +280,7 @@ def _skip_targets(df: pd.DataFrame, target_cols: list[str]):
 
 
 # modern implementation
-class MiceImputer:
+class DragonMICE:
     """
     A modern MICE imputation pipeline that uses a FeatureSchema
     to correctly discretize categorical features after imputation.
@@ -311,7 +311,7 @@ class MiceImputer:
         # 3. Names of categorical features
         self.categorical_features = list(self.schema.categorical_feature_names)
 
-        _LOGGER.info(f"MiceImputer initialized. Found {len(self.cat_info)} categorical features to discretize.")
+        _LOGGER.info(f"DragonMICE initialized. Found {len(self.cat_info)} categorical features to discretize.")
         
     def _post_process(self, imputed_df: pd.DataFrame) -> pd.DataFrame:
         """

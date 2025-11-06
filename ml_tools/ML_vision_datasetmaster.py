@@ -17,20 +17,19 @@ from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .keys import VisionTransformRecipeKeys, ObjectDetectionKeys
-from ._ML_vision_recipe import save_recipe
-from .ML_vision_transformers import TRANSFORM_REGISTRY
+from .ML_vision_transformers import TRANSFORM_REGISTRY, _save_recipe
 from .custom_logger import custom_logger
 
 
 __all__ = [
-    "VisionDatasetMaker",
-    "SegmentationDatasetMaker",
-    "ObjectDetectionDatasetMaker"
+    "DragonDatasetVision",
+    "DragonDatasetSegmentation",
+    "DragonDatasetObjectDetection"
 ]
 
 
-# --- VisionDatasetMaker ---
-class VisionDatasetMaker(_BaseMaker):
+# --- Vision Maker ---
+class DragonDatasetVision(_BaseMaker):
     """
     Creates processed PyTorch datasets for computer vision tasks from an
     image folder directory.
@@ -56,7 +55,7 @@ class VisionDatasetMaker(_BaseMaker):
         self._has_mean_std: bool = False
 
     @classmethod
-    def from_folder(cls, root_dir: Union[str,Path]) -> 'VisionDatasetMaker':
+    def from_folder(cls, root_dir: Union[str,Path]) -> 'DragonDatasetVision':
         """
         Creates a maker instance from a single root directory of images.
         
@@ -70,7 +69,7 @@ class VisionDatasetMaker(_BaseMaker):
             root_dir (str | Path): The path to the root directory containing class subfolders.
 
         Returns:
-            VisionDatasetMaker: A new instance with the full dataset loaded.
+            Instance: A new instance with the full dataset loaded.
         """
         root_path = make_fullpath(root_dir, enforce="directory")
         # Load with NO transform. We get PIL Images.
@@ -87,7 +86,7 @@ class VisionDatasetMaker(_BaseMaker):
     def from_folders(cls, 
                      train_dir: Union[str,Path], 
                      val_dir: Union[str,Path], 
-                     test_dir: Optional[Union[str,Path]] = None) -> 'VisionDatasetMaker':
+                     test_dir: Optional[Union[str,Path]] = None) -> 'DragonDatasetVision':
         """
         Creates a maker instance from separate, pre-split directories.
         
@@ -101,7 +100,7 @@ class VisionDatasetMaker(_BaseMaker):
             test_dir (str | Path | None): Path to the test data directory.
 
         Returns:
-            VisionDatasetMaker: A new, pre-split instance.
+            Instance: A new, pre-split instance.
 
         Raises:
             ValueError: If the classes found in train, val, or test directories are inconsistent.
@@ -186,7 +185,7 @@ class VisionDatasetMaker(_BaseMaker):
         print(report)
 
     def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
-                   stratify: bool = True, random_state: Optional[int] = None) -> 'VisionDatasetMaker':
+                   stratify: bool = True, random_state: Optional[int] = None) -> 'DragonDatasetVision':
         """
         Splits the dataset into train, validation, and optional test sets.
         
@@ -202,7 +201,7 @@ class VisionDatasetMaker(_BaseMaker):
             random_state (int | None): Seed for the random number generator for reproducible splits.
 
         Returns:
-            VisionDatasetMaker: The same instance, now with datasets split.
+            Self: The same instance, now with datasets split.
             
         Raises:
             ValueError: If `val_size` and `test_size` sum to 1.0 or more.
@@ -253,7 +252,7 @@ class VisionDatasetMaker(_BaseMaker):
                              mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
                              std: Optional[List[float]] = [0.229, 0.224, 0.225],
                              pre_transforms: Optional[List[Callable]] = None,
-                             extra_train_transforms: Optional[List[Callable]] = None) -> 'VisionDatasetMaker':
+                             extra_train_transforms: Optional[List[Callable]] = None) -> 'DragonDatasetVision':
         """
         Configures and applies the image transformations and augmentations.
         
@@ -279,7 +278,7 @@ class VisionDatasetMaker(_BaseMaker):
             pre_transforms (List[Callable] | None): An list of transforms to be applied at the very beginning of the transformations for all sets.
 
         Returns:
-            VisionDatasetMaker: The same instance, with transforms applied.
+            Self: The same instance, with transforms applied.
             
         Raises:
             RuntimeError: If called before data is split.
@@ -481,7 +480,7 @@ class VisionDatasetMaker(_BaseMaker):
             )
         
         # 3. Save the file
-        save_recipe(recipe, file_path)
+        _save_recipe(recipe, file_path)
         
     def save_class_map(self, save_dir: Union[str,Path]) -> dict[str,int]:
         """
@@ -688,8 +687,8 @@ class _PairedRandomResizedCrop:
         
         return cropped_image, cropped_mask # type: ignore
 
-# --- SegmentationDatasetMaker ---
-class SegmentationDatasetMaker(_BaseMaker):
+# --- Segmentation Dataset ---
+class DragonDatasetSegmentation(_BaseMaker):
     """
     Creates processed PyTorch datasets for segmentation from image and mask folders.
 
@@ -698,7 +697,7 @@ class SegmentationDatasetMaker(_BaseMaker):
     to both the image and its corresponding mask.
     
     Workflow:
-    1. `maker = SegmentationDatasetMaker.from_folders(img_dir, mask_dir)`
+    1. `maker = DragonDatasetSegmentation.from_folders(img_dir, mask_dir)`
     2. `maker.set_class_map({'background': 0, 'road': 1})`
     3. `maker.split_data(val_size=0.2)`
     4. `maker.configure_transforms(crop_size=256)`
@@ -722,7 +721,7 @@ class SegmentationDatasetMaker(_BaseMaker):
         self._has_mean_std: bool = False
 
     @classmethod
-    def from_folders(cls, image_dir: Union[str, Path], mask_dir: Union[str, Path]) -> 'SegmentationDatasetMaker':
+    def from_folders(cls, image_dir: Union[str, Path], mask_dir: Union[str, Path]) -> 'DragonDatasetSegmentation':
         """
         Creates a maker instance by loading all matching image-mask pairs
         from two corresponding directories.
@@ -735,7 +734,7 @@ class SegmentationDatasetMaker(_BaseMaker):
             mask_dir (str | Path): Path to the directory containing segmentation masks.
 
         Returns:
-            SegmentationDatasetMaker: A new instance with all pairs loaded.
+            DragonDatasetSegmentation: A new instance with all pairs loaded.
         """
         maker = cls()
         img_path_obj = make_fullpath(image_dir, enforce="directory")
@@ -795,9 +794,9 @@ class SegmentationDatasetMaker(_BaseMaker):
         Logs a report of the types, sizes, and channels of image files
         found in the directory. Useful for checking masks.
         """
-        VisionDatasetMaker.inspect_folder(path)
+        DragonDatasetVision.inspect_folder(path)
 
-    def set_class_map(self, class_map: Dict[str, int]) -> 'SegmentationDatasetMaker':
+    def set_class_map(self, class_map: Dict[str, int]) -> 'DragonDatasetSegmentation':
         """
         Sets a map of pixel_value -> class_name. This is used by the MLTrainer for clear evaluation reports.
 
@@ -818,7 +817,7 @@ class SegmentationDatasetMaker(_BaseMaker):
         return []
 
     def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
-                   random_state: Optional[int] = 42) -> 'SegmentationDatasetMaker':
+                   random_state: Optional[int] = 42) -> 'DragonDatasetSegmentation':
         """
         Splits the loaded image-mask pairs into train, validation, and test sets.
 
@@ -828,7 +827,7 @@ class SegmentationDatasetMaker(_BaseMaker):
             random_state (int | None): Seed for reproducible splits.
 
         Returns:
-            SegmentationDatasetMaker: The same instance, now with datasets created.
+            DragonDatasetSegmentation: The same instance, now with datasets created.
         """
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
@@ -884,7 +883,7 @@ class SegmentationDatasetMaker(_BaseMaker):
                              resize_size: int = 256, 
                              crop_size: int = 224, 
                              mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'SegmentationDatasetMaker':
+                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'DragonDatasetSegmentation':
         """
         Configures and applies the image and mask transformations.
         
@@ -899,7 +898,7 @@ class SegmentationDatasetMaker(_BaseMaker):
             std (List[float] | None): The std dev values for image normalization.
 
         Returns:
-            SegmentationDatasetMaker: The same instance, with transforms applied.
+            DragonDatasetSegmentation: The same instance, with transforms applied.
         """
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
@@ -1021,7 +1020,7 @@ class SegmentationDatasetMaker(_BaseMaker):
             )
         
         # Save the file
-        save_recipe(recipe, file_path)
+        _save_recipe(recipe, file_path)
         
     def images_per_dataset(self) -> str:
         """
@@ -1166,7 +1165,7 @@ class _OD_PairedRandomHorizontalFlip:
         return image, target
 
 
-class ObjectDetectionDatasetMaker(_BaseMaker):
+class DragonDatasetObjectDetection(_BaseMaker):
     """
     Creates processed PyTorch datasets for object detection from image
     and JSON annotation folders.
@@ -1179,7 +1178,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
     so this class provides a `collate_fn` to be used with a DataLoader.
     
     Workflow:
-    1. `maker = ObjectDetectionDatasetMaker.from_folders(img_dir, ann_dir)`
+    1. `maker = DragonDatasetObjectDetection.from_folders(img_dir, ann_dir)`
     2. `maker.set_class_map({'background': 0, 'person': 1, 'car': 2})`
     3. `maker.split_data(val_size=0.2)`
     4. `maker.configure_transforms()`
@@ -1206,7 +1205,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         self._has_mean_std: bool = False
 
     @classmethod
-    def from_folders(cls, image_dir: Union[str, Path], annotation_dir: Union[str, Path]) -> 'ObjectDetectionDatasetMaker':
+    def from_folders(cls, image_dir: Union[str, Path], annotation_dir: Union[str, Path]) -> 'DragonDatasetObjectDetection':
         """
         Creates a maker instance by loading all matching image-annotation pairs
         from two corresponding directories.
@@ -1223,7 +1222,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
                                          annotation files.
 
         Returns:
-            ObjectDetectionDatasetMaker: A new instance with all pairs loaded.
+            DragonDatasetObjectDetection: A new instance with all pairs loaded.
         """
         maker = cls()
         img_path_obj = make_fullpath(image_dir, enforce="directory")
@@ -1270,9 +1269,9 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         Logs a report of the types, sizes, and channels of image files
         found in the directory.
         """
-        VisionDatasetMaker.inspect_folder(path)
+        DragonDatasetVision.inspect_folder(path)
 
-    def set_class_map(self, class_map: Dict[str, int]) -> 'ObjectDetectionDatasetMaker':
+    def set_class_map(self, class_map: Dict[str, int]) -> 'DragonDatasetObjectDetection':
         """
         Sets a map of class_name -> pixel_value. This is used by the
         MLTrainer for clear evaluation reports.
@@ -1300,7 +1299,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
         return []
 
     def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
-                   random_state: Optional[int] = 42) -> 'ObjectDetectionDatasetMaker':
+                   random_state: Optional[int] = 42) -> 'DragonDatasetObjectDetection':
         """
         Splits the loaded image-annotation pairs into train, validation, and test sets.
 
@@ -1310,7 +1309,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             random_state (int | None): Seed for reproducible splits.
 
         Returns:
-            ObjectDetectionDatasetMaker: The same instance, now with datasets created.
+            DragonDatasetObjectDetection: The same instance, now with datasets created.
         """
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
@@ -1364,7 +1363,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
 
     def configure_transforms(self, 
                              mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'ObjectDetectionDatasetMaker':
+                             std: Optional[List[float]] = [0.229, 0.224, 0.225]) -> 'DragonDatasetObjectDetection':
         """
         Configures and applies the image and target transformations.
         
@@ -1379,7 +1378,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             std (List[float] | None): The std dev values for image normalization.
 
         Returns:
-            ObjectDetectionDatasetMaker: The same instance, with transforms applied.
+            DragonDatasetObjectDetection: The same instance, with transforms applied.
         """
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
@@ -1496,7 +1495,7 @@ class ObjectDetectionDatasetMaker(_BaseMaker):
             )
         
         # Save the file
-        save_recipe(recipe, file_path)
+        _save_recipe(recipe, file_path)
     
     def images_per_dataset(self) -> str:
         """

@@ -12,15 +12,15 @@ from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .custom_logger import save_list_strings
-from .ML_scaler import PytorchScaler
-from .keys import DatasetKeys
+from .ML_scaler import DragonScaler
+from .keys import DatasetKeys, MLTaskKeys
 from ._schema import FeatureSchema
 
 
 __all__ = [
-    "DatasetMaker",
-    "DatasetMakerMulti",
-    "SequenceMaker"
+    "DragonDataset",
+    "DragonDatasetMulti",
+    "DragonDatasetSequence"
 ]
 
 
@@ -89,7 +89,7 @@ class _BaseDatasetMaker(ABC):
     def __init__(self):
         self._train_ds: Optional[Dataset] = None
         self._test_ds: Optional[Dataset] = None
-        self.scaler: Optional[PytorchScaler] = None
+        self.scaler: Optional[DragonScaler] = None
         self._id: Optional[str] = None
         self._feature_names: List[str] = []
         self._target_names: List[str] = []
@@ -104,7 +104,7 @@ class _BaseDatasetMaker(ABC):
                         X_test: pandas.DataFrame, 
                         label_dtype: torch.dtype, 
                         schema: FeatureSchema):
-        """Internal helper to fit and apply a PytorchScaler using a FeatureSchema."""
+        """Internal helper to fit and apply a DragonScaler using a FeatureSchema."""
         continuous_feature_indices: Optional[List[int]] = None
 
         # Get continuous feature indices *from the schema*
@@ -126,9 +126,9 @@ class _BaseDatasetMaker(ABC):
 
         # continuous_feature_indices is derived
         if self.scaler is None and continuous_feature_indices:
-            _LOGGER.info("Fitting a new PytorchScaler on training data.")
+            _LOGGER.info("Fitting a new DragonScaler on training data.")
             temp_train_ds = _PytorchDataset(X_train_values, y_train, label_dtype) # type: ignore
-            self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices)
+            self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices)
 
         if self.scaler and self.scaler.mean_ is not None:
             _LOGGER.info("Applying scaler transformation to train and test feature sets.")
@@ -195,7 +195,7 @@ class _BaseDatasetMaker(ABC):
 
     def save_scaler(self, directory: Union[str, Path], verbose: bool=True) -> None:
         """
-        Saves the fitted PytorchScaler's state to a .pth file.
+        Saves the fitted DragonScaler's state to a .pth file.
 
         The filename is automatically generated based on the dataset id.
         
@@ -227,15 +227,15 @@ class _BaseDatasetMaker(ABC):
 
 
 # Single target dataset
-class DatasetMaker(_BaseDatasetMaker):
+class DragonDataset(_BaseDatasetMaker):
     """
     Dataset maker for pre-processed, numerical pandas DataFrames with a single target column.
 
     This class takes a DataFrame, and a FeatureSchema, automatically splits and converts them into PyTorch Datasets.
-    It can also create and apply a PytorchScaler using the schema.
+    It can also create and apply a DragonScaler using the schema.
     
     Attributes:
-        `scaler` -> PytorchScaler | None
+        `scaler` -> DragonScaler | None
         `train_dataset` -> PyTorch Dataset
         `test_dataset`  -> PyTorch Dataset
         `feature_names` -> list[str]
@@ -247,8 +247,8 @@ class DatasetMaker(_BaseDatasetMaker):
     def __init__(self,
                  pandas_df: pandas.DataFrame,
                  schema: FeatureSchema,
-                 kind: Literal["regression", "classification"],
-                 scaler: Union[Literal["fit"], Literal["none"], PytorchScaler],
+                 kind: Literal["regression", "binary classification", "multiclass classification"],
+                 scaler: Union[Literal["fit"], Literal["none"], DragonScaler],
                  test_size: float = 0.2,
                  random_state: int = 42):
         """
@@ -257,13 +257,16 @@ class DatasetMaker(_BaseDatasetMaker):
                 The pre-processed input DataFrame containing all columns. (features and single target).
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
-            kind ("regression" | "classification"): 
-                The type of ML task. This determines the data type of the labels.
-            scaler ("fit" | "none" | PytorchScaler): 
+            kind (str): 
+                The type of ML task. Must be one of:
+                - "regression"
+                - "binary classification"
+                - "multiclass classification"
+            scaler ("fit" | "none" | DragonScaler): 
                 Strategy for data scaling:
-                - "fit": Fit a new PytorchScaler on continuous features.
+                - "fit": Fit a new DragonScaler on continuous features.
                 - "none": Do not scale data (e.g., for TabularTransformer).
-                - PytorchScaler instance: Use a pre-fitted scaler to transform data.
+                - DragonScaler instance: Use a pre-fitted scaler to transform data.
             test_size (float): 
                 The proportion of the dataset to allocate to the test split.
             random_state (int): 
@@ -278,11 +281,11 @@ class DatasetMaker(_BaseDatasetMaker):
             _apply_scaling = True
         elif scaler == "none":
             self.scaler = None
-        elif isinstance(scaler, PytorchScaler):
+        elif isinstance(scaler, DragonScaler):
             self.scaler = scaler # Use the provided one
             _apply_scaling = True
         else:
-            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a PytorchScaler instance.")
+            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a DragonScaler instance.")
             raise ValueError()
         
         # --- 1. Identify features (from schema) ---
@@ -298,7 +301,7 @@ class DatasetMaker(_BaseDatasetMaker):
             _LOGGER.error("No target column found. The schema's features match the DataFrame's columns exactly.")
             raise ValueError("No target column found in DataFrame.")
         if len(target_cols_set) > 1:
-            _LOGGER.error(f"Ambiguous target. Found {len(target_cols_set)} columns not in the schema: {list(target_cols_set)}. DatasetMaker (single-target) requires exactly one.")
+            _LOGGER.error(f"Ambiguous target. Found {len(target_cols_set)} columns not in the schema: {list(target_cols_set)}. One target required.")
             raise ValueError("Ambiguous target: More than one non-feature column found.")
             
         target_name = list(target_cols_set)[0]
@@ -318,7 +321,14 @@ class DatasetMaker(_BaseDatasetMaker):
         self._X_train_shape, self._X_test_shape = X_train.shape, X_test.shape
         self._y_train_shape, self._y_test_shape = y_train.shape, y_test.shape
         
-        label_dtype = torch.float32 if kind == "regression" else torch.int64
+        # --- label_dtype logic ---
+        if kind == MLTaskKeys.REGRESSION or kind == MLTaskKeys.BINARY_CLASSIFICATION:
+            label_dtype = torch.float32
+        elif kind == MLTaskKeys.MULTICLASS_CLASSIFICATION:
+            label_dtype = torch.int64
+        else:
+            _LOGGER.error(f"Invalid 'kind' {kind}. Must be '{MLTaskKeys.REGRESSION}', '{MLTaskKeys.BINARY_CLASSIFICATION}', or '{MLTaskKeys.MULTICLASS_CLASSIFICATION}'.")
+            raise ValueError()
 
         # --- 4. Scale (using the schema) ---
         if _apply_scaling:
@@ -349,7 +359,7 @@ class DatasetMaker(_BaseDatasetMaker):
 
 
 # --- Multi-Target Class ---
-class DatasetMakerMulti(_BaseDatasetMaker):
+class DragonDatasetMulti(_BaseDatasetMaker):
     """
     Dataset maker for pre-processed, numerical pandas DataFrames with 
     multiple target columns.
@@ -365,7 +375,8 @@ class DatasetMakerMulti(_BaseDatasetMaker):
                  pandas_df: pandas.DataFrame,
                  target_columns: List[str],
                  schema: FeatureSchema,
-                 scaler: Union[Literal["fit"], Literal["none"], PytorchScaler],
+                 kind: Literal["multitarget regression", "multilabel binary classification"],
+                 scaler: Union[Literal["fit"], Literal["none"], DragonScaler],
                  test_size: float = 0.2,
                  random_state: int = 42):
         """
@@ -377,11 +388,15 @@ class DatasetMakerMulti(_BaseDatasetMaker):
                 List of target column names.
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
-            scaler ("fit" | "none" | PytorchScaler): 
+            kind (str):
+                The type of multi-target ML task. Must be one of:
+                - "multitarget regression"
+                - "multilabel binary classification"
+            scaler ("fit" | "none" | DragonScaler): 
                 Strategy for data scaling:
-                - "fit": Fit a new PytorchScaler on continuous features.
+                - "fit": Fit a new DragonScaler on continuous features.
                 - "none": Do not scale data (e.g., for TabularTransformer).
-                - PytorchScaler instance: Use a pre-fitted scaler to transform data.
+                - DragonScaler instance: Use a pre-fitted scaler to transform data.
             test_size (float): 
                 The proportion of the dataset to allocate to the test split.
             random_state (int): 
@@ -393,17 +408,22 @@ class DatasetMakerMulti(_BaseDatasetMaker):
         """
         super().__init__()
         
+        # --- Validate new kind parameter ---
+        if kind not in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+            _LOGGER.error(f"Invalid 'kind' {kind}. Must be '{MLTaskKeys.MULTITARGET_REGRESSION}' or '{MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION}'.")
+            raise ValueError()
+        
         _apply_scaling: bool = False
         if scaler == "fit":
             self.scaler = None
             _apply_scaling = True
         elif scaler == "none":
             self.scaler = None
-        elif isinstance(scaler, PytorchScaler):
+        elif isinstance(scaler, DragonScaler):
             self.scaler = scaler # Use the provided one
             _apply_scaling = True
         else:
-            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a PytorchScaler instance.")
+            _LOGGER.error(f"Invalid 'scaler' argument. Must be 'fit', 'none', or a DragonScaler instance.")
             raise ValueError()
         
         # --- 1. Get features and targets from schema/args ---
@@ -495,7 +515,7 @@ class _BaseMaker(ABC):
 
 
 # --- SequenceMaker ---
-class SequenceMaker(_BaseMaker):
+class DragonDatasetSequence(_BaseMaker):
     """
     Creates windowed PyTorch datasets from time-series data.
     
@@ -531,9 +551,9 @@ class SequenceMaker(_BaseMaker):
         self._is_normalized = False
         self._are_windows_generated = False
 
-    def normalize_data(self) -> 'SequenceMaker':
+    def normalize_data(self) -> 'DragonDatasetSequence':
         """
-        Normalizes the sequence data using PytorchScaler. Must be called AFTER 
+        Normalizes the sequence data using DragonScaler. Must be called AFTER 
         splitting to prevent data leakage from the test set.
         """
         if not self._is_split:
@@ -544,7 +564,7 @@ class SequenceMaker(_BaseMaker):
             _LOGGER.warning("Data has already been normalized.")
             return self
 
-        # 1. PytorchScaler requires a Dataset to fit. Create a temporary one.
+        # 1. DragonScaler requires a Dataset to fit. Create a temporary one.
         # The scaler expects 2D data [n_samples, n_features].
         train_features = self.train_sequence.reshape(-1, 1) # type: ignore
 
@@ -552,10 +572,10 @@ class SequenceMaker(_BaseMaker):
         dummy_labels = numpy.zeros(len(train_features))
         temp_train_ds = _PytorchDataset(train_features, dummy_labels, labels_dtype=torch.float32)
 
-        # 2. Fit the PytorchScaler on the temporary training dataset.
+        # 2. Fit the DragonScaler on the temporary training dataset.
         # The sequence is a single feature, so its index is [0].
-        _LOGGER.info("Fitting PytorchScaler on the training data...")
-        self.scaler = PytorchScaler.fit(temp_train_ds, continuous_feature_indices=[0])
+        _LOGGER.info("Fitting DragonScaler on the training data...")
+        self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices=[0])
 
         # 3. Transform sequences using the fitted scaler.
         # The transform method requires a tensor, so we convert, transform, and convert back.
@@ -566,10 +586,10 @@ class SequenceMaker(_BaseMaker):
         self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
 
         self._is_normalized = True
-        _LOGGER.info("Sequence data normalized using PytorchScaler.")
+        _LOGGER.info("Sequence data normalized using DragonScaler.")
         return self
 
-    def split_data(self, test_size: float = 0.2) -> 'SequenceMaker':
+    def split_data(self, test_size: float = 0.2) -> 'DragonDatasetSequence':
         """Splits the sequence into training and testing portions."""
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
@@ -586,7 +606,7 @@ class SequenceMaker(_BaseMaker):
         _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)} points) and testing ({len(self.test_sequence)} points).")
         return self
 
-    def generate_windows(self, sequence_to_sequence: bool = False) -> 'SequenceMaker':
+    def generate_windows(self, sequence_to_sequence: bool = False) -> 'DragonDatasetSequence':
         """
         Generates overlapping windows for features and labels.
         
@@ -633,7 +653,7 @@ class SequenceMaker(_BaseMaker):
             return _PytorchDataset(strided_x, strided_y, labels_dtype=torch.float32)
 
     def denormalize(self, data: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
-        """Applies inverse transformation using the stored PytorchScaler."""
+        """Applies inverse transformation using the stored DragonScaler."""
         if self.scaler is None:
             _LOGGER.error("Data was not normalized. Cannot denormalize.")
             raise RuntimeError()
