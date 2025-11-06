@@ -248,7 +248,9 @@ class DragonDatasetVision(_BaseMaker):
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
         return self
 
-    def configure_transforms(self, resize_size: int = 256, crop_size: int = 224, 
+    def configure_transforms(self, 
+                             resize_size: int = 256, 
+                             crop_size: int = 224, 
                              mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
                              std: Optional[List[float]] = [0.229, 0.224, 0.225],
                              pre_transforms: Optional[List[Callable]] = None,
@@ -259,11 +261,10 @@ class DragonDatasetVision(_BaseMaker):
         This method must be called AFTER data is loaded and split.
         
         It sets up two pipelines:
-        1.  **Training Pipeline:** Includes random augmentations like
-            `RandomResizedCrop` and `RandomHorizontalFlip` (plus any
+        1.  **Training Pipeline:** Includes random augmentations:
+            `RandomResizedCrop(crop_size)`, `RandomHorizontalFlip(0.5)`, and `RandomRotation(90)` (plus any
             `extra_train_transforms`) for online augmentation.
-        2.  **Validation/Test Pipeline:** A deterministic pipeline using
-            `Resize` and `CenterCrop` for consistent evaluation.
+        2.  **Validation/Test Pipeline:** A deterministic pipeline using `Resize` and `CenterCrop` for consistent evaluation.
             
         Both pipelines finish with `ToTensor` and `Normalize`.
 
@@ -314,8 +315,9 @@ class DragonDatasetVision(_BaseMaker):
 
         # Base augmentations for training
         base_train_transforms = [
-            transforms.RandomResizedCrop(crop_size), 
-            transforms.RandomHorizontalFlip()
+            transforms.RandomResizedCrop(size=crop_size), 
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(degrees=90)
         ]
         if extra_train_transforms:
             base_train_transforms.extend(extra_train_transforms)

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+### [15.1.0]
+
+## Added
+
+- ML_evaluation: `classification_metrics()`, Optimal Classification Threshold (Youden's J Statistic) calculation.
+- ML_evaluation_multi: `multi_label_classification_metrics()`, Optimal Classification Threshold (Youden's J Statistic) calculation.
+
+### Changed
+
+- ML_trainer: 
+    - `DragonTrainer`, enhanced `.evaluate()` method for automation and robustness.
+    - `DragonDetectionTrainer`, enhanced `.evaluate()` method for automation and robustness.
+- ML_vision_datasetmaster: `DragonDatasetVision.configure_transforms()`, added default `RandomRotation(90)` to the train transform pipeline.
+- ML_datasetmaster: Enhance all classes to support train, validation, and test dataset splits.
+
 ### [15.0.0] 2025-11-06
 
 ### Added

@@ -255,7 +255,40 @@ def multi_label_classification_metrics(
         plt.close(fig_cm)
 
         # --- Save ROC Curve (uses y_prob) ---
-        fpr, tpr, _ = roc_curve(true_i, prob_i)
+        fpr, tpr, thresholds = roc_curve(true_i, prob_i)
+        
+        try:
+            # Calculate Youden's J statistic (tpr - fpr)
+            J = tpr - fpr
+            # Find the index of the best threshold
+            best_index = np.argmax(J)
+            optimal_threshold = thresholds[best_index]
+            best_tpr = tpr[best_index]
+            best_fpr = fpr[best_index]
+            
+            # Define the filename
+            threshold_filename = f"best_threshold_{sanitized_name}.txt"
+            threshold_path = save_dir_path / threshold_filename
+            
+            # The class name is the target_name for this label
+            class_name = name 
+            
+            # Create content for the file
+            file_content = (
+                f"Optimal Classification Threshold (Youden's J Statistic)\n"
+                f"Class/Label: {class_name}\n"
+                f"--------------------------------------------------\n"
+                f"Threshold: {optimal_threshold:.6f}\n"
+                f"True Positive Rate (TPR): {best_tpr:.6f}\n"
+                f"False Positive Rate (FPR): {best_fpr:.6f}\n"
+            )
+            
+            threshold_path.write_text(file_content, encoding="utf-8")
+            _LOGGER.info(f"💾 Optimal threshold for '{name}' saved to '{threshold_path.name}'")
+
+        except Exception as e:
+            _LOGGER.warning(f"Could not calculate or save optimal threshold for '{name}': {e}")
+        
         auc = roc_auc_score(true_i, prob_i)
         fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
         ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=config.ROC_PR_line) # Use config color

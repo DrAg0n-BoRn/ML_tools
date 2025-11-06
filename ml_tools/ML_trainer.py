@@ -9,7 +9,7 @@ from .ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckp
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._script_info import _script_info
-from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords
+from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
 from ._logger import _LOGGER
 from .path_manager import make_fullpath, sanitize_filename
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
@@ -23,7 +23,10 @@ __all__ = [
 
 
 class DragonTrainer:
-    def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
+    def __init__(self, 
+                 model: nn.Module, 
+                 train_dataset: Dataset, 
+                 validation_dataset: Dataset, 
                  kind: Literal["regression", "binary classification", "multiclass classification", 
                                "multitarget regression", "multilabel binary classification", 
                                "binary segmentation", "multiclass segmentation", "binary image classification", "multiclass image classification"],
@@ -43,7 +46,7 @@ class DragonTrainer:
         Args:
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
-            test_dataset (Dataset): The testing/validation dataset.
+            validation_dataset (Dataset): The validation dataset.
             kind (str): Used to redirect to the correct process. 
             criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
             optimizer (torch.optim.Optimizer): The optimizer.
@@ -77,7 +80,7 @@ class DragonTrainer:
 
         self.model = model
         self.train_dataset = train_dataset
-        self.test_dataset = test_dataset
+        self.validation_dataset = validation_dataset
         self.kind = kind
         self.optimizer = optimizer
         self.scheduler = None
@@ -114,7 +117,7 @@ class DragonTrainer:
 
         # Internal state
         self.train_loader = None
-        self.test_loader = None
+        self.validation_loader = None
         self.history = {}
         self.epoch = 0
         self.epochs = 0 # Total epochs for the fit run
@@ -152,8 +155,8 @@ class DragonTrainer:
             drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
         )
         
-        self.test_loader = DataLoader(
-            dataset=self.test_dataset, 
+        self.validation_loader = DataLoader(
+            dataset=self.validation_dataset, 
             batch_size=batch_size, 
             shuffle=False, 
             num_workers=loader_workers, 
@@ -240,13 +243,6 @@ class DragonTrainer:
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
             resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
-            
-        Note:
-            For regression tasks using `nn.MSELoss` or `nn.L1Loss`, the trainer
-            automatically aligns the model's output tensor with the target tensor's
-            shape using `output.view_as(target)`. This handles the common case
-            where a model outputs a shape of `[batch_size, 1]` and the target has a
-            shape of `[batch_size]`.
         """
         self.epochs = epochs
         self._batch_size = batch_size
@@ -304,10 +300,7 @@ class DragonTrainer:
             
             # --- Label Type/Shape Correction ---
             # Cast target to float for BCE-based losses
-            if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
-                            MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
-                            MLTaskKeys.BINARY_SEGMENTATION, 
-                            MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
                 target = target.float()
 
             # Reshape output to match target for single-logit tasks
@@ -346,17 +339,14 @@ class DragonTrainer:
         self.model.eval()
         running_loss = 0.0
         with torch.no_grad():
-            for features, target in self.test_loader: # type: ignore
+            for features, target in self.validation_loader: # type: ignore
                 features, target = features.to(self.device), target.to(self.device)
                 
                 output = self.model(features)
                 
                 # --- Label Type/Shape Correction ---
                 # Cast target to float for BCE-based losses
-                if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
-                                MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
-                                MLTaskKeys.BINARY_SEGMENTATION, 
-                                MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+                if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
                     target = target.float()
 
                 # Reshape output to match target for single-logit tasks
@@ -374,7 +364,7 @@ class DragonTrainer:
                 
                 running_loss += loss.item() * features.size(0)
         
-        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.test_loader.dataset)} # type: ignore
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.validation_loader.dataset)} # type: ignore
         return logs
     
     def _predict_for_eval(self, dataloader: DataLoader):
@@ -467,12 +457,12 @@ class DragonTrainer:
                     y_true_batch = target.numpy()
 
                 yield y_pred_batch, y_prob_batch, y_true_batch
-
+                
     def evaluate(self, 
                  save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
-                 classification_threshold: float = 0.5,
-                 data: Optional[Union[DataLoader, Dataset]] = None,
+                 classification_threshold: Optional[float] = None,
+                 test_data: Optional[Union[DataLoader, Dataset]] = None,
                  format_configuration: Optional[Union[ClassificationMetricsFormat, 
                                                       MultiClassificationMetricsFormat,
                                                       RegressionMetricsFormat,
@@ -486,9 +476,99 @@ class DragonTrainer:
                 - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
             save_dir (str | Path): Directory to save all reports and plots.
-            classification_threshold (float): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
-            data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
+            classification_threshold (float | None): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
+            test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
             format_configuration: Optional configuration for metric format output.
+        """
+        # Validate model checkpoint
+        if isinstance(model_checkpoint, Path):
+            checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
+        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+            checkpoint_validated = model_checkpoint
+        else:
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.LATEST}', or the string '{MagicWords.CURRENT}'.")
+            raise ValueError()
+        
+        # Validate classification threshold
+        if self.kind not in MLTaskKeys.ALL_BINARY_TASKS:
+            # dummy value for tasks that do not need it
+            threshold_validated = 0.5
+        elif classification_threshold is None:
+            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
+                _LOGGER.error(f"The classification threshold must be provided for any of the following tasks:\n{MLTaskKeys.ALL_BINARY_TASKS}")
+                raise ValueError()
+            else:
+                # dummy value for tasks that do not need it
+                threshold_validated = 0.5
+        elif classification_threshold <= 0.0 or classification_threshold >= 1.0:
+            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
+                _LOGGER.error(f"A classification threshold of {classification_threshold} is invalid. Must be in the range (0.0 - 1.0).")
+                raise ValueError()
+            else:
+                # dummy value for tasks that do not need it
+                threshold_validated = 0.5
+        else:
+            threshold_validated = classification_threshold
+        
+        # Validate configuration
+        if format_configuration is not None:
+            if not isinstance(format_configuration, (ClassificationMetricsFormat, 
+                                                     MultiClassificationMetricsFormat, 
+                                                     RegressionMetricsFormat, 
+                                                     SegmentationMetricsFormat)):
+                _LOGGER.error(f"Invalid 'format_configuration': '{type(format_configuration)}'.")
+                raise ValueError()
+        
+        configuration_validated = format_configuration
+        
+        # Validate directory
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        # Validate test data and dispatch
+        if test_data is not None:
+            if not isinstance(test_data, (DataLoader, Dataset)):
+                _LOGGER.error(f"Invalid type for 'test_data': '{type(test_data)}'.")
+                raise ValueError()
+            test_data_validated = test_data
+                
+            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
+            test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
+            
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            self._evaluate(save_dir=validation_metrics_path,
+                           model_checkpoint=checkpoint_validated,
+                           classification_threshold=threshold_validated,
+                           data=None,
+                           format_configuration=configuration_validated)
+            
+            # Dispatch test set
+            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            self._evaluate(save_dir=test_metrics_path,
+                           model_checkpoint="current",
+                           classification_threshold=threshold_validated,
+                           data=test_data_validated,
+                           format_configuration=configuration_validated)
+        else:
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            self._evaluate(save_dir=save_path,
+                           model_checkpoint=checkpoint_validated,
+                           classification_threshold=threshold_validated,
+                           data=None,
+                           format_configuration=configuration_validated)
+        
+    def _evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 classification_threshold: float,
+                 data: Optional[Union[DataLoader, Dataset]],
+                 format_configuration: Optional[Union[ClassificationMetricsFormat, 
+                                                      MultiClassificationMetricsFormat,
+                                                      RegressionMetricsFormat,
+                                                      SegmentationMetricsFormat]]):
+        """
+        Changed to a private helper function.
         """
         dataset_for_names = None
         eval_loader = None
@@ -521,17 +601,17 @@ class DragonTrainer:
                                      pin_memory=(self.device.type == "cuda"))
             dataset_for_names = data
         else: # data is None, use the trainer's default test dataset
-            if self.test_dataset is None:
+            if self.validation_dataset is None:
                 _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
                 raise ValueError()
             # Create a fresh DataLoader from the test_dataset
-            eval_loader = DataLoader(self.test_dataset, 
+            eval_loader = DataLoader(self.validation_dataset, 
                                      batch_size=self._batch_size, 
                                      shuffle=False, 
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"))
             
-            dataset_for_names = self.test_dataset
+            dataset_for_names = self.validation_dataset
 
         if eval_loader is None:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
@@ -726,7 +806,7 @@ class DragonTrainer:
             return
 
         # 2. Determine target dataset and get explanation instances
-        target_dataset = explain_dataset if explain_dataset is not None else self.test_dataset
+        target_dataset = explain_dataset if explain_dataset is not None else self.validation_dataset
         instances_to_explain = _get_random_sample(target_dataset, n_samples)
         if instances_to_explain is None:
             _LOGGER.error("Explanation dataset is empty or invalid. Skipping SHAP analysis.")
@@ -835,7 +915,7 @@ class DragonTrainer:
             return
 
         # --- Step 2: Set up the dataloader ---
-        dataset_to_use = explain_dataset if explain_dataset is not None else self.test_dataset
+        dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
         if not isinstance(dataset_to_use, Dataset):
             _LOGGER.error("The explanation dataset is empty or invalid. Skipping attention analysis.")
             return
@@ -1139,9 +1219,10 @@ class DragonDetectionTrainer:
             _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
             raise
 
-    def fit(self, 
-            epochs: int = 10, 
-            batch_size: int = 10, 
+    def fit(self,
+            save_dir: Union[str,Path],
+            epochs: int = 100, 
+            batch_size: int = 2, 
             shuffle: bool = True,
             resume_from_checkpoint: Optional[Union[str, Path]] = None):
         """
@@ -1150,6 +1231,7 @@ class DragonDetectionTrainer:
         Returns the "History" callback dictionary.
 
         Args:
+            save_dir (str | Path): Directory to save the loss plot.
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
@@ -1186,6 +1268,9 @@ class DragonDetectionTrainer:
                 break
 
         self._callbacks_hook('on_train_end')
+        
+        plot_losses(history=self.history, save_dir=save_dir)
+        
         return self.history
     
     def _train_step(self):
@@ -1280,8 +1365,64 @@ class DragonDetectionTrainer:
     def evaluate(self, 
                  save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
-                 data: Optional[Union[DataLoader, Dataset]] = None):
+                 test_data: Optional[Union[DataLoader, Dataset]] = None):
         """
+        Evaluates the model using object detection mAP metrics.
+
+        Args:
+            save_dir (str | Path): Directory to save all reports and plots.
+            model_checkpoint ('auto' | Path | None): 
+                - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
+                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'current', use the current state of the trained model up the latest trained epoch.
+            test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
+        """
+        # Validate model checkpoint
+        if isinstance(model_checkpoint, Path):
+            checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
+        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+            checkpoint_validated = model_checkpoint
+        else:
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.LATEST}', or the string '{MagicWords.CURRENT}'.")
+            raise ValueError()
+        
+        # Validate directory
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        # Validate test data and dispatch
+        if test_data is not None:
+            if not isinstance(test_data, (DataLoader, Dataset)):
+                _LOGGER.error(f"Invalid type for 'test_data': '{type(test_data)}'.")
+                raise ValueError()
+            test_data_validated = test_data
+            
+            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
+            test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
+            
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            self._evaluate(save_dir=validation_metrics_path,
+                           model_checkpoint=checkpoint_validated,
+                           data=None) # 'None' triggers use of self.test_dataset
+            
+            # Dispatch test set
+            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            self._evaluate(save_dir=test_metrics_path,
+                           model_checkpoint="current", # Use 'current' state after loading checkpoint once
+                           data=test_data_validated)
+        else:
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            self._evaluate(save_dir=save_path,
+                           model_checkpoint=checkpoint_validated,
+                           data=None) # 'None' triggers use of self.test_dataset
+    
+    def _evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 data: Optional[Union[DataLoader, Dataset]]):
+        """
+        Changed to a private helper method
         Evaluates the model using object detection mAP metrics.
 
         Args:
@@ -1388,7 +1529,7 @@ class DragonDetectionTrainer:
         )
         
         # print("\n--- Training History ---")
-        plot_losses(self.history, save_dir=save_dir)
+        # plot_losses(self.history, save_dir=save_dir)
 
     def _callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""

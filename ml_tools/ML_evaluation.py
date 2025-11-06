@@ -259,13 +259,50 @@ def classification_metrics(save_dir: Union[str, Path],
             
             # Binarize y_true for the current class
             y_true_binary = (y_true == class_index).astype(int)
-
+            
             # --- Save ROC Curve ---
-            fpr, tpr, _ = roc_curve(y_true_binary, y_score)
+            fpr, tpr, thresholds = roc_curve(y_true_binary, y_score)
+            
+            try:
+                # Calculate Youden's J statistic (tpr - fpr)
+                J = tpr - fpr
+                # Find the index of the best threshold
+                best_index = np.argmax(J)
+                optimal_threshold = thresholds[best_index]
+                
+                # Define the filename
+                threshold_filename = f"best_threshold{save_suffix}.txt"
+                threshold_path = save_dir_path / threshold_filename
+                
+                # Get the class name for the report
+                class_name = ""
+                # Check if we have display labels and the current index is valid
+                if map_display_labels and class_index < len(map_display_labels):
+                    class_name = map_display_labels[class_index]
+                    if num_classes > 2:
+                        # Add 'vs. Rest' for multiclass one-vs-rest plots
+                        class_name += " (vs. Rest)"
+                else:
+                    # Fallback to the generic title or default binary name
+                    class_name = plot_title.strip() or "Binary Positive Class"
+                
+                # Create content for the file
+                file_content = (
+                    f"Optimal Classification Threshold (Youden's J Statistic)\n"
+                    f"Class: {class_name}\n"
+                    f"--------------------------------------------------\n"
+                    f"Threshold: {optimal_threshold:.6f}\n"
+                    f"True Positive Rate (TPR): {tpr[best_index]:.6f}\n"
+                    f"False Positive Rate (FPR): {fpr[best_index]:.6f}\n"
+                )
+                
+                threshold_path.write_text(file_content, encoding="utf-8")
+                _LOGGER.info(f"💾 Optimal threshold saved as '{threshold_path.name}'")
+
+            except Exception as e:
+                _LOGGER.warning(f"Could not calculate or save optimal threshold: {e}")
             
             # Calculate AUC. 
-            # Note: For multiclass, roc_auc_score(y_true, y_prob, multi_class='ovr') could average, but plotting individual curves is more informative.
-            # Here we calculate the specific AUC for the binarized problem.
             auc = roc_auc_score(y_true_binary, y_score) 
             
             fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)

@@ -147,6 +147,13 @@ class MLTaskKeys:
     MULTICLASS_SEGMENTATION = "multiclass segmentation"
     
     OBJECT_DETECTION = "object detection"
+    
+    ALL_BINARY_TASKS = [BINARY_CLASSIFICATION, MULTILABEL_BINARY_CLASSIFICATION, BINARY_IMAGE_CLASSIFICATION, BINARY_SEGMENTATION]
+
+
+class DragonTrainerKeys:
+    VALIDATION_METRICS_DIR = "Validation_Metrics"
+    TEST_METRICS_DIR = "Test_Metrics"
 
 
 class _OneHotOtherPlaceholder:
