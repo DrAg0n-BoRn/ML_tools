@@ -5,7 +5,7 @@ from typing import Union, Literal, Optional
 from pathlib import Path
 
 from .path_manager import make_fullpath
-from .keys import PyTorchLogKeys, PyTorchCheckpointKeys
+from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys
 from ._logger import _LOGGER
 from ._script_info import _script_info
 

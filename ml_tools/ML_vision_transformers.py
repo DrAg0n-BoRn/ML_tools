@@ -6,7 +6,7 @@ import json
 
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .keys import VisionTransformRecipeKeys
+from ._keys import VisionTransformRecipeKeys
 from .path_manager import make_fullpath
 
 

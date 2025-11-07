@@ -3,9 +3,8 @@ from torch.utils.data import Dataset
 import pandas
 import numpy
 from sklearn.model_selection import train_test_split
-from typing import Literal, Union, Tuple, List, Optional
-from abc import ABC, abstractmethod
-import matplotlib.pyplot as plt
+from typing import Literal, Union, List, Optional
+from abc import ABC
 from pathlib import Path
 
 from .path_manager import make_fullpath, sanitize_filename
@@ -13,16 +12,15 @@ from ._logger import _LOGGER
 from ._script_info import _script_info
 from .custom_logger import save_list_strings
 from .ML_scaler import DragonScaler
-from .keys import DatasetKeys, MLTaskKeys
+from ._keys import DatasetKeys, MLTaskKeys
 from ._schema import FeatureSchema
+from .custom_logger import custom_logger
 
 
 __all__ = [
     "DragonDataset",
-    "DragonDatasetMulti",
-    "DragonDatasetSequence"
+    "DragonDatasetMulti"
 ]
-
 
 # --- Internal Helper Class ---
 class _PytorchDataset(Dataset):
@@ -57,6 +55,7 @@ class _PytorchDataset(Dataset):
             
         self._feature_names = feature_names
         self._target_names = target_names
+        self.classes: List[str] = []
 
     def __len__(self):
         return len(self.features)
@@ -78,6 +77,7 @@ class _PytorchDataset(Dataset):
             return self._target_names
         else:
             _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
+            raise ValueError()
 
 
 # --- Abstract Base Class ---
@@ -100,6 +100,7 @@ class _BaseDatasetMaker(ABC):
         self._y_train_shape = (0,)
         self._y_val_shape = (0,)
         self._y_test_shape = (0,)
+        self.class_map: Optional[dict[str, int]] = None
         
     def _prepare_scaler(self, 
                         X_train: pandas.DataFrame, 
@@ -227,6 +228,24 @@ class _BaseDatasetMaker(ABC):
         self.scaler.save(filepath, verbose=False)
         if verbose:
             _LOGGER.info(f"Scaler for dataset '{self.id}' saved as '{filepath.name}'.")
+            
+    def save_class_map(self, directory: Union[str,Path], verbose: bool=True) -> None:
+        """
+        Saves the class to index mapping {str: int} to a directory.
+        """
+        if not self.class_map:
+            _LOGGER.warning(f"No class_map defined. Skipping.")
+            return
+        
+        log_name = f"Class_to_Index_{self.id}" if self.id else "Class_to_Index"
+        
+        custom_logger(data=self.class_map,
+                      save_directory=directory,
+                      log_name=log_name,
+                      add_timestamp=False,
+                      dict_as="json")
+        if verbose:
+            _LOGGER.info(f"Class map for '{self.id}' saved as '{log_name}.json'.")
 
     def save_artifacts(self, directory: Union[str, Path], verbose: bool=True) -> None:
         """
@@ -236,6 +255,8 @@ class _BaseDatasetMaker(ABC):
         self.save_target_names(directory=directory, verbose=verbose)
         if self.scaler is not None:
             self.save_scaler(directory=directory, verbose=verbose)
+        if self.class_map is not None:
+            self.save_class_map(directory=directory, verbose=verbose)
 
 
 # Single target dataset
@@ -365,6 +386,7 @@ class DragonDataset(_BaseDatasetMaker):
         else:
             _LOGGER.error(f"Invalid 'kind' {kind}. Must be '{MLTaskKeys.REGRESSION}', '{MLTaskKeys.BINARY_CLASSIFICATION}', or '{MLTaskKeys.MULTICLASS_CLASSIFICATION}'.")
             raise ValueError()
+        self.kind = kind
 
         # --- 4. Scale (using the schema) ---
         if _apply_scaling:
@@ -381,6 +403,39 @@ class DragonDataset(_BaseDatasetMaker):
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._val_ds = _PytorchDataset(X_val_final, y_val, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+
+    def set_class_map(self, class_map: dict[str, int]) -> None:
+        """
+        Sets a map of class_name -> integer_label.
+        
+        This is used by the InferenceHandler and to finalize the model after training.
+
+        Args:
+            class_map (Dict[str, int]): A dictionary mapping the integer label
+                to its string name.
+                Example: {'cat': 0, 'dog': 1, 'bird': 2}
+        """
+        if self.kind == MLTaskKeys.REGRESSION:
+            _LOGGER.warning(f"Class Map is for classifications tasks only.")
+            return
+        
+        self.class_map = class_map
+        
+        try:
+            sorted_items = sorted(class_map.items(), key=lambda item: item[1])
+            class_list = [item[0] for item in sorted_items]
+        except Exception as e:
+            _LOGGER.error(f"Could not sort class map. Ensure it is a dict of {str: int}. Error: {e}")
+            raise TypeError()
+        
+        if self._train_ds:
+            self._train_ds.classes = class_list # type: ignore
+        if self._val_ds:
+            self._val_ds.classes = class_list # type: ignore
+        if self._test_ds:
+            self._test_ds.classes = class_list # type: ignore
+            
+        _LOGGER.info(f"Class map set for dataset '{self.id}':\n{class_map}")
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
@@ -557,296 +612,6 @@ class DragonDatasetMulti(_BaseDatasetMaker):
             s += f"  Validation Samples: {len(self._val_ds)}\n" # type: ignore
         if self._test_ds:
             s += f"  Test Samples: {len(self._test_ds)}\n" # type: ignore
-            
-        return s
-
-
-# --- Private Base Class ---
-class _BaseMaker(ABC):
-    """
-    Abstract Base Class for extra dataset makers.
-    """
-    def __init__(self):
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
-
-    @abstractmethod
-    def get_datasets(self) -> Tuple[Dataset, ...]:
-        """
-        The primary method to retrieve the final, processed PyTorch datasets.
-        Must be implemented by all subclasses.
-        """
-        pass
-
-
-# --- SequenceMaker ---
-class DragonDatasetSequence(_BaseMaker):
-    """
-    Creates windowed PyTorch datasets from time-series data.
-    
-    Pipeline:
-    
-    1. `.split_data()`: Separate time series into training, validation, and testing portions.
-    2. `.normalize_data()`: Normalize the data. The scaler will be fitted on the training portion.
-    3. `.generate_windows()`: Create the windowed sequences from the split and normalized data.
-    4. `.get_datasets()`: Return Pytorch train and test datasets.
-    """
-    def __init__(self, data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], sequence_length: int):
-        super().__init__()
-        self.sequence_length = sequence_length
-        self.scaler = None
-        
-        if isinstance(data, pandas.DataFrame):
-            self.time_axis = data.index.values
-            self.sequence = data.iloc[:, 0].values.astype(numpy.float32)
-        elif isinstance(data, pandas.Series):
-            self.time_axis = data.index.values
-            self.sequence = data.values.astype(numpy.float32)
-        elif isinstance(data, numpy.ndarray):
-            self.time_axis = numpy.arange(len(data))
-            self.sequence = data.astype(numpy.float32)
-        else:
-            _LOGGER.error("Data must be a pandas DataFrame/Series or a numpy array.")
-            raise TypeError()
-            
-        self.train_sequence = None
-        self.val_sequence = None
-        self.test_sequence = None
-        
-        self.train_time_axis = None
-        self.val_time_axis = None 
-        self.test_time_axis = None 
-        
-        self._is_split = False
-        self._is_normalized = False
-        self._are_windows_generated = False
-
-    def normalize_data(self) -> 'DragonDatasetSequence':
-        """
-        Normalizes the sequence data using DragonScaler. Must be called AFTER 
-        splitting to prevent data leakage from the test set.
-        """
-        if not self._is_split:
-            _LOGGER.error("Data must be split BEFORE normalizing. Call .split_data() first.")
-            raise RuntimeError()
-
-        if self.scaler:
-            _LOGGER.warning("Data has already been normalized.")
-            return self
-
-        # 1. DragonScaler requires a Dataset to fit. Create a temporary one.
-        # The scaler expects 2D data [n_samples, n_features].
-        train_features = self.train_sequence.reshape(-1, 1) # type: ignore
-
-        # _PytorchDataset needs labels, so we create dummy ones.
-        dummy_labels = numpy.zeros(len(train_features))
-        temp_train_ds = _PytorchDataset(train_features, dummy_labels, labels_dtype=torch.float32)
-
-        # 2. Fit the DragonScaler on the temporary training dataset.
-        # The sequence is a single feature, so its index is [0].
-        _LOGGER.info("Fitting DragonScaler on the training data...")
-        self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices=[0])
-
-        # 3. Transform sequences using the fitted scaler.
-        # The transform method requires a tensor, so we convert, transform, and convert back.
-        train_tensor = torch.tensor(self.train_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-        val_tensor = torch.tensor(self.val_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-        test_tensor = torch.tensor(self.test_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-
-        self.train_sequence = self.scaler.transform(train_tensor).numpy().flatten()
-        self.val_sequence = self.scaler.transform(val_tensor).numpy().flatten()
-        self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
-
-        self._is_normalized = True
-        _LOGGER.info("Sequence data normalized using DragonScaler.")
-        return self
-
-    def split_data(self, validation_size: float = 0.2, test_size: float = 0.1) -> 'DragonDatasetSequence':
-        """
-        Splits the sequence chronologically into training, validation, and testing portions.
-        
-        To prevent windowing errors, the validation and test sets include an
-        overlap of `sequence_length` from the preceding data.
-        """
-        if self._is_split:
-            _LOGGER.warning("Data has already been split.")
-            return self
-            
-        if (validation_size + test_size) >= 1.0:
-            _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
-            raise ValueError("validation_size and test_size sum must be < 1.0")
-
-        total_size = len(self.sequence)
-        
-        # Calculate split indices
-        test_split_idx = int(total_size * (1 - test_size))
-        val_split_idx = int(total_size * (1 - test_size - validation_size))
-        
-        # --- Create sequences ---
-        # Train sequence is from the beginning to the validation index
-        self.train_sequence = self.sequence[:val_split_idx]
-        
-        # Validation sequence starts `sequence_length` before its split index for windowing
-        self.val_sequence = self.sequence[val_split_idx - self.sequence_length : test_split_idx]
-        
-        # Test sequence starts `sequence_length` before its split index for windowing
-        self.test_sequence = self.sequence[test_split_idx - self.sequence_length:]
-        
-        # --- Create time axes ---
-        self.train_time_axis = self.time_axis[:val_split_idx]
-        # The "plottable" validation/test time axes start from their respective split indices
-        self.val_time_axis = self.time_axis[val_split_idx : test_split_idx]
-        self.test_time_axis = self.time_axis[test_split_idx:]
-
-        self._is_split = True
-        _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)}), validation ({len(self.val_sequence)}), and testing ({len(self.test_sequence)}) points.")
-        return self
-
-    def generate_windows(self, sequence_to_sequence: bool = False) -> 'DragonDatasetSequence':
-        """
-        Generates overlapping windows for features and labels.
-        
-        "sequence-to-sequence": Label vectors are of the same size as the feature vectors instead of a single future prediction.
-        """
-        if not self._is_split:
-            _LOGGER.error("Cannot generate windows before splitting data. Call .split_data() first.")
-            raise RuntimeError()
-
-        self._train_dataset = self._create_windowed_dataset(self.train_sequence, sequence_to_sequence) # type: ignore
-        self._val_dataset = self._create_windowed_dataset(self.val_sequence, sequence_to_sequence) # type: ignore
-        self._test_dataset = self._create_windowed_dataset(self.test_sequence, sequence_to_sequence) # type: ignore
-        
-        self._are_windows_generated = True
-        _LOGGER.info("Feature and label windows generated for train, validation, and test sets.")
-        return self
-
-    def _create_windowed_dataset(self, data: numpy.ndarray, use_sequence_labels: bool) -> Dataset:
-        """Efficiently creates windowed features and labels using numpy."""
-        if len(data) <= self.sequence_length:
-            # Validation/Test sets of size 0 might be passed
-            _LOGGER.warning(f"Data length ({len(data)}) is not greater than sequence_length ({self.sequence_length}). Cannot create windows. Returning empty dataset.")
-            return _PytorchDataset(numpy.array([]), numpy.array([]), labels_dtype=torch.float32)
-            
-        if not use_sequence_labels:
-            # Standard: sequence-to-value
-            features = data[:-1]
-            labels = data[self.sequence_length:]
-            
-            n_windows = len(features) - self.sequence_length + 1
-            bytes_per_item = features.strides[0]
-            strided_features = numpy.lib.stride_tricks.as_strided(
-                features, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item)
-            )
-            # Ensure labels align with the end of each feature window
-            aligned_labels = labels[:n_windows]
-            return _PytorchDataset(strided_features, aligned_labels, labels_dtype=torch.float32)
-        
-        else:
-            # Sequence-to-sequence
-            x_data = data[:-1]
-            y_data = data[1:]
-            
-            n_windows = len(x_data) - self.sequence_length + 1
-            bytes_per_item = x_data.strides[0]
-            
-            strided_x = numpy.lib.stride_tricks.as_strided(x_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
-            strided_y = numpy.lib.stride_tricks.as_strided(y_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
-            
-            return _PytorchDataset(strided_x, strided_y, labels_dtype=torch.float32)
-
-    def denormalize(self, data: Union[torch.Tensor, numpy.ndarray]) -> numpy.ndarray:
-        """Applies inverse transformation using the stored DragonScaler."""
-        if self.scaler is None:
-            _LOGGER.error("Data was not normalized. Cannot denormalize.")
-            raise RuntimeError()
-
-        # Ensure data is a torch.Tensor
-        if isinstance(data, numpy.ndarray):
-            tensor_data = torch.tensor(data, dtype=torch.float32)
-        else:
-            tensor_data = data
-
-        # Reshape for the scaler [n_samples, n_features]
-        # Handle single values or sequences
-        original_shape = tensor_data.shape
-        if tensor_data.ndim == 0: # Single value
-             tensor_data = tensor_data.view(1, 1)
-        elif tensor_data.ndim == 1: # 1D sequence [seq_len]
-            tensor_data = tensor_data.view(-1, 1)
-        elif tensor_data.ndim == 2: # Batch of sequences [batch, seq_len]
-            tensor_data = tensor_data.view(-1, 1)
-        # Add more logic if ndim > 2 is expected
-
-        # Apply inverse transform
-        original_scale_tensor = self.scaler.inverse_transform(tensor_data)
-        
-        # Reshape back to original (or flattened if it was 1D/0D)
-        if tensor_data.ndim < 2:
-            return original_scale_tensor.cpu().numpy().flatten()
-        else:
-            return original_scale_tensor.view(original_shape).cpu().numpy()
-
-    def plot(self, predictions: Optional[numpy.ndarray] = None):
-        """Plots the original training, validation and testing data, with optional predictions."""
-        if not self._is_split:
-            _LOGGER.error("Cannot plot before splitting data. Call .split_data() first.")
-            raise RuntimeError()
-        
-        if self.scaler is None:
-            _LOGGER.error("Cannot plot: data has not been normalized, or scaler is missing.")
-            return
-
-        plt.figure(figsize=(15, 6))
-        plt.title("Time Series Data")
-        plt.grid(True)
-        plt.xlabel("Time")
-        plt.ylabel("Value (denormalized)")
-        
-        # Plot denormalized training data
-        plt.plot(self.train_time_axis, self.scaler.inverse_transform(self.train_sequence.reshape(-1, 1)), label='Train Data') # type: ignore
-        
-        # Plot denormalized validation data
-        # We must skip the overlapping 'sequence_length' part for plotting
-        val_plot_data = self.val_sequence[self.sequence_length-1:] # type: ignore
-        plt.plot(self.val_time_axis, self.scaler.inverse_transform(val_plot_data.reshape(-1, 1)), label='Validation Data', c='orange') # type: ignore
-
-        # Plot denormalized test data
-        # We must skip the overlapping 'sequence_length' part for plotting
-        test_plot_data = self.test_sequence[self.sequence_length-1:] # type: ignore
-        plt.plot(self.test_time_axis, self.scaler.inverse_transform(test_plot_data.reshape(-1, 1)), label='Test Data', c='green') # type: ignore
-
-        if predictions is not None:
-            # Assume predictions are for the test set
-            pred_time_axis = self.test_time_axis[:len(predictions)] # type: ignore
-            # Denormalize predictions before plotting
-            denorm_predictions = self.denormalize(predictions)
-            plt.plot(pred_time_axis, denorm_predictions, label='Predictions', c='red', linestyle='--')
-
-        plt.legend()
-        plt.show()
-
-    def get_datasets(self) -> Tuple[Dataset, Dataset, Dataset]:
-        """Returns the final train and test datasets."""
-        if not self._are_windows_generated:
-            _LOGGER.error("Windows have not been generated. Call .generate_windows() first.")
-            raise RuntimeError()
-        return self._train_dataset, self._val_dataset, self._test_dataset
-    
-    def __repr__(self) -> str:
-        s = f"<{self.__class__.__name__}>:\n"
-        s += f"  Sequence Length (Window): {self.sequence_length}\n"
-        s += f"  Total Data Points: {len(self.sequence)}\n"
-        s += "  --- Status ---\n"
-        s += f"  Split: {self._is_split}\n"
-        s += f"  Normalized: {self._is_normalized}\n"
-        s += f"  Windows Generated: {self._are_windows_generated}\n"
-        
-        if self._are_windows_generated:
-            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
-            val_len = len(self._val_dataset) if self._val_dataset else 0 # type: ignore
-            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
-            s += f"  Datasets (Train/Test): {train_len} | {val_len} | {test_len} windows\n"
             
         return s
 

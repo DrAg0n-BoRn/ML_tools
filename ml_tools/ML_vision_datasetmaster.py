@@ -12,11 +12,10 @@ import random
 import json
 import inspect
 
-from .ML_datasetmaster import _BaseMaker
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .keys import VisionTransformRecipeKeys, ObjectDetectionKeys
+from ._keys import VisionTransformRecipeKeys, ObjectDetectionKeys
 from .ML_vision_transformers import TRANSFORM_REGISTRY, _save_recipe
 from .custom_logger import custom_logger
 
@@ -29,7 +28,7 @@ __all__ = [
 
 
 # --- Vision Maker ---
-class DragonDatasetVision(_BaseMaker):
+class DragonDatasetVision:
     """
     Creates processed PyTorch datasets for computer vision tasks from an
     image folder directory.
@@ -44,7 +43,9 @@ class DragonDatasetVision(_BaseMaker):
         """
         Typically not called directly. Use the class methods `from_folder()` or `from_folders()` to create an instance.
         """
-        super().__init__()
+        self._train_dataset = None
+        self._test_dataset = None
+        self._val_dataset = None
         self._full_dataset: Optional[ImageFolder] = None
         self.labels: Optional[List[int]] = None
         self.class_map: Optional[dict[str,int]] = None
@@ -382,8 +383,8 @@ class DragonDatasetVision(_BaseMaker):
             _LOGGER.warning("Transforms have not been configured.")
 
         if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset
-        return self._train_dataset, self._val_dataset
+            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
+        return self._train_dataset, self._val_dataset # type: ignore
 
     def save_transform_recipe(self, filepath: Union[str, Path]) -> None:
         """
@@ -690,7 +691,7 @@ class _PairedRandomResizedCrop:
         return cropped_image, cropped_mask # type: ignore
 
 # --- Segmentation Dataset ---
-class DragonDatasetSegmentation(_BaseMaker):
+class DragonDatasetSegmentation:
     """
     Creates processed PyTorch datasets for segmentation from image and mask folders.
 
@@ -711,7 +712,9 @@ class DragonDatasetSegmentation(_BaseMaker):
         """
         Typically not called directly. Use the class method `from_folders()` to create an instance.
         """
-        super().__init__()
+        self._train_dataset = None
+        self._test_dataset = None
+        self._val_dataset = None
         self.image_paths: List[Path] = []
         self.mask_paths: List[Path] = []
         self.class_map: Dict[str, int] = {}
@@ -800,10 +803,10 @@ class DragonDatasetSegmentation(_BaseMaker):
 
     def set_class_map(self, class_map: Dict[str, int]) -> 'DragonDatasetSegmentation':
         """
-        Sets a map of pixel_value -> class_name. This is used by the MLTrainer for clear evaluation reports.
+        Sets a map of class_name -> pixel value. This is used by the Trainer for clear evaluation reports.
 
         Args:
-            class_map (Dict[int, str]): A dictionary mapping the integer pixel
+            class_map (Dict[str, int]): A dictionary mapping the integer pixel
                 value in a mask to its string name.
                 Example: {'background': 0, 'road': 1, 'car': 2}
         """
@@ -977,8 +980,8 @@ class DragonDatasetSegmentation(_BaseMaker):
             raise RuntimeError()
 
         if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset
-        return self._train_dataset, self._val_dataset
+            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
+        return self._train_dataset, self._val_dataset # type: ignore
     
     def save_transform_recipe(self, filepath: Union[str, Path]) -> None:
         """
@@ -1080,7 +1083,7 @@ class _ObjectDetectionDataset(Dataset):
         self.annotation_paths = annotation_paths
         self.transform = transform
         
-        # --- Propagate 'classes' if they exist (for MLTrainer) ---
+        # --- Propagate 'classes' if they exist ---
         self.classes: List[str] = []
 
     def __len__(self):
@@ -1167,7 +1170,7 @@ class _OD_PairedRandomHorizontalFlip:
         return image, target
 
 
-class DragonDatasetObjectDetection(_BaseMaker):
+class DragonDatasetObjectDetection:
     """
     Creates processed PyTorch datasets for object detection from image
     and JSON annotation folders.
@@ -1194,7 +1197,9 @@ class DragonDatasetObjectDetection(_BaseMaker):
         """
         Typically not called directly. Use the class method `from_folders()` to create an instance.
         """
-        super().__init__()
+        self._train_dataset = None
+        self._test_dataset = None
+        self._val_dataset = None
         self.image_paths: List[Path] = []
         self.annotation_paths: List[Path] = []
         self.class_map: Dict[str, int] = {}
@@ -1449,8 +1454,8 @@ class DragonDatasetObjectDetection(_BaseMaker):
             raise RuntimeError()
 
         if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset
-        return self._train_dataset, self._val_dataset
+            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
+        return self._train_dataset, self._val_dataset # type: ignore
     
     @property
     def collate_fn(self) -> Callable:

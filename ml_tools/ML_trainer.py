@@ -1,105 +1,60 @@
-from typing import List, Literal, Union, Optional, Callable, Dict, Any, Tuple
+from typing import List, Literal, Union, Optional, Callable, Dict, Any
 from pathlib import Path
 from torch.utils.data import DataLoader, Dataset
 import torch
 from torch import nn
 import numpy as np
+from abc import ABC, abstractmethod
 
+from .path_manager import make_fullpath, sanitize_filename
 from .ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckpoint, DragonEarlyStopping, DragonLRScheduler
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
-from ._script_info import _script_info
-from .keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
-from ._logger import _LOGGER
-from .path_manager import make_fullpath, sanitize_filename
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
-from .ML_configuration import ClassificationMetricsFormat, MultiClassificationMetricsFormat, RegressionMetricsFormat, SegmentationMetricsFormat
+from .ML_sequence_evaluation import sequence_to_sequence_metrics, sequence_to_value_metrics
+from .ML_configuration import (ClassificationMetricsFormat, 
+                               MultiClassificationMetricsFormat, 
+                               RegressionMetricsFormat, 
+                               SegmentationMetricsFormat,
+                               SequenceValueMetricsFormat,
+                               SequenceSequenceMetricsFormat)
+
+from ._script_info import _script_info
+from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
+from ._logger import _LOGGER
 
 
 __all__ = [
     "DragonTrainer",
     "DragonDetectionTrainer",
+    "DragonSequenceTrainer"
 ]
 
-
-class DragonTrainer:
+class _BaseDragonTrainer(ABC):
+    """
+    Abstract base class for Dragon Trainers.
+    
+    Handles the common training loop orchestration, checkpointing, callback
+    management, and device handling. Subclasses must implement the
+    task-specific logic (dataloaders, train/val steps, evaluation).
+    """
     def __init__(self, 
                  model: nn.Module, 
-                 train_dataset: Dataset, 
-                 validation_dataset: Dataset, 
-                 kind: Literal["regression", "binary classification", "multiclass classification", 
-                               "multitarget regression", "multilabel binary classification", 
-                               "binary segmentation", "multiclass segmentation", "binary image classification", "multiclass image classification"],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
-                 early_stopping_callback: Optional[DragonEarlyStopping],
-                 lr_scheduler_callback: Optional[DragonLRScheduler],
-                 extra_callbacks: Optional[List[_Callback]] = None,
-                 criterion: Union[nn.Module,Literal["auto"]] = "auto", 
-                 dataloader_workers: int = 2):
-        """
-        Automates the training process of a PyTorch Model.
-        
-        Built-in Callbacks: `History`, `TqdmProgressBar`
-
-        Args:
-            model (nn.Module): The PyTorch model to train.
-            train_dataset (Dataset): The training dataset.
-            validation_dataset (Dataset): The validation dataset.
-            kind (str): Used to redirect to the correct process. 
-            criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
-            optimizer (torch.optim.Optimizer): The optimizer.
-            device (str): The device to run training on ('cpu', 'cuda', 'mps').
-            dataloader_workers (int): Subprocesses for data loading.
-            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
-            
-        Note:
-            - For **regression** and **multi_target_regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`. The model should output as many logits as existing targets.
-            
-            - For **single-label, binary classification**, `nn.BCEWithLogitsLoss` is the standard choice. The model should output a single logit.
-    
-            - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice. The model should output as many logits as existing classes.
-    
-            - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem. The model should output 1 logit per binary target.
-        
-            - For **binary segmentation** tasks, `nn.BCEWithLogitsLoss` is common. The model should output a single logit.
-            
-            - for **multiclass segmentation** tasks, `nn.CrossEntropyLoss` is the standard. The model should output as many logits as existing classes.
-        """
-        if kind not in [MLTaskKeys.REGRESSION,
-                        MLTaskKeys.BINARY_CLASSIFICATION,
-                        MLTaskKeys.MULTICLASS_CLASSIFICATION,
-                        MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION,
-                        MLTaskKeys.MULTITARGET_REGRESSION,
-                        MLTaskKeys.BINARY_SEGMENTATION,
-                        MLTaskKeys.MULTICLASS_SEGMENTATION,
-                        MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
-                        MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
-            raise ValueError(f"'{kind}' is not a valid task type.")
+                 dataloader_workers: int = 2,
+                 checkpoint_callback: Optional[DragonModelCheckpoint] = None,
+                 early_stopping_callback: Optional[DragonEarlyStopping] = None,
+                 lr_scheduler_callback: Optional[DragonLRScheduler] = None,
+                 extra_callbacks: Optional[List[_Callback]] = None):
 
         self.model = model
-        self.train_dataset = train_dataset
-        self.validation_dataset = validation_dataset
-        self.kind = kind
         self.optimizer = optimizer
         self.scheduler = None
         self.device = self._validate_device(device)
         self.dataloader_workers = dataloader_workers
-        self._classification_threshold: float = 0.5
         
-        # loss function
-        if criterion == "auto":
-            if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
-                self.criterion = nn.MSELoss()
-            elif kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
-                self.criterion = nn.BCEWithLogitsLoss()
-            elif kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
-                self.criterion = nn.CrossEntropyLoss()
-        else:
-            self.criterion = criterion
-        
-        # Callback handler - History and TqdmProgressBar are added by default
+        # Callback handler
         default_callbacks = [History(), TqdmProgressBar()]
         
         self._checkpoint_callback = None
@@ -116,9 +71,9 @@ class DragonTrainer:
         self._set_trainer_on_callbacks()
 
         # Internal state
-        self.train_loader = None
-        self.validation_loader = None
-        self.history = {}
+        self.train_loader: Optional[DataLoader] = None
+        self.validation_loader: Optional[DataLoader] = None 
+        self.history: Dict[str, List[Any]] = {}
         self.epoch = 0
         self.epochs = 0 # Total epochs for the fit run
         self.start_epoch = 1
@@ -141,28 +96,6 @@ class DragonTrainer:
         for callback in self.callbacks:
             callback.set_trainer(self)
 
-    def _create_dataloaders(self, batch_size: int, shuffle: bool):
-        """Initializes the DataLoaders."""
-        # Ensure stability on MPS devices by setting num_workers to 0
-        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
-        
-        self.train_loader = DataLoader(
-            dataset=self.train_dataset, 
-            batch_size=batch_size, 
-            shuffle=shuffle, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type),
-            drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
-        )
-        
-        self.validation_loader = DataLoader(
-            dataset=self.validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type)
-        )
-        
     def _load_checkpoint(self, path: Union[str, Path]):
         """Loads a training checkpoint to resume training."""
         p = make_fullpath(path, enforce="file")
@@ -246,7 +179,7 @@ class DragonTrainer:
         """
         self.epochs = epochs
         self._batch_size = batch_size
-        self._create_dataloaders(self._batch_size, shuffle)
+        self._create_dataloaders(self._batch_size, shuffle) # type: ignore
         self.model.to(self.device)
         
         if resume_from_checkpoint:
@@ -257,11 +190,19 @@ class DragonTrainer:
 
         self._callbacks_hook('on_train_begin')
         
+        if not self.train_loader:
+            _LOGGER.error("Train loader is not initialized.")
+            raise ValueError()
+        
+        if not self.validation_loader:
+            _LOGGER.error("Validation loader is not initialized.")
+            raise ValueError()
+        
         for epoch in range(self.start_epoch, self.epochs + 1):
             self.epoch = epoch
-            epoch_logs = {}
+            epoch_logs: Dict[str, Any] = {}
             self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
-
+            
             train_logs = self._train_step()
             epoch_logs.update(train_logs)
 
@@ -280,11 +221,180 @@ class DragonTrainer:
         plot_losses(self.history, save_dir=save_dir)
         
         return self.history
+
+    def _callbacks_hook(self, method_name: str, *args, **kwargs):
+        """Calls the specified method on all callbacks."""
+        for callback in self.callbacks:
+            method = getattr(callback, method_name)
+            method(*args, **kwargs)
+            
+    def to_cpu(self):
+        """
+        Moves the model to the CPU and updates the trainer's device setting.
+        
+        This is useful for running operations that require the CPU.
+        """
+        self.device = torch.device('cpu')
+        self.model.to(self.device)
+        _LOGGER.info("Trainer and model moved to CPU.")
     
+    def to_device(self, device: str):
+        """
+        Moves the model to the specified device and updates the trainer's device setting.
+
+        Args:
+            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
+        """
+        self.device = self._validate_device(device)
+        self.model.to(self.device)
+        _LOGGER.info(f"Trainer and model moved to {self.device}.")
+        
+    # --- Abstract Methods ---
+    # These must be implemented by subclasses
+
+    @abstractmethod
+    def _create_dataloaders(self, batch_size: int, shuffle: bool):
+        """Initializes the DataLoaders."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _train_step(self) -> Dict[str, float]:
+        """Runs a single training epoch."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _validation_step(self) -> Dict[str, float]:
+        """Runs a single validation epoch."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def evaluate(self, *args, **kwargs):
+        """Runs the full model evaluation."""
+        raise NotImplementedError
+    
+    @abstractmethod
+    def _evaluate(self, *args, **kwargs):
+        """Internal evaluation helper."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def finalize_model_training(self, *args, **kwargs):
+        """Saves the finalized model for inference."""
+        raise NotImplementedError
+
+
+# --- DragonTrainer ----
+class DragonTrainer(_BaseDragonTrainer):
+    def __init__(self, 
+                 model: nn.Module, 
+                 train_dataset: Dataset, 
+                 validation_dataset: Dataset, 
+                 kind: Literal["regression", "binary classification", "multiclass classification", 
+                               "multitarget regression", "multilabel binary classification", 
+                               "binary segmentation", "multiclass segmentation", "binary image classification", "multiclass image classification"],
+                 optimizer: torch.optim.Optimizer, 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
+                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 early_stopping_callback: Optional[DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 extra_callbacks: Optional[List[_Callback]] = None,
+                 criterion: Union[nn.Module,Literal["auto"]] = "auto", 
+                 dataloader_workers: int = 2):
+        """
+        Automates the training process of a PyTorch Model.
+        
+        Built-in Callbacks: `History`, `TqdmProgressBar`
+
+        Args:
+            model (nn.Module): The PyTorch model to train.
+            train_dataset (Dataset): The training dataset.
+            validation_dataset (Dataset): The validation dataset.
+            kind (str): Used to redirect to the correct process. 
+            criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
+            optimizer (torch.optim.Optimizer): The optimizer.
+            device (str): The device to run training on ('cpu', 'cuda', 'mps').
+            dataloader_workers (int): Subprocesses for data loading.
+            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
+            
+        Note:
+            - For **regression** and **multi_target_regression** tasks, suggested criterions include `nn.MSELoss` or `nn.L1Loss`. The model should output as many logits as existing targets.
+            
+            - For **single-label, binary classification**, `nn.BCEWithLogitsLoss` is the standard choice. The model should output a single logit.
+    
+            - For **single-label, multi-class classification** tasks, `nn.CrossEntropyLoss` is the standard choice. The model should output as many logits as existing classes.
+    
+            - For **multi-label, binary classification** tasks (where each label is a 0 or 1), `nn.BCEWithLogitsLoss` is the correct choice as it treats each output as an independent binary problem. The model should output 1 logit per binary target.
+        
+            - For **binary segmentation** tasks, `nn.BCEWithLogitsLoss` is common. The model should output a single logit.
+            
+            - for **multiclass segmentation** tasks, `nn.CrossEntropyLoss` is the standard. The model should output as many logits as existing classes.
+        """
+        # Call the base class constructor with common parameters
+        super().__init__(
+            model=model,
+            optimizer=optimizer,
+            device=device,
+            dataloader_workers=dataloader_workers,
+            checkpoint_callback=checkpoint_callback,
+            early_stopping_callback=early_stopping_callback,
+            lr_scheduler_callback=lr_scheduler_callback,
+            extra_callbacks=extra_callbacks
+        )
+        
+        if kind not in [MLTaskKeys.REGRESSION,
+                        MLTaskKeys.BINARY_CLASSIFICATION,
+                        MLTaskKeys.MULTICLASS_CLASSIFICATION,
+                        MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION,
+                        MLTaskKeys.MULTITARGET_REGRESSION,
+                        MLTaskKeys.BINARY_SEGMENTATION,
+                        MLTaskKeys.MULTICLASS_SEGMENTATION,
+                        MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
+                        MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
+            raise ValueError(f"'{kind}' is not a valid task type.")
+
+        self.train_dataset = train_dataset
+        self.validation_dataset = validation_dataset
+        self.kind = kind
+        self._classification_threshold: float = 0.5
+        
+        # loss function
+        if criterion == "auto":
+            if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+                self.criterion = nn.MSELoss()
+            elif kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+                self.criterion = nn.BCEWithLogitsLoss()
+            elif kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
+                self.criterion = nn.CrossEntropyLoss()
+        else:
+            self.criterion = criterion
+
+    def _create_dataloaders(self, batch_size: int, shuffle: bool):
+        """Initializes the DataLoaders."""
+        # Ensure stability on MPS devices by setting num_workers to 0
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        
+        self.train_loader = DataLoader(
+            dataset=self.train_dataset, 
+            batch_size=batch_size, 
+            shuffle=shuffle, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type),
+            drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
+        )
+        
+        self.validation_loader = DataLoader(
+            dataset=self.validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type)
+        )
+
     def _train_step(self):
         self.model.train()
         running_loss = 0.0
         total_samples = 0
+        
         for batch_idx, (features, target) in enumerate(self.train_loader): # type: ignore
             # Create a log dictionary for the batch
             batch_logs = {
@@ -338,6 +448,7 @@ class DragonTrainer:
     def _validation_step(self):
         self.model.eval()
         running_loss = 0.0
+        
         with torch.no_grad():
             for features, target in self.validation_loader: # type: ignore
                 features, target = features.to(self.device), target.to(self.device)
@@ -363,6 +474,10 @@ class DragonTrainer:
                 loss = self.criterion(output, target)
                 
                 running_loss += loss.item() * features.size(0)
+                
+        if not self.validation_loader.dataset: # type: ignore
+            _LOGGER.warning("No samples processed in _validation_step. Returning 0 loss.")
+            return {PyTorchLogKeys.VAL_LOSS: 0.0}
         
         logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.validation_loader.dataset)} # type: ignore
         return logs
@@ -378,6 +493,7 @@ class DragonTrainer:
         """
         self.model.eval()
         self.model.to(self.device)
+        
         with torch.no_grad():
             for features, target in dataloader:
                 features = features.to(self.device)
@@ -463,7 +579,11 @@ class DragonTrainer:
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
-                 format_configuration: Optional[Union[ClassificationMetricsFormat, 
+                 val_format_configuration: Optional[Union[ClassificationMetricsFormat, 
+                                                      MultiClassificationMetricsFormat,
+                                                      RegressionMetricsFormat,
+                                                      SegmentationMetricsFormat]]=None,
+                 test_format_configuration: Optional[Union[ClassificationMetricsFormat, 
                                                       MultiClassificationMetricsFormat,
                                                       RegressionMetricsFormat,
                                                       SegmentationMetricsFormat]]=None):
@@ -478,7 +598,8 @@ class DragonTrainer:
             save_dir (str | Path): Directory to save all reports and plots.
             classification_threshold (float | None): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
             test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
-            format_configuration: Optional configuration for metric format output.
+            val_format_configuration: Optional configuration for metric format output for the validation set.
+            test_format_configuration: Optional configuration for metric format output for the test set.
         """
         # Validate model checkpoint
         if isinstance(model_checkpoint, Path):
@@ -494,32 +615,28 @@ class DragonTrainer:
             # dummy value for tasks that do not need it
             threshold_validated = 0.5
         elif classification_threshold is None:
-            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
-                _LOGGER.error(f"The classification threshold must be provided for any of the following tasks:\n{MLTaskKeys.ALL_BINARY_TASKS}")
-                raise ValueError()
-            else:
-                # dummy value for tasks that do not need it
-                threshold_validated = 0.5
+            # it should have been provided for binary tasks
+            _LOGGER.error(f"The classification threshold must be provided for '{self.kind}'.")
+            raise ValueError()
         elif classification_threshold <= 0.0 or classification_threshold >= 1.0:
-            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
-                _LOGGER.error(f"A classification threshold of {classification_threshold} is invalid. Must be in the range (0.0 - 1.0).")
-                raise ValueError()
-            else:
-                # dummy value for tasks that do not need it
-                threshold_validated = 0.5
+            # Invalid float
+            _LOGGER.error(f"A classification threshold of {classification_threshold} is invalid. Must be in the range (0.0 - 1.0).")
+            raise ValueError()
         else:
             threshold_validated = classification_threshold
         
-        # Validate configuration
-        if format_configuration is not None:
-            if not isinstance(format_configuration, (ClassificationMetricsFormat, 
+        # Validate val configuration
+        if val_format_configuration is not None:
+            if not isinstance(val_format_configuration, (ClassificationMetricsFormat, 
                                                      MultiClassificationMetricsFormat, 
                                                      RegressionMetricsFormat, 
                                                      SegmentationMetricsFormat)):
-                _LOGGER.error(f"Invalid 'format_configuration': '{type(format_configuration)}'.")
+                _LOGGER.error(f"Invalid 'format_configuration': '{type(val_format_configuration)}'.")
                 raise ValueError()
-        
-        configuration_validated = format_configuration
+            else:
+                val_configuration_validated = val_format_configuration
+        else: # config is None
+            val_configuration_validated = None
         
         # Validate directory
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -540,7 +657,26 @@ class DragonTrainer:
                            model_checkpoint=checkpoint_validated,
                            classification_threshold=threshold_validated,
                            data=None,
-                           format_configuration=configuration_validated)
+                           format_configuration=val_configuration_validated)
+            
+            # Validate test configuration
+            if test_format_configuration is not None:
+                if not isinstance(test_format_configuration, (ClassificationMetricsFormat, 
+                                                            MultiClassificationMetricsFormat, 
+                                                            RegressionMetricsFormat, 
+                                                            SegmentationMetricsFormat)):
+                    warning_message_type = f"Invalid test_format_configuration': '{type(val_format_configuration)}'."
+                    if val_configuration_validated is not None:
+                        warning_message_type += " 'val_format_configuration' will be used for the test set metrics output."
+                        test_configuration_validated = val_configuration_validated
+                    else:
+                        warning_message_type += " Using default format."
+                        test_configuration_validated = None
+                    _LOGGER.warning(warning_message_type)
+                else:
+                    test_configuration_validated = test_format_configuration
+            else: #config is None
+                test_configuration_validated = None
             
             # Dispatch test set
             _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
@@ -548,7 +684,7 @@ class DragonTrainer:
                            model_checkpoint="current",
                            classification_threshold=threshold_validated,
                            data=test_data_validated,
-                           format_configuration=configuration_validated)
+                           format_configuration=test_configuration_validated)
         else:
             # Dispatch validation set
             _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
@@ -556,7 +692,7 @@ class DragonTrainer:
                            model_checkpoint=checkpoint_validated,
                            classification_threshold=threshold_validated,
                            data=None,
-                           format_configuration=configuration_validated)
+                           format_configuration=val_configuration_validated)
         
     def _evaluate(self, 
                  save_dir: Union[str, Path], 
@@ -909,9 +1045,7 @@ class DragonTrainer:
         
         # --- Step 1: Check if the model supports this explanation ---
         if not getattr(self.model, 'has_interpretable_attention', False):
-            _LOGGER.warning(
-                "Model is not flagged for interpretable attention analysis. Skipping. This is the correct behavior for models like MultiHeadAttentionMLP."
-            )
+            _LOGGER.warning("Model is not compatible with interpretable attention analysis. Skipping.")
             return
 
         # --- Step 2: Set up the dataloader ---
@@ -950,35 +1084,13 @@ class DragonTrainer:
             )
         else:
             _LOGGER.error("No attention weights were collected from the model.")
-    
-    def _callbacks_hook(self, method_name: str, *args, **kwargs):
-        """Calls the specified method on all callbacks."""
-        for callback in self.callbacks:
-            method = getattr(callback, method_name)
-            method(*args, **kwargs)
-            
-    def to_cpu(self):
-        """
-        Moves the model to the CPU and updates the trainer's device setting.
         
-        This is useful for running operations that require the CPU.
-        """
-        self.device = torch.device('cpu')
-        self.model.to(self.device)
-        _LOGGER.info("Trainer and model moved to CPU.")
-    
-    def to_device(self, device: str):
-        """
-        Moves the model to the specified device and updates the trainer's device setting.
-
-        Args:
-            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
-        """
-        self.device = self._validate_device(device)
-        self.model.to(self.device)
-        _LOGGER.info(f"Trainer and model moved to {self.device}.")
-        
-    def finalize_model_training(self, save_dir: Union[str, Path], filename: str, model_checkpoint: Union[Path, Literal['latest', 'current']], classification_threshold: Optional[float]=None):
+    def finalize_model_training(self, 
+                                save_dir: Union[str, Path], 
+                                filename: str, 
+                                model_checkpoint: Union[Path, Literal['latest', 'current']], 
+                                classification_threshold: Optional[float]=None,
+                                class_map: Optional[Dict[str,int]]=None):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
@@ -997,6 +1109,7 @@ class DragonTrainer:
                 Required for `binary classification`, `binary segmentation`, and
                 `multilabel binary classification`. This is the threshold (0.0-1.0)
                 used to convert probabilities to class labels.
+            class_map (Dict[str, int] | None): Sets the class name mapping to translate predicted integer labels back into string names. (For Classification and Segmentation Tasks)
         """
         # handle save path
         sanitized_filename = sanitize_filename(filename)
@@ -1007,7 +1120,7 @@ class DragonTrainer:
         full_path = dir_path / sanitized_filename
         
         # threshold required for binary tasks
-        if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
+        if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
             if classification_threshold is None:
                 _LOGGER.error(f"A classification threshold is needed for binary-based classification tasks. If unknown, use '0.5' as a default.")
                 raise ValueError()
@@ -1033,6 +1146,19 @@ class DragonTrainer:
         else:
             _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
         
+        # Handle class map
+        if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
+                         MLTaskKeys.MULTICLASS_CLASSIFICATION,
+                         MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
+                         MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, 
+                         MLTaskKeys.BINARY_SEGMENTATION, 
+                         MLTaskKeys.MULTICLASS_SEGMENTATION]:
+            if class_map is None:
+                _LOGGER.error(f"'class_map' is required for '{self.kind}'.")
+                raise ValueError()
+        else:
+            class_map = None
+        
         # Create finalized data
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
@@ -1043,14 +1169,19 @@ class DragonTrainer:
             self._classification_threshold = classification_threshold
             finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = classification_threshold
         
+        if class_map is not None:
+            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = class_map
+        
         torch.save(finalized_data, full_path)
         
         _LOGGER.info(f"Finalized model weights saved to {full_path}.")
 
 
 # Object Detection Trainer
-class DragonDetectionTrainer:
-    def __init__(self, model: nn.Module, train_dataset: Dataset, test_dataset: Dataset, 
+class DragonDetectionTrainer(_BaseDragonTrainer):
+    def __init__(self, model: nn.Module, 
+                 train_dataset: Dataset, 
+                 validation_dataset: Dataset, 
                  collate_fn: Callable, optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
@@ -1066,7 +1197,7 @@ class DragonDetectionTrainer:
         Args:
             model (nn.Module): The PyTorch object detection model to train.
             train_dataset (Dataset): The training dataset.
-            test_dataset (Dataset): The testing/validation dataset.
+            validation_dataset (Dataset): The testing/validation dataset.
             collate_fn (Callable): The collate function from `ObjectDetectionDatasetMaker.collate_fn`.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
@@ -1079,58 +1210,23 @@ class DragonDetectionTrainer:
         ## Note:
             This trainer is specialized. It does not take a `criterion` because object detection models like Faster R-CNN return a dictionary of losses directly from their forward pass during training.
         """
-        self.model = model
+        # Call the base class constructor with common parameters
+        super().__init__(
+            model=model,
+            optimizer=optimizer,
+            device=device,
+            dataloader_workers=dataloader_workers,
+            checkpoint_callback=checkpoint_callback,
+            early_stopping_callback=early_stopping_callback,
+            lr_scheduler_callback=lr_scheduler_callback,
+            extra_callbacks=extra_callbacks
+        )
+        
         self.train_dataset = train_dataset
-        self.test_dataset = test_dataset
+        self.validation_dataset = validation_dataset # <-- Renamed
         self.kind = "object_detection"
         self.collate_fn = collate_fn
         self.criterion = None # Criterion is handled inside the model
-        self.optimizer = optimizer
-        self.scheduler = None
-        self.device = self._validate_device(device)
-        self.dataloader_workers = dataloader_workers
-        
-        # Callback handler - History and TqdmProgressBar are added by default
-        default_callbacks = [History(), TqdmProgressBar()]
-        
-        self._checkpoint_callback = None
-        if checkpoint_callback:
-            default_callbacks.append(checkpoint_callback)
-            self._checkpoint_callback = checkpoint_callback
-        if early_stopping_callback:
-            default_callbacks.append(early_stopping_callback)
-        if lr_scheduler_callback:
-            default_callbacks.append(lr_scheduler_callback)
-        
-        user_callbacks = extra_callbacks if extra_callbacks is not None else []
-        self.callbacks = default_callbacks + user_callbacks
-        self._set_trainer_on_callbacks()
-
-        # Internal state
-        self.train_loader = None
-        self.test_loader = None
-        self.history = {}
-        self.epoch = 0
-        self.epochs = 0 # Total epochs for the fit run
-        self.start_epoch = 1
-        self.stop_training = False
-        self._batch_size = 10
-
-    def _validate_device(self, device: str) -> torch.device:
-        """Validates the selected device and returns a torch.device object."""
-        device_lower = device.lower()
-        if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("CUDA not available, switching to CPU.")
-            device = "cpu"
-        elif device_lower == "mps" and not torch.backends.mps.is_available():
-            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
-            device = "cpu"
-        return torch.device(device)
-
-    def _set_trainer_on_callbacks(self):
-        """Gives each callback a reference to this trainer instance."""
-        for callback in self.callbacks:
-            callback.set_trainer(self)
 
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         """Initializes the DataLoaders with the object detection collate_fn."""
@@ -1142,141 +1238,25 @@ class DragonDetectionTrainer:
             batch_size=batch_size, 
             shuffle=shuffle, 
             num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type), # <-- Updated
+            pin_memory=("cuda" in self.device.type), 
             collate_fn=self.collate_fn, # Use the provided collate function
-            drop_last=True # Added for consistency with MLTrainer
+            drop_last=True 
         )
         
-        self.test_loader = DataLoader(
-            dataset=self.test_dataset, 
+        self.validation_loader = DataLoader(
+            dataset=self.validation_dataset, 
             batch_size=batch_size, 
             shuffle=False, 
             num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type), # <-- Updated
+            pin_memory=("cuda" in self.device.type),
             collate_fn=self.collate_fn # Use the provided collate function
         )
-        
-    def _load_checkpoint(self, path: Union[str, Path]):
-        """Loads a training checkpoint to resume training."""
-        p = make_fullpath(path, enforce="file")
-        _LOGGER.info(f"Loading checkpoint from '{p.name}' to resume training...")
-        
-        try:
-            checkpoint = torch.load(p, map_location=self.device)
-            
-            if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
-                _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
-                raise KeyError()
 
-            self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
-            self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
-            self.epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0) # <-- Updated
-            self.start_epoch = self.epoch + 1 # Resume on the *next* epoch
-            
-            # --- Load History ---
-            if PyTorchCheckpointKeys.HISTORY in checkpoint:
-                self.history = checkpoint[PyTorchCheckpointKeys.HISTORY]
-                _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
-            else:
-                _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
-                self.history = {} # Ensure it's at least an empty dict
-            
-            # --- Scheduler State Loading Logic ---
-            scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
-            scheduler_object_exists = self.scheduler is not None
-
-            if scheduler_object_exists and scheduler_state_exists:
-                # Case 1: Both exist. Attempt to load.
-                try:
-                    self.scheduler.load_state_dict(checkpoint[PyTorchCheckpointKeys.SCHEDULER_STATE]) # type: ignore
-                    scheduler_name = self.scheduler.__class__.__name__
-                    _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
-                except Exception as e:
-                    # Loading failed, likely a mismatch
-                    scheduler_name = self.scheduler.__class__.__name__
-                    _LOGGER.error(f"Failed to load scheduler state for '{scheduler_name}'. A different scheduler type might have been used.")
-                    raise e
-
-            elif scheduler_object_exists and not scheduler_state_exists:
-                # Case 2: Scheduler provided, but no state in checkpoint.
-                scheduler_name = self.scheduler.__class__.__name__
-                _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
-            
-            elif not scheduler_object_exists and scheduler_state_exists:
-                # Case 3: State in checkpoint, but no scheduler provided.
-                _LOGGER.error("Checkpoint contains an LR scheduler state, but no LRScheduler callback was provided.")
-                raise ValueError()
-            
-            # Restore callback states
-            for cb in self.callbacks:
-                if isinstance(cb, DragonModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
-                    cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
-                    _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
-            
-            _LOGGER.info(f"Checkpoint loaded. Resuming training from epoch {self.start_epoch}.")
-            
-        except Exception as e:
-            _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
-            raise
-
-    def fit(self,
-            save_dir: Union[str,Path],
-            epochs: int = 100, 
-            batch_size: int = 2, 
-            shuffle: bool = True,
-            resume_from_checkpoint: Optional[Union[str, Path]] = None):
-        """
-        Starts the training-validation process of the model.
-        
-        Returns the "History" callback dictionary.
-
-        Args:
-            save_dir (str | Path): Directory to save the loss plot.
-            epochs (int): The total number of epochs to train for.
-            batch_size (int): The number of samples per batch.
-            shuffle (bool): Whether to shuffle the training data at each epoch.
-            resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
-        """
-        self.epochs = epochs
-        self._batch_size = batch_size
-        self._create_dataloaders(self._batch_size, shuffle)
-        self.model.to(self.device)
-        
-        if resume_from_checkpoint:
-            self._load_checkpoint(resume_from_checkpoint)
-        
-        # Reset stop_training flag on the trainer
-        self.stop_training = False
-
-        self._callbacks_hook('on_train_begin')
-        
-        for epoch in range(self.start_epoch, self.epochs + 1):
-            self.epoch = epoch # <-- Ensured this is set
-            epoch_logs = {}
-            self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
-
-            train_logs = self._train_step()
-            epoch_logs.update(train_logs)
-
-            val_logs = self._validation_step()
-            epoch_logs.update(val_logs)
-            
-            self._callbacks_hook('on_epoch_end', epoch, logs=epoch_logs)
-            
-            # Check the early stopping flag
-            if self.stop_training:
-                break
-
-        self._callbacks_hook('on_train_end')
-        
-        plot_losses(history=self.history, save_dir=save_dir)
-        
-        return self.history
-    
     def _train_step(self):
         self.model.train()
         running_loss = 0.0
-        total_samples = 0 # <-- Track actual samples
+        total_samples = 0
+        
         for batch_idx, (images, targets) in enumerate(self.train_loader): # type: ignore
             # images is a tuple of tensors, targets is a tuple of dicts
             batch_size = len(images)
@@ -1328,13 +1308,13 @@ class DragonDetectionTrainer:
 
     def _validation_step(self):
         self.model.train() # Set to train mode even for validation loss calculation
-                           # as model internals (e.g., proposals) might differ,
-                           # but we still need loss_dict.
-                           # We use torch.no_grad() to prevent gradient updates.
+                           # as model internals (e.g., proposals) might differ, but we still need loss_dict.
+                           # use torch.no_grad() to prevent gradient updates.
         running_loss = 0.0
-        total_samples = 0 # <-- Track actual samples
+        total_samples = 0 
+        
         with torch.no_grad():
-            for images, targets in self.test_loader: # type: ignore
+            for images, targets in self.validation_loader: # type: ignore
                 batch_size = len(images)
                 
                 # Move data to device
@@ -1461,19 +1441,19 @@ class DragonDetectionTrainer:
                                      collate_fn=self.collate_fn)
             dataset_for_names = data
         else: # data is None, use the trainer's default test dataset
-            if self.test_dataset is None:
+            if self.validation_dataset is None:
                 _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
                 raise ValueError()
             # Create a fresh DataLoader from the test_dataset
             eval_loader = DataLoader(
-                self.test_dataset, 
+                self.validation_dataset, 
                 batch_size=self._batch_size, 
                 shuffle=False, 
                 num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                 pin_memory=(self.device.type == "cuda"),
                 collate_fn=self.collate_fn
             )
-            dataset_for_names = self.test_dataset
+            dataset_for_names = self.validation_dataset
 
         if eval_loader is None:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
@@ -1527,36 +1507,6 @@ class DragonDetectionTrainer:
             class_names=class_names,
             print_output=False
         )
-        
-        # print("\n--- Training History ---")
-        # plot_losses(self.history, save_dir=save_dir)
-
-    def _callbacks_hook(self, method_name: str, *args, **kwargs):
-        """Calls the specified method on all callbacks."""
-        for callback in self.callbacks:
-            method = getattr(callback, method_name)
-            method(*args, **kwargs)
-            
-    def to_cpu(self):
-        """
-        Moves the model to the CPU and updates the trainer's device setting.
-        
-        This is useful for running operations that require the CPU.
-        """
-        self.device = torch.device('cpu')
-        self.model.to(self.device)
-        _LOGGER.info("Trainer and model moved to CPU.")
-    
-    def to_device(self, device: str):
-        """
-        Moves the model to the specified device and updates the trainer's device setting.
-
-        Args:
-            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
-        """
-        self.device = self._validate_device(device)
-        self.model.to(self.device)
-        _LOGGER.info(f"Trainer and model moved to {self.device}.")
     
     def finalize_model_training(self, save_dir: Union[str, Path], filename: str, model_checkpoint: Union[Path, Literal['latest', 'current']]):
         """
@@ -1598,6 +1548,434 @@ class DragonDetectionTrainer:
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+        }
+        
+        torch.save(finalized_data, full_path)
+        
+        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
+
+# --- DragonSequenceTrainer ----
+class DragonSequenceTrainer(_BaseDragonTrainer):
+    def __init__(self, 
+                 model: nn.Module, 
+                 train_dataset: Dataset, 
+                 validation_dataset: Dataset, 
+                 kind: Literal["sequence-to-sequence", "sequence-to-value"],
+                 optimizer: torch.optim.Optimizer, 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
+                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 early_stopping_callback: Optional[DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 extra_callbacks: Optional[List[_Callback]] = None,
+                 criterion: Union[nn.Module,Literal["auto"]] = "auto", 
+                 dataloader_workers: int = 2):
+        """
+        Automates the training process of a PyTorch Sequence Model.
+        
+        Built-in Callbacks: `History`, `TqdmProgressBar`
+
+        Args:
+            model (nn.Module): The PyTorch model to train.
+            train_dataset (Dataset): The training dataset.
+            validation_dataset (Dataset): The validation dataset.
+            kind (str): Used to redirect to the correct process ('sequence-to-sequence' or 'sequence-to-value'). 
+            criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
+            optimizer (torch.optim.Optimizer): The optimizer.
+            device (str): The device to run training on ('cpu', 'cuda', 'mps').
+            dataloader_workers (int): Subprocesses for data loading.
+            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
+        """
+        # Call the base class constructor with common parameters
+        super().__init__(
+            model=model,
+            optimizer=optimizer,
+            device=device,
+            dataloader_workers=dataloader_workers,
+            checkpoint_callback=checkpoint_callback,
+            early_stopping_callback=early_stopping_callback,
+            lr_scheduler_callback=lr_scheduler_callback,
+            extra_callbacks=extra_callbacks
+        )
+        
+        if kind not in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
+            raise ValueError(f"'{kind}' is not a valid task type for DragonSequenceTrainer.")
+
+        self.train_dataset = train_dataset
+        self.validation_dataset = validation_dataset
+        self.kind = kind
+        
+        # try to validate against Dragon Sequence model
+        if hasattr(self.model, "prediction_mode"):
+            key_to_check: str = self.model.prediction_mode # type: ignore
+            if not key_to_check == self.kind:
+                _LOGGER.error(f"Trainer was set for '{self.kind}', but model architecture '{self.model}' is built for '{key_to_check}'.")
+                raise RuntimeError()
+        
+        # loss function
+        if criterion == "auto":
+            # Both sequence tasks are treated as regression problems
+            self.criterion = nn.MSELoss()
+        else:
+            self.criterion = criterion
+
+    def _create_dataloaders(self, batch_size: int, shuffle: bool):
+        """Initializes the DataLoaders."""
+        # Ensure stability on MPS devices by setting num_workers to 0
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        
+        self.train_loader = DataLoader(
+            dataset=self.train_dataset, 
+            batch_size=batch_size, 
+            shuffle=shuffle, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type),
+            drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
+        )
+        
+        self.validation_loader = DataLoader(
+            dataset=self.validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=loader_workers, 
+            pin_memory=("cuda" in self.device.type)
+        )
+
+    def _train_step(self):
+        self.model.train()
+        running_loss = 0.0
+        total_samples = 0
+        
+        for batch_idx, (features, target) in enumerate(self.train_loader): # type: ignore
+            # Create a log dictionary for the batch
+            batch_logs = {
+                PyTorchLogKeys.BATCH_INDEX: batch_idx, 
+                PyTorchLogKeys.BATCH_SIZE: features.size(0)
+            }
+            self._callbacks_hook('on_batch_begin', batch_idx, logs=batch_logs)
+
+            features, target = features.to(self.device), target.to(self.device)
+            self.optimizer.zero_grad()
+            
+            output = self.model(features)
+            
+            # --- Label Type/Shape Correction ---
+            # Ensure target is float for MSELoss
+            target = target.float()
+
+            # For seq-to-val, models might output [N, 1] but target is [N].
+            if self.kind == MLTaskKeys.SEQUENCE_VALUE:
+                if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
+                    output = output.squeeze(1)
+            
+            # For seq-to-seq, models might output [N, Seq, 1] but target is [N, Seq].
+            elif self.kind == MLTaskKeys.SEQUENCE_SEQUENCE:
+                if output.ndim == 3 and output.shape[2] == 1 and target.ndim == 2:
+                    output = output.squeeze(-1)
+            
+            loss = self.criterion(output, target)
+            
+            loss.backward()
+            self.optimizer.step()
+
+            # Calculate batch loss and update running loss for the epoch
+            batch_loss = loss.item()
+            batch_size = features.size(0)
+            running_loss += batch_loss * batch_size  # Accumulate total loss
+            total_samples += batch_size # total samples
+            
+            # Add the batch loss to the logs and call the end-of-batch hook
+            batch_logs[PyTorchLogKeys.BATCH_LOSS] = batch_loss
+            self._callbacks_hook('on_batch_end', batch_idx, logs=batch_logs)
+        
+        if total_samples == 0:
+            _LOGGER.warning("No samples processed in a train_step. Returning 0 loss.")
+            return {PyTorchLogKeys.TRAIN_LOSS: 0.0}
+
+        return {PyTorchLogKeys.TRAIN_LOSS: running_loss / total_samples} # type: ignore
+
+    def _validation_step(self):
+        self.model.eval()
+        running_loss = 0.0
+        
+        with torch.no_grad():
+            for features, target in self.validation_loader: # type: ignore
+                features, target = features.to(self.device), target.to(self.device)
+                
+                output = self.model(features)
+                
+                # --- Label Type/Shape Correction ---
+                target = target.float()
+                
+                # For seq-to-val, models might output [N, 1] but target is [N].
+                if self.kind == MLTaskKeys.SEQUENCE_VALUE:
+                    if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
+                        output = output.squeeze(1)
+                        
+                # For seq-to-seq, models might output [N, Seq, 1] but target is [N, Seq].
+                elif self.kind == MLTaskKeys.SEQUENCE_SEQUENCE:
+                    if output.ndim == 3 and output.shape[2] == 1 and target.ndim == 2:
+                        output = output.squeeze(-1)
+                
+                loss = self.criterion(output, target)
+                
+                running_loss += loss.item() * features.size(0)
+                
+        if not self.validation_loader.dataset: # type: ignore
+            _LOGGER.warning("No samples processed in _validation_step. Returning 0 loss.")
+            return {PyTorchLogKeys.VAL_LOSS: 0.0}
+        
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.validation_loader.dataset)} # type: ignore
+        return logs
+    
+    def _predict_for_eval(self, dataloader: DataLoader):
+        """
+        Private method to yield model predictions batch by batch for evaluation.
+        
+        Yields:
+            tuple: A tuple containing (y_pred_batch, y_prob_batch, y_true_batch).
+                   y_prob_batch is always None for sequence tasks.
+        """
+        self.model.eval()
+        self.model.to(self.device)
+        
+        with torch.no_grad():
+            for features, target in dataloader:
+                features = features.to(self.device)
+                output = self.model(features).cpu()
+
+                y_pred_batch = output.numpy()
+                y_prob_batch = None # Not applicable for sequence regression
+                y_true_batch = target.numpy()
+
+                yield y_pred_batch, y_prob_batch, y_true_batch
+                
+    def evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 test_data: Optional[Union[DataLoader, Dataset]] = None,
+                 val_format_configuration: Optional[Union[SequenceValueMetricsFormat, 
+                                                          SequenceSequenceMetricsFormat]]=None,
+                 test_format_configuration: Optional[Union[SequenceValueMetricsFormat, 
+                                                           SequenceSequenceMetricsFormat]]=None):
+        """
+        Evaluates the model, routing to the correct evaluation function.
+
+        Args:
+            model_checkpoint ('auto' | Path | None): 
+                - Path to a valid checkpoint for the model.
+                - If 'latest', the latest checkpoint will be loaded.
+                - If 'current', use the current state of the trained model.
+            save_dir (str | Path): Directory to save all reports and plots.
+            test_data (DataLoader | Dataset | None): Optional Test data.
+            val_format_configuration: Optional configuration for validation metrics.
+            test_format_configuration: Optional configuration for test metrics.
+        """
+        # Validate model checkpoint
+        if isinstance(model_checkpoint, Path):
+            checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
+        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+            checkpoint_validated = model_checkpoint
+        else:
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or '{MagicWords.LATEST}', or '{MagicWords.CURRENT}'.")
+            raise ValueError()
+        
+        # Validate val configuration
+        if val_format_configuration is not None:
+            if not isinstance(val_format_configuration, (SequenceValueMetricsFormat, SequenceSequenceMetricsFormat)):
+                _LOGGER.error(f"Invalid 'val_format_configuration': '{type(val_format_configuration)}'.")
+                raise ValueError()
+        
+        # Validate directory
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        # Validate test data and dispatch
+        if test_data is not None:
+            if not isinstance(test_data, (DataLoader, Dataset)):
+                _LOGGER.error(f"Invalid type for 'test_data': '{type(test_data)}'.")
+                raise ValueError()
+            test_data_validated = test_data
+    
+            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
+            test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
+            
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            self._evaluate(save_dir=validation_metrics_path,
+                           model_checkpoint=checkpoint_validated,
+                           data=None,
+                           format_configuration=val_format_configuration)
+            
+            # Validate test configuration
+            test_configuration_validated = None
+            if test_format_configuration is not None:
+                if not isinstance(test_format_configuration, (SequenceValueMetricsFormat, SequenceSequenceMetricsFormat)):
+                    warning_message_type = f"Invalid test_format_configuration': '{type(test_format_configuration)}'."
+                    if val_format_configuration is not None:
+                        warning_message_type += " 'val_format_configuration' will be used."
+                        test_configuration_validated = val_format_configuration
+                    else:
+                        warning_message_type += " Using default format."
+                    _LOGGER.warning(warning_message_type)
+                else:
+                    test_configuration_validated = test_format_configuration
+            
+            # Dispatch test set
+            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            self._evaluate(save_dir=test_metrics_path,
+                           model_checkpoint="current",
+                           data=test_data_validated,
+                           format_configuration=test_configuration_validated)
+        else:
+            # Dispatch validation set
+            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            self._evaluate(save_dir=save_path,
+                           model_checkpoint=checkpoint_validated,
+                           data=None,
+                           format_configuration=val_format_configuration)
+        
+    def _evaluate(self, 
+                 save_dir: Union[str, Path], 
+                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 data: Optional[Union[DataLoader, Dataset]],
+                 format_configuration: Optional[Union[SequenceValueMetricsFormat, 
+                                                      SequenceSequenceMetricsFormat]]):
+        """
+        Private evaluation helper.
+        """
+        eval_loader = None
+        
+        # load model checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        
+        # Dataloader
+        if isinstance(data, DataLoader):
+            eval_loader = data
+        elif isinstance(data, Dataset):
+            # Create a new loader from the provided dataset
+            eval_loader = DataLoader(data, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                                     pin_memory=(self.device.type == "cuda"))
+        else: # data is None, use the trainer's default validation dataset
+            if self.validation_dataset is None:
+                _LOGGER.error("Cannot evaluate. No data provided and no validation_dataset available in the trainer.")
+                raise ValueError()
+            eval_loader = DataLoader(self.validation_dataset, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
+                                     pin_memory=(self.device.type == "cuda"))
+
+        if eval_loader is None:
+            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
+            raise ValueError()
+
+        all_preds, _, all_true = [], [], []
+        for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
+            if y_pred_b is not None: all_preds.append(y_pred_b)
+            if y_true_b is not None: all_true.append(y_true_b)
+
+        if not all_true:
+            _LOGGER.error("Evaluation failed: No data was processed.")
+            return
+
+        y_pred = np.concatenate(all_preds)
+        y_true = np.concatenate(all_true)
+
+        # --- Routing Logic ---
+        if self.kind == MLTaskKeys.SEQUENCE_VALUE:
+            config = None
+            if format_configuration and isinstance(format_configuration, SequenceValueMetricsFormat):
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong config type: Received {type(format_configuration).__name__}, expected SequenceValueMetricsFormat.")
+            
+            sequence_to_value_metrics(y_true=y_true, 
+                                      y_pred=y_pred, 
+                                      save_dir=save_dir,
+                                      config=config)
+
+        elif self.kind == MLTaskKeys.SEQUENCE_SEQUENCE:
+            config = None
+            if format_configuration and isinstance(format_configuration, SequenceSequenceMetricsFormat):
+                config = format_configuration
+            elif format_configuration:
+                _LOGGER.warning(f"Wrong config type: Received {type(format_configuration).__name__}, expected SequenceSequenceMetricsFormat.")
+
+            sequence_to_sequence_metrics(y_true=y_true, 
+                                         y_pred=y_pred, 
+                                         save_dir=save_dir,
+                                         config=config)
+    
+    def finalize_model_training(self, 
+                                save_dir: Union[str, Path], 
+                                filename: str, 
+                                last_training_sequence: np.ndarray,
+                                model_checkpoint: Union[Path, Literal['latest', 'current']]):
+        """
+        Saves a finalized, "inference-ready" model state to a .pth file.
+
+        This method saves the model's `state_dict` and the final epoch number.
+
+        Args:
+            save_dir (Union[str, Path]): The directory to save the finalized model.
+            filename (str): The desired filename for the model (e.g., "final_model.pth").
+            last_training_sequence (np.ndarray): The last un-scaled sequence from the training data, used for forecasting.
+            model_checkpoint (Union[Path, Literal["latest", "current"]]):
+                - Path: Loads the model state from a specific checkpoint file.
+                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is at the end of the `fit()` call.
+        """
+        # handle save path
+        sanitized_filename = sanitize_filename(filename)
+        if not sanitized_filename.endswith(".pth"):
+            sanitized_filename = sanitized_filename + ".pth"
+            
+        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+        full_path = dir_path / sanitized_filename
+        
+        # handle checkpoint
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        elif model_checkpoint == MagicWords.CURRENT:
+            pass
+        else:
+            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
+        
+        # --- 1. Validate the provided initial sequence ---
+        if not isinstance(last_training_sequence, np.ndarray):
+            _LOGGER.error(f"'last_training_sequence' must be a numpy array. Got {type(last_training_sequence)}")
+            raise TypeError()
+        if last_training_sequence.ndim != 1:
+            _LOGGER.error(f"'last_training_sequence' must be a 1D array. Got {last_training_sequence.ndim} dimensions.")
+            raise ValueError()
+        
+        # --- 2. Derive sequence_length from the array ---
+        sequence_length = len(last_training_sequence)
+        if sequence_length <= 0:
+             _LOGGER.error(f"Length of 'last_training_sequence' cannot be zero.")
+             raise ValueError()
+        
+        # Create finalized data
+        finalized_data = {
+            PyTorchCheckpointKeys.EPOCH: self.epoch,
+            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+            PyTorchCheckpointKeys.SEQUENCE_LENGTH: sequence_length,
+            PyTorchCheckpointKeys.INITIAL_SEQUENCE: last_training_sequence
         }
         
         torch.save(finalized_data, full_path)

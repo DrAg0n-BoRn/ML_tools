@@ -4,7 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-### [15.1.0]
+### [16.0.0] 2025-11-07
+
+## Added
+
+- New module: "ML_sequence_datasetmaster"
+- New module: "ML_sequence_evaluation"
+    - `sequence_to_value_metrics`
+    - `sequence_to_sequence_metrics`
+- New module: "ML_sequence_inference"
+    - `DragonSequenceInferenceHandler`
+- New module: "ML_sequence_models"
+- ML_trainer: 
+    - `DragonSequenceTrainer`, Supports Sequence-to-Sequence and Sequence-to-Value model training.
+    - `DragonTrainer.evaluate()`, supports an optional test-set format configuration for metric output.
+    - `DragonTrainer.finalize_model_training()`, saves additional artifacts for classification-related tasks.
+- ML_configuration: 
+    - `SegmentationMetricsFormat`
+    - `SequenceValueMetricsFormat`
+    - `SequenceSequenceMetricsFormat`
+
+## Changed
+
+- ML_datasetmaster:
+    - `DragonDataset`, supports "class_map" for targets.
+    - `DragonDatasetSequence`, revamped and moved to "ML_sequence_datasetmaster" module.
+- ML_inference: `DragonInferenceHandler`, supports class to index conversion to get label names.
+- ML_models: `DragonSequenceLSTM`, revamped and moved to "ML_sequence_models".
+- ML_vision_inference: `DragonVisionInferenceHandler`, refactored and enhanced robustness.
+
+## Deleted
+
+- RNN_forecast: functionality included in `DragonSequenceInferenceHandler`.
+
+### [15.1.0] 2025-11-06
 
 ## Added
 

@@ -2,7 +2,7 @@ from typing import NamedTuple, Tuple, Optional, Dict, Union
 from pathlib import Path
 
 from .custom_logger import save_list_strings
-from .keys import DatasetKeys
+from ._keys import DatasetKeys
 from ._logger import _LOGGER
 
 

@@ -7,7 +7,7 @@ import json
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
 from ._script_info import _script_info
-from .keys import PytorchModelArchitectureKeys
+from ._keys import PytorchModelArchitectureKeys
 from ._schema import FeatureSchema
 
 
@@ -15,8 +15,7 @@ __all__ = [
     "DragonMLP",
     "DragonAttentionMLP",
     "DragonMultiHeadAttentionNet",
-    "DragonTabularTransformer",
-    "DragonSequenceLSTM",
+    "DragonTabularTransformer"
 ]
 
 
@@ -661,94 +660,6 @@ class _MultiHeadAttentionLayer(nn.Module):
         # Squeeze weights for a consistent output shape
         return out, attn_weights.squeeze()
 
-
-class DragonSequenceLSTM(nn.Module, _ArchitectureHandlerMixin):
-    """
-    A simple LSTM-based network for sequence-to-sequence prediction tasks.
-
-    This model is designed for datasets where each input sequence maps to an
-    output sequence of the same length. It's suitable for forecasting problems
-    prepared by the `SequenceMaker` class.
-
-    The expected input shape is `(batch_size, sequence_length, features)`.
-
-    Args:
-        features (int): The number of features in the input sequence. Defaults to 1.
-        hidden_size (int): The number of features in the LSTM's hidden state.
-                           Defaults to 100.
-        recurrent_layers (int): The number of recurrent LSTM layers. Defaults to 1.
-        dropout (float): The dropout probability for all but the last LSTM layer.
-                         Defaults to 0.
-    """
-    def __init__(self, features: int = 1, hidden_size: int = 100,
-                 recurrent_layers: int = 1, dropout: float = 0):
-        super().__init__()
-
-        # --- Validation ---
-        if not isinstance(features, int) or features < 1:
-            raise ValueError("features must be a positive integer.")
-        if not isinstance(hidden_size, int) or hidden_size < 1:
-            raise ValueError("hidden_size must be a positive integer.")
-        if not isinstance(recurrent_layers, int) or recurrent_layers < 1:
-            raise ValueError("recurrent_layers must be a positive integer.")
-        if not (0.0 <= dropout < 1.0):
-            raise ValueError("dropout must be a float between 0.0 and 1.0.")
-        
-        # --- Save configuration ---
-        self.features = features
-        self.hidden_size = hidden_size
-        self.recurrent_layers = recurrent_layers
-        self.dropout = dropout
-        
-        # Build model
-        self.lstm = nn.LSTM(
-            input_size=features,
-            hidden_size=hidden_size,
-            num_layers=recurrent_layers,
-            dropout=dropout,
-            batch_first=True  # This is crucial for (batch, seq, feature) input
-        )
-        self.linear = nn.Linear(in_features=hidden_size, out_features=features)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Defines the forward pass.
-
-        Args:
-            x (torch.Tensor): The input tensor with shape
-                              (batch_size, sequence_length, features).
-
-        Returns:
-            torch.Tensor: The output tensor with shape
-                          (batch_size, sequence_length, features).
-        """
-        # The LSTM returns the full output sequence and the final hidden/cell states
-        lstm_out, _ = self.lstm(x)
-        
-        # Pass the LSTM's output sequence to the linear layer
-        predictions = self.linear(lstm_out)
-        
-        return predictions
-    
-    def get_architecture_config(self) -> dict:
-        """Returns the configuration of the model."""
-        return {
-            'features': self.features,
-            'hidden_size': self.hidden_size,
-            'recurrent_layers': self.recurrent_layers,
-            'dropout': self.dropout
-        }
-    
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
-        return (
-            f"DragonSequenceLSTM(features={self.lstm.input_size}, "
-            f"hidden_size={self.lstm.hidden_size}, "
-            f"recurrent_layers={self.lstm.num_layers})"
-        )
-
-
-# ---- PyTorch models ---
 
 def info():
     _script_info(__all__)

@@ -9,7 +9,7 @@ import lightgbm
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath, list_files_by_extension
-from .keys import EnsembleKeys
+from ._keys import EnsembleKeys
 from .serde import deserialize_object
 
 

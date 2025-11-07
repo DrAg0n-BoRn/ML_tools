@@ -6,7 +6,7 @@ import json
 
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from .keys import PytorchModelArchitectureKeys
+from ._keys import PytorchModelArchitectureKeys
 from ._schema import FeatureSchema
 from ._script_info import _script_info
 from .ML_models import _ArchitectureHandlerMixin

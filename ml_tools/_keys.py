@@ -91,6 +91,9 @@ class PyTorchCheckpointKeys:
     CHECKPOINT_NAME = "PyModelCheckpoint"
     # Finalized config
     CLASSIFICATION_THRESHOLD = "classification_threshold"
+    CLASS_MAP = "class_map"
+    SEQUENCE_LENGTH = "sequence_length"
+    INITIAL_SEQUENCE = "initial_sequence"
 
 
 class UtilityKeys:
@@ -147,6 +150,9 @@ class MLTaskKeys:
     MULTICLASS_SEGMENTATION = "multiclass segmentation"
     
     OBJECT_DETECTION = "object detection"
+    
+    SEQUENCE_SEQUENCE = "sequence-to-sequence"
+    SEQUENCE_VALUE = "sequence-to-value"
     
     ALL_BINARY_TASKS = [BINARY_CLASSIFICATION, MULTILABEL_BINARY_CLASSIFICATION, BINARY_IMAGE_CLASSIFICATION, BINARY_SEGMENTATION]
 

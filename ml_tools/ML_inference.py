@@ -9,7 +9,7 @@ from .ML_scaler import DragonScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
+from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
 
 
 __all__ = [
@@ -44,6 +44,10 @@ class _BaseInferenceHandler(ABC):
         self.device = self._validate_device(device)
         self._classification_threshold = 0.5
         self._loaded_threshold: bool = False
+        self._loaded_class_map: bool = False
+        self._class_map: Optional[dict[str,int]] = None
+        self._idx_to_class: Optional[Dict[int, str]] = None
+        self._loaded_data_dict: Dict[str, Any] = {} #Store whatever is in the finalized file
 
         # Load the scaler if a path is provided
         if scaler is not None:
@@ -59,25 +63,45 @@ class _BaseInferenceHandler(ABC):
         try:
             # Load whatever is in the file
             loaded_data = torch.load(model_p, map_location=self.device)
-
+            
             # Check if it's dictionary or a old weights-only file
-            if isinstance(loaded_data, dict) and PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
-                # It's a new training checkpoint, extract the weights
-                self.model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
+            if isinstance(loaded_data, dict):
+                self._loaded_data_dict = loaded_data # Store the dict
                 
-                # attempt to get a custom classification threshold
-                if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
-                    try:
-                        self._classification_threshold = float(loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD])
-                    except Exception as e_int:
-                        _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
-                        self._classification_threshold = 0.5
-                    else:
-                        _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
-                        self._loaded_threshold = True
-                        
+                if PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
+                    # It's a new training checkpoint, extract the weights
+                    self.model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
+                    
+                    # attempt to get a custom classification threshold
+                    if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
+                        try:
+                            self._classification_threshold = float(loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD])
+                        except Exception as e_int:
+                            _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
+                            self._classification_threshold = 0.5
+                        else:
+                            _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
+                            self._loaded_threshold = True
+                            
+                    # attempt to get a class map
+                    if PyTorchCheckpointKeys.CLASS_MAP in loaded_data:
+                        try:
+                            self._class_map = loaded_data[PyTorchCheckpointKeys.CLASS_MAP]
+                        except Exception as e_int:
+                            _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASS_MAP}' but an error occurred when retrieving it:\n{e_int}")
+                        else:
+                            if isinstance(self._class_map, dict):
+                                self._loaded_class_map = True
+                                self.set_class_map(self._class_map)
+                            else:
+                                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASS_MAP}' but it is not a dict: '{type(self._class_map)}'.")
+                                self._class_map = None
+                else:
+                    # It's a state_dict, load it directly
+                    self.model.load_state_dict(loaded_data)
+            
             else:
-                # It's a state_dict, load it directly
+                 # It's an old state_dict (just weights), load it directly
                 self.model.load_state_dict(loaded_data)
             
             _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
@@ -98,21 +122,37 @@ class _BaseInferenceHandler(ABC):
             _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
             device_lower = "cpu"
         return torch.device(device_lower)
-
-    def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    
+    def set_class_map(self, class_map: Dict[str, int], force_overwrite: bool = False):
         """
-        Converts input to a torch.Tensor, applies scaling if a scaler is
-        present, and moves it to the correct device.
+        Sets the class name mapping to translate predicted integer labels back into string names.
+        
+        If a class_map was previously loaded from a model configuration, this
+        method will log a warning and refuse to update the value. This
+        prevents accidentally overriding a setting from a loaded checkpoint.
+        
+        To bypass this safety check set `force_overwrite` to `True`.
+
+        Args:
+            class_map (Dict[str, int]): The class_to_idx dictionary (e.g., {'cat': 0, 'dog': 1}).
+            force_overwrite (bool): If True, allows overwriting a map that was loaded from a configuration file.
         """
-        if isinstance(features, np.ndarray):
-            features_tensor = torch.from_numpy(features).float()
-        else:
-            features_tensor = features.float()
-
-        if self.scaler:
-            features_tensor = self.scaler.transform(features_tensor)
-
-        return features_tensor.to(self.device)
+        if self._loaded_class_map:
+            warning_message = f"A '{PyTorchCheckpointKeys.CLASS_MAP}' was loaded from the model configuration file."
+            if not force_overwrite:
+                warning_message += " Use 'force_overwrite=True' if you are sure you want to modify it. This will not affect the value from the file."
+                _LOGGER.warning(warning_message)
+                return
+            else:
+                warning_message += " Overwriting it for this inference instance."
+                _LOGGER.warning(warning_message)
+        
+        # Store the map and invert it for fast lookup
+        self._class_map = class_map
+        self._idx_to_class = {v: k for k, v in class_map.items()}
+        # Mark as 'loaded' by the user, even if it wasn't from a file, to prevent accidental changes later if _loaded_class_map was false.
+        self._loaded_class_map = True # Protect this newly set map
+        _LOGGER.info("Class map set for label-to-name translation.")
 
     @abstractmethod
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -146,6 +186,8 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             target_id (str | None): An optional identifier for the target.
             scaler (DragonScaler | str | Path | None): A DragonScaler instance or the file path to a saved DragonScaler state.
+            
+        Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
         # Call the parent constructor to handle model loading, device, and scaler
         super().__init__(model, state_dict, device, scaler)
@@ -159,6 +201,21 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             raise ValueError()
         self.task = task
         self.target_ids = target_ids
+        
+    def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """
+        Converts input to a torch.Tensor, applies scaling if a scaler is
+        present, and moves it to the correct device.
+        """
+        if isinstance(features, np.ndarray):
+            features_tensor = torch.from_numpy(features).float()
+        else:
+            features_tensor = features.float()
+
+        if self.scaler:
+            features_tensor = self.scaler.transform(features_tensor)
+
+        return features_tensor.to(self.device)
 
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -168,7 +225,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             features (np.ndarray | torch.Tensor): A 2D array/tensor of input features.
 
         Returns:
-            A dictionary containing the raw output tensors from the model.
+            Dict: A dictionary containing the raw output tensors from the model.
         """
         if features.ndim != 2:
             _LOGGER.error("Input for batch prediction must be a 2D array or tensor.")
@@ -230,7 +287,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             features (np.ndarray | torch.Tensor): A 1D array/tensor of input features.
 
         Returns:
-            A dictionary containing the raw output tensors for a single sample.
+            Dict: A dictionary containing the raw output tensors for a single sample.
         """
         if features.ndim == 1:
             features = features.reshape(1, -1) # Reshape to a batch of one
@@ -249,26 +306,50 @@ class DragonInferenceHandler(_BaseInferenceHandler):
 
     def predict_batch_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, np.ndarray]:
         """
-        Convenience wrapper for predict_batch that returns NumPy arrays.
+        Convenience wrapper for predict_batch that returns NumPy arrays
+        and adds string labels for classification tasks if a class_map is set.
         """
         tensor_results = self.predict_batch(features)
         numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}
+        
+        # Add string names for classification if map exists
+        is_classification = self.task in [
+            MLTaskKeys.BINARY_CLASSIFICATION, 
+            MLTaskKeys.MULTICLASS_CLASSIFICATION
+        ]
+        
+        if is_classification and self._idx_to_class and PyTorchInferenceKeys.LABELS in numpy_results:
+            int_labels = numpy_results[PyTorchInferenceKeys.LABELS] # This is a (B,) array
+            numpy_results[PyTorchInferenceKeys.LABEL_NAMES] = [ # type: ignore
+                self._idx_to_class.get(label_id, "Unknown")
+                for label_id in int_labels
+            ]
+        
         return numpy_results
 
     def predict_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, Any]:
         """
-        Convenience wrapper for predict that returns NumPy arrays or scalars.
+        Convenience wrapper for predict that returns NumPy arrays or scalars
+        and adds string labels for classification tasks if a class_map is set.
         """
         tensor_results = self.predict(features)
 
         if self.task == MLTaskKeys.REGRESSION:
             # .item() implicitly moves to CPU and returns a Python scalar
             return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
+        
         elif self.task in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
+            int_label = tensor_results[PyTorchInferenceKeys.LABELS].item()
+            label_name = "Unknown"
+            if self._idx_to_class:
+                label_name = self._idx_to_class.get(int_label, "Unknown") # type: ignore
+
             return {
-                PyTorchInferenceKeys.LABELS: tensor_results[PyTorchInferenceKeys.LABELS].item(),
+                PyTorchInferenceKeys.LABELS: int_label,
+                PyTorchInferenceKeys.LABEL_NAMES: label_name,
                 PyTorchInferenceKeys.PROBABILITIES: tensor_results[PyTorchInferenceKeys.PROBABILITIES].cpu().numpy()
             }
+            
         elif self.task in [MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION, MLTaskKeys.MULTITARGET_REGRESSION]:
             # For multi-target models, the output is always an array.
             numpy_results = {key: value.cpu().numpy() for key, value in tensor_results.items()}

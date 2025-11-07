@@ -18,7 +18,7 @@ from torchmetrics.detection import MeanAveragePrecision
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .keys import VisionKeys
+from ._keys import VisionKeys
 from .ML_configuration import SegmentationMetricsFormat
 
 

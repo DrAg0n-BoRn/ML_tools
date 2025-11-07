@@ -7,7 +7,7 @@ from torch import nn
 from .path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
+from ._keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from .utilities import load_dataframe
 from .custom_logger import save_list_strings, custom_logger
 from .serde import serialize_object_filename

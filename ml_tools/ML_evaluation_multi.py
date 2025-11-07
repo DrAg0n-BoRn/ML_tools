@@ -25,7 +25,7 @@ import warnings
 from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .keys import SHAPKeys
+from ._keys import SHAPKeys
 from .ML_configuration import RegressionMetricsFormat, MultiClassificationMetricsFormat
 
 

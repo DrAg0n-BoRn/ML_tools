@@ -15,7 +15,7 @@ from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .ML_inference import DragonInferenceHandler
-from .keys import PyTorchInferenceKeys
+from ._keys import PyTorchInferenceKeys
 from .SQL import DragonSQL
 from .optimization_tools import _save_result, create_optimization_bounds
 from .utilities import save_dataframe_filename

@@ -17,7 +17,7 @@ from .utilities import yield_dataframes_from_dir, train_dataset_yielder
 from .serde import serialize_object_filename
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
-from .keys import EnsembleKeys
+from ._keys import EnsembleKeys
 from ._logger import _LOGGER
 from .ensemble_evaluation import (evaluate_model_classification,
                                   plot_roc_curve,

@@ -1,6 +1,6 @@
 # dragon-ml-toolbox
 
-A collection of Python utilities for data science and machine learning, structured as a modular package for easy reuse and installation. This package has no base dependencies, allowing for lightweight and customized virtual environments.
+A collection of machine learning pipelines and utilities, structured as modular packages for easy reuse and installation. This package has no base dependencies, allowing for lightweight and customized virtual environments.
 
 ### Features:
 
@@ -71,6 +71,10 @@ ML_models
 ML_models_advanced # Requires the extra flag [py-tab]
 ML_optimization
 ML_scaler
+ML_sequence_datasetmaster
+ML_sequence_evaluation
+ML_sequence_inference
+ML_sequence_models
 ML_trainer
 ML_utilities
 ML_vision_datasetmaster
@@ -81,7 +85,6 @@ ML_vision_transformers
 optimization_tools
 path_manager
 PSO_optimization
-RNN_forecast
 serde
 SQL
 utilities
@@ -167,6 +170,7 @@ custom_logger
 GUI_tools
 ML_models
 ML_inference
+ML_sequence_inference
 ML_scaler
 path_manager
 ```

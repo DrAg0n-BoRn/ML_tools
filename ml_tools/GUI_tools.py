@@ -8,7 +8,7 @@ import numpy as np
 
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .keys import _OneHotOtherPlaceholder
+from ._keys import _OneHotOtherPlaceholder
 
 
 __all__ = [

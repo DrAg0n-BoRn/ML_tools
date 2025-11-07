@@ -8,7 +8,7 @@ from .path_manager import make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .constants import CHEMICAL_ELEMENT_SYMBOLS
-from .keys import MagicWords
+from ._keys import MagicWords
 
 
 __all__ = [

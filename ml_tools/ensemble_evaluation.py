@@ -25,7 +25,7 @@ from typing import Union, Optional, Literal
 from .path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .keys import SHAPKeys
+from ._keys import SHAPKeys
 
 
 __all__ = [

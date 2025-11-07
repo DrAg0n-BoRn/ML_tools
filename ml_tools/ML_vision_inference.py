@@ -8,9 +8,9 @@ from torchvision import transforms
 
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .path_manager import make_fullpath
-from .keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
+from ._keys import PyTorchInferenceKeys, MLTaskKeys
 from .ML_vision_transformers import _load_recipe_and_build_transform
+from .ML_inference import _BaseInferenceHandler
 
 
 __all__ = [
@@ -18,22 +18,19 @@ __all__ = [
 ]
 
 
-class DragonVisionInferenceHandler:
+class DragonVisionInferenceHandler(_BaseInferenceHandler):
     """
     Handles loading a PyTorch vision model's state dictionary and performing inference.
 
     This class is specifically for vision models, which typically expect
     4D Tensors (B, C, H, W) or Lists of Tensors as input.
-    It does NOT use a scaler, as preprocessing (e.g., normalization)
-    is assumed to be part of the input transform pipeline.
     """
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  task: Literal["binary image classification", "multiclass image classification", "binary segmentation", "multiclass segmentation", "object detection"],
                  device: str = 'cpu',
-                 transform_source: Optional[Union[str, Path, Callable]] = None,
-                 class_map: Optional[Dict[str, int]] = None):
+                 transform_source: Optional[Union[str, Path, Callable]] = None):
         """
         Initializes the vision inference handler.
 
@@ -46,18 +43,13 @@ class DragonVisionInferenceHandler:
                 - A path to a .json recipe file (str or Path).
                 - A pre-built transformation pipeline (Callable).
                 - None, in which case .set_transform() must be called explicitly to set transformations.
-            idx_to_class (Dict[int, str] | None): Sets the class name mapping to translate predicted integer labels back into string names. (For image classification and object detection)
+        
+        Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
-        self._model = model
-        self._device = self._validate_device(device)
+        super().__init__(model, state_dict, device, None)
+
         self._transform: Optional[Callable] = None
         self._is_transformed: bool = False
-        self._idx_to_class: Optional[Dict[int, str]] = None
-        self._classification_threshold = 0.5
-        self._loaded_threshold = False
-        
-        if class_map is not None:
-            self.set_class_map(class_map)
 
         if task not in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION, MLTaskKeys.OBJECT_DETECTION]:
             _LOGGER.error(f"Unsupported task: '{task}'.")
@@ -74,49 +66,6 @@ class DragonVisionInferenceHandler:
         if transform_source:
             self.set_transform(transform_source)
             self._is_transformed = True
-        
-        model_p = make_fullpath(state_dict, enforce="file")
-
-        try:
-            # Load whatever is in the file
-            loaded_data = torch.load(model_p, map_location=self._device)
-
-            # Check if it's a dictionary or a weights-only file
-            if isinstance(loaded_data, dict) and PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
-                # It's a dict, extract the weights
-                self._model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
-                if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
-                    # Binary based models need a classification threshold
-                    try:
-                        self._classification_threshold = loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD]
-                    except Exception as e_int:
-                        _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
-                        self._classification_threshold = 0.5
-                    else:
-                        _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
-                        self._loaded_threshold = True
-            else:
-                # It's a state_dict, load it directly
-                self._model.load_state_dict(loaded_data)
-            
-            _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
-            
-            self._model.to(self._device)
-            self._model.eval()  # Set the model to evaluation mode
-        except Exception as e:
-            _LOGGER.error(f"Failed to load model state from '{model_p}': {e}")
-            raise
-
-    def _validate_device(self, device: str) -> torch.device:
-        """Validates the selected device and returns a torch.device object."""
-        device_lower = device.lower()
-        if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("CUDA not available, switching to CPU.")
-            device_lower = "cpu"
-        elif device_lower == "mps" and not torch.backends.mps.is_available():
-            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
-            device_lower = "cpu"
-        return torch.device(device_lower)
 
     def _preprocess_batch(self, inputs: Union[torch.Tensor, List[torch.Tensor]]) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
@@ -129,7 +78,7 @@ class DragonVisionInferenceHandler:
                 _LOGGER.error("Input for object_detection must be a List[torch.Tensor].")
                 raise ValueError("Invalid input type for object detection.")
             # Move each tensor in the list to the device
-            return [t.float().to(self._device) for t in inputs]
+            return [t.float().to(self.device) for t in inputs]
         
         else: # Classification or Segmentation
             if not isinstance(inputs, torch.Tensor):
@@ -140,7 +89,7 @@ class DragonVisionInferenceHandler:
                  _LOGGER.error(f"Input tensor for {self.task} must be 4D (B, C, H, W). Got {inputs.ndim}D.") # type: ignore
                  raise ValueError("Input tensor must be 4D.")
             
-            return inputs.float().to(self._device) # type: ignore
+            return inputs.float().to(self.device) 
         
     def set_transform(self, transform_source: Union[str, Path, Callable]):
         """
@@ -168,21 +117,6 @@ class DragonVisionInferenceHandler:
         else:
             _LOGGER.error(f"Invalid transform_source type: {type(transform_source)}. Must be str, Path, or Callable.")
             raise TypeError("transform_source must be a file path or a Callable.")
-        
-    def set_class_map(self, class_map: Dict[str, int]):
-        """
-        Sets the class name mapping to translate predicted integer labels
-        back into string names.
-
-        Args:
-            class_map (Dict[str, int]): The class_to_idx dictionary
-                (e.g., {'cat': 0, 'dog': 1}) from the VisionDatasetMaker.
-        """
-        if self._idx_to_class is not None:
-            _LOGGER.warning("Class to index mapping was previously given. Setting new mapping...")
-        # Invert the dictionary for fast lookup
-        self._idx_to_class = {v: k for k, v in class_map.items()}
-        _LOGGER.info("Class map set for label-to-name translation.")
 
     def predict_batch(self, inputs: Union[torch.Tensor, List[torch.Tensor]]) -> Dict[str, Any]:
         """
@@ -207,7 +141,7 @@ class DragonVisionInferenceHandler:
         
         with torch.no_grad():
             # get outputs
-            output = self._model(processed_inputs)
+            output = self.model(processed_inputs)
             if self.task == MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION:
                 # process
                 probs = torch.softmax(output, dim=1)
