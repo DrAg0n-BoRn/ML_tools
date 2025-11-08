@@ -4,9 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-### [16.0.0] 2025-11-07
+## [16.1.0] 2025-11-08
 
-## Added
+### Added
+
+- ML_configuration: Metadata classes to use with "ML_trainer" classes.
+- ML_inference: `DragonInference.set_target_ids()`, to manually set target ids.
+
+### Changed
+
+- ML_evaluation: `classification_metrics()`, takes a 'class_map' to parse label names.
+- ML_Datasetmaster: `DragonDataset`, propagates the class mapping attribute to train, validation, and test datasets.
+- ML_vision_datasetmaster: `DragonDatasetVision`, propagates the class mapping attribute to train, validation, and test datasets.
+- ML_vision_inference: `DragonVisionInferenceHandler`, Object Detection tasks no longer use a class map for outputs. Class maps are for reference only.
+- ML_trainer:
+    - `DragonTrainer.explain()`, uses a memory efficient sampler. 
+    - `DragonTrainer.evaluate()`, automatically finds class mappings in the dataset.
+    - `finalize_model_training()`, enhanced logic and robustness for all trainer classes by requiring a configuration class.
+- ML_inference: 
+    - `DragonInference`, parses target names and set target ids from the model file at initialization.
+    - `DragonInference`, removed `target_ids` parameter for initialization.
+
+## [16.0.0] 2025-11-07
+
+### Added
 
 - New module: "ML_sequence_datasetmaster"
 - New module: "ML_sequence_evaluation"
@@ -24,7 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - `SequenceValueMetricsFormat`
     - `SequenceSequenceMetricsFormat`
 
-## Changed
+### Changed
 
 - ML_datasetmaster:
     - `DragonDataset`, supports "class_map" for targets.
@@ -33,13 +54,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - ML_models: `DragonSequenceLSTM`, revamped and moved to "ML_sequence_models".
 - ML_vision_inference: `DragonVisionInferenceHandler`, refactored and enhanced robustness.
 
-## Deleted
+### Deleted
 
 - RNN_forecast: functionality included in `DragonSequenceInferenceHandler`.
 
-### [15.1.0] 2025-11-06
+## [15.1.0] 2025-11-06
 
-## Added
+### Added
 
 - ML_evaluation: `classification_metrics()`, Optimal Classification Threshold (Youden's J Statistic) calculation.
 - ML_evaluation_multi: `multi_label_classification_metrics()`, Optimal Classification Threshold (Youden's J Statistic) calculation.
@@ -52,7 +73,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - ML_vision_datasetmaster: `DragonDatasetVision.configure_transforms()`, added default `RandomRotation(90)` to the train transform pipeline.
 - ML_datasetmaster: Enhance all classes to support train, validation, and test dataset splits.
 
-### [15.0.0] 2025-11-06
+## [15.0.0] 2025-11-06
 
 ### Added
 

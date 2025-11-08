@@ -1,5 +1,9 @@
-from typing import Optional, Union
+from typing import Union, Optional
+import numpy as np
+
 from ._script_info import _script_info
+from ._logger import _LOGGER
+from .path_manager import sanitize_filename
 
 
 __all__ = [
@@ -8,7 +12,18 @@ __all__ = [
     "RegressionMetricsFormat",
     "SegmentationMetricsFormat",
     "SequenceValueMetricsFormat",
-    "SequenceSequenceMetricsFormat"
+    "SequenceSequenceMetricsFormat",
+    "FinalizeBinaryClassification",
+    "FinalizeBinarySegmentation",
+    "FinalizeBinaryImageClassification",
+    "FinalizeMultiClassClassification",
+    "FinalizeMultiClassImageClassification",
+    "FinalizeMultiClassSegmentation",
+    "FinalizeMultiLabelBinaryClassification",
+    "FinalizeMultiTargetRegression",
+    "FinalizeRegression",
+    "FinalizeObjectDetection",
+    "FinalizeSequencePrediction"
 ]
 
 
@@ -18,7 +33,6 @@ class ClassificationMetricsFormat:
     """
     def __init__(self, 
                  cmap: str="Blues",
-                 class_map: Optional[dict[str,int]]=None, 
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -30,11 +44,6 @@ class ClassificationMetricsFormat:
                 and report heatmap. Defaults to "Blues".
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
                 - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
-            
-            class_map (dict[str,int] | None): A dictionary mapping 
-                class string names to their integer indices (e.g., {'cat': 0, 'dog': 1}). 
-                This is used to label the axes of the confusion matrix and classification 
-                report correctly. Defaults to None.
             
             ROC_PR_line (str): The color name or hex code for the line plotted
                 on the ROC and Precision-Recall curves. Defaults to 'darkorange'.
@@ -51,7 +60,6 @@ class ClassificationMetricsFormat:
         ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
         self.cmap = cmap
-        self.class_map = class_map
         self.ROC_PR_line = ROC_PR_line
         self.calibration_bins = calibration_bins
         self.font_size = font_size
@@ -59,7 +67,6 @@ class ClassificationMetricsFormat:
     def __repr__(self) -> str:
         parts = [
             f"cmap='{self.cmap}'",
-            f"class_map={self.class_map}",
             f"ROC_PR_line='{self.ROC_PR_line}'",
             f"calibration_bins={self.calibration_bins}",
             f"font_size={self.font_size}"
@@ -304,6 +311,287 @@ class SequenceSequenceMetricsFormat:
             f"mae_color='{self.mae_color}'"
         ]
         return f"SequenceMetricsFormat({', '.join(parts)})"
+
+# -------- Finalize classes --------
+class _FinalizeModelTraining:
+    """
+    Base class for finalizing model training.
+
+    This class is not intended to be instantiated directly. Instead, use one of its specific subclasses.
+    """
+    def __init__(self,
+                 filename: str,
+                 ) -> None:
+        self.filename = _validate_string(string=filename, attribute_name="filename", extension=".pth")
+        self.target_name: Optional[str] = None
+        self.target_names: Optional[list[str]] = None
+        self.classification_threshold: Optional[float] = None
+        self.class_map: Optional[dict[str,int]] = None
+        self.initial_sequence: Optional[np.ndarray] = None
+        self.sequence_length: Optional[int] = None
+
+
+class FinalizeRegression(_FinalizeModelTraining):
+    """Parameters for finalizing a single-target regression model."""
+    def __init__(self,
+                 filename: str,
+                 target_name: str,
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            target_name (str): The name of the target variable.
+        """
+        super().__init__(filename=filename)
+        self.target_name = _validate_string(string=target_name, attribute_name="Target name")
+    
+    
+class FinalizeMultiTargetRegression(_FinalizeModelTraining):
+    """Parameters for finalizing a multi-target regression model."""
+    def __init__(self,
+                 filename: str,
+                 target_names: list[str],
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            target_names (list[str]): A list of names for the target variables.
+        """
+        super().__init__(filename=filename)
+        safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
+        self.target_names = safe_names
+
+
+class FinalizeBinaryClassification(_FinalizeModelTraining):
+    """Parameters for finalizing a binary classification model."""
+    def __init__(self,
+                 filename: str,
+                 target_name: str,
+                 classification_threshold: float,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            target_name (str): The name of the target variable.
+            classification_threshold (float): The cutoff threshold for classifying as the positive class.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+        """
+        super().__init__(filename=filename)
+        self.target_name = _validate_string(string=target_name, attribute_name="Target name")
+        self.classification_threshold = _validate_threshold(classification_threshold)
+        self.class_map = _validate_class_map(class_map)
+
+
+class FinalizeMultiClassClassification(_FinalizeModelTraining):
+    """Parameters for finalizing a multi-class classification model."""
+    def __init__(self,
+                 filename: str,
+                 target_name: str,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            target_name (str): The name of the target variable.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+        """
+        super().__init__(filename=filename)
+        self.target_name = _validate_string(string=target_name, attribute_name="Target name")
+        self.class_map = _validate_class_map(class_map)
+    
+    
+class FinalizeBinaryImageClassification(_FinalizeModelTraining):
+    """Parameters for finalizing a binary image classification model."""
+    def __init__(self,
+                 filename: str,
+                 classification_threshold: float,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            classification_threshold (float): The cutoff threshold for
+                classifying as the positive class.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+        """
+        super().__init__(filename=filename)
+        self.classification_threshold = _validate_threshold(classification_threshold)
+        self.class_map = _validate_class_map(class_map)
+
+
+class FinalizeMultiClassImageClassification(_FinalizeModelTraining):
+    """Parameters for finalizing a multi-class image classification model."""
+    def __init__(self,
+                 filename: str,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+        """
+        super().__init__(filename=filename)
+        self.class_map = _validate_class_map(class_map)
+    
+    
+class FinalizeMultiLabelBinaryClassification(_FinalizeModelTraining):
+    """Parameters for finalizing a multi-label binary classification model."""
+    def __init__(self,
+                 filename: str,
+                 target_names: list[str],
+                 classification_threshold: float,
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            target_names (list[str]): A list of names for the target variables.
+            classification_threshold (float): The cutoff threshold for classifying as the positive class.
+        """
+        super().__init__(filename=filename)
+        safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
+        self.target_names = safe_names
+        self.classification_threshold = _validate_threshold(classification_threshold)
+
+
+class FinalizeBinarySegmentation(_FinalizeModelTraining):
+    """Parameters for finalizing a binary segmentation model."""
+    def __init__(self,
+                 filename: str,
+                 class_map: dict[str,int],
+                 classification_threshold: float,
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            classification_threshold (float): The cutoff threshold for classifying as the positive class (mask).
+        """
+        super().__init__(filename=filename)
+        self.classification_threshold = _validate_threshold(classification_threshold)
+        self.class_map = _validate_class_map(class_map)
+    
+    
+class FinalizeMultiClassSegmentation(_FinalizeModelTraining):
+    """Parameters for finalizing a multi-class segmentation model."""
+    def __init__(self,
+                 filename: str,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+        """
+        super().__init__(filename=filename)
+        self.class_map = _validate_class_map(class_map)
+
+
+class FinalizeObjectDetection(_FinalizeModelTraining):
+    """Parameters for finalizing an object detection model."""
+    def __init__(self,
+                 filename: str,
+                 class_map: dict[str,int]
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+        """
+        super().__init__(filename=filename)
+        self.class_map = _validate_class_map(class_map)
+
+
+class FinalizeSequencePrediction(_FinalizeModelTraining):
+    """Parameters for finalizing a sequence prediction model."""
+    def __init__(self,
+                 filename: str,
+                 last_training_sequence: np.ndarray,
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+        """
+        super().__init__(filename=filename)
+        
+        if not isinstance(last_training_sequence, np.ndarray):
+            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
+            raise TypeError()
+        
+        if last_training_sequence.ndim == 1:
+            # It's already 1D, (N,). This is valid.
+            self.initial_sequence = last_training_sequence
+        elif last_training_sequence.ndim == 2:
+            # It's 2D, check for shape (1, N)
+            if last_training_sequence.shape[0] == 1:
+                # Shape is (1, N), flatten to (N,)
+                self.initial_sequence = last_training_sequence.flatten()
+            else:
+                # Shape is (N, 1) or (N, M), which is invalid
+                _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
+                raise ValueError()
+        else:
+            # It's 3D or more, which is not supported
+            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
+            raise ValueError()
+        
+        # Save the length of the validated 1D sequence
+        self.sequence_length = len(self.initial_sequence)
+
+
+def _validate_string(string: str, attribute_name: str, extension: Optional[str]=None) -> str:
+    """Helper for finalize classes"""
+    if not isinstance(string, str):
+        _LOGGER.error(f"{attribute_name} must be a string.")
+        raise TypeError()
+
+    if extension:
+        safe_name = sanitize_filename(string)
+        
+        if not safe_name.endswith(extension):
+            safe_name += extension
+    else:
+        safe_name = string
+            
+    return safe_name
+
+def _validate_threshold(threshold: float):
+    """Helper for finalize classes"""
+    if not isinstance(threshold, float):
+        _LOGGER.error(f"Classification threshold must be a float.")
+        raise TypeError()
+    elif threshold <= 0.0 or threshold >= 1.0:
+        _LOGGER.error(f"Classification threshold must be in the range [0.1, 0.9]")
+        raise ValueError()
+    
+    return threshold
+
+def _validate_class_map(map: dict[str,int]):
+    """Helper for finalize classes"""
+    validated_map = None
+    if isinstance(map, dict):
+        if all( [isinstance(key, str) for key in map.keys()] ):
+            if all( [isinstance(val, str) for val in map.values()] ):
+                validated_map = map
+    
+    if validated_map is None:
+        _LOGGER.error(f"Class map must be a dictionary of string keys and integer values.")
+        raise TypeError()
+    else:
+        return validated_map
 
 def info():
     _script_info(__all__)

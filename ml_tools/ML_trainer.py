@@ -6,7 +6,7 @@ from torch import nn
 import numpy as np
 from abc import ABC, abstractmethod
 
-from .path_manager import make_fullpath, sanitize_filename
+from .path_manager import make_fullpath
 from .ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckpoint, DragonEarlyStopping, DragonLRScheduler
 from .ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
@@ -17,7 +17,18 @@ from .ML_configuration import (ClassificationMetricsFormat,
                                RegressionMetricsFormat, 
                                SegmentationMetricsFormat,
                                SequenceValueMetricsFormat,
-                               SequenceSequenceMetricsFormat)
+                               SequenceSequenceMetricsFormat,
+                               FinalizeBinaryClassification,
+                               FinalizeBinarySegmentation,
+                               FinalizeBinaryImageClassification,
+                               FinalizeMultiClassClassification,
+                               FinalizeMultiClassImageClassification,
+                               FinalizeMultiClassSegmentation,
+                               FinalizeMultiLabelBinaryClassification,
+                               FinalizeMultiTargetRegression,
+                               FinalizeRegression,
+                               FinalizeObjectDetection,
+                               FinalizeSequencePrediction)
 
 from ._script_info import _script_info
 from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
@@ -248,6 +259,25 @@ class _BaseDragonTrainer(ABC):
         self.device = self._validate_device(device)
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
+        
+    def _load_model_state_for_finalizing(self, model_checkpoint: Union[Path, Literal['latest', 'current']]):
+        """
+        Private helper to load the correct model state_dict based on user's choice.
+        This is called by finalize_model_training() in subclasses.
+        """
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest)
+        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        elif model_checkpoint == MagicWords.CURRENT:
+            pass
+        else:
+            _LOGGER.error(f"Unknown 'model_checkpoint' received '{model_checkpoint}'.")
+            raise ValueError()
         
     # --- Abstract Methods ---
     # These must be implemented by subclasses
@@ -665,7 +695,7 @@ class DragonTrainer(_BaseDragonTrainer):
                                                             MultiClassificationMetricsFormat, 
                                                             RegressionMetricsFormat, 
                                                             SegmentationMetricsFormat)):
-                    warning_message_type = f"Invalid test_format_configuration': '{type(val_format_configuration)}'."
+                    warning_message_type = f"Invalid test_format_configuration': '{type(test_format_configuration)}'."
                     if val_configuration_validated is not None:
                         warning_message_type += " 'val_format_configuration' will be used for the test set metrics output."
                         test_configuration_validated = val_configuration_validated
@@ -706,7 +736,7 @@ class DragonTrainer(_BaseDragonTrainer):
         """
         Changed to a private helper function.
         """
-        dataset_for_names = None
+        dataset_for_artifacts = None
         eval_loader = None
         
         # set threshold
@@ -727,7 +757,7 @@ class DragonTrainer(_BaseDragonTrainer):
             eval_loader = data
             # Try to get the dataset from the loader for fetching target names
             if hasattr(data, 'dataset'):
-                dataset_for_names = data.dataset # type: ignore
+                dataset_for_artifacts = data.dataset # type: ignore
         elif isinstance(data, Dataset):
             # Create a new loader from the provided dataset
             eval_loader = DataLoader(data, 
@@ -735,10 +765,10 @@ class DragonTrainer(_BaseDragonTrainer):
                                      shuffle=False, 
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"))
-            dataset_for_names = data
+            dataset_for_artifacts = data
         else: # data is None, use the trainer's default test dataset
             if self.validation_dataset is None:
-                _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
+                _LOGGER.error("Cannot evaluate. No data provided and no validation dataset available in the trainer.")
                 raise ValueError()
             # Create a fresh DataLoader from the test_dataset
             eval_loader = DataLoader(self.validation_dataset, 
@@ -747,7 +777,7 @@ class DragonTrainer(_BaseDragonTrainer):
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"))
             
-            dataset_for_names = self.validation_dataset
+            dataset_for_artifacts = self.validation_dataset
 
         if eval_loader is None:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
@@ -784,6 +814,17 @@ class DragonTrainer(_BaseDragonTrainer):
                                config=config)
 
         elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
+            # get the class map if it exists
+            try:
+                class_map = dataset_for_artifacts.class_map # type: ignore
+            except AttributeError:
+                _LOGGER.warning(f"Dataset has no 'class_map' attribute. Using generics.")
+                class_map = None
+            else:
+                if not isinstance(class_map, dict):
+                    _LOGGER.warning(f"Dataset has a 'class_map' attribute, but it is not a dictionary: '{type(class_map)}'.")
+                    class_map = None
+            
             # Check configuration
             config = None
             if format_configuration and isinstance(format_configuration, ClassificationMetricsFormat):
@@ -795,11 +836,12 @@ class DragonTrainer(_BaseDragonTrainer):
                                    y_true=y_true,
                                    y_pred=y_pred,
                                    y_prob=y_prob,
+                                   class_map=class_map,
                                    config=config)
 
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION:
             try:
-                target_names = dataset_for_names.target_names # type: ignore
+                target_names = dataset_for_artifacts.target_names # type: ignore
             except AttributeError:
                 num_targets = y_true.shape[1]
                 target_names = [f"target_{i}" for i in range(num_targets)]
@@ -820,7 +862,7 @@ class DragonTrainer(_BaseDragonTrainer):
 
         elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
             try:
-                target_names = dataset_for_names.target_names # type: ignore
+                target_names = dataset_for_artifacts.target_names # type: ignore
             except AttributeError:
                 num_targets = y_true.shape[1]
                 target_names = [f"label_{i}" for i in range(num_targets)]
@@ -848,18 +890,18 @@ class DragonTrainer(_BaseDragonTrainer):
             class_names = None
             try:
                 # Try to get 'classes' from VisionDatasetMaker
-                if hasattr(dataset_for_names, 'classes'):
-                    class_names = dataset_for_names.classes # type: ignore
+                if hasattr(dataset_for_artifacts, 'classes'):
+                    class_names = dataset_for_artifacts.classes # type: ignore
                 # Fallback for Subset
-                elif hasattr(dataset_for_names, 'dataset') and hasattr(dataset_for_names.dataset, 'classes'): # type: ignore
-                     class_names = dataset_for_names.dataset.classes # type: ignore
+                elif hasattr(dataset_for_artifacts, 'dataset') and hasattr(dataset_for_artifacts.dataset, 'classes'): # type: ignore
+                     class_names = dataset_for_artifacts.dataset.classes # type: ignore
             except AttributeError:
                 pass # class_names is still None
 
             if class_names is None:
                 try:
                     # Fallback to 'target_names'
-                    class_names = dataset_for_names.target_names # type: ignore
+                    class_names = dataset_for_artifacts.target_names # type: ignore
                 except AttributeError:
                     # Fallback to inferring from labels
                     labels = np.unique(y_true)
@@ -905,34 +947,52 @@ class DragonTrainer(_BaseDragonTrainer):
             explainer_type (Literal['deep', 'kernel']): The explainer to use.
                 - 'deep': Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
                 - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY slow and memory-intensive. Use with a very low 'n_samples'< 100.
-        """
-        # Internal helper to create a dataloader and get a random sample
+        """        
+        # memory efficient helper
         def _get_random_sample(dataset: Dataset, num_samples: int):
+            """
+            Memory-efficiently samples data from a dataset.
+            """
             if dataset is None:
+                return None
+            
+            dataset_len = len(dataset) # type: ignore
+            if dataset_len == 0:
                 return None
             
             # For MPS devices, num_workers must be 0 to ensure stability
             loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
             
+            # Ensure batch_size is not larger than the dataset itself
+            batch_size = min(num_samples, 64, dataset_len) 
+            
             loader = DataLoader(
                 dataset, 
-                batch_size=64,
-                shuffle=False,
+                batch_size=batch_size,
+                shuffle=True, # Shuffle to get random samples
                 num_workers=loader_workers
             )
             
-            all_features = [features for features, _ in loader]
-            if not all_features:
+            collected_features = []
+            num_collected = 0
+            
+            for features, _ in loader:
+                collected_features.append(features)
+                num_collected += features.size(0)
+                if num_collected >= num_samples:
+                    break # Stop once we have enough samples
+            
+            if not collected_features:
                 return None
             
-            full_data = torch.cat(all_features, dim=0)
+            full_data = torch.cat(collected_features, dim=0)
             
-            if num_samples >= full_data.size(0):
-                return full_data
+            # If we collected more than needed, trim it down
+            if full_data.size(0) > num_samples:
+                return full_data[:num_samples]
             
-            rand_indices = torch.randperm(full_data.size(0))[:num_samples]
-            return full_data[rand_indices]
-
+            return full_data
+        
         # print(f"\n--- Preparing SHAP Data (sampling up to {n_samples} instances) ---")
 
         # 1. Get background data from the trainer's train_dataset
@@ -1086,95 +1146,85 @@ class DragonTrainer(_BaseDragonTrainer):
             _LOGGER.error("No attention weights were collected from the model.")
         
     def finalize_model_training(self, 
+                                model_checkpoint: Union[Path, Literal['latest', 'current']],
                                 save_dir: Union[str, Path], 
-                                filename: str, 
-                                model_checkpoint: Union[Path, Literal['latest', 'current']], 
-                                classification_threshold: Optional[float]=None,
-                                class_map: Optional[Dict[str,int]]=None):
+                                finalize_config: Union[FinalizeRegression,
+                                                       FinalizeMultiTargetRegression,
+                                                       FinalizeBinaryClassification,
+                                                       FinalizeBinaryImageClassification,
+                                                       FinalizeMultiClassClassification,
+                                                       FinalizeMultiClassImageClassification,
+                                                       FinalizeBinarySegmentation,
+                                                       FinalizeMultiClassSegmentation,
+                                                       FinalizeMultiLabelBinaryClassification]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
-        This method saves the model's `state_dict`, the final epoch number, and
-        an optional classification threshold required for binary-based tasks (binary classification, binary segmentation,
-        multilabel binary classification).
+        This method saves the model's `state_dict`, the final epoch number, and optional configuration for the task at hand.
 
         Args:
-            save_dir (str | Path): The directory to save the finalized model.
-            filename (str): The desired filename for the saved file.
             model_checkpoint (Path | "latest" | "current"):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's state as it is at the end of the `fit()` call.
-            classification_threshold (float, None):
-                Required for `binary classification`, `binary segmentation`, and
-                `multilabel binary classification`. This is the threshold (0.0-1.0)
-                used to convert probabilities to class labels.
-            class_map (Dict[str, int] | None): Sets the class name mapping to translate predicted integer labels back into string names. (For Classification and Segmentation Tasks)
+            save_dir (str | Path): The directory to save the finalized model.
+            finalize_config (object): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
-        # handle save path
-        sanitized_filename = sanitize_filename(filename)
-        if not sanitized_filename.endswith(".pth"):
-            sanitized_filename = sanitized_filename + ".pth"
-            
-        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = dir_path / sanitized_filename
+        if self.kind == MLTaskKeys.REGRESSION and not isinstance(finalize_config, FinalizeRegression):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeRegression', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION and not isinstance(finalize_config, FinalizeMultiTargetRegression):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiTargetRegression', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.BINARY_CLASSIFICATION and not isinstance(finalize_config, FinalizeBinaryClassification):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryClassification', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.BINARY_IMAGE_CLASSIFICATION and not isinstance(finalize_config, FinalizeBinaryImageClassification):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryImageClassification', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiClassClassification):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassClassification', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiClassImageClassification):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassImageClassification', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.BINARY_SEGMENTATION and not isinstance(finalize_config, FinalizeBinarySegmentation):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinarySegmentation', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.MULTICLASS_SEGMENTATION and not isinstance(finalize_config, FinalizeMultiClassSegmentation):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassSegmentation', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiLabelBinaryClassification):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiLabelBinaryClassification', but got {type(finalize_config).__name__}.")
+            raise TypeError()
         
-        # threshold required for binary tasks
-        if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
-            if classification_threshold is None:
-                _LOGGER.error(f"A classification threshold is needed for binary-based classification tasks. If unknown, use '0.5' as a default.")
-                raise ValueError()
-            elif not isinstance(classification_threshold, float):
-                _LOGGER.error(f"The classification threshold must be a float value.")
-                raise TypeError()
-            elif classification_threshold <= 0.0 or classification_threshold >= 1.0:
-                _LOGGER.error(f"The classification threshold must be in the range (0.0 - 1.0).")
-        else:
-            classification_threshold = None
+        # handle save path
+        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
+        full_path = dir_path / finalize_config.filename
         
         # handle checkpoint
-        if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
-            path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
-            raise ValueError()
-        elif model_checkpoint == MagicWords.CURRENT:
-            pass
-        else:
-            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
-        
-        # Handle class map
-        if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
-                         MLTaskKeys.MULTICLASS_CLASSIFICATION,
-                         MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
-                         MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, 
-                         MLTaskKeys.BINARY_SEGMENTATION, 
-                         MLTaskKeys.MULTICLASS_SEGMENTATION]:
-            if class_map is None:
-                _LOGGER.error(f"'class_map' is required for '{self.kind}'.")
-                raise ValueError()
-        else:
-            class_map = None
+        self._load_model_state_for_finalizing(model_checkpoint)
         
         # Create finalized data
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
         }
-        
-        if classification_threshold is not None:
-            self._classification_threshold = classification_threshold
-            finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = classification_threshold
-        
-        if class_map is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = class_map
-        
+
+        # Parse config
+        if finalize_config.target_name is not None:
+            finalized_data[PyTorchCheckpointKeys.TARGET_NAME] = finalize_config.target_name
+        if finalize_config.target_names is not None:
+            finalized_data[PyTorchCheckpointKeys.TARGET_NAMES] = finalize_config.target_names
+        if finalize_config.classification_threshold is not None:
+            finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = finalize_config.classification_threshold
+        if finalize_config.class_map is not None:
+            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
+
+        # Save model file
         torch.save(finalized_data, full_path)
         
-        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
+        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
 
 
 # Object Detection Trainer
@@ -1224,7 +1274,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset # <-- Renamed
-        self.kind = "object_detection"
+        self.kind = MLTaskKeys.OBJECT_DETECTION
         self.collate_fn = collate_fn
         self.criterion = None # Criterion is handled inside the model
 
@@ -1413,7 +1463,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                 - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
         """
-        dataset_for_names = None
+        dataset_for_artifacts = None
         eval_loader = None
         
         # load model checkpoint
@@ -1430,7 +1480,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         if isinstance(data, DataLoader):
             eval_loader = data
             if hasattr(data, 'dataset'):
-                dataset_for_names = data.dataset # type: ignore
+                dataset_for_artifacts = data.dataset # type: ignore
         elif isinstance(data, Dataset):
             # Create a new loader from the provided dataset
             eval_loader = DataLoader(data, 
@@ -1439,7 +1489,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                                      num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
                                      pin_memory=(self.device.type == "cuda"),
                                      collate_fn=self.collate_fn)
-            dataset_for_names = data
+            dataset_for_artifacts = data
         else: # data is None, use the trainer's default test dataset
             if self.validation_dataset is None:
                 _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
@@ -1453,7 +1503,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                 pin_memory=(self.device.type == "cuda"),
                 collate_fn=self.collate_fn
             )
-            dataset_for_names = self.validation_dataset
+            dataset_for_artifacts = self.validation_dataset
 
         if eval_loader is None:
             _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
@@ -1490,11 +1540,11 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         class_names = None
         try:
             # Try to get 'classes' from ObjectDetectionDatasetMaker
-            if hasattr(dataset_for_names, 'classes'):
-                class_names = dataset_for_names.classes # type: ignore
+            if hasattr(dataset_for_artifacts, 'classes'):
+                class_names = dataset_for_artifacts.classes # type: ignore
             # Fallback for Subset
-            elif hasattr(dataset_for_names, 'dataset') and hasattr(dataset_for_names.dataset, 'classes'): # type: ignore
-                 class_names = dataset_for_names.dataset.classes # type: ignore
+            elif hasattr(dataset_for_artifacts, 'dataset') and hasattr(dataset_for_artifacts.dataset, 'classes'): # type: ignore
+                 class_names = dataset_for_artifacts.dataset.classes # type: ignore
         except AttributeError:
             _LOGGER.warning("Could not find 'classes' attribute on dataset. Per-class metrics will not be named.")
             pass # class_names is still None
@@ -1508,7 +1558,11 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             print_output=False
         )
     
-    def finalize_model_training(self, save_dir: Union[str, Path], filename: str, model_checkpoint: Union[Path, Literal['latest', 'current']]):
+    def finalize_model_training(self, 
+                                save_dir: Union[str, Path], 
+                                model_checkpoint: Union[Path, Literal['latest', 'current']],
+                                finalize_config: FinalizeObjectDetection
+                                ):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
@@ -1516,33 +1570,22 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
 
         Args:
             save_dir (Union[str, Path]): The directory to save the finalized model.
-            filename (str): The desired filename for the model (e.g., "final_model.pth").
             model_checkpoint (Union[Path, Literal["latest", "current"]]):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's state as it is at the end of the `fit()` call.
+            finalize_config (FinalizeObjectDetection): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
+        if not isinstance(finalize_config, FinalizeObjectDetection):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeObjectDetection', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+        
         # handle save path
-        sanitized_filename = sanitize_filename(filename)
-        if not sanitized_filename.endswith(".pth"):
-            sanitized_filename = sanitized_filename + ".pth"
-            
         dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = dir_path / sanitized_filename
+        full_path = dir_path / finalize_config.filename
         
         # handle checkpoint
-        if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
-            path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
-            raise ValueError()
-        elif model_checkpoint == MagicWords.CURRENT:
-            pass
-        else:
-            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
+        self._load_model_state_for_finalizing(model_checkpoint)
         
         # Create finalized data
         finalized_data = {
@@ -1550,9 +1593,12 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
         }
         
+        if finalize_config.class_map is not None:
+            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
+        
         torch.save(finalized_data, full_path)
         
-        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
+        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
 
 # --- DragonSequenceTrainer ----
 class DragonSequenceTrainer(_BaseDragonTrainer):
@@ -1917,9 +1963,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     
     def finalize_model_training(self, 
                                 save_dir: Union[str, Path], 
-                                filename: str, 
-                                last_training_sequence: np.ndarray,
-                                model_checkpoint: Union[Path, Literal['latest', 'current']]):
+                                model_checkpoint: Union[Path, Literal['latest', 'current']],
+                                finalize_config: FinalizeSequencePrediction):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
@@ -1927,60 +1972,37 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
         Args:
             save_dir (Union[str, Path]): The directory to save the finalized model.
-            filename (str): The desired filename for the model (e.g., "final_model.pth").
-            last_training_sequence (np.ndarray): The last un-scaled sequence from the training data, used for forecasting.
             model_checkpoint (Union[Path, Literal["latest", "current"]]):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's state as it is at the end of the `fit()` call.
+            finalize_config (FinalizeSequencePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
+        if not isinstance(finalize_config, FinalizeSequencePrediction):
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeSequencePrediction', but got {type(finalize_config).__name__}.")
+            raise TypeError()
+
         # handle save path
-        sanitized_filename = sanitize_filename(filename)
-        if not sanitized_filename.endswith(".pth"):
-            sanitized_filename = sanitized_filename + ".pth"
-            
         dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = dir_path / sanitized_filename
+        full_path = dir_path / finalize_config.filename
         
         # handle checkpoint
-        if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
-            path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
-            raise ValueError()
-        elif model_checkpoint == MagicWords.CURRENT:
-            pass
-        else:
-            _LOGGER.error(f"Unknown 'model_checkpoint' parameter received '{model_checkpoint}'.")
-        
-        # --- 1. Validate the provided initial sequence ---
-        if not isinstance(last_training_sequence, np.ndarray):
-            _LOGGER.error(f"'last_training_sequence' must be a numpy array. Got {type(last_training_sequence)}")
-            raise TypeError()
-        if last_training_sequence.ndim != 1:
-            _LOGGER.error(f"'last_training_sequence' must be a 1D array. Got {last_training_sequence.ndim} dimensions.")
-            raise ValueError()
-        
-        # --- 2. Derive sequence_length from the array ---
-        sequence_length = len(last_training_sequence)
-        if sequence_length <= 0:
-             _LOGGER.error(f"Length of 'last_training_sequence' cannot be zero.")
-             raise ValueError()
+        self._load_model_state_for_finalizing(model_checkpoint)
         
         # Create finalized data
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.SEQUENCE_LENGTH: sequence_length,
-            PyTorchCheckpointKeys.INITIAL_SEQUENCE: last_training_sequence
         }
+        
+        if finalize_config.sequence_length is not None:
+            finalized_data[PyTorchCheckpointKeys.SEQUENCE_LENGTH] = finalize_config.sequence_length
+        if finalize_config.initial_sequence is not None:
+            finalized_data[PyTorchCheckpointKeys.INITIAL_SEQUENCE] = finalize_config.initial_sequence
         
         torch.save(finalized_data, full_path)
         
-        _LOGGER.info(f"Finalized model weights saved to {full_path}.")
+        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
 
 
 def info():

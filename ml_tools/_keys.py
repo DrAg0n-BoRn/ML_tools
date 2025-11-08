@@ -94,6 +94,8 @@ class PyTorchCheckpointKeys:
     CLASS_MAP = "class_map"
     SEQUENCE_LENGTH = "sequence_length"
     INITIAL_SEQUENCE = "initial_sequence"
+    TARGET_NAME = "target_name"
+    TARGET_NAMES = "target_names"
 
 
 class UtilityKeys:

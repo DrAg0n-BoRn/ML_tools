@@ -55,7 +55,8 @@ class _PytorchDataset(Dataset):
             
         self._feature_names = feature_names
         self._target_names = target_names
-        self.classes: List[str] = []
+        self._classes: List[str] = []
+        self._class_map: dict[str,int] = dict()
 
     def __len__(self):
         return len(self.features)
@@ -79,6 +80,14 @@ class _PytorchDataset(Dataset):
             _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
             raise ValueError()
 
+    @property
+    def classes(self):
+        return self._classes
+    
+    @property
+    def class_map(self):
+        return self._class_map
+
 
 # --- Abstract Base Class ---
 class _BaseDatasetMaker(ABC):
@@ -100,7 +109,8 @@ class _BaseDatasetMaker(ABC):
         self._y_train_shape = (0,)
         self._y_val_shape = (0,)
         self._y_test_shape = (0,)
-        self.class_map: Optional[dict[str, int]] = None
+        self.class_map: dict[str, int] = dict()
+        self.classes: list[str] = list()
         
     def _prepare_scaler(self, 
                         X_train: pandas.DataFrame, 
@@ -255,7 +265,7 @@ class _BaseDatasetMaker(ABC):
         self.save_target_names(directory=directory, verbose=verbose)
         if self.scaler is not None:
             self.save_scaler(directory=directory, verbose=verbose)
-        if self.class_map is not None:
+        if self.class_map:
             self.save_class_map(directory=directory, verbose=verbose)
 
 
@@ -285,6 +295,7 @@ class DragonDataset(_BaseDatasetMaker):
                  scaler: Union[Literal["fit"], Literal["none"], DragonScaler],
                  validation_size: float = 0.2,
                  test_size: float = 0.1,
+                 class_map: Optional[dict[str,int]]=None,
                  random_state: int = 42):
         """
         Args:
@@ -306,6 +317,7 @@ class DragonDataset(_BaseDatasetMaker):
                 The proportion of the *original* dataset to allocate to the validation split.
             test_size (float): 
                 The proportion of the dataset to allocate to the test split (can be 0).
+            class_map (dict[str,int] | None): Optional class map for the target classes in classification tasks. Can be set later using `.set_class_map()`.
             random_state (int): 
                 The seed for the random number of generator for reproducibility.
             
@@ -403,8 +415,17 @@ class DragonDataset(_BaseDatasetMaker):
         self._train_ds = _PytorchDataset(X_train_final, y_train, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._val_ds = _PytorchDataset(X_val_final, y_val, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
         self._test_ds = _PytorchDataset(X_test_final, y_test, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        
+        # --- 6. create class map if given ---
+        if self.kind != MLTaskKeys.REGRESSION:
+            if class_map is None:
+                self.class_map = dict()
+            else:
+                self.set_class_map(class_map)
+        else:
+            self.class_map = dict()
 
-    def set_class_map(self, class_map: dict[str, int]) -> None:
+    def set_class_map(self, class_map: dict[str, int], force_overwrite: bool=False) -> None:
         """
         Sets a map of class_name -> integer_label.
         
@@ -414,10 +435,21 @@ class DragonDataset(_BaseDatasetMaker):
             class_map (Dict[str, int]): A dictionary mapping the integer label
                 to its string name.
                 Example: {'cat': 0, 'dog': 1, 'bird': 2}
+            force_overwrite (bool): Required to overwrite a previously set class map.
         """
         if self.kind == MLTaskKeys.REGRESSION:
             _LOGGER.warning(f"Class Map is for classifications tasks only.")
             return
+        
+        if self.class_map:
+            warning_message = f"Class map was previously set."
+            if not force_overwrite:
+                warning_message += " Use `force_overwrite=True` to set new values."
+                _LOGGER.warning(warning_message)
+                return
+            else:
+                warning_message += ". Setting new values..."
+                _LOGGER.warning(warning_message)
         
         self.class_map = class_map
         
@@ -427,15 +459,20 @@ class DragonDataset(_BaseDatasetMaker):
         except Exception as e:
             _LOGGER.error(f"Could not sort class map. Ensure it is a dict of {str: int}. Error: {e}")
             raise TypeError()
+        else:
+            self.classes = class_list
         
         if self._train_ds:
-            self._train_ds.classes = class_list # type: ignore
+            self._train_ds._classes = class_list # type: ignore
+            self._train_ds._class_map = class_map # type: ignore
         if self._val_ds:
-            self._val_ds.classes = class_list # type: ignore
+            self._val_ds._classes = class_list # type: ignore
+            self._val_ds._class_map = class_map # type: ignore
         if self._test_ds:
-            self._test_ds.classes = class_list # type: ignore
+            self._test_ds._classes = class_list # type: ignore
+            self._test_ds._class_map = class_map # type: ignore
             
-        _LOGGER.info(f"Class map set for dataset '{self.id}':\n{class_map}")
+        _LOGGER.info(f"Class map set for dataset '{self.id}' and its subsets:\n{class_map}")
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"

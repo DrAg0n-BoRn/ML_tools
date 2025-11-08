@@ -95,7 +95,7 @@ class _BaseInferenceHandler(ABC):
                                 self.set_class_map(self._class_map)
                             else:
                                 _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASS_MAP}' but it is not a dict: '{type(self._class_map)}'.")
-                                self._class_map = None
+                                self._class_map = None        
                 else:
                     # It's a state_dict, load it directly
                     self.model.load_state_dict(loaded_data)
@@ -174,7 +174,6 @@ class DragonInferenceHandler(_BaseInferenceHandler):
                  state_dict: Union[str, Path],
                  task: Literal["regression", "binary classification", "multiclass classification", "multitarget regression", "multilabel binary classification"],
                  device: str = 'cpu',
-                 target_ids: Optional[list[str]] = None,
                  scaler: Optional[Union[DragonScaler, str, Path]] = None):
         """
         Initializes the handler for single-target tasks.
@@ -184,7 +183,6 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             task (str): The type of task.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            target_id (str | None): An optional identifier for the target.
             scaler (DragonScaler | str | Path | None): A DragonScaler instance or the file path to a saved DragonScaler state.
             
         Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
@@ -200,8 +198,27 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             _LOGGER.error(f"'task' not recognized: '{task}'.")
             raise ValueError()
         self.task = task
-        self.target_ids = target_ids
+        self.target_ids: Optional[list[str]] = None
+        self._target_ids_set: bool = False
         
+        # attempt to get target name or target names
+        if PyTorchCheckpointKeys.TARGET_NAME in self._loaded_data_dict:
+            try:
+                target_from_dict = [self._loaded_data_dict[PyTorchCheckpointKeys.TARGET_NAME]]
+            except Exception as e_int:
+                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.TARGET_NAME}' but an error occurred when retrieving it:\n{e_int}")
+                self.target_ids = None
+            else:
+                self.set_target_ids([target_from_dict]) # type: ignore
+        elif PyTorchCheckpointKeys.TARGET_NAMES in self._loaded_data_dict:
+            try:
+                targets_from_dict = self._loaded_data_dict[PyTorchCheckpointKeys.TARGET_NAMES]
+            except Exception as e_int:
+                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.TARGET_NAMES}' but an error occurred when retrieving it:\n{e_int}")
+                self.target_ids = None
+            else:
+                self.set_target_ids(targets_from_dict) # type: ignore
+
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
         Converts input to a torch.Tensor, applies scaling if a scaler is
@@ -216,6 +233,29 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             features_tensor = self.scaler.transform(features_tensor)
 
         return features_tensor.to(self.device)
+    
+    def set_target_ids(self, target_names: list[str], force_overwrite: bool=False):
+        """
+        Assigns the provided list of strings as the target variable names.
+        If target IDs have already been set, this method will log a warning.
+
+        Args:
+            target_names (list[str]): A list of target names.
+            force_overwrite (bool): If True, allows the method to overwrite previously set target IDs.
+        """
+        if self._target_ids_set:
+            warning_message = "Target IDs was previously set."
+            if not force_overwrite:
+                warning_message += " Use `force_overwrite=True` to overwrite."
+                _LOGGER.warning(warning_message)
+                return
+            else:
+                warning_message += " Overwriting..."
+                _LOGGER.warning(warning_message)
+
+        self.target_ids = target_names
+        self._target_ids_set = True
+        _LOGGER.info("Target IDs set.")
 
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """

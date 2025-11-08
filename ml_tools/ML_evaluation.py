@@ -109,6 +109,7 @@ def classification_metrics(save_dir: Union[str, Path],
                            y_true: np.ndarray, 
                            y_pred: np.ndarray, 
                            y_prob: Optional[np.ndarray] = None, 
+                           class_map: Optional[dict[str,int]] = None,
                            config: Optional[ClassificationMetricsFormat] = None):
     """
     Saves classification metrics and plots.
@@ -133,10 +134,10 @@ def classification_metrics(save_dir: Union[str, Path],
     # --- Parse class_map ---
     map_labels = None
     map_display_labels = None
-    if config.class_map:
+    if class_map:
         # Sort the map by its values (the indices) to ensure correct order
         try:
-            sorted_items = sorted(config.class_map.items(), key=lambda item: item[1])
+            sorted_items = sorted(class_map.items(), key=lambda item: item[1])
             map_labels = [item[1] for item in sorted_items]
             map_display_labels = [item[0] for item in sorted_items]
         except Exception as e:

@@ -252,12 +252,12 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
                 # Convert all tensors to numpy
                 np_dict = {key: value.cpu().numpy() for key, value in pred_dict.items()}
                 
-                # Add string names if map exists
-                if self._idx_to_class and PyTorchInferenceKeys.LABELS in np_dict:
-                    np_dict[PyTorchInferenceKeys.LABEL_NAMES] = [
-                        self._idx_to_class.get(label_id, "Unknown") 
-                        for label_id in np_dict[PyTorchInferenceKeys.LABELS]
-                    ]
+                # 3D pixel to string map unnecessary 
+                # if self._idx_to_class and PyTorchInferenceKeys.LABELS in np_dict:
+                #     np_dict[PyTorchInferenceKeys.LABEL_NAMES] = [
+                #         self._idx_to_class.get(label_id, "Unknown") 
+                #         for label_id in np_dict[PyTorchInferenceKeys.LABELS]
+                #     ]
                 numpy_results.append(np_dict)
             return {PyTorchInferenceKeys.PREDICTIONS: numpy_results}
         
@@ -300,13 +300,13 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
             }
             
             # Add string names if map exists
-            if self._idx_to_class and PyTorchInferenceKeys.LABELS in numpy_results:
-                int_labels = numpy_results[PyTorchInferenceKeys.LABELS]
+            # if self._idx_to_class and PyTorchInferenceKeys.LABELS in numpy_results:
+            #     int_labels = numpy_results[PyTorchInferenceKeys.LABELS]
                 
-                numpy_results[PyTorchInferenceKeys.LABEL_NAMES] = [
-                    self._idx_to_class.get(label_id, "Unknown")
-                    for label_id in int_labels
-                ]
+            #     numpy_results[PyTorchInferenceKeys.LABEL_NAMES] = [
+            #         self._idx_to_class.get(label_id, "Unknown")
+            #         for label_id in int_labels
+            #     ]
                 
             return numpy_results
             

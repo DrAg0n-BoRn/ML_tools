@@ -48,7 +48,7 @@ class DragonDatasetVision:
         self._val_dataset = None
         self._full_dataset: Optional[ImageFolder] = None
         self.labels: Optional[List[int]] = None
-        self.class_map: Optional[dict[str,int]] = None
+        self.class_map: dict[str,int] = dict()
         
         self._is_split = False
         self._are_transforms_configured = False
@@ -352,10 +352,10 @@ class DragonDatasetVision:
         # --- Apply Transforms using the Wrapper ---
         # This correctly assigns the transform regardless of whether the dataset is a Subset (from_folder) or an ImageFolder (from_folders).
         
-        self._train_dataset = _DatasetTransformer(self._train_dataset, train_transform) # type: ignore
-        self._val_dataset = _DatasetTransformer(self._val_dataset, val_transform) # type: ignore
+        self._train_dataset = _DatasetTransformer(self._train_dataset, train_transform, self.class_map) # type: ignore
+        self._val_dataset = _DatasetTransformer(self._val_dataset, val_transform, self.class_map) # type: ignore
         if self._test_dataset:
-            self._test_dataset = _DatasetTransformer(self._test_dataset, val_transform) # type: ignore
+            self._test_dataset = _DatasetTransformer(self._test_dataset, val_transform, self.class_map) # type: ignore
         
         self._are_transforms_configured = True
         _LOGGER.info("Image transforms configured and applied.")
@@ -540,9 +540,10 @@ class _DatasetTransformer(Dataset):
     Internal wrapper class to apply a specific transform pipeline to any
     dataset (e.g., a full ImageFolder or a Subset).
     """
-    def __init__(self, dataset: Dataset, transform: Optional[transforms.Compose] = None):
+    def __init__(self, dataset: Dataset, transform: Optional[transforms.Compose] = None, class_map: dict[str,int]=dict()):
         self.dataset = dataset
         self.transform = transform
+        self.class_map = class_map
         
         # --- Propagate attributes for inspection ---
         # For ImageFolder
@@ -582,7 +583,7 @@ class _SegmentationDataset(Dataset):
         self.mask_paths = mask_paths
         self.transform = transform
         
-        # --- Propagate 'classes' if they exist (for MLTrainer) ---
+        # --- Propagate 'classes' if they exist for trainer ---
         self.classes: List[str] = []
 
     def __len__(self):
@@ -876,7 +877,7 @@ class DragonDatasetSegmentation:
         self._train_dataset = _SegmentationDataset(train_imgs, train_masks, transform=None)
         self._val_dataset = _SegmentationDataset(val_imgs, val_masks, transform=None)
         
-        # Propagate class names to datasets for MLTrainer
+        # Propagate class names to datasets for trainer
         self._train_dataset.classes = self.classes # type: ignore
         self._val_dataset.classes = self.classes # type: ignore
 
@@ -1281,7 +1282,7 @@ class DragonDatasetObjectDetection:
     def set_class_map(self, class_map: Dict[str, int]) -> 'DragonDatasetObjectDetection':
         """
         Sets a map of class_name -> pixel_value. This is used by the
-        MLTrainer for clear evaluation reports.
+        trainer for clear evaluation reports.
         
         **Important:** For object detection models, 'background' MUST
         be included as class 0.
