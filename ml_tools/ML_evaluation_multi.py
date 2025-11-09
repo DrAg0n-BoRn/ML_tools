@@ -26,7 +26,10 @@ from .path_manager import make_fullpath, sanitize_filename
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from ._keys import SHAPKeys
-from .ML_configuration import RegressionMetricsFormat, MultiClassificationMetricsFormat
+from .ML_configuration import (MultiTargetRegressionMetricsFormat,
+                               _BaseRegressionFormat,
+                               MultiLabelBinaryClassificationMetricsFormat,
+                               _BaseMultiLabelFormat)
 
 
 __all__ = [
@@ -43,7 +46,7 @@ def multi_target_regression_metrics(
     y_pred: np.ndarray,
     target_names: List[str],
     save_dir: Union[str, Path],
-    config: Optional[RegressionMetricsFormat] = None
+    config: Optional[MultiTargetRegressionMetricsFormat] = None
 ):
     """
     Calculates and saves regression metrics for each target individually.
@@ -57,7 +60,7 @@ def multi_target_regression_metrics(
         y_pred (np.ndarray): Predicted values, shape (n_samples, n_targets).
         target_names (List[str]): A list of names for the target variables.
         save_dir (str | Path): Directory to save plots and the report.
-        config (RegressionMetricsFormat, optional): Formatting configuration object.
+        config (object): Formatting configuration object.
     """
     if y_true.ndim != 2 or y_pred.ndim != 2:
         _LOGGER.error("y_true and y_pred must be 2D arrays for multi-target regression.")
@@ -75,11 +78,13 @@ def multi_target_regression_metrics(
     # --- Parse Config or use defaults ---
     if config is None:
         # Create a default config if one wasn't provided
-        config = RegressionMetricsFormat()
-        
+        format_config = _BaseRegressionFormat()
+    else:
+        format_config = config
+
     # --- Set Matplotlib font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': config.font_size})
+    plt.rcParams.update({'font.size': format_config.font_size})
 
     _LOGGER.debug("--- Multi-Target Regression Evaluation ---")
 
@@ -106,11 +111,11 @@ def multi_target_regression_metrics(
         residuals = true_i - pred_i
         fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
         ax_res.scatter(pred_i, residuals, 
-                       alpha=config.scatter_alpha, 
+                       alpha=format_config.scatter_alpha, 
                        edgecolors='k', 
                        s=50,
-                       color=config.scatter_color) # Use config color
-        ax_res.axhline(0, color=config.residual_line_color, linestyle='--') # Use config color
+                       color=format_config.scatter_color) # Use config color
+        ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--') # Use config color
         ax_res.set_xlabel("Predicted Values")
         ax_res.set_ylabel("Residuals (True - Predicted)")
         ax_res.set_title(f"Residual Plot for '{name}'")
@@ -123,14 +128,14 @@ def multi_target_regression_metrics(
         # --- Save True vs. Predicted Plot ---
         fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
         ax_tvp.scatter(true_i, pred_i, 
-                       alpha=config.scatter_alpha, 
+                       alpha=format_config.scatter_alpha, 
                        edgecolors='k', 
                        s=50,
-                       color=config.scatter_color) # Use config color
+                       color=format_config.scatter_color) # Use config color
         ax_tvp.plot([true_i.min(), true_i.max()], [true_i.min(), true_i.max()], 
                     linestyle='--', 
                     lw=2,
-                    color=config.ideal_line_color) # Use config color
+                    color=format_config.ideal_line_color) # Use config color
         ax_tvp.set_xlabel('True Values')
         ax_tvp.set_ylabel('Predicted Values')
         ax_tvp.set_title(f'True vs. Predicted Values for "{name}"')
@@ -156,7 +161,7 @@ def multi_label_classification_metrics(
     y_prob: np.ndarray,
     target_names: List[str],
     save_dir: Union[str, Path],
-    config: Optional[MultiClassificationMetricsFormat] = None # Add config object
+    config: Optional[MultiLabelBinaryClassificationMetricsFormat] = None
 ):
     """
     Calculates and saves classification metrics for each label individually.
@@ -171,7 +176,7 @@ def multi_label_classification_metrics(
         y_prob (np.ndarray): Predicted probabilities, shape (n_samples, n_labels).
         target_names (List[str]): A list of names for the labels.
         save_dir (str | Path): Directory to save plots and reports.
-        config (MultiClassificationMetricsFormat, optional): Formatting configuration object.
+        config (object): Formatting configuration object.
     """
     if y_true.ndim != 2 or y_prob.ndim != 2 or y_pred.ndim != 2:
         _LOGGER.error("y_true, y_pred, and y_prob must be 2D arrays for multi-label classification.")
@@ -188,13 +193,15 @@ def multi_label_classification_metrics(
     # --- Parse Config or use defaults ---
     if config is None:
         # Create a default config if one wasn't provided
-        config = MultiClassificationMetricsFormat()
+        format_config = _BaseMultiLabelFormat()
+    else:
+        format_config = config
     
     # y_pred is now passed in directly, no threshold needed.
     
     # --- Save current RC params and update font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': config.font_size})
+    plt.rcParams.update({'font.size': format_config.font_size})
 
     # _LOGGER.info("--- Multi-Label Classification Evaluation ---")
 
@@ -232,7 +239,7 @@ def multi_label_classification_metrics(
         fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
         disp_ = ConfusionMatrixDisplay.from_predictions(true_i, 
                                                 pred_i, 
-                                                cmap=config.cmap, # Use config cmap
+                                                cmap=format_config.cmap, # Use config cmap
                                                 ax=ax_cm, 
                                                 normalize='true',
                                                 labels=[0, 1],
@@ -245,7 +252,7 @@ def multi_label_classification_metrics(
         
         # Manually update font size of cell texts
         for text in ax_cm.texts:
-            text.set_fontsize(config.font_size) # Use config font_size
+            text.set_fontsize(format_config.font_size) # Use config font_size
 
         fig_cm.tight_layout()
         
@@ -291,7 +298,7 @@ def multi_label_classification_metrics(
         
         auc = roc_auc_score(true_i, prob_i)
         fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=config.ROC_PR_line) # Use config color
+        ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
         ax_roc.set_title(f'ROC Curve for "{name}"')
         ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
@@ -304,7 +311,7 @@ def multi_label_classification_metrics(
         precision, recall, _ = precision_recall_curve(true_i, prob_i)
         ap_score = average_precision_score(true_i, prob_i)
         fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
-        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=config.ROC_PR_line) # Use config color
+        ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_pr.set_title(f'Precision-Recall Curve for "{name}"')
         ax_pr.set_xlabel('Recall'); ax_pr.set_ylabel('Precision')
         ax_pr.legend(loc='lower left'); ax_pr.grid(True, linestyle='--', alpha=0.6)

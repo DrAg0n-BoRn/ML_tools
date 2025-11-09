@@ -12,23 +12,29 @@ from .ML_evaluation import classification_metrics, regression_metrics, plot_loss
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
 from .ML_sequence_evaluation import sequence_to_sequence_metrics, sequence_to_value_metrics
-from .ML_configuration import (ClassificationMetricsFormat, 
-                               MultiClassificationMetricsFormat, 
-                               RegressionMetricsFormat, 
-                               SegmentationMetricsFormat,
-                               SequenceValueMetricsFormat,
-                               SequenceSequenceMetricsFormat,
-                               FinalizeBinaryClassification,
-                               FinalizeBinarySegmentation,
-                               FinalizeBinaryImageClassification,
-                               FinalizeMultiClassClassification,
-                               FinalizeMultiClassImageClassification,
-                               FinalizeMultiClassSegmentation,
-                               FinalizeMultiLabelBinaryClassification,
-                               FinalizeMultiTargetRegression,
-                               FinalizeRegression,
-                               FinalizeObjectDetection,
-                               FinalizeSequencePrediction)
+from .ML_configuration import (RegressionMetricsFormat, 
+                            MultiTargetRegressionMetricsFormat,
+                            BinaryClassificationMetricsFormat,
+                            MultiClassClassificationMetricsFormat,
+                            BinaryImageClassificationMetricsFormat,
+                            MultiClassImageClassificationMetricsFormat,
+                            MultiLabelBinaryClassificationMetricsFormat,
+                            BinarySegmentationMetricsFormat,
+                            MultiClassSegmentationMetricsFormat,
+                            SequenceValueMetricsFormat,
+                            SequenceSequenceMetricsFormat,
+
+                            FinalizeBinaryClassification,
+                            FinalizeBinarySegmentation,
+                            FinalizeBinaryImageClassification,
+                            FinalizeMultiClassClassification,
+                            FinalizeMultiClassImageClassification,
+                            FinalizeMultiClassSegmentation,
+                            FinalizeMultiLabelBinaryClassification,
+                            FinalizeMultiTargetRegression,
+                            FinalizeRegression,
+                            FinalizeObjectDetection,
+                            FinalizeSequencePrediction)
 
 from ._script_info import _script_info
 from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
@@ -609,14 +615,28 @@ class DragonTrainer(_BaseDragonTrainer):
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
-                 val_format_configuration: Optional[Union[ClassificationMetricsFormat, 
-                                                      MultiClassificationMetricsFormat,
-                                                      RegressionMetricsFormat,
-                                                      SegmentationMetricsFormat]]=None,
-                 test_format_configuration: Optional[Union[ClassificationMetricsFormat, 
-                                                      MultiClassificationMetricsFormat,
-                                                      RegressionMetricsFormat,
-                                                      SegmentationMetricsFormat]]=None):
+                 val_format_configuration: Optional[Union[
+                        RegressionMetricsFormat, 
+                        MultiTargetRegressionMetricsFormat,
+                        BinaryClassificationMetricsFormat,
+                        MultiClassClassificationMetricsFormat,
+                        BinaryImageClassificationMetricsFormat,
+                        MultiClassImageClassificationMetricsFormat,
+                        MultiLabelBinaryClassificationMetricsFormat,
+                        BinarySegmentationMetricsFormat,
+                        MultiClassSegmentationMetricsFormat
+                    ]]=None,
+                 test_format_configuration: Optional[Union[
+                        RegressionMetricsFormat, 
+                        MultiTargetRegressionMetricsFormat,
+                        BinaryClassificationMetricsFormat,
+                        MultiClassClassificationMetricsFormat,
+                        BinaryImageClassificationMetricsFormat,
+                        MultiClassImageClassificationMetricsFormat,
+                        MultiLabelBinaryClassificationMetricsFormat,
+                        BinarySegmentationMetricsFormat,
+                        MultiClassSegmentationMetricsFormat,
+                    ]]=None):
         """
         Evaluates the model, routing to the correct evaluation function based on task `kind`.
 
@@ -628,8 +648,8 @@ class DragonTrainer(_BaseDragonTrainer):
             save_dir (str | Path): Directory to save all reports and plots.
             classification_threshold (float | None): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
             test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
-            val_format_configuration: Optional configuration for metric format output for the validation set.
-            test_format_configuration: Optional configuration for metric format output for the test set.
+            val_format_configuration (object): Optional configuration for metric format output for the validation set.
+            test_format_configuration (object): Optional configuration for metric format output for the test set.
         """
         # Validate model checkpoint
         if isinstance(model_checkpoint, Path):
@@ -657,10 +677,15 @@ class DragonTrainer(_BaseDragonTrainer):
         
         # Validate val configuration
         if val_format_configuration is not None:
-            if not isinstance(val_format_configuration, (ClassificationMetricsFormat, 
-                                                     MultiClassificationMetricsFormat, 
-                                                     RegressionMetricsFormat, 
-                                                     SegmentationMetricsFormat)):
+            if not isinstance(val_format_configuration, (RegressionMetricsFormat, 
+                                                        MultiTargetRegressionMetricsFormat,
+                                                        BinaryClassificationMetricsFormat,
+                                                        MultiClassClassificationMetricsFormat,
+                                                        BinaryImageClassificationMetricsFormat,
+                                                        MultiClassImageClassificationMetricsFormat,
+                                                        MultiLabelBinaryClassificationMetricsFormat,
+                                                        BinarySegmentationMetricsFormat,
+                                                        MultiClassSegmentationMetricsFormat)):
                 _LOGGER.error(f"Invalid 'format_configuration': '{type(val_format_configuration)}'.")
                 raise ValueError()
             else:
@@ -691,10 +716,15 @@ class DragonTrainer(_BaseDragonTrainer):
             
             # Validate test configuration
             if test_format_configuration is not None:
-                if not isinstance(test_format_configuration, (ClassificationMetricsFormat, 
-                                                            MultiClassificationMetricsFormat, 
-                                                            RegressionMetricsFormat, 
-                                                            SegmentationMetricsFormat)):
+                if not isinstance(test_format_configuration, (RegressionMetricsFormat, 
+                                                        MultiTargetRegressionMetricsFormat,
+                                                        BinaryClassificationMetricsFormat,
+                                                        MultiClassClassificationMetricsFormat,
+                                                        BinaryImageClassificationMetricsFormat,
+                                                        MultiClassImageClassificationMetricsFormat,
+                                                        MultiLabelBinaryClassificationMetricsFormat,
+                                                        BinarySegmentationMetricsFormat,
+                                                        MultiClassSegmentationMetricsFormat)):
                     warning_message_type = f"Invalid test_format_configuration': '{type(test_format_configuration)}'."
                     if val_configuration_validated is not None:
                         warning_message_type += " 'val_format_configuration' will be used for the test set metrics output."
@@ -729,10 +759,17 @@ class DragonTrainer(_BaseDragonTrainer):
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
                  classification_threshold: float,
                  data: Optional[Union[DataLoader, Dataset]],
-                 format_configuration: Optional[Union[ClassificationMetricsFormat, 
-                                                      MultiClassificationMetricsFormat,
-                                                      RegressionMetricsFormat,
-                                                      SegmentationMetricsFormat]]):
+                 format_configuration: Optional[Union[
+                        RegressionMetricsFormat, 
+                        MultiTargetRegressionMetricsFormat,
+                        BinaryClassificationMetricsFormat,
+                        MultiClassClassificationMetricsFormat,
+                        BinaryImageClassificationMetricsFormat,
+                        MultiClassImageClassificationMetricsFormat,
+                        MultiLabelBinaryClassificationMetricsFormat,
+                        BinarySegmentationMetricsFormat,
+                        MultiClassSegmentationMetricsFormat
+                    ]]=None):
         """
         Changed to a private helper function.
         """
@@ -800,20 +837,25 @@ class DragonTrainer(_BaseDragonTrainer):
         y_prob = np.concatenate(all_probs) if all_probs else None
 
         # --- Routing Logic ---
+        # Single-target regression
         if self.kind == MLTaskKeys.REGRESSION:
             # Check configuration
             config = None
             if format_configuration and isinstance(format_configuration, RegressionMetricsFormat):
                 config = format_configuration
             elif format_configuration:
-                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected RegressionMetricsFormat.")
+                _LOGGER.warning(f"Wrong configuration type: Received '{type(format_configuration).__name__}'.")
             
             regression_metrics(y_true=y_true.flatten(), 
                                y_pred=y_pred.flatten(), 
                                save_dir=save_dir,
                                config=config)
-
-        elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
+        
+        # single target classification
+        elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, 
+                           MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
+                           MLTaskKeys.MULTICLASS_CLASSIFICATION, 
+                           MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
             # get the class map if it exists
             try:
                 class_map = dataset_for_artifacts.class_map # type: ignore
@@ -827,10 +869,17 @@ class DragonTrainer(_BaseDragonTrainer):
             
             # Check configuration
             config = None
-            if format_configuration and isinstance(format_configuration, ClassificationMetricsFormat):
-                config = format_configuration
-            elif format_configuration:
-                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected ClassificationMetricsFormat.")
+            if format_configuration:
+                if self.kind == MLTaskKeys.BINARY_CLASSIFICATION and isinstance(format_configuration, BinaryClassificationMetricsFormat):
+                    config = format_configuration
+                elif self.kind == MLTaskKeys.BINARY_IMAGE_CLASSIFICATION and isinstance(format_configuration, BinaryImageClassificationMetricsFormat):
+                    config = format_configuration
+                elif self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION and isinstance(format_configuration, MultiClassClassificationMetricsFormat):
+                    config = format_configuration
+                elif self.kind == MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION and isinstance(format_configuration, MultiClassImageClassificationMetricsFormat):
+                    config = format_configuration
+                else:
+                    _LOGGER.warning(f"Wrong configuration type: Received '{type(format_configuration).__name__}'.")
   
             classification_metrics(save_dir=save_dir,
                                    y_true=y_true,
@@ -838,7 +887,8 @@ class DragonTrainer(_BaseDragonTrainer):
                                    y_prob=y_prob,
                                    class_map=class_map,
                                    config=config)
-
+        
+        # multitarget regression
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION:
             try:
                 target_names = dataset_for_artifacts.target_names # type: ignore
@@ -849,17 +899,18 @@ class DragonTrainer(_BaseDragonTrainer):
                 
             # Check configuration
             config = None
-            if format_configuration and isinstance(format_configuration, RegressionMetricsFormat):
+            if format_configuration and isinstance(format_configuration, MultiTargetRegressionMetricsFormat):
                 config = format_configuration
             elif format_configuration:
-                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected RegressionMetricsFormat.")
+                _LOGGER.warning(f"Wrong configuration type: Received '{type(format_configuration).__name__}'.")
             
             multi_target_regression_metrics(y_true=y_true, 
                                             y_pred=y_pred,
                                             target_names=target_names, 
                                             save_dir=save_dir,
                                             config=config)
-
+            
+        # multi-label binary classification
         elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
             try:
                 target_names = dataset_for_artifacts.target_names # type: ignore
@@ -874,10 +925,10 @@ class DragonTrainer(_BaseDragonTrainer):
             
             # Check configuration
             config = None
-            if format_configuration and isinstance(format_configuration, MultiClassificationMetricsFormat):
+            if format_configuration and isinstance(format_configuration, MultiLabelBinaryClassificationMetricsFormat):
                 config = format_configuration
             elif format_configuration:
-                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected MultiClassificationMetricsFormat.")
+                _LOGGER.warning(f"Wrong configuration type: Received '{type(format_configuration).__name__}'.")
 
             multi_label_classification_metrics(y_true=y_true,
                                                y_pred=y_pred,
@@ -885,7 +936,8 @@ class DragonTrainer(_BaseDragonTrainer):
                                                target_names=target_names,
                                                save_dir=save_dir,
                                                config=config)
-            
+        
+        # Segmentation tasks
         elif self.kind in [MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
             class_names = None
             try:
@@ -910,10 +962,10 @@ class DragonTrainer(_BaseDragonTrainer):
             
             # Check configuration
             config = None
-            if format_configuration and isinstance(format_configuration, SegmentationMetricsFormat):
+            if format_configuration and isinstance(format_configuration, (BinarySegmentationMetricsFormat, MultiClassSegmentationMetricsFormat)):
                 config = format_configuration
             elif format_configuration:
-                _LOGGER.warning(f"Wrong configuration type: Received {type(format_configuration).__name__}, expected SegmentationMetricsFormat.")
+                _LOGGER.warning(f"Wrong configuration type: Received '{type(format_configuration).__name__}'.")
             
             segmentation_metrics(y_true=y_true,
                                  y_pred=y_pred,
@@ -1883,8 +1935,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["latest", "current"]],
                  data: Optional[Union[DataLoader, Dataset]],
-                 format_configuration: Optional[Union[SequenceValueMetricsFormat, 
-                                                      SequenceSequenceMetricsFormat]]):
+                 format_configuration: object):
         """
         Private evaluation helper.
         """

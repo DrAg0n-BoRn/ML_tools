@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [16.2.0] 2025-11-09
+
+### Changed
+
+- ML_configuration: Standardized format configuration for metrics according to the task:
+    `RegressionMetricsFormat`
+    `MultiTargetRegressionMetricsFormat`
+    `BinaryClassificationMetricsFormat`
+    `MultiClassClassificationMetricsFormat`
+    `BinaryImageClassificationMetricsFormat`
+    `MultiClassImageClassificationMetricsFormat`
+    `MultiLabelBinaryClassificationMetricsFormat`
+    `BinarySegmentationMetricsFormat`
+    `MultiClassSegmentationMetricsFormat`
+    `SequenceValueMetricsFormat`
+    `SequenceSequenceMetricsFormat`
+- Updated the following modules to use new format configuration classes:
+    - ML_evaluation
+    - ML_evaluation_multi
+    - ML_sequence_evaluation
+    - ML_vision_evaluation
+    - ML_trainer
+
 ## [16.1.0] 2025-11-08
 
 ### Added

@@ -7,12 +7,18 @@ from .path_manager import sanitize_filename
 
 
 __all__ = [
-    "ClassificationMetricsFormat",
-    "MultiClassificationMetricsFormat",
     "RegressionMetricsFormat",
-    "SegmentationMetricsFormat",
+    "MultiTargetRegressionMetricsFormat",
+    "BinaryClassificationMetricsFormat",
+    "MultiClassClassificationMetricsFormat",
+    "BinaryImageClassificationMetricsFormat",
+    "MultiClassImageClassificationMetricsFormat",
+    "MultiLabelBinaryClassificationMetricsFormat",
+    "BinarySegmentationMetricsFormat",
+    "MultiClassSegmentationMetricsFormat",
     "SequenceValueMetricsFormat",
     "SequenceSequenceMetricsFormat",
+    
     "FinalizeBinaryClassification",
     "FinalizeBinarySegmentation",
     "FinalizeBinaryImageClassification",
@@ -26,10 +32,11 @@ __all__ = [
     "FinalizeSequencePrediction"
 ]
 
+# --- Private base classes ---
 
-class ClassificationMetricsFormat:
+class _BaseClassificationFormat:
     """
-    Optional configuration for classification tasks.
+    [PRIVATE] Base configuration for single-label classification metrics.
     """
     def __init__(self, 
                  cmap: str="Blues",
@@ -71,12 +78,12 @@ class ClassificationMetricsFormat:
             f"calibration_bins={self.calibration_bins}",
             f"font_size={self.font_size}"
         ]
-        return f"ClassificationMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
-class MultiClassificationMetricsFormat:
+class _BaseMultiLabelFormat:
     """
-    Optional configuration for multi-label classification tasks.
+    [PRIVATE] Base configuration for multi-label binary classification metrics.
     """
     def __init__(self,
                  ROC_PR_line: str='darkorange',
@@ -113,12 +120,12 @@ class MultiClassificationMetricsFormat:
             f"cmap='{self.cmap}'",
             f"font_size={self.font_size}"
         ]
-        return f"MultiClassificationMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
-class RegressionMetricsFormat:
+class _BaseRegressionFormat:
     """
-    Optional configuration for single-target regression and multi-target regression tasks.
+    [PRIVATE] Base configuration for regression metrics.
     """
     def __init__(self, 
                  font_size: int=16,
@@ -165,12 +172,12 @@ class RegressionMetricsFormat:
             f"residual_line_color='{self.residual_line_color}'",
             f"hist_bins='{self.hist_bins}'"
         ]
-        return f"RegressionMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
-class SegmentationMetricsFormat:
+class _BaseSegmentationFormat:
     """
-    Optional configuration for segmentation tasks.
+    [PRIVATE] Base configuration for segmentation metrics.
     """
     def __init__(self,
                  heatmap_cmap: str = 'viridis',
@@ -203,13 +210,12 @@ class SegmentationMetricsFormat:
             f"cm_cmap='{self.cm_cmap}'",
             f"font_size={self.font_size}"
         ]
-        return f"SegmentationMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
-# Similar to regression configuration
-class SequenceValueMetricsFormat:
+class _BaseSequenceValueFormat:
     """
-    Optional configuration for sequence to value prediction tasks.
+    [PRIVATE] Base configuration for sequence to value metrics.
     """
     def __init__(self, 
                  font_size: int=16,
@@ -256,12 +262,12 @@ class SequenceValueMetricsFormat:
             f"residual_line_color='{self.residual_line_color}'",
             f"hist_bins='{self.hist_bins}'"
         ]
-        return f"SequenceValueMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
-class SequenceSequenceMetricsFormat:
+class _BaseSequenceSequenceFormat:
     """
-    Optional configuration for sequence-to-sequence evaluation plots.
+    [PRIVATE] Base configuration for sequence-to-sequence metrics.
     """
     def __init__(self,
                  font_size: int = 16,
@@ -310,7 +316,192 @@ class SequenceSequenceMetricsFormat:
             f"rmse_color='{self.rmse_color}'",
             f"mae_color='{self.mae_color}'"
         ]
-        return f"SequenceMetricsFormat({', '.join(parts)})"
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+
+# --- Public API classes ---
+
+# Regression
+class RegressionMetricsFormat(_BaseRegressionFormat):
+    """
+    Configuration for single-target regression.
+    """
+    def __init__(self, 
+                 font_size: int=16,
+                 scatter_color: str='tab:blue',
+                 scatter_alpha: float=0.6,
+                 ideal_line_color: str='k',
+                 residual_line_color: str='red',
+                 hist_bins: Union[int, str] = 'auto') -> None:
+        super().__init__(font_size=font_size, 
+                         scatter_color=scatter_color, 
+                         scatter_alpha=scatter_alpha, 
+                         ideal_line_color=ideal_line_color, 
+                         residual_line_color=residual_line_color, 
+                         hist_bins=hist_bins)
+
+
+# Multitarget regression
+class MultiTargetRegressionMetricsFormat(_BaseRegressionFormat):
+    """
+    Configuration for multi-target regression.
+    """
+    def __init__(self, 
+                 font_size: int=16,
+                 scatter_color: str='tab:blue',
+                 scatter_alpha: float=0.6,
+                 ideal_line_color: str='k',
+                 residual_line_color: str='red',
+                 hist_bins: Union[int, str] = 'auto') -> None:
+        super().__init__(font_size=font_size, 
+                         scatter_color=scatter_color, 
+                         scatter_alpha=scatter_alpha, 
+                         ideal_line_color=ideal_line_color, 
+                         residual_line_color=residual_line_color, 
+                         hist_bins=hist_bins)
+
+
+# Classification
+class BinaryClassificationMetricsFormat(_BaseClassificationFormat):
+    """
+    Configuration for binary classification.
+    """
+    def __init__(self, 
+                 cmap: str="Blues",
+                 ROC_PR_line: str='darkorange',
+                 calibration_bins: int=15, 
+                 font_size: int=16) -> None:
+        super().__init__(cmap=cmap, 
+                         ROC_PR_line=ROC_PR_line, 
+                         calibration_bins=calibration_bins, 
+                         font_size=font_size)
+
+
+class MultiClassClassificationMetricsFormat(_BaseClassificationFormat):
+    """
+    Configuration for multi-class classification.
+    """
+    def __init__(self, 
+                 cmap: str="Blues",
+                 ROC_PR_line: str='darkorange',
+                 calibration_bins: int=15, 
+                 font_size: int=16) -> None:
+        super().__init__(cmap=cmap, 
+                         ROC_PR_line=ROC_PR_line, 
+                         calibration_bins=calibration_bins, 
+                         font_size=font_size)
+
+
+class BinaryImageClassificationMetricsFormat(_BaseClassificationFormat):
+    """
+    Configuration for binary image classification.
+    """
+    def __init__(self, 
+                 cmap: str="Blues",
+                 ROC_PR_line: str='darkorange',
+                 calibration_bins: int=15, 
+                 font_size: int=16) -> None:
+        super().__init__(cmap=cmap, 
+                         ROC_PR_line=ROC_PR_line, 
+                         calibration_bins=calibration_bins, 
+                         font_size=font_size)
+
+
+class MultiClassImageClassificationMetricsFormat(_BaseClassificationFormat):
+    """
+    Configuration for multi-class image classification.
+    """
+    def __init__(self, 
+                 cmap: str="Blues",
+                 ROC_PR_line: str='darkorange',
+                 calibration_bins: int=15, 
+                 font_size: int=16) -> None:
+        super().__init__(cmap=cmap, 
+                         ROC_PR_line=ROC_PR_line, 
+                         calibration_bins=calibration_bins, 
+                         font_size=font_size)
+
+
+# Multi-Label classification
+class MultiLabelBinaryClassificationMetricsFormat(_BaseMultiLabelFormat):
+    """
+    Configuration for multi-label binary classification.
+    """
+    def __init__(self,
+                 ROC_PR_line: str='darkorange',
+                 cmap: str = "Blues",
+                 font_size: int = 16) -> None:
+        super().__init__(ROC_PR_line=ROC_PR_line, 
+                         cmap=cmap, 
+                         font_size=font_size)
+
+
+# Segmentation
+class BinarySegmentationMetricsFormat(_BaseSegmentationFormat):
+    """
+    Configuration for binary segmentation.
+    """
+    def __init__(self,
+                 heatmap_cmap: str = 'viridis',
+                 cm_cmap: str = "Blues",
+                 font_size: int = 16) -> None:
+        super().__init__(heatmap_cmap=heatmap_cmap, 
+                         cm_cmap=cm_cmap, 
+                         font_size=font_size)
+
+
+class MultiClassSegmentationMetricsFormat(_BaseSegmentationFormat):
+    """
+    Configuration for multi-class segmentation.
+    """
+    def __init__(self,
+                 heatmap_cmap: str = 'viridis',
+                 cm_cmap: str = "Blues",
+                 font_size: int = 16) -> None:
+        super().__init__(heatmap_cmap=heatmap_cmap, 
+                         cm_cmap=cm_cmap, 
+                         font_size=font_size)
+
+
+# Sequence 
+class SequenceValueMetricsFormat(_BaseSequenceValueFormat):
+    """
+    Configuration for sequence-to-value prediction.
+    """
+    def __init__(self, 
+                 font_size: int=16,
+                 scatter_color: str='tab:blue',
+                 scatter_alpha: float=0.6,
+                 ideal_line_color: str='k',
+                 residual_line_color: str='red',
+                 hist_bins: Union[int, str] = 'auto') -> None:
+        super().__init__(font_size=font_size, 
+                         scatter_color=scatter_color, 
+                         scatter_alpha=scatter_alpha, 
+                         ideal_line_color=ideal_line_color, 
+                         residual_line_color=residual_line_color, 
+                         hist_bins=hist_bins)
+
+
+class SequenceSequenceMetricsFormat(_BaseSequenceSequenceFormat):
+    """
+    Configuration for sequence-to-sequence prediction.
+    """
+    def __init__(self,
+                 font_size: int = 16,
+                 plot_figsize: tuple[int, int] = (10, 6),
+                 grid_style: str = '--',
+                 rmse_color: str = 'tab:blue',
+                 rmse_marker: str = 'o-',
+                 mae_color: str = 'tab:orange',
+                 mae_marker: str = 's--'):
+        super().__init__(font_size=font_size, 
+                         plot_figsize=plot_figsize, 
+                         grid_style=grid_style, 
+                         rmse_color=rmse_color, 
+                         rmse_marker=rmse_marker, 
+                         mae_color=mae_color, 
+                         mae_marker=mae_marker)
+
 
 # -------- Finalize classes --------
 class _FinalizeModelTraining:

@@ -14,7 +14,7 @@ from typing import Union, Optional
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from .ML_configuration import SequenceValueMetricsFormat, SequenceSequenceMetricsFormat
+from .ML_configuration import SequenceValueMetricsFormat, SequenceSequenceMetricsFormat, _BaseSequenceValueFormat, _BaseSequenceSequenceFormat
 
 
 __all__ = [
@@ -38,7 +38,7 @@ def sequence_to_value_metrics(
         y_true (np.ndarray): Ground truth values (1D array).
         y_pred (np.ndarray): Predicted values (1D array).
         save_dir (str | Path): Directory to save plots and report.
-        config (SequenceValueMetricsFormat): Formatting configuration object.
+        config (object): Formatting configuration object.
     """
     
     # --- Ensure 1D input ---
@@ -48,11 +48,13 @@ def sequence_to_value_metrics(
     # --- Parse Config or use defaults ---
     if config is None:
         # Create a default config if one wasn't provided
-        config = SequenceValueMetricsFormat()
+        format_config = _BaseSequenceValueFormat()
+    else:
+        format_config = config
         
     # --- Set Matplotlib font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': config.font_size})
+    plt.rcParams.update({'font.size': format_config.font_size})
     
     # --- Calculate Metrics ---
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
@@ -79,9 +81,9 @@ def sequence_to_value_metrics(
     residuals = y_true - y_pred
     fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
     ax_res.scatter(y_pred, residuals, 
-                   alpha=config.scatter_alpha, 
-                   color=config.scatter_color)
-    ax_res.axhline(0, color=config.residual_line_color, linestyle='--')
+                   alpha=format_config.scatter_alpha, 
+                   color=format_config.scatter_color)
+    ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--')
     ax_res.set_xlabel("Predicted Values")
     ax_res.set_ylabel("Residuals")
     ax_res.set_title("Sequence-to-Value Residual Plot")
@@ -95,12 +97,12 @@ def sequence_to_value_metrics(
     # --- Save true vs predicted plot ---
     fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
     ax_tvp.scatter(y_true, y_pred, 
-                   alpha=config.scatter_alpha, 
-                   color=config.scatter_color)
+                   alpha=format_config.scatter_alpha, 
+                   color=format_config.scatter_color)
     ax_tvp.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 
                 linestyle='--', 
                 lw=2,
-                color=config.ideal_line_color)
+                color=format_config.ideal_line_color)
     ax_tvp.set_xlabel('True Values')
     ax_tvp.set_ylabel('Predictions')
     ax_tvp.set_title('Sequence-to-Value: True vs. Predicted')
@@ -128,7 +130,7 @@ def sequence_to_sequence_metrics(
         y_true (np.ndarray): Ground truth sequences (n_samples, sequence_length).
         y_pred (np.ndarray): Predicted sequences (n_samples, sequence_length).
         save_dir (str | Path): Directory to save plots and report.
-        config (SequenceSequenceMetricsFormat): Formatting configuration object.
+        config (object): Formatting configuration object.
     """
 
     if y_true.ndim != 2 or y_pred.ndim != 2:
@@ -141,11 +143,13 @@ def sequence_to_sequence_metrics(
 
     # --- Parse Config or use defaults ---
     if config is None:
-        config = SequenceSequenceMetricsFormat()
+        format_config = _BaseSequenceSequenceFormat()
+    else:
+        format_config = config
         
     # --- Set Matplotlib font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': config.font_size})
+    plt.rcParams.update({'font.size': format_config.font_size})
 
     sequence_length = y_true.shape[1]
     steps = list(range(1, sequence_length + 1))
@@ -176,21 +180,21 @@ def sequence_to_sequence_metrics(
     _LOGGER.info(f"📝 Seq-to-Seq per-step report saved as '{report_path.name}'")
 
     # --- Create and save plot ---
-    fig, ax1 = plt.subplots(figsize=config.plot_figsize, dpi=DPI_value)
+    fig, ax1 = plt.subplots(figsize=format_config.plot_figsize, dpi=DPI_value)
 
     # Plot RMSE
-    color_rmse = config.rmse_color
+    color_rmse = format_config.rmse_color
     ax1.set_xlabel('Prediction Step')
     ax1.set_ylabel('RMSE', color=color_rmse)
-    ax1.plot(steps, per_step_rmse, config.rmse_marker, color=color_rmse, label='RMSE')
+    ax1.plot(steps, per_step_rmse, format_config.rmse_marker, color=color_rmse, label='RMSE')
     ax1.tick_params(axis='y', labelcolor=color_rmse)
-    ax1.grid(True, linestyle=config.grid_style)
+    ax1.grid(True, linestyle=format_config.grid_style)
 
     # Create a second y-axis for MAE
     ax2 = ax1.twinx()
-    color_mae = config.mae_color
+    color_mae = format_config.mae_color
     ax2.set_ylabel('MAE', color=color_mae)
-    ax2.plot(steps, per_step_mae, config.mae_marker, color=color_mae, label='MAE')
+    ax2.plot(steps, per_step_mae, format_config.mae_marker, color=color_mae, label='MAE')
     ax2.tick_params(axis='y', labelcolor=color_mae)
 
     fig.suptitle('Sequence-to-Sequence Metrics (Per-Step)')

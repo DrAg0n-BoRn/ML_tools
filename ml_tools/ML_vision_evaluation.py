@@ -19,7 +19,9 @@ from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from ._keys import VisionKeys
-from .ML_configuration import SegmentationMetricsFormat
+from .ML_configuration import (BinarySegmentationMetricsFormat,
+                               MultiClassSegmentationMetricsFormat,
+                               _BaseSegmentationFormat)
 
 
 __all__ = [
@@ -35,7 +37,7 @@ def segmentation_metrics(
     y_pred: np.ndarray,
     save_dir: Union[str, Path],
     class_names: Optional[List[str]] = None,
-    config: Optional[SegmentationMetricsFormat] = None # Add config object
+    config: Optional[Union[BinarySegmentationMetricsFormat, MultiClassSegmentationMetricsFormat]] = None
 ):
     """
     Calculates and saves pixel-level metrics for segmentation tasks.
@@ -52,17 +54,19 @@ def segmentation_metrics(
         y_pred (np.ndarray): Predicted masks (e.g., shape [N, H, W]).
         save_dir (str | Path): Directory to save the metrics report and plots.
         class_names (List[str] | None): Names of the classes for the report.
-        config (SegmentationMetricsFormat, optional): Formatting configuration object.
+        config (object): Formatting configuration object.
     """
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     # --- Parse Config or use defaults ---
     if config is None:
-        config = SegmentationMetricsFormat()
+        format_config = _BaseSegmentationFormat()
+    else:
+        format_config = config
 
     # --- Set Matplotlib font size ---
     original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': config.font_size})
+    plt.rcParams.update({'font.size': format_config.font_size})
     
     # Get all unique class labels present in either true or pred
     labels = np.unique(np.concatenate((np.unique(y_true), np.unique(y_pred)))).astype(int)
@@ -137,7 +141,7 @@ def segmentation_metrics(
         sns.heatmap(
             per_class_df.set_index('Class').T, 
             annot=True, 
-            cmap=config.heatmap_cmap, # Use config cmap
+            cmap=format_config.heatmap_cmap, # Use config cmap
             fmt='.3f',
             linewidths=0.5
         )
@@ -162,11 +166,11 @@ def segmentation_metrics(
             confusion_matrix=cm,
             display_labels=display_names
         )
-        disp.plot(cmap=config.cm_cmap, ax=ax_cm, xticks_rotation=45) # Use config cmap
+        disp.plot(cmap=format_config.cm_cmap, ax=ax_cm, xticks_rotation=45) # Use config cmap
         
         # Manually update font size of cell texts
         for text in disp.text_.flatten(): # type: ignore
-            text.set_fontsize(config.font_size)
+            text.set_fontsize(format_config.font_size)
         
         ax_cm.set_title("Pixel-Level Confusion Matrix")
         plt.tight_layout()
