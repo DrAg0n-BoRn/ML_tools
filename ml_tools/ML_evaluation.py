@@ -169,16 +169,29 @@ def classification_metrics(save_dir: Union[str, Path],
 
     # --- Save Classification Report Heatmap ---
     try:
-        plt.figure(figsize=(8, 6), dpi=DPI_value)
+        # Create DataFrame from report
+        report_df = pd.DataFrame(report_dict)
+        
+        # 1. Drop the 'accuracy' column (single float)
+        if 'accuracy' in report_df.columns:
+            report_df = report_df.drop(columns=['accuracy'])
+        
+        # 2. Select all metric rows *except* the last one ('support')
+        # 3. Transpose the DataFrame
+        plot_df = report_df.iloc[:-1, :].T
+        
+        fig_height = max(5.0, len(plot_df.index) * 0.5 + 2.0)
+        plt.figure(figsize=(7, fig_height), dpi=DPI_value)
+
         sns.set_theme(font_scale=1.2) # Scale seaborn font
-        sns.heatmap(pd.DataFrame(report_dict).iloc[:-1, :].T, 
+        sns.heatmap(plot_df, 
                     annot=True, 
                     cmap=format_config.cmap, 
                     fmt='.2f',
                     vmin=0.0,
                     vmax=1.0)
         sns.set_theme(font_scale=1.0) # Reset seaborn scale
-        plt.title("Classification Report")
+        plt.title("Classification Report Heatmap")
         plt.tight_layout()
         heatmap_path = save_dir_path / "classification_report_heatmap.svg"
         plt.savefig(heatmap_path)

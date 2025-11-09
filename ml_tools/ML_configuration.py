@@ -39,7 +39,7 @@ class _BaseClassificationFormat:
     [PRIVATE] Base configuration for single-label classification metrics.
     """
     def __init__(self, 
-                 cmap: str="Blues",
+                 cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -64,7 +64,11 @@ class _BaseClassificationFormat:
         
         <br>
         
-        ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+        ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+        
+        <br>
+        
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
@@ -86,29 +90,33 @@ class _BaseMultiLabelFormat:
     [PRIVATE] Base configuration for multi-label binary classification metrics.
     """
     def __init__(self,
+                 cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
-                 cmap: str = "Blues",
                  font_size: int = 16) -> None:
         """
         Initializes the formatting configuration for multi-label classification metrics.
 
         Args:
+            cmap (str): The matplotlib colormap name for the per-label
+                    confusion matrices. Defaults to "Blues".
+                    - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
+                    - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
+        
             ROC_PR_line (str): The color name or hex code for the line plotted
                 on the ROC and Precision-Recall curves (one for each label). 
                 Defaults to 'darkorange'.
                 - Common color names: 'darkorange', 'cornflowerblue', 'crimson', 'forestgreen'
                 - Hex codes: '#FF6347', '#4682B4'
             
-            cmap (str): The matplotlib colormap name for the per-label
-                confusion matrices. Defaults to "Blues".
-                - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
-                - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
-            
             font_size (int): The base font size to apply to the plots. Defaults to 16.
             
         <br>
         
-        ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)    
+        ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+        
+        <br>
+        
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
@@ -116,8 +124,8 @@ class _BaseMultiLabelFormat:
         
     def __repr__(self) -> str:
         parts = [
-            f"ROC_PR_line='{self.ROC_PR_line}'",
             f"cmap='{self.cmap}'",
+            f"ROC_PR_line='{self.ROC_PR_line}'",
             f"font_size={self.font_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
@@ -154,7 +162,7 @@ class _BaseRegressionFormat:
         
         <br>
         
-        ## [Matplotlib Colors](https://matplotlib.org/stable/users/explain/colors/colors.html)
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
         self.font_size = font_size
         self.scatter_color = scatter_color
@@ -180,8 +188,8 @@ class _BaseSegmentationFormat:
     [PRIVATE] Base configuration for segmentation metrics.
     """
     def __init__(self,
-                 heatmap_cmap: str = 'viridis',
-                 cm_cmap: str = "Blues",
+                 heatmap_cmap: str = "BuGn",
+                 cm_cmap: str = "Purples",
                  font_size: int = 16) -> None:
         """
         Initializes the formatting configuration for segmentation metrics.
@@ -198,7 +206,7 @@ class _BaseSegmentationFormat:
         
         <br>
         
-        ## [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+        ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
         self.heatmap_cmap = heatmap_cmap
         self.cm_cmap = cm_cmap
@@ -241,10 +249,10 @@ class _BaseSequenceValueFormat:
             hist_bins (int | str): The number of bins for the residuals histogram. 
                 Defaults to 'auto' to use seaborn's automatic bin selection.
                 - Options: 'auto', 'sqrt', 10, 20
-        
+
         <br>
         
-        ## [Matplotlib Colors](https://matplotlib.org/stable/users/explain/colors/colors.html)
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
         self.font_size = font_size
         self.scatter_color = scatter_color
@@ -296,9 +304,15 @@ class _BaseSequenceSequenceFormat:
         
         <br>
         
-        ## [Matplotlib Colors](https://matplotlib.org/stable/users/explain/colors/colors.html)
-        ## [Matplotlib Linestyles](https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html)
-        ## [Matplotlib Markers](https://matplotlib.org/stable/api/markers_api.html)
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+        
+        <br>
+        
+        ### [Matplotlib Linestyles](https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html)
+        
+        <br>
+        
+        ### [Matplotlib Markers](https://matplotlib.org/stable/api/markers_api.html)
         """
         self.font_size = font_size
         self.plot_figsize = plot_figsize
@@ -366,7 +380,7 @@ class BinaryClassificationMetricsFormat(_BaseClassificationFormat):
     Configuration for binary classification.
     """
     def __init__(self, 
-                 cmap: str="Blues",
+                 cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -381,7 +395,7 @@ class MultiClassClassificationMetricsFormat(_BaseClassificationFormat):
     Configuration for multi-class classification.
     """
     def __init__(self, 
-                 cmap: str="Blues",
+                 cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -396,7 +410,7 @@ class BinaryImageClassificationMetricsFormat(_BaseClassificationFormat):
     Configuration for binary image classification.
     """
     def __init__(self, 
-                 cmap: str="Blues",
+                 cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -411,7 +425,7 @@ class MultiClassImageClassificationMetricsFormat(_BaseClassificationFormat):
     Configuration for multi-class image classification.
     """
     def __init__(self, 
-                 cmap: str="Blues",
+                 cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
                  font_size: int=16) -> None:
@@ -427,11 +441,11 @@ class MultiLabelBinaryClassificationMetricsFormat(_BaseMultiLabelFormat):
     Configuration for multi-label binary classification.
     """
     def __init__(self,
+                 cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
-                 cmap: str = "Blues",
                  font_size: int = 16) -> None:
-        super().__init__(ROC_PR_line=ROC_PR_line, 
-                         cmap=cmap, 
+        super().__init__(cmap=cmap,
+                         ROC_PR_line=ROC_PR_line, 
                          font_size=font_size)
 
 
@@ -441,8 +455,8 @@ class BinarySegmentationMetricsFormat(_BaseSegmentationFormat):
     Configuration for binary segmentation.
     """
     def __init__(self,
-                 heatmap_cmap: str = 'viridis',
-                 cm_cmap: str = "Blues",
+                 heatmap_cmap: str = "BuGn",
+                 cm_cmap: str = "Purples",
                  font_size: int = 16) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
@@ -454,8 +468,8 @@ class MultiClassSegmentationMetricsFormat(_BaseSegmentationFormat):
     Configuration for multi-class segmentation.
     """
     def __init__(self,
-                 heatmap_cmap: str = 'viridis',
-                 cm_cmap: str = "Blues",
+                 heatmap_cmap: str = "BuGn",
+                 cm_cmap: str = "Purples",
                  font_size: int = 16) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
