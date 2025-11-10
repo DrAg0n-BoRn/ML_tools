@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [16.2.2] 2025-11-10
+
+### Fixed
+
+- ML_configuration: Bugs and inconsistencies.
+
 ## [16.2.1] 2025-11-09
 
 - Cosmetic update: Better format defaults for Configuration class in "ML_configuration" and classification_metrics in "ML_evaluation".

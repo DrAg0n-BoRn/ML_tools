@@ -48,19 +48,19 @@ class _BaseClassificationFormat:
 
         Args:
             cmap (str): The matplotlib colormap name for the confusion matrix
-                and report heatmap. Defaults to "Blues".
+                and report heatmap.
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
                 - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
             
             ROC_PR_line (str): The color name or hex code for the line plotted
-                on the ROC and Precision-Recall curves. Defaults to 'darkorange'.
+                on the ROC and Precision-Recall curves.
                 - Common color names: 'darkorange', 'cornflowerblue', 'crimson', 'forestgreen'
                 - Hex codes: '#FF6347', '#4682B4'
             
             calibration_bins (int): The number of bins to use when
-                creating the calibration (reliability) plot. Defaults to 15.
+                creating the calibration (reliability) plot.
             
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
+            font_size (int): The base font size to apply to the plots.
         
         <br>
         
@@ -98,17 +98,16 @@ class _BaseMultiLabelFormat:
 
         Args:
             cmap (str): The matplotlib colormap name for the per-label
-                    confusion matrices. Defaults to "Blues".
+                    confusion matrices.
                     - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
                     - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
         
             ROC_PR_line (str): The color name or hex code for the line plotted
                 on the ROC and Precision-Recall curves (one for each label). 
-                Defaults to 'darkorange'.
                 - Common color names: 'darkorange', 'cornflowerblue', 'crimson', 'forestgreen'
                 - Hex codes: '#FF6347', '#4682B4'
             
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
+            font_size (int): The base font size to apply to the plots.
             
         <br>
         
@@ -146,15 +145,15 @@ class _BaseRegressionFormat:
         Initializes the formatting configuration for regression metrics.
 
         Args:
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
-            scatter_color (str): Matplotlib color for the scatter plot points. Defaults to 'tab:blue'.
+            font_size (int): The base font size to apply to the plots.
+            scatter_color (str): Matplotlib color for the scatter plot points.
                 - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
-            scatter_alpha (float): Alpha transparency for scatter plot points. Defaults to 0.6.
+            scatter_alpha (float): Alpha transparency for scatter plot points.
             ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the 
-                True vs. Predicted plot. Defaults to 'k' (black).
+                True vs. Predicted plot.
                 - Common color names: 'k', 'red', 'darkgrey', '#FF6347'
             residual_line_color (str): Matplotlib color for the y=0 line in the 
-                Residual plot. Defaults to 'red'.
+                Residual plot.
                 - Common color names: 'red', 'blue', 'k', '#4682B4'
             hist_bins (int | str): The number of bins for the residuals histogram. 
                 Defaults to 'auto' to use seaborn's automatic bin selection.
@@ -196,13 +195,13 @@ class _BaseSegmentationFormat:
 
         Args:
             heatmap_cmap (str): The matplotlib colormap name for the per-class
-                metrics heatmap. Defaults to "viridis".
+                metrics heatmap.
                 - Sequential options: 'viridis', 'plasma', 'inferno', 'cividis'
                 - Diverging options: 'coolwarm', 'bwr', 'seismic'
             cm_cmap (str): The matplotlib colormap name for the pixel-level
-                confusion matrix. Defaults to "Blues".
+                confusion matrix.
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges'
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
+            font_size (int): The base font size to apply to the plots.
         
         <br>
         
@@ -236,15 +235,15 @@ class _BaseSequenceValueFormat:
         Initializes the formatting configuration for sequence to value metrics.
 
         Args:
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
-            scatter_color (str): Matplotlib color for the scatter plot points. Defaults to 'tab:blue'.
+            font_size (int): The base font size to apply to the plots.
+            scatter_color (str): Matplotlib color for the scatter plot points.
                 - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
-            scatter_alpha (float): Alpha transparency for scatter plot points. Defaults to 0.6.
+            scatter_alpha (float): Alpha transparency for scatter plot points.
             ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the 
-                True vs. Predicted plot. Defaults to 'k' (black).
+                True vs. Predicted plot.
                 - Common color names: 'k', 'red', 'darkgrey', '#FF6347'
             residual_line_color (str): Matplotlib color for the y=0 line in the 
-                Residual plot. Defaults to 'red'.
+                Residual plot.
                 - Common color names: 'red', 'blue', 'k', '#4682B4'
             hist_bins (int | str): The number of bins for the residuals histogram. 
                 Defaults to 'auto' to use seaborn's automatic bin selection.
@@ -289,17 +288,17 @@ class _BaseSequenceSequenceFormat:
         Initializes the formatting configuration for seq-to-seq metrics.
 
         Args:
-            font_size (int): The base font size to apply to the plots. Defaults to 16.
-            plot_figsize (Tuple[int, int]): Figure size for the plot. Defaults to (10, 6).
-            grid_style (str): Matplotlib linestyle for the plot grid. Defaults to '--'.
+            font_size (int): The base font size to apply to the plots.
+            plot_figsize (Tuple[int, int]): Figure size for the plot.
+            grid_style (str): Matplotlib linestyle for the plot grid.
                 - Options: '--' (dashed), ':' (dotted), '-.' (dash-dot), '-' (solid)
-            rmse_color (str): Matplotlib color for the RMSE line. Defaults to 'tab:blue'.
+            rmse_color (str): Matplotlib color for the RMSE line.
                 - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
-            rmse_marker (str): Matplotlib marker style for the RMSE line. Defaults to 'o-'.
+            rmse_marker (str): Matplotlib marker style for the RMSE line.
                 - Options: 'o-' (circle), 's--' (square), '^:' (triangle), 'x' (x marker)
-            mae_color (str): Matplotlib color for the MAE line. Defaults to 'tab:orange'.
+            mae_color (str): Matplotlib color for the MAE line.
                 - Common color names: 'tab:orange', 'purple', 'black', '#FF6347'
-            mae_marker (str): Matplotlib marker style for the MAE line. Defaults to 's--'.
+            mae_marker (str): Matplotlib marker style for the MAE line.
                 - Options: 's--', 'o-', 'v:', '+' (plus marker)
         
         <br>
@@ -778,25 +777,31 @@ def _validate_threshold(threshold: float):
     if not isinstance(threshold, float):
         _LOGGER.error(f"Classification threshold must be a float.")
         raise TypeError()
-    elif threshold <= 0.0 or threshold >= 1.0:
+    elif threshold < 0.1 or threshold > 0.9:
         _LOGGER.error(f"Classification threshold must be in the range [0.1, 0.9]")
         raise ValueError()
     
     return threshold
 
-def _validate_class_map(map: dict[str,int]):
+def _validate_class_map(map_dict: dict[str, int]):
     """Helper for finalize classes"""
-    validated_map = None
-    if isinstance(map, dict):
-        if all( [isinstance(key, str) for key in map.keys()] ):
-            if all( [isinstance(val, str) for val in map.values()] ):
-                validated_map = map
-    
-    if validated_map is None:
-        _LOGGER.error(f"Class map must be a dictionary of string keys and integer values.")
+    if not isinstance(map_dict, dict):
+        _LOGGER.error(f"Class map must be a dictionary, but got {type(map_dict)}.")
         raise TypeError()
-    else:
-        return validated_map
+    
+    if not map_dict:
+        _LOGGER.error("Class map dictionary cannot be empty.")
+        raise ValueError()
+
+    for key, val in map_dict.items():
+        if not isinstance(key, str):
+            _LOGGER.error(f"All keys in the class map must be strings, but found key: {key} ({type(key)}).")
+            raise TypeError()
+        if not isinstance(val, int):
+            _LOGGER.error(f"All values in the class map must be integers, but for key '{key}' found value: {val} ({type(val)}).")
+            raise TypeError()
+            
+    return map_dict
 
 def info():
     _script_info(__all__)
