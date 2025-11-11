@@ -251,7 +251,7 @@ class DragonDatasetVision:
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
-                             crop_size: int = 224, 
+                             crop_size: Optional[int] = 224, 
                              mean: Optional[List[float]] = [0.485, 0.456, 0.406], 
                              std: Optional[List[float]] = [0.229, 0.224, 0.225],
                              pre_transforms: Optional[List[Callable]] = None,
@@ -262,18 +262,20 @@ class DragonDatasetVision:
         This method must be called AFTER data is loaded and split.
         
         It sets up two pipelines:
-        1.  **Training Pipeline:** Includes random augmentations:
-            `RandomResizedCrop(crop_size)`, `RandomHorizontalFlip(0.5)`, and `RandomRotation(90)` (plus any
-            `extra_train_transforms`) for online augmentation.
+        1.  **Training Pipeline:** Includes random transforms for online augmentation:
+            - `Resize(resize_size)`
+            - `RandomResizedCrop(crop_size)`
+            - `RandomHorizontalFlip(0.5)`
+            - `RandomRotation(90)` 
+            - (Any `extra_train_transforms`)
+            
         2.  **Validation/Test Pipeline:** A deterministic pipeline using `Resize` and `CenterCrop` for consistent evaluation.
             
         Both pipelines finish with `ToTensor` and `Normalize`.
 
         Args:
-            resize_size (int): The size to resize the smallest edge to
-                               for validation/testing.
-            crop_size (int): The target size (square) for the final
-                             cropped image.
+            resize_size (int): The size to resize the smallest edge of the image.
+            crop_size (int): The target size (square) for the final cropped image. If None, then it will be the same value as `resize_size`, to avoid losing information from the image borders.
             mean (List[float] | None): The mean values for normalization (e.g., ImageNet mean).
             std (List[float] | None): The standard deviation values for normalization (e.g., ImageNet std).
             extra_train_transforms (List[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
@@ -294,7 +296,8 @@ class DragonDatasetVision:
             raise ValueError()
 
         # --- Define Transform Pipelines ---
-        # These now MUST include ToTensor and Normalize, as the ImageFolder was loaded with transform=None.
+        if crop_size is None:
+            crop_size = resize_size
         
         # --- Store components for validation recipe ---
         self._val_recipe_components = {
@@ -316,7 +319,8 @@ class DragonDatasetVision:
 
         # Base augmentations for training
         base_train_transforms = [
-            transforms.RandomResizedCrop(size=crop_size), 
+            transforms.Resize(resize_size), # Scale down
+            transforms.RandomResizedCrop(size=crop_size), # Random crops over the image
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=90)
         ]

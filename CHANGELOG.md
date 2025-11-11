@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [16.3.0] 2025-11-11
+
+### Changed
+
+- ML_vision_datasetmaster: `DragonDatasetVision.configure_transforms()`, added the Resize transform for the train transform pipeline for consistency.
+
+### Added
+
+- ML_vision_transformers:
+    - `LetterboxResize`, Resizes an image to fit within a target size while maintaining its aspect ratio.
+    - `HistogramEqualization`, Applies histogram equalization to the image, spreading out the most frequent pixel intensity values to improve contrast.
+    - `RandomHistogramEqualization`, Randomly applies histogram equalization to the image with a given probability.
+
 ## [16.2.2] 2025-11-10
 
 ### Fixed

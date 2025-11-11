@@ -1,8 +1,9 @@
-from typing import Union, Dict, Type, Callable, Optional, Any, List, Literal
+from typing import Union, Dict, Type, Callable, Optional, Any, List, Literal, Tuple
 from PIL import ImageOps, Image
 from torchvision import transforms
 from pathlib import Path
 import json
+import random
 
 from ._logger import _LOGGER
 from ._script_info import _script_info
@@ -13,12 +14,17 @@ from .path_manager import make_fullpath
 __all__ = [
     "TRANSFORM_REGISTRY",
     "ResizeAspectFill",
+    "LetterboxResize",
+    "HistogramEqualization",
+    "RandomHistogramEqualization",
     "create_offline_augmentations"
 ]
 
 # --- Custom Vision Transform Class ---
 class ResizeAspectFill:
     """
+    Pre-Transform
+    
     Custom transformation to make an image square by padding it to match the
     longest side, preserving the aspect ratio. The image is finally centered.
 
@@ -28,7 +34,7 @@ class ResizeAspectFill:
     """
     def __init__(self, pad_color: Union[str, int] = "black") -> None:
         self.pad_color = pad_color
-        # Store kwargs to allow for re-creation
+        # Important: Store keyword to allow for re-creation
         self.__setattr__(VisionTransformRecipeKeys.KWARGS, {"pad_color": pad_color})
 
     def __call__(self, image: Image.Image) -> Image.Image:
@@ -53,10 +59,138 @@ class ResizeAspectFill:
         return ImageOps.expand(image, padding, fill=self.pad_color)
 
 
+class LetterboxResize:
+    """
+    Pre-Transform
+    
+    Resizes an image to fit within a target size (e.g., 640x640) while
+    maintaining its aspect ratio. The remaining space is padded to meet
+    the target size, and the image is centered.
+
+    Args:
+        target_size (Union[int, Tuple[int, int]]): The target (width, height)
+            to resize to. If an int, it's used for both width and height.
+        pad_color (Union[str, int]): Color to use for the padding.
+                                     Defaults to "black".
+    
+    Note:
+        This is extremely common for object detection models that require fixed-size, square inputs but where distorting the
+        aspect ratio would harm geometric accuracy.
+    """
+    def __init__(
+        self, 
+        target_size: Union[int, Tuple[int, int]], 
+        pad_color: Union[str, int] = "black"
+    ) -> None:
+        
+        if isinstance(target_size, int):
+            self.target_size = (target_size, target_size)
+        else:
+            self.target_size = target_size
+            
+        self.pad_color = pad_color
+        # Store kwargs to allow for re-creation
+        self.__setattr__(VisionTransformRecipeKeys.KWARGS, {
+            "target_size": target_size, 
+            "pad_color": pad_color
+        })
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        if not isinstance(image, Image.Image):
+            _LOGGER.error(f"Expected PIL.Image.Image, got {type(image).__name__}")
+            raise TypeError()
+
+        w, h = image.size
+        tw, th = self.target_size
+        
+        if (w, h) == (tw, th):
+            return image
+
+        # Calculate resize ratio
+        r = min(tw / w, th / h)
+        
+        # New dimensions
+        new_w = int(round(w * r))
+        new_h = int(round(h * r))
+
+        # Resize
+        resized_image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+        # Calculate padding
+        left_padding = (tw - new_w) // 2
+        right_padding = tw - new_w - left_padding
+        top_padding = (th - new_h) // 2
+        bottom_padding = th - new_h - top_padding
+        
+        padding = (left_padding, top_padding, right_padding, bottom_padding)
+        
+        return ImageOps.expand(resized_image, padding, fill=self.pad_color)
+
+
+class HistogramEqualization:
+    """
+    Augmentation / Pre-Transform
+    
+    Applies histogram equalization to the image, spreading out the
+    most frequent pixel intensity values to improve contrast.
+
+    Note:
+        This is useful as a pre-processing step for datasets with
+        consistently poor lighting or low contrast (e.g., some medical imaging or security camera footage).
+    """
+    def __init__(self) -> None:
+        # Store kwargs to allow for re-creation
+        self.__setattr__(VisionTransformRecipeKeys.KWARGS, {})
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        if not isinstance(image, Image.Image):
+            _LOGGER.error(f"Expected PIL.Image.Image, got {type(image).__name__}")
+            raise TypeError()
+            
+        return ImageOps.equalize(image)
+
+
+class RandomHistogramEqualization:
+    """
+    Augmentation
+    
+    Randomly applies histogram equalization to the image with a
+    given probability `p`.
+
+    Args:
+        p (float): The probability of applying the equalization.
+                   Defaults to 0.5.
+
+    Note:
+        This is useful as a data augmentation to make the model robust
+        to a wide variety of lighting conditions and contrast levels,
+        without forcing all images to be equalized.
+    """
+    def __init__(self, p: float = 0.5) -> None:
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"Probability 'p' must be between 0.0 and 1.0, got {p}")
+        self.p = p
+        # Store kwargs to allow for re-creation
+        self.__setattr__(VisionTransformRecipeKeys.KWARGS, {"p": p})
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        if not isinstance(image, Image.Image):
+            _LOGGER.error(f"Expected PIL.Image.Image, got {type(image).__name__}")
+            raise TypeError()
+
+        if random.random() < self.p:
+            return ImageOps.equalize(image)
+        
+        return image
+
+
 #############################################################
 #NOTE: Add custom transforms.
 TRANSFORM_REGISTRY: Dict[str, Type[Callable]] = {
-    "ResizeAspectFill": ResizeAspectFill,
+    "ResizeAspectFill": ResizeAspectFill, 
+    "LetterboxResize": LetterboxResize,
+    "HistogramEqualization": HistogramEqualization,
+    "RandomHistogramEqualization": RandomHistogramEqualization,
 }
 #############################################################
 
