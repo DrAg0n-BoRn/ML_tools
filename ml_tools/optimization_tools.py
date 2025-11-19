@@ -150,7 +150,9 @@ def parse_lower_upper_bounds(source: dict[str,tuple[Any,Any]]):
     return lower, upper
 
 
-def plot_optimal_feature_distributions(results_dir: Union[str, Path], verbose: bool=False):
+def plot_optimal_feature_distributions(results_dir: Union[str, Path], 
+                                       verbose: bool=False,
+                                       ignore_columns: Optional[List[str]] = None):
     """
     Analyzes optimization results and plots the distribution of optimal values.
 
@@ -165,8 +167,10 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], verbose: b
 
     Parameters
     ----------
-    results_dir : str or Path
+    results_dir : str | Path
         The path to the directory containing the optimization result CSV files.
+    ignore_columns : List[str] | None
+        A list of column names to exclude from plotting (e.g. non-optimized targets).
     """
     # Check results_dir and create output path
     results_path = make_fullpath(results_dir, enforce="directory")
@@ -182,7 +186,22 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path], verbose: b
         if df.shape[1] < 2:
             _LOGGER.warning(f"Skipping '{df_name}': must have at least 2 columns (feature + target).")
             continue
-        melted_df = df.iloc[:, :-1].melt(var_name='feature', value_name='value')
+        
+        # --- MODIFIED SLICING LOGIC ---
+        # 1. Separate the score (last column) from features
+        features_df = df.iloc[:, :-1]
+        
+        # 2. Remove specific ignored columns (other targets) if provided
+        if ignore_columns:
+            # Only drop if they actually exist in this specific dataframe
+            cols_to_drop = [c for c in ignore_columns if c in features_df.columns]
+            if cols_to_drop:
+                features_df = features_df.drop(columns=cols_to_drop)
+        
+        # 3. Melt the filtered dataframe
+        melted_df = features_df.melt(var_name='feature', value_name='value')
+        # --------------------
+        
         melted_df['target'] = df_name
         data_to_plot.append(melted_df)
     

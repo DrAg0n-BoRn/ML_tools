@@ -68,7 +68,7 @@ ML_evaluation_multi
 ML_evaluation
 ML_inference
 ML_models
-ML_models_advanced # Requires the extra flag [py-tab]
+ML_models_advanced # Requires the extra flag [py-tab] and numpy<2.0
 ML_optimization
 ML_scaler
 ML_sequence_datasetmaster

@@ -167,12 +167,16 @@ class _BaseInferenceHandler(ABC):
 
 class DragonInferenceHandler(_BaseInferenceHandler):
     """
-    Handles loading a PyTorch model's state dictionary and performing inference.
+    Handles loading a PyTorch model's state dictionary and performing inference for tabular data.
     """
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["regression", "binary classification", "multiclass classification", "multitarget regression", "multilabel binary classification"],
+                 task: Literal["regression", 
+                               "binary classification", 
+                               "multiclass classification", 
+                               "multitarget regression", 
+                               "multilabel binary classification"],
                  device: str = 'cpu',
                  scaler: Optional[Union[DragonScaler, str, Path]] = None):
         """

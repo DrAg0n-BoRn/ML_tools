@@ -50,6 +50,7 @@ class DragonOptimizer:
         >>> optimizer = DragonOptimizer(
         ...     inference_handler=my_handler,
         ...     schema=schema,
+        ...     target_name="my_target",
         ...     continuous_bounds_map=cont_bounds,
         ...     task="max",
         ...     algorithm="Genetic",
@@ -57,7 +58,6 @@ class DragonOptimizer:
         >>> # 4. Run the optimization
         >>> best_result = optimizer.run(
         ...     num_generations=100,
-        ...     target_name="my_target",
         ...     save_dir="/path/to/results",
         ...     save_format="csv"
         ... )
@@ -65,6 +65,7 @@ class DragonOptimizer:
     def __init__(self,
                  inference_handler: DragonInferenceHandler,
                  schema: FeatureSchema,
+                 target_name: str,
                  continuous_bounds_map: Dict[str, Tuple[float, float]],
                  task: Literal["min", "max"],
                  algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
@@ -79,10 +80,13 @@ class DragonOptimizer:
                 An initialized inference handler containing the model.
             schema (FeatureSchema): 
                 The definitive schema object from data_exploration.
+            target_name (str): 
+                target name to optimize.
             continuous_bounds_map (Dict[str, Tuple[float, float]]):
                 A dictionary mapping the *name* of each **continuous** feature
                 to its (min_bound, max_bound) tuple.
             task (str): The optimization goal, either "min" or "max".
+            
             algorithm (str): The search algorithm to use ("SNES", "CEM", "Genetic").
             population_size (int): Population size for CEM and GeneticAlgorithm.
             discretize_start_at_zero (bool): 
@@ -93,21 +97,53 @@ class DragonOptimizer:
         """
         # --- Store schema ---
         self.schema = schema
+        # --- Store inference handler ---
+        self.inference_handler = inference_handler
+        
+        # --- store target name ---
+        self.target_name = target_name
+        
+        # --- flag to control single vs multi-target ---
+        self.is_multi_target = False
         
         # --- 1. Create bounds from schema ---
-        # This is the new, robust way to get bounds
+        # This is the robust way to get bounds
         bounds = create_optimization_bounds(
             schema=schema,
             continuous_bounds_map=continuous_bounds_map,
             start_at_zero=discretize_start_at_zero
         )
-
+        
+        # Resolve target index if multi-target
+        target_index = None
+        if self.inference_handler.target_ids:
+            if target_name in self.inference_handler.target_ids:
+                # if the length of target_ids == 1, it is a single target task
+                if len(self.inference_handler.target_ids) == 1:
+                    # leave target_index as None
+                    target_index = None
+                    _LOGGER.info(f"Optimization locked to single-target model '{target_name}'.")
+                # else it is multi-target
+                else:
+                    target_index = self.inference_handler.target_ids.index(target_name)
+                    self.is_multi_target = True
+                    _LOGGER.info(f"Optimization locked to target '{target_name}' (Index {target_index}) in a multi-target model.")
+            else:
+                # target was provided but not found
+                _LOGGER.error(f"Target name '{target_name}' not found in the inference handler's 'target_ids'.")
+                raise ValueError()
+        else:
+            # inference handler has no target_ids, raise error
+            _LOGGER.error("The provided inference handler does not have 'target_ids' defined.")
+            raise ValueError()
+        
         # --- 2. Make a fitness function ---
         self.evaluator = FitnessEvaluator(
             inference_handler=inference_handler,
             # Get categorical info from the schema
             categorical_index_map=schema.categorical_index_map,
-            discretize_start_at_zero=discretize_start_at_zero
+            discretize_start_at_zero=discretize_start_at_zero,
+            target_index=target_index
         )
         
         # --- 3. Create the problem and searcher factory ---
@@ -125,7 +161,6 @@ class DragonOptimizer:
 
     def run(self,
             num_generations: int,
-            target_name: str,
             save_dir: Union[str, Path],
             save_format: Literal['csv', 'sqlite', 'both'],
             repetitions: int = 1,
@@ -138,7 +173,6 @@ class DragonOptimizer:
 
         Args:
             num_generations (int): The total number of generations for each repetition.
-            target_name (str): Target name used for the CSV filename and/or SQL table.
             save_dir (str | Path): The directory where result files will be saved.
             save_format (Literal['csv', 'sqlite', 'both']): The format for saving results.
             repetitions (int): The number of independent times to run the optimization.
@@ -148,12 +182,25 @@ class DragonOptimizer:
             Optional[dict]: A dictionary with the best result if repetitions is 1, 
                             otherwise None.
         """
+        # Validate all possible targets for the SQL Schema
+        if self.inference_handler.target_ids is None:
+            _LOGGER.error("The provided inference handler does not have 'target_ids' defined.")
+            raise ValueError()
+        
+        # Pass inference handler and target names for multi-target only
+        if self.is_multi_target:
+            target_names_to_pass = self.inference_handler.target_ids
+            inference_handler_to_pass = self.inference_handler
+        else:
+            target_names_to_pass = None
+            inference_handler_to_pass = None
+        
         # Call the existing run function, passing info from the schema
         return run_optimization(
             problem=self.problem,
             searcher_factory=self.searcher_factory,
             num_generations=num_generations,
-            target_name=target_name,
+            target_name=self.target_name,
             save_dir=save_dir,
             save_format=save_format,
             # Get the definitive feature names (as a list) from the schema
@@ -163,7 +210,9 @@ class DragonOptimizer:
             categorical_mappings=self.schema.categorical_mappings,
             repetitions=repetitions,
             verbose=verbose,
-            discretize_start_at_zero=self.discretize_start_at_zero
+            discretize_start_at_zero=self.discretize_start_at_zero,
+            all_target_names=target_names_to_pass,
+            inference_handler=inference_handler_to_pass
         )
         
         
@@ -178,6 +227,7 @@ class FitnessEvaluator:
     def __init__(self,
                  inference_handler: DragonInferenceHandler,
                  categorical_index_map: Optional[Dict[int, int]] = None,
+                 target_index: Optional[int] = None,
                  discretize_start_at_zero: bool = True):
         """
         Initializes the fitness evaluator.
@@ -189,10 +239,14 @@ class FitnessEvaluator:
                 Maps {column_index: cardinality} for discretization.
             discretize_start_at_zero (bool): 
                 True if discrete encoding starts at 0.
+            target_index (int | None):
+                If provided, the fitness will be the value at this index of the model output (multi-target).
+                If None, the output is flattened (single target).
         """
         self.inference_handler = inference_handler
         self.categorical_index_map = categorical_index_map
         self.discretize_start_at_zero = discretize_start_at_zero
+        self.target_index = target_index
         
         # Expose the device
         self.device = self.inference_handler.device
@@ -219,8 +273,14 @@ class FitnessEvaluator:
                 # 3. Clamp the values and update the processed tensor
                 processed_tensor[:, col_idx] = torch.clamp(rounded_col, min_bound, max_bound)
 
-        # Use the *processed_tensor* for prediction
+        # Use the processed_tensor for prediction
         predictions = self.inference_handler.predict_batch(processed_tensor)[PyTorchInferenceKeys.PREDICTIONS]
+        
+        # If a specific target index is requested (Multi-target model optimizing single objective)
+        if self.target_index is not None:
+            # Return only the specific column, flattened to 1D array of fitness scores
+            return predictions[:, self.target_index]
+            
         return predictions.flatten()
 
 
@@ -333,7 +393,9 @@ def run_optimization(
     verbose: bool = True,
     categorical_map: Optional[Dict[int, int]] = None,
     categorical_mappings: Optional[Dict[str, Dict[str, int]]] = None,
-    discretize_start_at_zero: bool = True
+    discretize_start_at_zero: bool = True,
+    all_target_names: Optional[List[str]] = None,
+    inference_handler: Optional[DragonInferenceHandler] = None
 ) -> Optional[dict]:
     """
     Runs the evolutionary optimization process, with support for multiple repetitions.
@@ -370,6 +432,10 @@ def run_optimization(
         discretize_start_at_zero (bool): 
             True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
             False if it starts at 1 (e.g., [1, 2, 3]).
+        all_target_names (List[str] | None):
+            List of all possible target names for multi-target models. Used for SQL and CSV schemas.
+        inference_handler (DragonInferenceHandler | None):
+            The inference handler used to make predictions for unoptimized targets in multi-target tasks.
 
     Returns:
         Optional[dict]: A dictionary containing the best feature values and the
@@ -392,6 +458,10 @@ def run_optimization(
         feat_len = problem.solution_length
         feature_names = [f"feature_{i}" for i in range(feat_len)] # type: ignore
     
+    # Default to the single target if no list provided
+    if all_target_names is None:
+        all_target_names = [target_name]
+    
     # --- 2. Run Optimization ---
     # --- SINGLE RUN LOGIC ---
     if repetitions <= 1:
@@ -404,7 +474,9 @@ def run_optimization(
             target_name=target_name,
             categorical_map=categorical_map,
             discretize_start_at_zero=discretize_start_at_zero,
-            attach_logger=verbose
+            attach_logger=verbose,
+            all_target_names=all_target_names,
+            inference_handler=inference_handler
         )
         
         # Single run defaults to CSV, pass mappings for reverse mapping
@@ -434,9 +506,13 @@ def run_optimization(
                 schema = {}
                 categorical_cols = set(categorical_mappings.keys()) if categorical_mappings else set()
                 
+                # Features
                 for name in feature_names:
                     schema[name] = "TEXT" if name in categorical_cols else "REAL"
-                schema[target_name] = "REAL"
+                    
+                # Targets
+                for t_name in all_target_names:
+                    schema[t_name] = "REAL"
                 
                 db_manager.create_table(db_table_name, schema)
             
@@ -454,7 +530,9 @@ def run_optimization(
                     target_name=target_name,
                     categorical_map=categorical_map,
                     discretize_start_at_zero=discretize_start_at_zero,
-                    attach_logger=attach_logger
+                    attach_logger=attach_logger,
+                    all_target_names=all_target_names,
+                    inference_handler=inference_handler
                 )
                 
                 if pandas_logger:
@@ -484,7 +562,9 @@ def _run_single_optimization_rep(
     target_name: str,
     categorical_map: Optional[Dict[int, int]],
     discretize_start_at_zero: bool,
-    attach_logger: bool
+    attach_logger: bool,
+    all_target_names: List[str],
+    inference_handler: Optional[DragonInferenceHandler]
 ) -> Tuple[dict, Optional[PandasLogger]]:
     """
     Internal helper to run one full optimization repetition.
@@ -503,7 +583,6 @@ def _run_single_optimization_rep(
     # Get the best result
     best_solution_container = searcher.status["pop_best"]
     best_solution_tensor = best_solution_container.values
-    best_fitness = best_solution_container.evals
  
     best_solution_np = best_solution_tensor.cpu().numpy()
     
@@ -517,9 +596,31 @@ def _run_single_optimization_rep(
     else:
         best_solution_thresholded = best_solution_np
     
-    # Format results into a dictionary
+    # Format features
     result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
-    result_dict[target_name] = best_fitness.item()
+
+    # Run a final prediction to get values for ALL targets
+    if inference_handler:
+        final_preds_dict = inference_handler.predict_numpy(best_solution_thresholded)
+        
+        # For Multi-target Regression, 'PREDICTIONS' is an array [val1, val2, val3]
+        raw_preds = final_preds_dict.get(PyTorchInferenceKeys.PREDICTIONS)
+        
+        # Ensure it's 1D
+        if hasattr(raw_preds, "flatten"):
+            raw_preds = raw_preds.flatten() # type: ignore
+        
+        # Map values to names
+        # If raw_preds is a vector (multi target), it maps to all_target_names
+        if len(all_target_names) > 1:
+            for t_name, val in zip(all_target_names, raw_preds): # type: ignore
+                result_dict[t_name] = float(val)
+        else:
+            # Single target fallback
+            result_dict[all_target_names[0]] = float(raw_preds) if raw_preds.size == 1 else raw_preds[0] # type: ignore
+    else:
+        # Fallback: use the fitness score tracked by EvoTorch (single target)
+        result_dict[target_name] = best_solution_container.evals.item()
     
     return result_dict, pandas_logger
 

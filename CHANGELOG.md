@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [16.4.0] 2025-11-19
+
+### Changed
+
+- ML_Optimization:
+    - `FitnessEvaluator`, modified to handle multi-target models.
+    - `DragonOptimizer`, modified to handle multi-target models.
+    - `run_optimization()`, modified to handle multi-target models.
+
+- optimization_tools:
+    - `plot_optimal_feature_distributions()`, added `ignore_columns` parameter to exclude specific columns (like unoptimized targets).
+
 ## [16.3.1] 2025-11-19
 
 ### Changed
