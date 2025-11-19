@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [16.3.1] 2025-11-19
+
+### Changed
+
+- data_exploration: `plot_continuous_vs_target()`, migrated from legacy `numpy.polyfit` to the modern `numpy.polynomial` API internally.
+
 ## [16.3.0] 2025-11-11
 
 ### Changed

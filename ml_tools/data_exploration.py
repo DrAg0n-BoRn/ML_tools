@@ -568,10 +568,8 @@ def plot_continuous_vs_target(
 
             # 6. Perform linear fit
             try:
-                # Use numpy's polyfit to get the slope (pf[0]) and intercept (pf[1])
-                pf = np.polyfit(x, y, 1)
-                # Create a polynomial function p(x)
-                p = np.poly1d(pf)
+                # Modern replacement for np.polyfit + np.poly1d. Compatible with NumPy 1.14+ and NumPy 2.0+
+                p = np.polynomial.Polynomial.fit(x, y, deg=1)
                 plot_regression_line = True
             except (np.linalg.LinAlgError, ValueError):
                 _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
