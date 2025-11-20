@@ -288,6 +288,14 @@ class DragonSQL:
         
         _LOGGER.info(f"➡️ Executing: {query}")
         self.cursor.execute(query)
+        
+    def commit(self):
+        """Manually commits the current transaction."""
+        if self.conn:
+            self.conn.commit()
+            _LOGGER.debug(f"Transaction committed to {self.db_path.name}")
+        else:
+            _LOGGER.error("Cannot commit: Database connection is not open.")
 
 
 def info():

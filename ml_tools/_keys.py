@@ -78,7 +78,13 @@ class SHAPKeys:
     FEATURE_COLUMN = "feature"
     SHAP_VALUE_COLUMN = "mean_abs_shap_value"
     SAVENAME = "shap_summary"
-
+    
+class CaptumKeys:
+    """Keys for Captum functions"""
+    FEATURE_COLUMN = "feature"
+    IMPORTANCE_COLUMN = "importance"
+    SAVENAME = "captum_summary"
+    PLOT_NAME = "captum_importance_plot"
 
 class PyTorchCheckpointKeys:
     """Keys for saving/loading a training checkpoint dictionary."""
@@ -163,6 +169,12 @@ class DragonTrainerKeys:
     VALIDATION_METRICS_DIR = "Validation_Metrics"
     TEST_METRICS_DIR = "Test_Metrics"
 
+
+class SequenceDatasetKeys:
+    """Used by the sequence dataset module."""
+    FEATURE_NAME = "Signal_Value"
+    TARGET_NAME = "Next_Step"
+    
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""

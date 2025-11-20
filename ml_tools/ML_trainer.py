@@ -12,6 +12,7 @@ from .ML_evaluation import classification_metrics, regression_metrics, plot_loss
 from .ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from .ML_vision_evaluation import segmentation_metrics, object_detection_metrics
 from .ML_sequence_evaluation import sequence_to_sequence_metrics, sequence_to_value_metrics
+from .ML_evaluation_captum import captum_feature_importance, _is_captum_available, captum_segmentation_heatmap, captum_image_heatmap
 from .ML_configuration import (RegressionMetricsFormat, 
                             MultiTargetRegressionMetricsFormat,
                             BinaryClassificationMetricsFormat,
@@ -37,7 +38,7 @@ from .ML_configuration import (RegressionMetricsFormat,
                             FinalizeSequencePrediction)
 
 from ._script_info import _script_info
-from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
+from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, SequenceDatasetKeys
 from ._logger import _LOGGER
 
 
@@ -973,7 +974,7 @@ class DragonTrainer(_BaseDragonTrainer):
                                  class_names=class_names,
                                  config=config)
     
-    def explain(self,
+    def explain_shap(self,
                 save_dir: Union[str,Path], 
                 explain_dataset: Optional[Dataset] = None, 
                 n_samples: int = 300,
@@ -982,6 +983,9 @@ class DragonTrainer(_BaseDragonTrainer):
                 explainer_type: Literal['deep', 'kernel'] = 'kernel'):
         """
         Explains model predictions using SHAP and saves all artifacts.
+        
+        NOTE: SHAP support is limited to single-target tasks (Regression, Binary/Multiclass Classification).
+        For complex tasks (Multi-target, Multi-label, Sequences, Images), please use `explain_captum()`.
 
         The background data is automatically sampled from the trainer's training dataset.
         
@@ -999,7 +1003,18 @@ class DragonTrainer(_BaseDragonTrainer):
             explainer_type (Literal['deep', 'kernel']): The explainer to use.
                 - 'deep': Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
                 - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY slow and memory-intensive. Use with a very low 'n_samples'< 100.
-        """        
+        """
+        # --- 1. Compatibility Guard ---
+        valid_shap_tasks = [
+            MLTaskKeys.REGRESSION, 
+            MLTaskKeys.BINARY_CLASSIFICATION, 
+            MLTaskKeys.MULTICLASS_CLASSIFICATION
+        ]
+        
+        if self.kind not in valid_shap_tasks:
+            _LOGGER.warning(f"SHAP explanation is deprecated for task '{self.kind}' due to instability. Please use 'explain_captum()' instead.")
+            return
+        
         # memory efficient helper
         def _get_random_sample(dataset: Dataset, num_samples: int):
             """
@@ -1083,6 +1098,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 explainer_type=explainer_type,
                 device=self.device
             )
+        # DEPRECATED: Multi-target SHAP support is unstable; recommend Captum instead.
         elif self.kind in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
             # try to get target names
             if target_names is None:
@@ -1107,6 +1123,123 @@ class DragonTrainer(_BaseDragonTrainer):
                 target_names=target_names, # type: ignore
                 save_dir=save_dir,
                 explainer_type=explainer_type,
+                device=self.device
+            )
+
+    def explain_captum(self,
+                       save_dir: Union[str, Path],
+                       explain_dataset: Optional[Dataset] = None,
+                       n_samples: int = 100,
+                       feature_names: Optional[List[str]] = None,
+                       target_names: Optional[List[str]] = None,
+                       n_steps: int = 50):
+        """
+        Explains model predictions using Captum's Integrated Gradients.
+        
+        - **Tabular/Classification:** Generates Feature Importance Bar Charts.
+        - **Segmentation:** Generates Spatial Heatmaps for each class.
+        
+        Args:
+            save_dir (str | Path): Directory to save artifacts.
+            explain_dataset (Dataset | None): Dataset to sample from. Defaults to validation set.
+            n_samples (int): Number of samples to evaluate.
+            feature_names (list[str] | None): Feature names. 
+                - Required for Tabular tasks.
+                - Ignored/Optional for Image tasks (defaults to Channel names).
+            target_names (list[str] | None): Names for the model outputs (or Class names).
+                - If None, attempts to extract from dataset attributes (`target_names`, `classes`, or `class_map`).
+                - If extraction fails, generates generic names (e.g. "Output_0").
+            n_steps (int): Number of interpolation steps.
+        """
+        # 1. Check availability
+        if not _is_captum_available():
+            _LOGGER.error("Captum is not installed or could not be imported.")
+            return
+         
+        # 2. Prepare Data
+        dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
+        if dataset_to_use is None:
+            _LOGGER.error("No dataset available for explanation.")
+            return
+
+        # Efficient sampling helper
+        def _get_samples(ds, n):
+            # Use num_workers=0 for stability during ad-hoc sampling
+            loader = DataLoader(ds, batch_size=n, shuffle=True, num_workers=0)
+            data_iter = iter(loader)
+            features, targets = next(data_iter)
+            return features, targets
+
+        input_data, _ = _get_samples(dataset_to_use, n_samples)
+        
+        # 3. Get Feature Names (Only if NOT segmentation AND NOT image classification)
+        # Image tasks generally don't have explicit feature names; Captum will default to "Channel_X"
+        is_segmentation = self.kind in [MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION]
+        is_image_classification = self.kind in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]
+        
+        if feature_names is None and not is_segmentation and not is_image_classification:
+            if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
+                feature_names = dataset_to_use.feature_names # type: ignore
+            else:
+                _LOGGER.error(f"Could not extract `feature_names`. It must be provided if the dataset does not have it.")
+                raise ValueError()
+
+        # 4. Handle Target Names (or Class Names)
+        if target_names is None:
+            # A. Try dataset attributes first
+            if hasattr(dataset_to_use, DatasetKeys.TARGET_NAMES):
+                target_names = dataset_to_use.target_names # type: ignore
+            elif hasattr(dataset_to_use, "classes"): 
+                 target_names = dataset_to_use.classes # type: ignore
+            elif hasattr(dataset_to_use, "class_map") and isinstance(dataset_to_use.class_map, dict): # type: ignore
+                 # Sort by value (index) to ensure correct order: {name: index} -> [name_at_0, name_at_1...]
+                 sorted_items = sorted(dataset_to_use.class_map.items(), key=lambda item: item[1]) # type: ignore
+                 target_names = [k for k, v in sorted_items]
+
+            # B. Infer based on task
+            if target_names is None:
+                if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION]:
+                    target_names = ["Output"]
+                elif self.kind == MLTaskKeys.BINARY_SEGMENTATION:
+                    target_names = ["Foreground"]
+                
+                # For multiclass/multitarget without names, leave it None and let the evaluation function generate generics.
+
+        # 5. Dispatch based on Task
+        if is_segmentation:
+            # lower n_steps for segmentation to save memory
+            if n_steps > 30:
+                n_steps = 30
+                _LOGGER.warning(f"Segmentation task detected: Reducing Captum n_steps to {n_steps} to prevent OOM. If you encounter OOM errors, consider lowering this further.")
+            
+            captum_segmentation_heatmap(
+                model=self.model,
+                input_data=input_data,
+                save_dir=save_dir,
+                target_names=target_names, # Can be None, helper handles it
+                n_steps=n_steps,
+                device=self.device
+            )
+        
+        elif is_image_classification:
+            captum_image_heatmap(
+                model=self.model,
+                input_data=input_data,
+                save_dir=save_dir,
+                target_names=target_names,
+                n_steps=n_steps,
+                device=self.device
+            )
+            
+        else:
+            # Standard Tabular/Image Classification
+            captum_feature_importance(
+                model=self.model,
+                input_data=input_data,
+                feature_names=feature_names,
+                save_dir=save_dir,
+                target_names=target_names,
+                n_steps=n_steps,
                 device=self.device
             )
 
@@ -2011,6 +2144,78 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                                          y_pred=y_pred, 
                                          save_dir=save_dir,
                                          config=config)
+            
+    def explain_captum(self,
+                       save_dir: Union[str, Path],
+                       explain_dataset: Optional[Dataset] = None,
+                       n_samples: int = 100,
+                       feature_names: Optional[List[str]] = None,
+                       target_names: Optional[List[str]] = None,
+                       n_steps: int = 50):
+        """
+        Explains sequence model predictions using Captum's Integrated Gradients.
+
+        This method calculates global feature importance by aggregating attributions across 
+        the time dimension. 
+        - For **multivariate** sequences, it highlights which variables (channels) are most influential.
+        - For **univariate** sequences, it attributes importance to the single signal feature.
+
+        Args:
+            save_dir (str | Path): Directory to save the importance plots and CSV reports.
+            explain_dataset (Dataset | None): A specific dataset to sample from. If None, the 
+                                            trainer's validation dataset is used.
+            n_samples (int): The number of samples to use for the explanation (background + inputs).
+            feature_names (List[str] | None): Names of the features (signals). If None, attempts to extract them from the dataset attribute.
+            target_names (List[str] | None): Names of the model outputs (e.g., for Seq2Seq or Multivariate output). If None, attempts to extract them from the dataset attribute.
+            n_steps (int): Number of integral approximation steps.
+
+        Note:
+            For univariate data (Shape: N, Seq_Len), the 'feature' is the signal itself. 
+        """
+        if not _is_captum_available():
+            _LOGGER.error("Captum is not installed.")
+            return
+            
+        dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
+        if dataset_to_use is None:
+            _LOGGER.error("No dataset available for explanation.")
+            return
+
+        # Helper to sample data (same as DragonTrainer)
+        def _get_samples(ds, n):
+            loader = DataLoader(ds, batch_size=n, shuffle=True, num_workers=0)
+            data_iter = iter(loader)
+            features, targets = next(data_iter)
+            return features, targets
+
+        input_data, _ = _get_samples(dataset_to_use, n_samples)
+        
+        if feature_names is None:
+             if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
+                feature_names = dataset_to_use.feature_names # type: ignore
+             else:
+                # If retrieval fails, leave it as None. 
+                _LOGGER.warning("'feature_names' not provided and not found in dataset. Generic names will be used.")
+            
+        if target_names is None:
+            if hasattr(dataset_to_use, DatasetKeys.TARGET_NAMES):
+                target_names = dataset_to_use.target_names # type: ignore
+            else:
+                # If retrieval fails, leave it as None. 
+                _LOGGER.warning("'target_names' not provided and not found in dataset. Generic names will be used.")
+
+        # Sequence models usually output [N, 1] (Value) or [N, Seq, 1] (Seq2Seq)
+        # captum_feature_importance handles the aggregation.
+        
+        captum_feature_importance(
+            model=self.model,
+            input_data=input_data,
+            feature_names=feature_names,
+            save_dir=save_dir,
+            target_names=target_names,
+            n_steps=n_steps,
+            device=self.device
+        )
     
     def finalize_model_training(self, 
                                 save_dir: Union[str, Path], 

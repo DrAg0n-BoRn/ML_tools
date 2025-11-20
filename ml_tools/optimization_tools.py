@@ -152,7 +152,7 @@ def parse_lower_upper_bounds(source: dict[str,tuple[Any,Any]]):
 
 def plot_optimal_feature_distributions(results_dir: Union[str, Path], 
                                        verbose: bool=False,
-                                       ignore_columns: Optional[List[str]] = None):
+                                       target_columns: Optional[List[str]] = None):
     """
     Analyzes optimization results and plots the distribution of optimal values.
 
@@ -169,8 +169,8 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
     ----------
     results_dir : str | Path
         The path to the directory containing the optimization result CSV files.
-    ignore_columns : List[str] | None
-        A list of column names to exclude from plotting (e.g. non-optimized targets).
+    target_columns (list[str] | None): 
+        A list of target column names to explicitly exclude from plotting. If None, it defaults to excluding only the last column (assumed as the target).
     """
     # Check results_dir and create output path
     results_path = make_fullpath(results_dir, enforce="directory")
@@ -187,16 +187,18 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
             _LOGGER.warning(f"Skipping '{df_name}': must have at least 2 columns (feature + target).")
             continue
         
-        # --- MODIFIED SLICING LOGIC ---
-        # 1. Separate the score (last column) from features
-        features_df = df.iloc[:, :-1]
-        
-        # 2. Remove specific ignored columns (other targets) if provided
-        if ignore_columns:
-            # Only drop if they actually exist in this specific dataframe
-            cols_to_drop = [c for c in ignore_columns if c in features_df.columns]
-            if cols_to_drop:
-                features_df = features_df.drop(columns=cols_to_drop)
+        # --- Column selection logic ---
+        if target_columns:
+            # 1. Explicitly drop known targets to isolate features
+            existing_targets = [c for c in target_columns if c in df.columns]
+            features_df = df.drop(columns=existing_targets)
+            
+            if features_df.empty:
+                _LOGGER.warning(f"Skipping '{df_name}': All columns were dropped based on target_columns list.")
+                continue
+        else:
+            # 2. Fallback: Assume the last column is the only target
+            features_df = df.iloc[:, :-1]
         
         # 3. Melt the filtered dataframe
         melted_df = features_df.melt(var_name='feature', value_name='value')

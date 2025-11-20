@@ -4,11 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.0.0] 2025-11-20
+
+### Added
+
+- New module: "ML_evaluation_captum", using Captum API to explain PyTorch models.
+- ML_evaluation_captum:
+    - `captum_feature_importance()`, calculate and visualize feature importance using Captum's Integrated Gradients.
+    - `captum_image_heatmap()`, importance for image classification tasks.
+    - `captum_segmentation_heatmap()`, importance for segmentation tasks.
+- ML_trainer: 
+    - `DragonTrainer`, added `.explain_captum()` method.
+    - `DragonSequenceTrainer`, added `.explain_captum()` method.
+
+### Changed
+
+- ML_trainer: 
+    - `DragonTrainer`, method `.explain()` renamed to `.explain_shap()`, with functionality limited to regression, binary classification and multi-class classification.
+
+- ML_optimization:
+    - `FitnessEvaluator`: Modified to handle specific target indexing for multi-target models.
+    - `run_optimization()`: Added intermediate database commits inside the repetition loop to prevent data loss during long-running jobs.
+
+- SQL:
+    - `DragonSQL`: Added `commit()` method to allow manual transaction commits.
+
+- optimization_tools:
+    - `plot_optimal_feature_distributions()`: Refactored column handling to robustly exclude unoptimized targets via `target_columns` parameter.
+
+### Fixed
+
+- ML_optimization:
+    - Fixed a serialization crash by forcing conversion of NumPy types to native Python `int`/`float` before saving to SQL or JSON.
+    - Fixed an `AttributeError` in single-target regression tasks by standardizing prediction handling to support both scalar and array outputs from the inference handler.
+
 ## [16.4.0] 2025-11-19
 
 ### Changed
 
-- ML_Optimization:
+- ML_optimization:
     - `FitnessEvaluator`, modified to handle multi-target models.
     - `DragonOptimizer`, modified to handle multi-target models.
     - `run_optimization()`, modified to handle multi-target models.

@@ -11,7 +11,7 @@ from ._logger import _LOGGER
 from ._script_info import _script_info
 from .ML_scaler import DragonScaler
 from .ML_datasetmaster import _PytorchDataset
-from ._keys import DatasetKeys, MLTaskKeys
+from ._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys
 
 
 __all__ = [
@@ -204,7 +204,11 @@ class DragonDatasetSequence:
             # Validation/Test sets of size 0 might be passed
             _LOGGER.warning(f"Data length ({len(data)}) is not greater than sequence_length ({self.sequence_length}). Cannot create windows. Returning empty dataset.")
             return _PytorchDataset(numpy.array([]), numpy.array([]), labels_dtype=torch.float32)
-            
+        
+        # Define a generic name for the univariate feature
+        f_names = [SequenceDatasetKeys.FEATURE_NAME]
+        t_names = [SequenceDatasetKeys.TARGET_NAME]
+        
         if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
             # sequence-to-value
             features = data[:-1]
@@ -217,7 +221,10 @@ class DragonDatasetSequence:
             )
             # Ensure labels align with the end of each feature window
             aligned_labels = labels[:n_windows]
-            return _PytorchDataset(strided_features, aligned_labels, labels_dtype=torch.float32)
+            return _PytorchDataset(strided_features, aligned_labels, 
+                                   labels_dtype=torch.float32,
+                                   feature_names=f_names,
+                                   target_names=t_names)
         
         else:
             # Sequence-to-sequence
@@ -230,7 +237,10 @@ class DragonDatasetSequence:
             strided_x = numpy.lib.stride_tricks.as_strided(x_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
             strided_y = numpy.lib.stride_tricks.as_strided(y_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
             
-            return _PytorchDataset(strided_x, strided_y, labels_dtype=torch.float32)
+            return _PytorchDataset(strided_x, strided_y, 
+                                   labels_dtype=torch.float32,
+                                   feature_names=f_names,
+                                   target_names=t_names)
 
     def plot_splits(self, save_dir: Union[str, Path]):
         """Plots the training, validation and testing data."""
@@ -317,6 +327,14 @@ class DragonDatasetSequence:
         end_idx = val_split_idx
         
         return self.sequence[start_idx:end_idx]
+    
+    @property
+    def feature_names(self):
+        return [SequenceDatasetKeys.FEATURE_NAME]
+    
+    @property
+    def target_names(self):
+        return [SequenceDatasetKeys.TARGET_NAME]
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"

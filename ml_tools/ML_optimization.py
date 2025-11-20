@@ -547,7 +547,11 @@ def run_optimization(
                     db_table_name=db_table_name, 
                     categorical_mappings=categorical_mappings
                 )
-            
+                
+                # Commit safely after every repetition to prevent data loss on crash
+                if db_manager:
+                    db_manager.commit()
+                
         if first_run_logger:
             _handle_pandas_log(first_run_logger, save_path=save_path, target_name=target_name)      
         
@@ -596,28 +600,37 @@ def _run_single_optimization_rep(
     else:
         best_solution_thresholded = best_solution_np
     
-    # Format features
-    result_dict = {name: value for name, value in zip(feature_names, best_solution_thresholded)}
+    # Format features, casting types appropriately
+    result_dict = {}
+    for name, value in zip(feature_names, best_solution_thresholded):
+        if isinstance(value, (int, numpy.integer)):
+            result_dict[name] = int(value)
+        else:
+            result_dict[name] = float(value)
 
     # Run a final prediction to get values for ALL targets
     if inference_handler:
         final_preds_dict = inference_handler.predict_numpy(best_solution_thresholded)
         
-        # For Multi-target Regression, 'PREDICTIONS' is an array [val1, val2, val3]
+        # For Multi-target Regression, 'PREDICTIONS' is an array [val1, val2, val3] or a scalar
         raw_preds = final_preds_dict.get(PyTorchInferenceKeys.PREDICTIONS)
         
-        # Ensure it's 1D
-        if hasattr(raw_preds, "flatten"):
-            raw_preds = raw_preds.flatten() # type: ignore
+        # Normalize to a flat list to handle both scalars and arrays safely
+        if isinstance(raw_preds, (numpy.ndarray, list, torch.Tensor)):
+             raw_preds_flat = numpy.array(raw_preds).flatten().tolist()
+        else:
+             # It is a scalar (native float or numpy scalar)
+             raw_preds_flat = [float(raw_preds)] # type: ignore
         
         # Map values to names
-        # If raw_preds is a vector (multi target), it maps to all_target_names
         if len(all_target_names) > 1:
-            for t_name, val in zip(all_target_names, raw_preds): # type: ignore
+            # Multi-target: map index 0->Target A, index 1->Target B
+            for t_name, val in zip(all_target_names, raw_preds_flat): 
                 result_dict[t_name] = float(val)
         else:
-            # Single target fallback
-            result_dict[all_target_names[0]] = float(raw_preds) if raw_preds.size == 1 else raw_preds[0] # type: ignore
+            # Single target (or Multi-target model used for single objective)
+            # Use the first element of the prediction
+            result_dict[all_target_names[0]] = float(raw_preds_flat[0])
     else:
         # Fallback: use the fitness score tracked by EvoTorch (single target)
         result_dict[target_name] = best_solution_container.evals.item()
