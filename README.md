@@ -64,12 +64,12 @@ math_utilities
 ML_callbacks
 ML_configuration
 ML_datasetmaster
-ML_evaluation_captum # Requires the extra flag [captum] and numpy<2.0
+ML_evaluation_captum # Requires the extra flag [captum] or [extras] and numpy<2.0
 ML_evaluation_multi
 ML_evaluation
 ML_inference
 ML_models
-ML_models_advanced # Requires the extra flag [py-tab] and numpy<2.0
+ML_models_advanced # Requires the extra flag [py-tab] or [extras] and numpy<2.0
 ML_optimization
 ML_scaler
 ML_sequence_datasetmaster

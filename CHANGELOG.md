@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.1.0] 2025-11-21
+
+### Added
+
+- Package install flag `[extras]`, to install pytorch_tabular and captum. 
+
+- New module: "ML_optimization_pareto"
+    - `DragonParetoOptimizer`, Pareto fronts optimization for multi-target regression tasks.
+
+### Changed 
+
+- The core `[ML]` package accepts modern Numpy 1.* and 2.* versions, instead of strictly requiring 2.* versions.
+
+- ML_optimization:
+    - `DragonOptimizer`, add validation for regression tasks only.
+
 ## [17.0.0] 2025-11-20
 
 ### Added

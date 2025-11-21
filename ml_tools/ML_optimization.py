@@ -11,15 +11,15 @@ from tqdm.auto import trange
 from contextlib import nullcontext
 from functools import partial
 
-from .path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
-from ._script_info import _script_info
-from .ML_inference import DragonInferenceHandler
-from ._keys import PyTorchInferenceKeys
 from .SQL import DragonSQL
 from .optimization_tools import _save_result, create_optimization_bounds
 from .utilities import save_dataframe_filename
 from .math_utilities import discretize_categorical_values
+from .ML_inference import DragonInferenceHandler
+from .path_manager import make_fullpath, sanitize_filename
+from ._logger import _LOGGER
+from ._script_info import _script_info
+from ._keys import PyTorchInferenceKeys, MLTaskKeys
 from ._schema import FeatureSchema
 
 
@@ -33,7 +33,7 @@ __all__ = [
 
 class DragonOptimizer:
     """
-    A wrapper class for setting up and running EvoTorch optimization tasks.
+    A wrapper class for setting up and running EvoTorch optimization tasks for regression models.
 
     This class combines the functionality of `FitnessEvaluator`, `create_pytorch_problem`, and
     `run_optimization` into a single, streamlined workflow. 
@@ -100,6 +100,12 @@ class DragonOptimizer:
         # --- Store inference handler ---
         self.inference_handler = inference_handler
         
+        # Ensure only Regression tasks are used
+        allowed_tasks = [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]
+        if self.inference_handler.task not in allowed_tasks:
+            _LOGGER.error(f"DragonOptimizer only supports {allowed_tasks}. Got '{self.inference_handler.task}'.")
+            raise ValueError(f"Invalid Task: {self.inference_handler.task}")
+        
         # --- store target name ---
         self.target_name = target_name
         
@@ -116,26 +122,25 @@ class DragonOptimizer:
         
         # Resolve target index if multi-target
         target_index = None
-        if self.inference_handler.target_ids:
-            if target_name in self.inference_handler.target_ids:
-                # if the length of target_ids == 1, it is a single target task
-                if len(self.inference_handler.target_ids) == 1:
-                    # leave target_index as None
-                    target_index = None
-                    _LOGGER.info(f"Optimization locked to single-target model '{target_name}'.")
-                # else it is multi-target
-                else:
-                    target_index = self.inference_handler.target_ids.index(target_name)
-                    self.is_multi_target = True
-                    _LOGGER.info(f"Optimization locked to target '{target_name}' (Index {target_index}) in a multi-target model.")
-            else:
-                # target was provided but not found
-                _LOGGER.error(f"Target name '{target_name}' not found in the inference handler's 'target_ids'.")
-                raise ValueError()
-        else:
-            # inference handler has no target_ids, raise error
+        
+        if self.inference_handler.target_ids is None:
+            # This should be caught by ML_inference logic
             _LOGGER.error("The provided inference handler does not have 'target_ids' defined.")
             raise ValueError()
+
+        if target_name not in self.inference_handler.target_ids:
+            _LOGGER.error(f"Target name '{target_name}' not found in the inference handler's 'target_ids': {self.inference_handler.target_ids}")
+            raise ValueError()
+
+        if len(self.inference_handler.target_ids) == 1:
+            # Single target regression
+            target_index = None
+            _LOGGER.info(f"Optimization locked to single-target model '{target_name}'.")
+        else:
+            # Multi-target regression (optimizing one specific column)
+            target_index = self.inference_handler.target_ids.index(target_name)
+            self.is_multi_target = True
+            _LOGGER.info(f"Optimization locked to target '{target_name}' (Index {target_index}) in a multi-target model.")
         
         # --- 2. Make a fitness function ---
         self.evaluator = FitnessEvaluator(
@@ -182,11 +187,6 @@ class DragonOptimizer:
             Optional[dict]: A dictionary with the best result if repetitions is 1, 
                             otherwise None.
         """
-        # Validate all possible targets for the SQL Schema
-        if self.inference_handler.target_ids is None:
-            _LOGGER.error("The provided inference handler does not have 'target_ids' defined.")
-            raise ValueError()
-        
         # Pass inference handler and target names for multi-target only
         if self.is_multi_target:
             target_names_to_pass = self.inference_handler.target_ids

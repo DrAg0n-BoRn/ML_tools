@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "17.0.0"
+version = "17.1.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -21,7 +21,8 @@ Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 [project.optional-dependencies]
 # Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
 ML = [
-    "numpy>=2.0",
+    # "numpy>=2.0",
+    "numpy",
     "pandas",
     "polars",
     "joblib",
@@ -43,6 +44,13 @@ ML = [
     "pyarrow",
     "colorlog",
     "torchmetrics",
+]
+
+# pytorch_tabular + captum
+extras = [
+    "pytorch_tabular",
+    "omegaconf",
+    "captum"
 ]
 
 # pytorch-tabular API for advanced models (numpy<2)
