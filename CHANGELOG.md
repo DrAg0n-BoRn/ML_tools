@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.2.0] 2025-11-21
+
+### Changed
+
+- New modular structure:
+    - `[ML]`, includes all scripts compatible with PyTorch.
+    - `[ensemble]`, includes all scripts compatible with XGBoost and LightGBM.
+- MICE_imputation:
+    - `DragonMICE`, added support for imputing target values.
+
+### Deleted
+
+- Project flags:
+    - `[extras]`
+    - `[py-tab]`
+    - `[captum]`
+
+### Fixed
+
+- utilities:
+    - `save_dataframe_filename()` minor syntax bug for polars '.strip()' to '.strip_chars()'
+
 ## [17.1.0] 2025-11-21
 
 ### Added

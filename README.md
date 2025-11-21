@@ -39,15 +39,19 @@ pip install -e .
 
 ## Modular Installation
 
+This toolbox is designed as a collection of mutually exclusive environments due to conflicting core dependencies, except APP bundlers (PyInstaller/Nuitka).
+
+- Rule: Create a fresh virtual environment for each module to use.
+
 ### 📦 Core Machine Learning Toolbox [ML]
 
-Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation. PyTorch is required.
+Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation using PyTorch.
+
+⚠️ Prerequisite: PyTorch required. Follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 ```Bash
 pip install "dragon-ml-toolbox[ML]"
 ```
-
-⚠️ PyTorch required, follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 #### Modules:
 
@@ -55,21 +59,19 @@ pip install "dragon-ml-toolbox[ML]"
 constants
 custom_logger
 data_exploration
-ensemble_evaluation
-ensemble_inference
-ensemble_learning
 ETL_cleaning
 ETL_engineering
 math_utilities
 ML_callbacks
 ML_configuration
 ML_datasetmaster
-ML_evaluation_captum # Requires the extra flag [captum] or [extras] and numpy<2.0
+ML_evaluation_captum
 ML_evaluation_multi
 ML_evaluation
 ML_inference
 ML_models
-ML_models_advanced # Requires the extra flag [py-tab] or [extras] and numpy<2.0
+ML_models_advanced
+ML_optimization_pareto
 ML_optimization
 ML_scaler
 ML_sequence_datasetmaster
@@ -85,6 +87,37 @@ ML_vision_models
 ML_vision_transformers
 optimization_tools
 path_manager
+serde
+SQL
+utilities
+```
+
+---
+
+### 🌳 Ensemble Learning [ensemble]
+
+Comprehensive set of tools for typical data science workflows focused on **XGBoost** and **LightGBM**.
+
+*Note: Optimizes for NumPy >= 2.0.*
+
+```Bash
+pip install "dragon-ml-toolbox[ensemble]"
+```
+
+#### Modules:
+
+```bash
+constants
+custom_logger
+data_exploration
+ensemble_evaluation
+ensemble_inference
+ensemble_learning
+ETL_cleaning
+ETL_engineering
+math_utilities
+optimization_tools
+path_manager
 PSO_optimization
 serde
 SQL
@@ -95,7 +128,7 @@ utilities
 
 ### 🔬 MICE Imputation and Variance Inflation Factor [mice]
 
-⚠️ Important: This group has strict version requirements. It is highly recommended to install this group in a separate virtual environment.
+Utilities for advanced data cleaning and statistical checks. Features **Multiple Imputation by Chained Equations (MICE)** for handling missing data and **Variance Inflation Factor (VIF)** analysis to detect multicollinearity in features.
 
 ```Bash
 pip install "dragon-ml-toolbox[mice]"
@@ -170,8 +203,12 @@ constants
 custom_logger
 GUI_tools
 ML_models
+ML_sequence_models
+ML_vision_models
 ML_inference
 ML_sequence_inference
+ML_vision_inference
+ML_vision_transformers
 ML_scaler
 path_manager
 ```
@@ -180,7 +217,7 @@ path_manager
 
 ### ⚒️ APP bundlers
 
-Choose one if needed.
+Dependencies required to compile applications, inference scripts, or GUIs into standalone executables (`.exe` or binary) for distribution. Choose your preferred backend:
 
 ```Bash
 pip install "dragon-ml-toolbox[pyinstaller]"

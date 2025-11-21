@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "17.1.0"
+version = "17.2.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -21,54 +21,71 @@ Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 [project.optional-dependencies]
 # Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
 ML = [
-    # "numpy>=2.0",
-    "numpy",
+    # Core
+    "numpy<2.0",          # Pinned for PyTorch extension compatibility
     "pandas",
-    "polars",
+    "polars>=1.0",
+    "pyarrow",            # Essential for Polars efficiency
     "joblib",
+    "tqdm",
+    "colorlog",
+    "omegaconf",          
+    
+    # Math / ML
     "scikit-learn",
+    "shap",               # Uses KernelExplainer/DeepExplainer
+    "captum",
+    "evotorch",
+    "torchmetrics",
+    "pytorch_tabular",
+
+    # Viz / Notebook
     "matplotlib",
     "seaborn",
-    "imbalanced-learn",
+    "Pillow",
     "ipython",
     "ipykernel",
     "notebook",
     "jupyterlab",
     "ipywidgets",
+]
+
+# ensemble tools
+ensemble = [
+    # Core
+    "numpy>=2.0",         # Root dependency
+    "numba>=0.60",        # Required for NumPy 2.0 JIT compilation
+    "shap>=0.46",         # Required to use the newer Numba
+    
+    # Data
+    "pandas",
+    "polars>=1.0",        # Recommended for safest NumPy 2.0
+    "pyarrow",
+    "joblib",
+    "tqdm",
+    "colorlog",
+
+    # Math / ML
+    "scikit-learn>=1.5",  # Required for numpy 2.0
+    "imbalanced-learn",
     "xgboost",
     "lightgbm",
-    "shap",
-    "tqdm",
-    "Pillow",
-    "evotorch",
-    "pyarrow",
-    "colorlog",
-    "torchmetrics",
+
+    # Viz / Notebook
+    "matplotlib",
+    "seaborn",
+    "ipython",
+    "ipykernel",
+    "notebook",
+    "jupyterlab",
+    "ipywidgets",
 ]
 
-# pytorch_tabular + captum
-extras = [
-    "pytorch_tabular",
-    "omegaconf",
-    "captum"
-]
-
-# pytorch-tabular API for advanced models (numpy<2)
-py-tab = [
-    "pytorch_tabular",
-    "omegaconf"
-]
-
-# captum explanations (numpy<2)
-captum = [
-    "captum"
-]
-
-# MICE and VIF - Requires a new virtual-env due to dependency version conflicts (numpy<2)
+# MICE and VIF
 mice = [
     "numpy<2.0",
     "pandas",
-    "polars",
+    "polars>=1.0",
     "joblib",
     "miceforest>=6.0.0",
     "plotnine>=0.12",
@@ -93,17 +110,19 @@ excel = [
 ]
 
 # GUI for boost algorithms
+# Optional: matplotlib / seaborn
 gui-boost = [
-    "numpy",
+    "numpy>=2.0",
     "joblib",
     "FreeSimpleGUI>=5.2",
     "xgboost", 
     "lightgbm", 
 ]
 
-# GUI for Pytorch - Additionally Requires PyTorch with CUDA / MPS support
+# GUI for Pytorch - Additionally Requires PyTorch with CUDA / MPS support. 
+# Optional: Pil / Torchvision / pytorch_tabular / omegaconf / matplotlib / seaborn
 gui-torch = [
-    "numpy",
+    "numpy<2.0",
     "FreeSimpleGUI>=5.2",
 ]
 

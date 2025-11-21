@@ -360,7 +360,7 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
     elif isinstance(df, pl.DataFrame):
         # Transform empty strings to Null
         df_to_save = df.with_columns(
-            pl.when(pl.col(pl.Utf8).str.strip() == "") # type: ignore
+            pl.when(pl.col(pl.Utf8).str.strip_chars() == "")
             .then(None)
             .otherwise(pl.col(pl.Utf8))
         )
