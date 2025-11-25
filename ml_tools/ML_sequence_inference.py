@@ -30,7 +30,7 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
-                 scaler: Union[DragonScaler, str, Path],
+                 scaler: Union[str, Path],
                  device: str = 'cpu'):
         """
         Initializes the handler for sequence tasks.
@@ -40,8 +40,7 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             prediction_mode (str): The type of sequence task.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            scaler (DragonScaler | str | Path): A DragonScaler instance or 
-                the file path to a saved DragonScaler state. This is required
+            scaler (DragonScaler | str | Path): File path to a saved DragonScaler state. This is required
                 to correctly scale inputs and de-scale predictions.
         """
         # Call the parent constructor to handle model loading and device
@@ -55,8 +54,8 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
             raise ValueError()
         self.prediction_mode = prediction_mode
         
-        if self.scaler is None:
-            _LOGGER.error("A 'scaler' is required for DragonSequenceInferenceHandler to scale inputs and de-scale predictions.")
+        if self.feature_scaler is None and self.target_scaler is None:
+            _LOGGER.error("A scaler is required to scale inputs and de-scale predictions.")
             raise ValueError()
         
         # Load sequence length from the loaded dict (populated by _BaseInferenceHandler)
@@ -84,32 +83,25 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
 
     def _preprocess_input(self, features: torch.Tensor) -> torch.Tensor:
         """
-        Converts input sequence to a torch.Tensor, applies scaling, and moves it to the correct device.
+        Converts input sequence to a torch.Tensor, applies FEATURE scaling, 
+        and moves it to the correct device.
 
         Overrides _BaseInferenceHandler._preprocess_input.
-
-        Args:
-            features (torch.Tensor): Input tensor of shape (batch_size, sequence_length).
-
-        Returns:
-            torch.Tensor: Scaled tensor on the correct device.
         """
-        if self.scaler is None:
-            # This check is redundant due to __init__ check, but good for safety.
-            _LOGGER.error("Scaler is not available for preprocessing.")
-            raise RuntimeError()
-            
         features_tensor = features.float()
         
-        # Scale the sequence values
-        # (batch, seq_len) -> (batch * seq_len, 1)
-        batch_size, seq_len = features_tensor.shape
-        features_flat = features_tensor.reshape(-1, 1)
-        
-        scaled_flat = self.scaler.transform(features_flat)
-        
-        # (batch * seq_len, 1) -> (batch, seq_len)
-        scaled_features = scaled_flat.reshape(batch_size, seq_len)
+        if self.feature_scaler:
+            # Scale the sequence values
+            # Assumption: Univariate sequence (batch, seq_len) -> (batch * seq_len, 1) for scaling
+            batch_size, seq_len = features_tensor.shape
+            features_flat = features_tensor.reshape(-1, 1)
+            
+            scaled_flat = self.feature_scaler.transform(features_flat)
+            
+            # (batch * seq_len, 1) -> (batch, seq_len)
+            scaled_features = scaled_flat.reshape(batch_size, seq_len)
+        else:
+            scaled_features = features_tensor
 
         return scaled_features.to(self.device)
 
@@ -126,7 +118,7 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
             A dictionary containing the de-scaled prediction tensors.
         """
         if features.ndim != 2:
-            _LOGGER.error("Input for batch prediction must be a 2D array or tensor (batch_size, sequence_length).")
+            _LOGGER.error("Input for batch prediction must be a 2D array/tensor (batch_size, sequence_length).")
             raise ValueError()
         
         if isinstance(features, np.ndarray):
@@ -134,34 +126,34 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         else:
             features_tensor = features.float()
 
-        # _preprocess_input scales the data and moves it to the correct device
+        # _preprocess_input scales data using feature_scaler
         input_tensor = self._preprocess_input(features_tensor) 
 
         with torch.no_grad():
-            scaled_output = self.model(input_tensor)
+            output = self.model(input_tensor)
 
-        # De-scale the output using the scaler
-        if self.scaler is None: # Should be impossible due to __init__
-             raise RuntimeError("Scaler not found for de-scaling.")
-
-        if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
-            # scaled_output is (batch)
-            # Reshape to (batch, 1) for scaler
-            scaled_output_reshaped = scaled_output.reshape(-1, 1)
-            descaled_output = self.scaler.inverse_transform(scaled_output_reshaped)
-            descaled_output = descaled_output.squeeze(-1) # (batch)
+        # De-scale the output using the TARGET scaler
+        # If no target scaler exists (unlikely for regression), return raw output
+        scaler_to_use = self.target_scaler if self.target_scaler else None
         
-        elif self.prediction_mode == MLTaskKeys.SEQUENCE_SEQUENCE:
-            # scaled_output is (batch, seq_len)
-            batch_size, seq_len = scaled_output.shape
-            scaled_flat = scaled_output.reshape(-1, 1)
-            descaled_flat = self.scaler.inverse_transform(scaled_flat)
-            descaled_output = descaled_flat.reshape(batch_size, seq_len)
-        
+        if scaler_to_use:
+            if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+                # output is (batch) -> reshape to (batch, 1) for scaler
+                output_reshaped = output.reshape(-1, 1)
+                descaled_output = scaler_to_use.inverse_transform(output_reshaped)
+                descaled_output = descaled_output.squeeze(-1) # (batch)
+            
+            elif self.prediction_mode == MLTaskKeys.SEQUENCE_SEQUENCE:
+                # output is (batch, seq_len)
+                batch_size, seq_len = output.shape
+                output_flat = output.reshape(-1, 1)
+                descaled_flat = scaler_to_use.inverse_transform(output_flat)
+                descaled_output = descaled_flat.reshape(batch_size, seq_len)
+            else:
+                 _LOGGER.error(f"Invalid prediction mode: {self.prediction_mode}")
+                 raise RuntimeError()
         else:
-             # Should not happen
-            _LOGGER.error(f"Invalid prediction mode: {self.prediction_mode}")
-            raise RuntimeError()
+            descaled_output = output
 
         return {PyTorchInferenceKeys.PREDICTIONS: descaled_output}
 
@@ -182,14 +174,10 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
             features = features.reshape(1, -1) # Reshape (seq_len) to (1, seq_len)
         
         if features.shape[0] != 1 or features.ndim != 2:
-            _LOGGER.error("The 'predict()' method is for a single sequence (1D tensor). Use 'predict_batch()' for multiple sequences (2D tensor).")
+            _LOGGER.error("predict() is for a single sequence (1D). Use predict_batch() for multiple (2D).")
             raise ValueError()
 
         batch_results = self.predict_batch(features)
-
-        # Extract the first (and only) result from the batch output
-        # For seq-to-value, result is shape ()
-        # For seq-to-seq, result is shape (seq_len)
         single_results = {key: value[0] for key, value in batch_results.items()}
         return single_results
     
@@ -256,9 +244,9 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         # --- Validation ---
         if initial_sequence is None:
             if self.initial_sequence is None:
-                _LOGGER.error("No 'initial_sequence' provided and no default sequence was loaded. Cannot forecast.")
+                _LOGGER.error("No 'initial_sequence' provided/loaded. Cannot forecast.")
                 raise ValueError()
-            _LOGGER.info("Using default 'initial_sequence' loaded from model file for forecast.")
+            _LOGGER.info("Using default 'initial_sequence' loaded from model file.")
             initial_sequence_tensor = torch.from_numpy(self.initial_sequence).float()
         elif isinstance(initial_sequence, np.ndarray):
             initial_sequence_tensor = torch.from_numpy(initial_sequence).float()
@@ -266,55 +254,48 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
             initial_sequence_tensor = initial_sequence.float()
 
         if initial_sequence_tensor.ndim != 1:
-             _LOGGER.error(f"initial_sequence must be a 1D array. Got {initial_sequence_tensor.ndim} dimensions.")
+             _LOGGER.error(f"initial_sequence must be 1D. Got {initial_sequence_tensor.ndim}D.")
              raise ValueError()
         
-        if self.sequence_length is not None:
-            if len(initial_sequence_tensor) != self.sequence_length:
-                _LOGGER.error(f"Input sequence length ({len(initial_sequence_tensor)}) does not match model's required sequence_length ({self.sequence_length}).")
-                raise ValueError()
-        else:
-            _LOGGER.warning("Model's 'sequence_length' is unknown. Cannot validate input sequence length. Assuming it is correct.")
+        # --- Scaling ---
+        # For autoregression (Forecasting Y), the input is history of Y.
+        # We must use target_scaler.
+        scaler_to_use = self.target_scaler if self.target_scaler else self.feature_scaler
         
-        # --- Pre-processing ---
-        # 1. Scale the entire initial sequence
-        # We need to use the scaler: (seq_len) -> (seq_len, 1)
-        if self.scaler is None: # Should be impossible due to __init__
-            raise RuntimeError("Scaler not found for forecasting.")
-            
-        scaled_sequence_flat = self.scaler.transform(initial_sequence_tensor.reshape(-1, 1))
-        # (seq_len, 1) -> (seq_len)
-        current_scaled_sequence = scaled_sequence_flat.squeeze(-1).to(self.device)
+        if scaler_to_use is None:
+             _LOGGER.warning("No scaler found for forecasting. Using raw data.")
+             current_scaled_sequence = initial_sequence_tensor.to(self.device)
+        else:
+            scaled_sequence_flat = scaler_to_use.transform(initial_sequence_tensor.reshape(-1, 1))
+            current_scaled_sequence = scaled_sequence_flat.squeeze(-1).to(self.device)
         
         descaled_predictions = []
 
         # --- Autoregressive Loop ---
-        self.model.eval() # Ensure model is in eval mode
+        self.model.eval()
         with torch.no_grad():
             for _ in range(n_steps):
                 # (seq_len) -> (1, seq_len)
                 input_tensor = current_scaled_sequence.reshape(1, -1)
                 
-                # Run the model
-                # input_tensor is (1, seq_len)
-                model_output = self.model(input_tensor).squeeze() # remove batch dim
+                # Run model directly (bypassing _preprocess_input to keep control of scaling)
+                model_output = self.model(input_tensor).squeeze() 
                 
                 # Extract the single new prediction
                 if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
-                    # Output is shape (), a single scalar tensor
                     scaled_prediction = model_output
-                else: # MLTaskKeys.SEQUENCE_SEQUENCE
-                    # Output is shape (seq_len), we need the last value
+                else: 
                     scaled_prediction = model_output[-1]
                 
-                # De-scale the prediction for storage
-                # scaler input (1, 1)
-                descaled_prediction = self.scaler.inverse_transform(scaled_prediction.reshape(1, 1)).item()
-                descaled_predictions.append(descaled_prediction)
+                # De-scale
+                if scaler_to_use:
+                    descaled_val = scaler_to_use.inverse_transform(scaled_prediction.reshape(1, 1)).item()
+                else:
+                    descaled_val = scaled_prediction.item()
+                    
+                descaled_predictions.append(descaled_val)
                 
-                # Create the new input sequence for the next loop
-                # "autoregression": roll the window by dropping the first value and appending the new scaled prediction.
-                # .unsqueeze(0) is needed to make the 0-dim tensor 1-dim for cat
+                # Update sequence (Roll window)
                 current_scaled_sequence = torch.cat((current_scaled_sequence[1:], scaled_prediction.unsqueeze(0)))
                 
         return np.array(descaled_predictions)

@@ -258,7 +258,8 @@ class DragonModelCheckpoint(_Callback):
             old_best_str = f"{self.best:.4f}" if self.best not in [np.inf, -np.inf] else "inf"
             
             # Create a descriptive filename
-            filename = f"epoch{epoch}_{self._checkpoint_name}_{current:.4f}.pth"
+            current_string = str(round(current, ndigits=2)).replace('.', '_')
+            filename = f"epoch{epoch}_{self._checkpoint_name}-{current_string}.pth"
             new_filepath = self.save_dir / filename
             
             if self.verbose > 0:
@@ -294,8 +295,9 @@ class DragonModelCheckpoint(_Callback):
     def _save_rolling_checkpoints(self, epoch, logs):
         """Saves the latest model and keeps only the most recent ones."""
         current = logs.get(self.monitor)
-
-        filename = f"epoch{epoch}_{self._checkpoint_name}_{current:.4f}.pth"
+        
+        current_string = str(round(current, ndigits=2)).replace('.', '_')
+        filename = f"epoch{epoch}_{self._checkpoint_name}-{current_string}.pth"
         filepath = self.save_dir / filename
         
         if self.verbose > 0:

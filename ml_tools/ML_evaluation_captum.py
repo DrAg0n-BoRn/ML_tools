@@ -163,7 +163,7 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                                            return_convergence_delta=True)
         # Check convergence quality
         mean_delta = torch.mean(torch.abs(delta)).item()
-        if mean_delta > 0.05:
+        if mean_delta > 0.1:
             _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). The attribution approximation may be inaccurate. Consider increasing 'n_steps'.")
         
     except Exception as e:
@@ -239,6 +239,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     plot_path = save_dir / plot_name
     plt.savefig(plot_path)
     plt.close()
+    
+    _LOGGER.info(f"🔬 Captum explanation for target '{file_suffix.lstrip("_").replace("_", " ")}' saved to '{save_dir.name}'")
 
 
 def captum_image_heatmap(model: nn.Module,

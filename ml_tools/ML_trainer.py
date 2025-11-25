@@ -38,7 +38,7 @@ from .ML_configuration import (RegressionMetricsFormat,
                             FinalizeSequencePrediction)
 
 from ._script_info import _script_info
-from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, SequenceDatasetKeys
+from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, SequenceDatasetKeys, ScalerKeys
 from ._logger import _LOGGER
 
 
@@ -523,6 +523,9 @@ class DragonTrainer(_BaseDragonTrainer):
         """
         Private method to yield model predictions batch by batch for evaluation.
         
+        Automatically detects if `target_scaler` is present in the training dataset
+        and applies inverse transformation for Regression tasks.
+        
         Yields:
             tuple: A tuple containing (y_pred_batch, y_prob_batch, y_true_batch).
                    
@@ -531,83 +534,97 @@ class DragonTrainer(_BaseDragonTrainer):
         self.model.eval()
         self.model.to(self.device)
         
+        # --- Check for Target Scaler (for Regression Un-scaling) ---
+        target_scaler = None
+        if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+            # Try to get the scaler from the dataset attached to the trainer
+            if hasattr(self.train_dataset, ScalerKeys.TARGET_SCALER):
+                target_scaler = getattr(self.train_dataset, ScalerKeys.TARGET_SCALER)
+                if target_scaler is not None:
+                     _LOGGER.debug("Target scaler detected. Un-scaling predictions and targets for metric calculation.")
+        
         with torch.no_grad():
             for features, target in dataloader:
                 features = features.to(self.device)
-                output = self.model(features).cpu()
+                # Keep target on device initially for potential un-scaling
+                target = target.to(self.device) 
+                
+                output = self.model(features)
 
                 y_pred_batch = None
                 y_prob_batch = None
                 y_true_batch = None
 
                 if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
-                    y_pred_batch = output.numpy()
-                    y_true_batch = target.numpy()
+                    
+                    # --- Automatic Un-scaling Logic ---
+                    if target_scaler:
+                        # 1. Reshape output/target if flattened (common in single regression)
+                        # Scaler expects [N, Features]
+                        original_out_shape = output.shape
+                        original_target_shape = target.shape
+                        
+                        if output.ndim == 1: output = output.reshape(-1, 1)
+                        if target.ndim == 1: target = target.reshape(-1, 1)
+                            
+                        # 2. Apply Inverse Transform
+                        output = target_scaler.inverse_transform(output)
+                        target = target_scaler.inverse_transform(target)
+                        
+                        # 3. Restore shapes (optional, but good for consistency)
+                        if len(original_out_shape) == 1: output = output.flatten()
+                        if len(original_target_shape) == 1: target = target.flatten()
+
+                    y_pred_batch = output.cpu().numpy()
+                    y_true_batch = target.cpu().numpy()
                     
                 elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.BINARY_IMAGE_CLASSIFICATION]:
-                    # Assumes model output is [N, 1] (a single logit)
-                    # Squeeze output from [N, 1] to [N] if necessary
                     if output.ndim == 2 and output.shape[1] == 1:
                         output = output.squeeze(1)
                         
-                    probs_pos = torch.sigmoid(output) # Probability of positive class
+                    probs_pos = torch.sigmoid(output) 
                     preds = (probs_pos >= self._classification_threshold).int()
-                    y_pred_batch = preds.numpy()
-                    # For metrics (like ROC AUC), we often need probs for *both* classes
-                    # Create an [N, 2] array: [prob_class_0, prob_class_1]
+                    y_pred_batch = preds.cpu().numpy()
+                    
                     probs_neg = 1.0 - probs_pos
-                    y_prob_batch = torch.stack([probs_neg, probs_pos], dim=1).numpy()
-                    y_true_batch = target.numpy()
+                    y_prob_batch = torch.stack([probs_neg, probs_pos], dim=1).cpu().numpy()
+                    y_true_batch = target.cpu().numpy()
 
                 elif self.kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
-                    num_classes = output.shape[1]
-                    if num_classes < 3:
-                        # Optional: warn the user they are using the wrong kind
-                        wrong_class = MLTaskKeys.MULTICLASS_CLASSIFICATION if self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION else MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
-                        recommended_class = MLTaskKeys.BINARY_CLASSIFICATION if self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION else MLTaskKeys.BINARY_IMAGE_CLASSIFICATION
-                        _LOGGER.warning(f"'{wrong_class}' kind used with {num_classes} classes. Consider using '{recommended_class}' instead.")
-                    
                     probs = torch.softmax(output, dim=1)
                     preds = torch.argmax(probs, dim=1)
-                    y_pred_batch = preds.numpy()
-                    y_prob_batch = probs.numpy()
-                    y_true_batch = target.numpy()
+                    y_pred_batch = preds.cpu().numpy()
+                    y_prob_batch = probs.cpu().numpy()
+                    y_true_batch = target.cpu().numpy()
 
                 elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
                     probs = torch.sigmoid(output)
                     preds = (probs >= self._classification_threshold).int()
-                    y_pred_batch = preds.numpy()
-                    y_prob_batch = probs.numpy()
-                    y_true_batch = target.numpy()
+                    y_pred_batch = preds.cpu().numpy()
+                    y_prob_batch = probs.cpu().numpy()
+                    y_true_batch = target.cpu().numpy()
                 
                 elif self.kind == MLTaskKeys.BINARY_SEGMENTATION:
-                    # Assumes model output is [N, 1, H, W] (logits for positive class)
-                    probs_pos = torch.sigmoid(output) # Shape [N, 1, H, W]
-                    preds = (probs_pos >= self._classification_threshold).int() # Shape [N, 1, H, W]
-                    
-                    # Squeeze preds to [N, H, W] (class indices 0 or 1)
-                    y_pred_batch = preds.squeeze(1).numpy()
+                    probs_pos = torch.sigmoid(output) 
+                    preds = (probs_pos >= self._classification_threshold).int() 
+                    y_pred_batch = preds.squeeze(1).cpu().numpy()
 
-                    # Create [N, 2, H, W] probs for consistency
                     probs_neg = 1.0 - probs_pos
-                    y_prob_batch = torch.cat([probs_neg, probs_pos], dim=1).numpy()
+                    y_prob_batch = torch.cat([probs_neg, probs_pos], dim=1).cpu().numpy()
 
-                    # Handle target shape [N, 1, H, W] -> [N, H, W]
                     if target.ndim == 4 and target.shape[1] == 1:
                         target = target.squeeze(1)
-                    y_true_batch = target.numpy()
+                    y_true_batch = target.cpu().numpy()
                     
                 elif self.kind == MLTaskKeys.MULTICLASS_SEGMENTATION:
-                    # output shape [N, C, H, W]
                     probs = torch.softmax(output, dim=1)
-                    preds = torch.argmax(probs, dim=1) # shape [N, H, W]
-                    y_pred_batch = preds.numpy()
-                    y_prob_batch = probs.numpy() # Probs are [N, C, H, W]
+                    preds = torch.argmax(probs, dim=1) 
+                    y_pred_batch = preds.cpu().numpy()
+                    y_prob_batch = probs.cpu().numpy() 
                     
-                    # Handle target shape [N, 1, H, W] -> [N, H, W]
                     if target.ndim == 4 and target.shape[1] == 1:
                         target = target.squeeze(1)
-                    y_true_batch = target.numpy()
+                    y_true_batch = target.cpu().numpy()
 
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
@@ -708,7 +725,7 @@ class DragonTrainer(_BaseDragonTrainer):
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated,
                            classification_threshold=threshold_validated,
@@ -740,7 +757,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 test_configuration_validated = None
             
             # Dispatch test set
-            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current",
                            classification_threshold=threshold_validated,
@@ -1962,6 +1979,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         """
         Private method to yield model predictions batch by batch for evaluation.
         
+        Automatically checks for 'scaler'.
+        
         Yields:
             tuple: A tuple containing (y_pred_batch, y_prob_batch, y_true_batch).
                    y_prob_batch is always None for sequence tasks.
@@ -1969,14 +1988,43 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         self.model.eval()
         self.model.to(self.device)
         
+        # --- Check for Scaler ---
+        # DragonDatasetSequence stores it as 'scaler'
+        scaler = None
+        if hasattr(self.train_dataset, ScalerKeys.TARGET_SCALER):
+            scaler = getattr(self.train_dataset, ScalerKeys.TARGET_SCALER)
+            if scaler is not None:
+                _LOGGER.debug("Sequence scaler detected. Un-scaling predictions and targets.")
+        
         with torch.no_grad():
             for features, target in dataloader:
                 features = features.to(self.device)
-                output = self.model(features).cpu()
+                target = target.to(self.device)
+                
+                output = self.model(features)
 
-                y_pred_batch = output.numpy()
-                y_prob_batch = None # Not applicable for sequence regression
-                y_true_batch = target.numpy()
+                # --- Automatic Un-scaling Logic ---
+                if scaler:
+                    # 1. Reshape for scaler (N, 1) or (N*Seq, 1)
+                    original_out_shape = output.shape
+                    original_target_shape = target.shape
+                    
+                    # Flatten sequence dims
+                    output_flat = output.reshape(-1, 1)
+                    target_flat = target.reshape(-1, 1)
+                    
+                    # 2. Inverse Transform
+                    output_flat = scaler.inverse_transform(output_flat)
+                    target_flat = scaler.inverse_transform(target_flat)
+                    
+                    # 3. Restore
+                    output = output_flat.reshape(original_out_shape)
+                    target = target_flat.reshape(original_target_shape)
+
+                # Move to CPU
+                y_pred_batch = output.cpu().numpy()
+                y_true_batch = target.cpu().numpy()
+                y_prob_batch = None
 
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 

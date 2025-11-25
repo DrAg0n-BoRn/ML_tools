@@ -39,6 +39,7 @@ __all__ = [
 ]
 
 DPI_value = 250
+REGRESSION_PLOT_SIZE = (9, 6)
 
 
 def multi_target_regression_metrics(
@@ -109,7 +110,7 @@ def multi_target_regression_metrics(
 
         # --- Save Residual Plot ---
         residuals = true_i - pred_i
-        fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+        fig_res, ax_res = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
         ax_res.scatter(pred_i, residuals, 
                        alpha=format_config.scatter_alpha, 
                        edgecolors='k', 
@@ -117,7 +118,7 @@ def multi_target_regression_metrics(
                        color=format_config.scatter_color) # Use config color
         ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--') # Use config color
         ax_res.set_xlabel("Predicted Values")
-        ax_res.set_ylabel("Residuals (True - Predicted)")
+        ax_res.set_ylabel("Residuals")
         ax_res.set_title(f"Residual Plot for '{name}'")
         ax_res.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
@@ -126,7 +127,7 @@ def multi_target_regression_metrics(
         plt.close(fig_res)
 
         # --- Save True vs. Predicted Plot ---
-        fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+        fig_tvp, ax_tvp = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
         ax_tvp.scatter(true_i, pred_i, 
                        alpha=format_config.scatter_alpha, 
                        edgecolors='k', 
@@ -138,7 +139,7 @@ def multi_target_regression_metrics(
                     color=format_config.ideal_line_color) # Use config color
         ax_tvp.set_xlabel('True Values')
         ax_tvp.set_ylabel('Predicted Values')
-        ax_tvp.set_title(f'True vs. Predicted Values for "{name}"')
+        ax_tvp.set_title(f"True vs. Predicted for '{name}'")
         ax_tvp.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
         tvp_path = save_dir_path / f"true_vs_predicted_plot_{sanitized_name}.svg"
@@ -336,6 +337,8 @@ def multi_target_shap_summary_plot(
     explainer_type: Literal['deep', 'kernel'] = 'kernel'
 ):
     """
+    DEPRECATED
+    
     Calculates SHAP values for a multi-target model and saves summary plots and data for each target.
 
     Args:
@@ -350,6 +353,8 @@ def multi_target_shap_summary_plot(
             - 'deep': Uses shap.DeepExplainer. Fast and efficient.
             - 'kernel': Uses shap.KernelExplainer. Model-agnostic but slow and memory-intensive.
     """
+    _LOGGER.warning("This function is deprecated and may be removed in future versions. Use Captum module instead.")
+    
     _LOGGER.info(f"--- Multi-Target SHAP Value Explanation (Using: {explainer_type.upper()}Explainer) ---")
     model.eval()
     # model.cpu()

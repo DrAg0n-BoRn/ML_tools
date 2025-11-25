@@ -1,12 +1,15 @@
-from typing import Union, Optional
+from typing import Union, Optional, List, Any, Dict, Literal
+from collections.abc import Mapping
 import numpy as np
 
+from ._schema import FeatureSchema
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import sanitize_filename
 
 
 __all__ = [
+    # --- Metrics Formats ---
     "RegressionMetricsFormat",
     "MultiTargetRegressionMetricsFormat",
     "BinaryClassificationMetricsFormat",
@@ -19,6 +22,7 @@ __all__ = [
     "SequenceValueMetricsFormat",
     "SequenceSequenceMetricsFormat",
     
+    # --- Finalize Configs ---
     "FinalizeBinaryClassification",
     "FinalizeBinarySegmentation",
     "FinalizeBinaryImageClassification",
@@ -29,7 +33,20 @@ __all__ = [
     "FinalizeMultiTargetRegression",
     "FinalizeRegression",
     "FinalizeObjectDetection",
-    "FinalizeSequencePrediction"
+    "FinalizeSequencePrediction",
+    
+    # --- Model Parameter Configs ---
+    "DragonMLPParams",
+    "DragonAttentionMLPParams",
+    "DragonMultiHeadAttentionNetParams",
+    "DragonTabularTransformerParams",
+    "DragonGateParams",
+    "DragonNodeParams",
+    "DragonTabNetParams",
+    "DragonAutoIntParams",
+    
+    # --- Training Config ---
+    "DragonTrainingConfig"
 ]
 
 # --- Private base classes ---
@@ -331,7 +348,222 @@ class _BaseSequenceSequenceFormat:
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
+
+class _BaseModelParams(Mapping):
+    """
+    [PRIVATE] Base class for model parameter configs.
+    
+    Inherits from Mapping to behave like a dictionary, enabling
+    `**params` unpacking directly into model constructors.
+    """
+    def __getitem__(self, key: str) -> Any:
+        return self.__dict__[key]
+    
+    def __iter__(self):
+        return iter(self.__dict__)
+    
+    def __len__(self) -> int:
+        return len(self.__dict__)
+    
+    def __or__(self, other) -> Dict[str, Any]:
+        """Allows merging with other Mappings using the | operator."""
+        if isinstance(other, Mapping):
+            return dict(self) | dict(other)
+        return NotImplemented
+    
+    def __ror__(self, other) -> Dict[str, Any]:
+        """Allows merging with other Mappings using the | operator."""
+        if isinstance(other, Mapping):
+            return dict(other) | dict(self)
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        """Returns a formatted multi-line string representation."""
+        class_name = self.__class__.__name__
+        # Format parameters for clean logging
+        params = []
+        for k, v in self.__dict__.items():
+            # If value is huge (like FeatureSchema), use its own repr or name
+            val_str = str(v)
+            params.append(f"  {k}={val_str}")
+            
+        params_str = ",\n".join(params)
+        return f"{class_name}(\n{params_str}\n)"
+
+
 # --- Public API classes ---
+
+# ----------------------------
+# Model Parameters Configurations
+# ----------------------------
+
+# --- Standard Models ---
+
+class DragonMLPParams(_BaseModelParams):
+    def __init__(self, 
+                 in_features: int, 
+                 out_targets: int,
+                 hidden_layers: List[int] = [256, 128], 
+                 drop_out: float = 0.2) -> None:
+        self.in_features = in_features
+        self.out_targets = out_targets
+        self.hidden_layers = hidden_layers
+        self.drop_out = drop_out
+
+class DragonAttentionMLPParams(_BaseModelParams):
+    def __init__(self, 
+                 in_features: int, 
+                 out_targets: int,
+                 hidden_layers: List[int] = [256, 128], 
+                 drop_out: float = 0.2) -> None:
+        self.in_features = in_features
+        self.out_targets = out_targets
+        self.hidden_layers = hidden_layers
+        self.drop_out = drop_out
+
+class DragonMultiHeadAttentionNetParams(_BaseModelParams):
+    def __init__(self, 
+                 in_features: int, 
+                 out_targets: int,
+                 hidden_layers: List[int] = [256, 128], 
+                 drop_out: float = 0.2,
+                 num_heads: int = 4, 
+                 attention_dropout: float = 0.1) -> None:
+        self.in_features = in_features
+        self.out_targets = out_targets
+        self.hidden_layers = hidden_layers
+        self.drop_out = drop_out
+        self.num_heads = num_heads
+        self.attention_dropout = attention_dropout
+
+class DragonTabularTransformerParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 embedding_dim: int = 256,
+                 num_heads: int = 8,
+                 num_layers: int = 6,
+                 dropout: float = 0.2) -> None:
+        self.schema = schema
+        self.out_targets = out_targets
+        self.embedding_dim = embedding_dim
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.dropout = dropout
+
+# --- Advanced Models ---
+
+class DragonGateParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 embedding_dim: int = 32,
+                 gflu_stages: int = 4,
+                 num_trees: int = 20,
+                 tree_depth: int = 4,
+                 dropout: float = 0.1) -> None:
+        self.schema = schema
+        self.out_targets = out_targets
+        self.embedding_dim = embedding_dim
+        self.gflu_stages = gflu_stages
+        self.num_trees = num_trees
+        self.tree_depth = tree_depth
+        self.dropout = dropout
+
+class DragonNodeParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 embedding_dim: int = 32,
+                 num_trees: int = 1024,
+                 num_layers: int = 2,
+                 tree_depth: int = 6,
+                 dropout: float = 0.1,
+                 backend_function: Literal['softmax', 'entmax'] = 'softmax'
+                 ) -> None:
+        self.schema = schema
+        self.out_targets = out_targets
+        self.embedding_dim = embedding_dim
+        self.num_trees = num_trees
+        self.num_layers = num_layers
+        self.tree_depth = tree_depth
+        self.dropout = dropout
+        self.backend_function = backend_function
+
+class DragonTabNetParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 n_d: int = 8,
+                 n_a: int = 8,
+                 n_steps: int = 3,
+                 gamma: float = 1.3,
+                 n_independent: int = 2,
+                 n_shared: int = 2,
+                 virtual_batch_size: int = 128) -> None:
+        self.schema = schema
+        self.out_targets = out_targets
+        self.n_d = n_d
+        self.n_a = n_a
+        self.n_steps = n_steps
+        self.gamma = gamma
+        self.n_independent = n_independent
+        self.n_shared = n_shared
+        self.virtual_batch_size = virtual_batch_size
+
+class DragonAutoIntParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 embedding_dim: int = 32,
+                 num_heads: int = 2,
+                 num_attn_blocks: int = 3,
+                 attn_dropout: float = 0.1,
+                 has_residuals: bool = True,
+                 deep_layers: bool = True,
+                 layers: str = "128-64-32") -> None:
+        self.schema = schema
+        self.out_targets = out_targets
+        self.embedding_dim = embedding_dim
+        self.num_heads = num_heads
+        self.num_attn_blocks = num_attn_blocks
+        self.attn_dropout = attn_dropout
+        self.has_residuals = has_residuals
+        self.deep_layers = deep_layers
+        self.layers = layers
+
+# --- Training Configuration ---
+
+class DragonTrainingConfig(_BaseModelParams):
+    """
+    Configuration object for the training process.
+    
+    Can be unpacked as a dictionary for logging or accessed as an object.
+    """
+    def __init__(self,
+                 validation_size: float,
+                 test_size: float,
+                 initial_learning_rate: float,
+                 batch_size: int,
+                 random_state: int = 101,
+                 early_stop_patience: Optional[int] = None,
+                 scheduler_patience: Optional[int] = None,
+                 scheduler_lr_factor: Optional[float] = None,
+                 scheduler_threshold: Optional[float] = None) -> None:
+        self.validation_size = validation_size
+        self.test_size = test_size
+        self.initial_learning_rate = initial_learning_rate
+        self.batch_size = batch_size
+        self.random_state = random_state
+        self.early_stop_patience = early_stop_patience
+        self.scheduler_patience = scheduler_patience
+        self.scheduler_lr_factor = scheduler_lr_factor
+        self.scheduler_threshold = scheduler_threshold
+
+
+# ----------------------------
+# Metrics Configurations
+# ----------------------------
 
 # Regression
 class RegressionMetricsFormat(_BaseRegressionFormat):
@@ -753,7 +985,7 @@ class FinalizeSequencePrediction(_FinalizeModelTraining):
             raise ValueError()
         
         # Save the length of the validated 1D sequence
-        self.sequence_length = len(self.initial_sequence)
+        self.sequence_length = len(self.initial_sequence) # type: ignore
 
 
 def _validate_string(string: str, attribute_name: str, extension: Optional[str]=None) -> str:

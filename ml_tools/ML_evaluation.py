@@ -43,6 +43,7 @@ __all__ = [
 ]
 
 DPI_value = 250
+REGRESSION_PLOT_SIZE = (9, 6)
 
 
 def plot_losses(history: dict, save_dir: Union[str, Path]):
@@ -462,7 +463,7 @@ def regression_metrics(
 
     # --- Save residual plot ---
     residuals = y_true - y_pred
-    fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+    fig_res, ax_res = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
     ax_res.scatter(y_pred, residuals, 
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
@@ -478,7 +479,7 @@ def regression_metrics(
     plt.close(fig_res)
 
     # --- Save true vs predicted plot ---
-    fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+    fig_tvp, ax_tvp = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
     ax_tvp.scatter(y_true, y_pred, 
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
@@ -497,7 +498,7 @@ def regression_metrics(
     plt.close(fig_tvp)
     
     # --- Save Histogram of Residuals ---
-    fig_hist, ax_hist = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+    fig_hist, ax_hist = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
     sns.histplot(residuals, kde=True, ax=ax_hist, 
                  bins=format_config.hist_bins, 
                  color=format_config.scatter_color)

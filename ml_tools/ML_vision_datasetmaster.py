@@ -12,11 +12,11 @@ import random
 import json
 import inspect
 
+from .ML_vision_transformers import TRANSFORM_REGISTRY, _save_recipe
 from .path_manager import make_fullpath
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from ._keys import VisionTransformRecipeKeys, ObjectDetectionKeys
-from .ML_vision_transformers import TRANSFORM_REGISTRY, _save_recipe
 from .custom_logger import custom_logger
 
 
@@ -518,7 +518,28 @@ class DragonDatasetVision:
             return f"Full Dataset: {len(self._full_dataset)} images"
         else:
             _LOGGER.warning("No datasets found.")
-            return "No datasets found"   
+            return "No datasets found"
+    
+    @property
+    def train_dataset(self) -> Dataset:
+        if self._train_dataset is None: 
+            _LOGGER.error("Train Dataset not created.")
+            raise RuntimeError()
+        return self._train_dataset
+    
+    @property
+    def validation_dataset(self) -> Dataset:
+        if self._val_dataset is None: 
+            _LOGGER.error("Validation Dataset not yet created.")
+            raise RuntimeError()
+        return self._val_dataset
+
+    @property
+    def test_dataset(self) -> Dataset:
+        if self._test_dataset is None: 
+            _LOGGER.error("Test Dataset not yet created.")
+            raise RuntimeError()
+        return self._test_dataset
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
@@ -1043,7 +1064,28 @@ class DragonDatasetSegmentation:
             return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
         else:
             _LOGGER.warning("No datasets found.")
-            return "No datasets found"   
+            return "No datasets found"
+    
+    @property
+    def train_dataset(self) -> Dataset:
+        if self._train_dataset is None: 
+            _LOGGER.error("Train Dataset not created.")
+            raise RuntimeError()
+        return self._train_dataset
+    
+    @property
+    def validation_dataset(self) -> Dataset:
+        if self._val_dataset is None: 
+            _LOGGER.error("Validation Dataset not yet created.")
+            raise RuntimeError()
+        return self._val_dataset
+
+    @property
+    def test_dataset(self) -> Dataset:
+        if self._test_dataset is None: 
+            _LOGGER.error("Test Dataset not yet created.")
+            raise RuntimeError()
+        return self._test_dataset
         
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
@@ -1521,6 +1563,27 @@ class DragonDatasetObjectDetection:
         else:
             _LOGGER.warning("No datasets found.")
             return "No datasets found"
+    
+    @property
+    def train_dataset(self) -> Dataset:
+        if self._train_dataset is None: 
+            _LOGGER.error("Train Dataset not created.")
+            raise RuntimeError()
+        return self._train_dataset
+    
+    @property
+    def validation_dataset(self) -> Dataset:
+        if self._val_dataset is None: 
+            _LOGGER.error("Validation Dataset not yet created.")
+            raise RuntimeError()
+        return self._val_dataset
+
+    @property
+    def test_dataset(self) -> Dataset:
+        if self._test_dataset is None: 
+            _LOGGER.error("Test Dataset not yet created.")
+            raise RuntimeError()
+        return self._test_dataset
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"

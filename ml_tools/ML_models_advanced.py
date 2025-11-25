@@ -1,20 +1,27 @@
 import torch
 from torch import nn
-from typing import Union, Dict, Any
+from torch.utils.data import DataLoader
+from typing import Union, Dict, Any, Literal
 from pathlib import Path
 import json
+import warnings
 
-from ._logger import _LOGGER
+from .ML_models import _ArchitectureHandlerMixin
 from .path_manager import make_fullpath
 from ._keys import PytorchModelArchitectureKeys
 from ._schema import FeatureSchema
 from ._script_info import _script_info
-from .ML_models import _ArchitectureHandlerMixin
+from ._logger import _LOGGER
 
 # Imports from pytorch_tabular
 try:
     from omegaconf import DictConfig
-    from pytorch_tabular.models import GatedAdditiveTreeEnsembleModel, NODEModel
+    from pytorch_tabular.models import (
+        GatedAdditiveTreeEnsembleModel as _GATE, 
+        NODEModel as _NODE,
+        TabNetModel as _TabNet,
+        AutoIntModel as _AutoInt
+    )
 except ImportError:
     _LOGGER.error(f"GATE and NODE require 'pip install pytorch_tabular omegaconf' dependencies.")
     raise ImportError()
@@ -22,7 +29,9 @@ except ImportError:
 
 __all__ = [
     "DragonGateModel",
-    "DragonNodeModel",
+    "DragonTabNet",
+    "DragonAutoInt",
+    "DragonNodeModel"
 ]
 
 
@@ -32,12 +41,6 @@ class _BasePytabWrapper(nn.Module, _ArchitectureHandlerMixin):
     
     This is an adapter to make pytorch_tabular models compatible with the
     dragon-ml-toolbox pipeline.
-    
-    It handles:
-    1.  Schema-based initialization.
-    2.  Single-tensor forward pass, which is then split into the
-        dict {'continuous': ..., 'categorical': ...} that pytorch_tabular expects.
-    3.  Saving/Loading architecture using the pipeline's _ArchitectureHandlerMixin.
     """
     def __init__(self, schema: FeatureSchema):
         super().__init__()
@@ -65,7 +68,6 @@ class _BasePytabWrapper(nn.Module, _ArchitectureHandlerMixin):
 
     def _build_pt_config(self, out_targets: int, **kwargs) -> DictConfig:
         """Helper to create the minimal config dict for a pytorch_tabular model."""
-        # 'regression' is the most neutral for model architecture. The final output_dim is what truly matters.
         task = "regression"
 
         config_dict = {
@@ -80,42 +82,64 @@ class _BasePytabWrapper(nn.Module, _ArchitectureHandlerMixin):
             
             # --- Model Params ---
             'output_dim': out_targets,
+            'target_range': None,
             **kwargs
         }
         
-        # Add common params that most models need
         if 'loss' not in config_dict:
-            config_dict['loss'] = 'NotUsed'
+            config_dict['loss'] = 'MSELoss' # Dummy
         if 'metrics' not in config_dict:
             config_dict['metrics'] = []
             
         return DictConfig(config_dict)
+    
+    def _build_inferred_config(self, out_targets: int, embedding_dim: int = None) -> DictConfig:
+        """
+        Helper to create the inferred_config required by pytorch_tabular v1.0+.
+        Includes explicit embedding_dims calculation to satisfy BaseModel assertions.
+        """
+        # 1. Calculate embedding_dims list of tuples: [(cardinality, dim), ...]
+        if self.categorical_indices:
+            if embedding_dim is not None:
+                # Use the user-provided fixed dimension for all categorical features
+                embedding_dims = [(card, embedding_dim) for card in self.cardinalities]
+            else:
+                # Default heuristic: min(50, (card + 1) // 2)
+                embedding_dims = [(card, min(50, (card + 1) // 2)) for card in self.cardinalities]
+        else:
+            embedding_dims = []
+
+        # 2. Calculate the total dimension of concatenated embeddings
+        # This fixes the 'Missing key embedded_cat_dim' error
+        embedded_cat_dim = sum([dim for _, dim in embedding_dims])
+
+        return DictConfig({
+            "continuous_dim": len(self.numerical_indices),
+            "categorical_dim": len(self.categorical_indices),
+            "categorical_cardinality": self.cardinalities,
+            "output_dim": out_targets,
+            "embedding_dims": embedding_dims,
+            "embedded_cat_dim": embedded_cat_dim, 
+        })
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Accepts a single tensor and converts it to the dict
         that pytorch_tabular models expect.
         """
-        # 1. Split the single tensor input
         x_cont = x[:, self.numerical_indices].float()
         x_cat = x[:, self.categorical_indices].long()
 
-        # 2. Create the input dict
         input_dict = {
             'continuous': x_cont,
             'categorical': x_cat
         }
         
-        # 3. Pass to the internal pytorch_tabular model
-        #    The model returns a dict, we extract the logits
         model_output_dict = self.internal_model(input_dict)
-        
-        # 4. Return the logits tensor
         return model_output_dict['logits']
 
     def get_architecture_config(self) -> Dict[str, Any]:
         """Returns the full configuration of the model."""
-        # Deconstruct schema into a JSON-friendly dict
         schema_dict = {
             'feature_names': self.schema.feature_names,
             'continuous_feature_names': self.schema.continuous_feature_names,
@@ -157,19 +181,17 @@ class _BasePytabWrapper(nn.Module, _ArchitectureHandlerMixin):
 
         # --- RECONSTRUCTION LOGIC ---
         if 'schema_dict' not in config:
-            _LOGGER.error("Invalid architecture file: missing 'schema_dict'. This file may be from an older version.")
+            _LOGGER.error("Invalid architecture file: missing 'schema_dict'.")
             raise ValueError("Missing 'schema_dict' in config.")
             
         schema_data = config.pop('schema_dict')
         
-        # JSON saves all dict keys as strings, convert them back to int.
         raw_index_map = schema_data['categorical_index_map']
         if raw_index_map is not None:
             rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
         else:
             rehydrated_index_map = None
 
-        # JSON deserializes tuples as lists, convert them back.
         schema = FeatureSchema(
             feature_names=tuple(schema_data['feature_names']),
             continuous_feature_names=tuple(schema_data['continuous_feature_names']),
@@ -188,28 +210,21 @@ class _BasePytabWrapper(nn.Module, _ArchitectureHandlerMixin):
     
     def __repr__(self) -> str:
         internal_model_str = str(self.internal_model)
-        # Grab the first line of the internal model's repr
         internal_repr = internal_model_str.split('\n')[0]
         return f"{self.model_name}(internal_model={internal_repr})"
 
 
 class DragonGateModel(_BasePytabWrapper):
     """
-    Adapter for the Gated Additive Tree Ensemble (GATE) model from the 'pytorch_tabular' library.
-    
-    GATE is a hybrid model that uses Gated Feature Learning Units (GFLUs) to
-    learn powerful feature representations. These learned features are then
-    fed into an additive ensemble of differentiable decision trees, combining
-    the representation learning of deep networks with the structured
-    decision-making of tree ensembles.
+    Adapter for the Gated Additive Tree Ensemble (GATE) model.
     """
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
                  embedding_dim: int = 32,
-                 gflu_stages: int = 6,
+                 gflu_stages: int = 4,
                  num_trees: int = 20,
-                 tree_depth: int = 5,
+                 tree_depth: int = 4,
                  dropout: float = 0.1):
         """
         Args:
@@ -224,15 +239,19 @@ class DragonGateModel(_BasePytabWrapper):
             num_trees (int):
                 Number of trees in the ensemble. (Recommended: 10 to 50)
             tree_depth (int):
-                Depth of each tree. (Recommended: 4 to 8)
+                Depth of each tree. (Recommended: 4 to 6)
             dropout (float):
                 Dropout rate for the GFLU.
         """
         super().__init__(schema)
+        
+        warnings.filterwarnings("ignore", message="Implicit dimension choice for softmax")
+        warnings.filterwarnings("ignore", message="Ignoring head config")
+        
+        
         self.model_name = "DragonGateModel"
         self.out_targets = out_targets
         
-        # Store hparams for saving/loading
         self.model_hparams = {
             'embedding_dim': embedding_dim,
             'gflu_stages': gflu_stages,
@@ -241,41 +260,271 @@ class DragonGateModel(_BasePytabWrapper):
             'dropout': dropout
         }
 
-        # Build the minimal config for the GateModel
+        # Build Hyperparameter Config with defaults
         pt_config = self._build_pt_config(
             out_targets=out_targets,
             embedding_dim=embedding_dim,
+            
+            # GATE Specific Mappings
             gflu_stages=gflu_stages,
             num_trees=num_trees,
             tree_depth=tree_depth,
-            dropout=dropout,
-            # GATE-specific params
             gflu_dropout=dropout,
+            tree_dropout=dropout,
+            tree_wise_attention=True,
+            tree_wise_attention_dropout=dropout,
+            
+            # GATE Defaults
             chain_trees=False,
+            binning_activation="sigmoid",
+            feature_mask_function="softmax",
+            share_head_weights=True,
+            
+            # Sparsity
+            gflu_feature_init_sparsity=0.3,
+            tree_feature_init_sparsity=0.3,
+            learnable_sparsity=True,
+            
+            # Head Configuration
+            head="LinearHead",
+            head_config={
+                "layers": "", 
+                "activation": "ReLU", 
+                "dropout": 0.0, 
+                "use_batch_norm": False, 
+                "initialization": "kaiming"
+            },
+            
+            # General Defaults (Required to prevent initialization errors)
+            embedding_dropout=0.0,
+            batch_norm_continuous_input=False,
+            virtual_batch_size=None,
+            learning_rate=1e-3, 
+            target_range=None,
+        )
+        
+        # Build Data Inference Config (Required by PyTabular v1.0+)
+        inferred_config = self._build_inferred_config(
+            out_targets=out_targets, 
+            embedding_dim=embedding_dim
         )
 
         # Instantiate the internal pytorch_tabular model
-        self.internal_model = GatedAdditiveTreeEnsembleModel(config=pt_config)
+        self.internal_model = _GATE(
+            config=pt_config, 
+            inferred_config=inferred_config
+        )
+        
+    def __repr__(self) -> str:
+        return (f"{self.model_name}(\n"
+                f"  out_targets={self.out_targets},\n"
+                f"  embedding_dim={self.model_hparams.get('embedding_dim')},\n"
+                f"  gflu_stages={self.model_hparams.get('gflu_stages')},\n"
+                f"  num_trees={self.model_hparams.get('num_trees')},\n"
+                f"  tree_depth={self.model_hparams.get('tree_depth')},\n"
+                f"  dropout={self.model_hparams.get('dropout')}\n"
+                ")")
+
+
+class DragonTabNet(_BasePytabWrapper):
+    """
+    Adapter for Google's TabNet (Attentive Interpretable Tabular Learning).
+    
+    TabNet uses sequential attention to choose which features to reason 
+    from at each decision step, enabling interpretability.
+    """
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 n_d: int = 8,
+                 n_a: int = 8,
+                 n_steps: int = 3,
+                 gamma: float = 1.3,
+                 n_independent: int = 2,
+                 n_shared: int = 2,
+                 virtual_batch_size: int = 128):
+        """
+        Args:
+            schema (FeatureSchema): The definitive schema object.
+            out_targets (int): Number of output targets.
+            n_d (int): Dimension of the prediction layer (usually 8-64).
+            n_a (int): Dimension of the attention layer (usually equal to n_d).
+            n_steps (int): Number of sequential attention steps (usually 3-10).
+            gamma (float): Relaxation parameter for sparsity (usually 1.0-2.0).
+            n_independent (int): Number of independent GLU layers in each block.
+            n_shared (int): Number of shared GLU layers in each block.
+            virtual_batch_size (int): Batch size for Ghost Batch Normalization.
+        """
+        super().__init__(schema)
+        self.model_name = "DragonTabNet"
+        self.out_targets = out_targets
+        
+        self.model_hparams = {
+            'n_d': n_d,
+            'n_a': n_a,
+            'n_steps': n_steps,
+            'gamma': gamma,
+            'n_independent': n_independent,
+            'n_shared': n_shared,
+            'virtual_batch_size': virtual_batch_size
+        }
+
+        # TabNet does not use standard embeddings, so we don't pass embedding_dim
+        pt_config = self._build_pt_config(
+            out_targets=out_targets,
+            
+            # TabNet Params
+            n_d=n_d,
+            n_a=n_a,
+            n_steps=n_steps,
+            gamma=gamma,
+            n_independent=n_independent,
+            n_shared=n_shared,
+            virtual_batch_size=virtual_batch_size,
+            
+            # TabNet Defaults
+            mask_type="sparsemax",
+            
+            # Head Configuration
+            head="LinearHead",
+            head_config={
+                "layers": "", 
+                "activation": "ReLU", 
+                "dropout": 0.0, 
+                "use_batch_norm": False, 
+                "initialization": "kaiming"
+            },
+            
+            # General Defaults
+            batch_norm_continuous_input=False,
+            learning_rate=1e-3
+        )
+        
+        inferred_config = self._build_inferred_config(out_targets=out_targets)
+
+        self.internal_model = _TabNet(
+            config=pt_config,
+            inferred_config=inferred_config
+        )
+
+    def __repr__(self) -> str:
+        return (f"{self.model_name}(\n"
+                f"  out_targets={self.out_targets},\n"
+                f"  n_d={self.model_hparams.get('n_d')},\n"
+                f"  n_a={self.model_hparams.get('n_a')},\n"
+                f"  n_steps={self.model_hparams.get('n_steps')},\n"
+                f"  gamma={self.model_hparams.get('gamma')},\n"
+                f"  virtual_batch_size={self.model_hparams.get('virtual_batch_size')}\n"
+                f")")
+
+
+class DragonAutoInt(_BasePytabWrapper):
+    """
+    Adapter for AutoInt (Automatic Feature Interaction Learning).
+    
+    Uses Multi-Head Self-Attention to automatically learn high-order 
+    feature interactions.
+    """
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 out_targets: int,
+                 embedding_dim: int = 32,
+                 num_heads: int = 2,
+                 num_attn_blocks: int = 3,
+                 attn_dropout: float = 0.1,
+                 has_residuals: bool = True,
+                 deep_layers: bool = True,
+                 layers: str = "128-64-32"):
+        """
+        Args:
+            schema (FeatureSchema): The definitive schema object.
+            out_targets (int): Number of output targets.
+            embedding_dim (int): Dimension of feature embeddings (attn_embed_dim).
+            num_heads (int): Number of attention heads.
+            num_attn_blocks (int): Number of attention layers.
+            attn_dropout (float): Dropout between attention layers.
+            has_residuals (bool): If True, adds residual connections.
+            deep_layers (bool): If True, adds a standard MLP after attention.
+            layers (str): Hyphen-separated layer sizes for the deep MLP part.
+        """
+        super().__init__(schema)
+        self.model_name = "DragonAutoInt"
+        self.out_targets = out_targets
+        
+        self.model_hparams = {
+            'embedding_dim': embedding_dim,
+            'num_heads': num_heads,
+            'num_attn_blocks': num_attn_blocks,
+            'attn_dropout': attn_dropout,
+            'has_residuals': has_residuals,
+            'deep_layers': deep_layers,
+            'layers': layers
+        }
+
+        pt_config = self._build_pt_config(
+            out_targets=out_targets,
+            
+            # AutoInt Params
+            attn_embed_dim=embedding_dim,
+            num_heads=num_heads,
+            num_attn_blocks=num_attn_blocks,
+            attn_dropouts=attn_dropout,
+            has_residuals=has_residuals,
+            
+            # Deep MLP part (Optional in AutoInt, but usually good)
+            deep_layers=deep_layers,
+            layers=layers,
+            activation="ReLU",
+            
+            # Head Configuration
+            head="LinearHead",
+            head_config={
+                "layers": "", 
+                "activation": "ReLU", 
+                "dropout": 0.0, 
+                "use_batch_norm": False, 
+                "initialization": "kaiming"
+            },
+            
+            # General Defaults
+            embedding_dropout=0.0,
+            batch_norm_continuous_input=False,
+            learning_rate=1e-3
+        )
+        
+        inferred_config = self._build_inferred_config(
+            out_targets=out_targets, 
+            embedding_dim=embedding_dim
+        )
+
+        self.internal_model = _AutoInt(
+            config=pt_config,
+            inferred_config=inferred_config
+        )
+
+    def __repr__(self) -> str:
+        return (f"{self.model_name}(\n"
+                f"  out_targets={self.out_targets},\n"
+                f"  embedding_dim={self.model_hparams.get('embedding_dim')},\n"
+                f"  num_heads={self.model_hparams.get('num_heads')},\n"
+                f"  num_attn_blocks={self.model_hparams.get('num_attn_blocks')},\n"
+                f"  deep_layers={self.model_hparams.get('deep_layers')}\n"
+                f")")
 
 
 class DragonNodeModel(_BasePytabWrapper):
     """
-    Adapter for the Neural Oblivious Decision Ensembles (NODE) model from the 'pytorch_tabular' library.
-    
-    NODE is a model based on an ensemble of differentiable 'oblivious'
-    decision trees. An oblivious tree uses the same splitting feature and
-    threshold across all nodes at the same depth. This structure, combined
-    with a differentiable formulation, allows the model to be trained
-    end-to-end with gradient descent, learning feature interactions and
-    splitting thresholds simultaneously.
+    Adapter for the Neural Oblivious Decision Ensembles (NODE) model.
     """
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
                  embedding_dim: int = 32,
                  num_trees: int = 1024,
+                 num_layers: int = 2,
                  tree_depth: int = 6,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 backend_function: Literal['softmax', 'entmax'] = 'softmax'):
         """
         Args:
             schema (FeatureSchema): 
@@ -286,37 +535,130 @@ class DragonNodeModel(_BasePytabWrapper):
                 Dimension of the categorical embeddings. (Recommended: 16 to 64)
             num_trees (int):
                 Total number of trees in the ensemble. (Recommended: 256 to 2048)
+            num_layers (int):
+                Number of NODE layers (stacked ensembles). (Recommended: 2 to 4)
             tree_depth (int):
                 Depth of each tree. (Recommended: 4 to 8)
             dropout (float):
                 Dropout rate.
+            backend_function ('softmax' | 'entmax'):
+                Function for feature selection. 'entmax15' (sparse) or 'softmax' (dense).
+                Use 'softmax' if dealing with convergence issues.
         """
         super().__init__(schema)
         self.model_name = "DragonNodeModel"
         self.out_targets = out_targets
+        
+        warnings.filterwarnings("ignore", message="Ignoring head config because NODE has a specific head")
 
-        # Store hparams for saving/loading
         self.model_hparams = {
             'embedding_dim': embedding_dim,
             'num_trees': num_trees,
+            'num_layers': num_layers,
             'tree_depth': tree_depth,
-            'dropout': dropout
+            'dropout': dropout,
+            'backend_function': backend_function
         }
 
-        # Build the minimal config for the NodeModel
+        # Build Hyperparameter Config with ALL defaults
         pt_config = self._build_pt_config(
             out_targets=out_targets,
             embedding_dim=embedding_dim,
+            
+            # NODE Specific Mappings
             num_trees=num_trees,
-            tree_depth=tree_depth,
-            # NODE-specific params
-            num_layers=1, # NODE uses num_layers=1 for a single ensemble
+            depth=tree_depth, # Map tree_depth -> depth
+            num_layers=num_layers,     # num_layers=1 for a single ensemble
             total_trees=num_trees,
             dropout_rate=dropout,
+            
+            # NODE Defaults (Manually populated to satisfy backbone requirements)
+            additional_tree_output_dim=0,
+            input_dropout=0.0,
+            choice_function=backend_function,
+            bin_function=backend_function,
+            initialize_response="normal",
+            initialize_selection_logits="uniform",
+            threshold_init_beta=1.0,
+            threshold_init_cutoff=1.0,
+            max_features=None,
+            
+            # General Defaults (Required to prevent initialization errors)
+            embedding_dropout=0.0,
+            batch_norm_continuous_input=False,
+            virtual_batch_size=None,
+            learning_rate=1e-3, 
+        )
+
+        # Build Data Inference Config (Required by PyTabular v1.0+)
+        inferred_config = self._build_inferred_config(
+            out_targets=out_targets, 
+            embedding_dim=embedding_dim
         )
 
         # Instantiate the internal pytorch_tabular model
-        self.internal_model = NODEModel(config=pt_config)
+        self.internal_model = _NODE(
+            config=pt_config,
+            inferred_config=inferred_config
+        )
+    
+    def perform_data_aware_initialization(self, train_dataset: Any, batch_size: int = 2000):
+        """
+        CRITICAL: Initializes NODE decision thresholds using a batch of data.
+        
+        Call this ONCE before training starts with a large batch (e.g., 2000 samples).
+        
+        Use the CPU
+        
+        Args:
+            train_dataset: a PyTorch Dataset.
+            batch_size: Number of samples to use for initialization.
+        """
+        # _LOGGER.info(f"Preparing Data-Aware Initialization batch (size={batch_size})")
+        
+        # Use a DataLoader to robustly fetch a single batch from the dataset
+        # This works with your _PytorchDataset or any standard Torch Dataset
+        loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        
+        # Fetch one batch
+        try:
+            batch = next(iter(loader))
+        except StopIteration:
+            _LOGGER.error("Dataset is empty. Cannot perform data-aware initialization.")
+            return
+
+        # Unpack the batch (assuming [features, labels] from your DatasetMaster)
+        x_tensor, _ = batch 
+        
+        # Prepare input dict for pytorch_tabular
+        # Note: We must be on CPU for this initialization usually
+        x_cont = x_tensor[:, self.numerical_indices].float()
+        x_cat = x_tensor[:, self.categorical_indices].long()
+        
+        input_dict = {
+            'continuous': x_cont,
+            'categorical': x_cat
+        }
+        
+        _LOGGER.info("Running NODE Data-Aware Initialization...")
+        try:
+            with torch.no_grad():
+                self.internal_model.data_aware_initialization(input_dict)
+            _LOGGER.info("NODE Initialization Complete. Ready to train.")
+        except Exception as e:
+            _LOGGER.error(f"Failed to initialize NODE model: {e}")
+            raise e
+    
+    def __repr__(self) -> str:
+        return (f"{self.model_name}(\n"
+                f"  out_targets={self.out_targets},\n"
+                f"  embedding_dim={self.model_hparams.get('embedding_dim')},\n"
+                f"  num_trees={self.model_hparams.get('num_trees')},\n"
+                f"  num_layers={self.model_hparams.get('num_layers')},\n"
+                f"  tree_depth={self.model_hparams.get('tree_depth')},\n"
+                f"  dropout={self.model_hparams.get('dropout')}\n"
+                f"  backend_function={self.model_hparams.get('backend_function')}\n"
+                f")")
 
 
 def info():

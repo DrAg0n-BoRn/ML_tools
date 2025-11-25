@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.3.0] 2025-11-25
+
+### Fixed
+
+- ML_datasetmaster:
+    - `DragonDatasetMulti`, set a default `id` attribute at initialization to automate scaler file saving.
+
+### Added
+
+- ML_evaluation_captum:
+    - `captum_feature_importance()`, add a logger after each successful plot and report creation.
+- ML_models_advanced:
+    - `DragonTabNet`, Adapter for Google's TabNet (Attentive Interpretable Tabular Learning).
+    - `DragonAutoInt`, Adapter for AutoInt (Automatic Feature Interaction Learning).
+- ML_configuration:
+    - `DragonTrainingConfig`, Configuration file for training stage.
+    - Model-specific parameter configurations:
+        - `DragonMLPParams`
+        - `DragonAttentionMLPParams`
+        - `DragonMultiHeadAttentionNetParams`
+        - `DragonTabularTransformerParams`
+        - `DragonGateParams`
+        - `DragonNodeParams`
+        - `DragonTabNetParams`
+        - `DragonAutoIntParams`
+
+### Changed
+
+- ML_evaluation:
+    - `regression_metrics()`, new default plot size (9, 6).
+- ML_evaluation_multi:
+    - `multi_target_regression_metrics()`, new default plot size (9, 6).
+- ML_models_advanced:
+    - `DragonNodeModel`, updated to run with pytorch_tabular version > 1.0. Important: The model must perform a initialization on the CPU using its method `perform_data_aware_initialization()` before training.
+    - `DragonGateModel`, updated to run with pytorch_tabular version > 1.0. 
+- ML_callbacks:
+    - `DragonModelCheckpoint`, modified default checkpoint filename.
+- ML_datasetmaster:
+    - `DragonDataset`, support for target scaler (regression) and feature scaler.
+    - `DragonDatasetMulti`, support for target scaler (regression) and feature scaler.
+- ML_sequence_datasetmaster:
+    - `DragonDatasetSequence`, save scaler using the new format. Added property methods: `train_dataset`, `validation_dataset`, `test_dataset`.
+- ML_vision_datasetmaster:
+    - Added new property methods to the dataset classes: `train_dataset`, `validation_dataset`, `test_dataset`.
+- ML_inference:
+    - `DragonInferenceHandler`, support for target scaler.
+- ML_sequence_inference:
+    - `DragonSequenceInferenceHandler`, support for target scaler.
+- ML_scaler:
+    - `DragonScaler`, new method `fit_tensor()`, useful for targets or small datasets.
+- ML_trainer:
+    - `DragonTrainer`, support for target scaler during evaluation (regression).
+    - `DragonSequenceTrainer`, support for scaler during evaluation.
+
+### Deprecated
+
+- ML_evaluation_multi:
+    - `multi_target_shap_summary_plot()`, deprecated function. use Captum explanation instead.
+
 ## [17.2.0] 2025-11-21
 
 ### Changed

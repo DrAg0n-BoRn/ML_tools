@@ -22,6 +22,15 @@ class PyTorchLogKeys:
     BATCH_SIZE = 'size'
 
 
+class ScalerKeys:
+    """Keys for saving/loading scaler artifacts."""
+    MEAN = "mean"
+    STD = "std"
+    INDICES = "continuous_feature_indices"
+    FEATURE_SCALER = "feature_scaler"
+    TARGET_SCALER = "target_scaler"
+
+
 class EnsembleKeys:
     """
     Used internally by ensemble_learning.

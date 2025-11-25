@@ -614,7 +614,7 @@ def _validate_and_reorder_schema(
     if not df_target_cols:
         _LOGGER.warning(f"No target columns were found after index {n_features-1}.")
     else:
-        _LOGGER.info(f"Presumed Target Columns: {df_target_cols}")
+        _LOGGER.info(f"Target Columns: {df_target_cols}")
     
     return df_to_process # type: ignore
 

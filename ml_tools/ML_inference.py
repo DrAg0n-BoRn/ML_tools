@@ -9,7 +9,7 @@ from .ML_scaler import DragonScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from .path_manager import make_fullpath
-from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
+from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys
 
 
 __all__ = [
@@ -30,7 +30,7 @@ class _BaseInferenceHandler(ABC):
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  device: str = 'cpu',
-                 scaler: Optional[Union[DragonScaler, str, Path]] = None):
+                 scaler: Optional[Union[str, Path]] = None):
         """
         Initializes the handler.
 
@@ -38,7 +38,7 @@ class _BaseInferenceHandler(ABC):
             model (nn.Module): An instantiated PyTorch model.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            scaler (DragonScaler | str | Path | None): An optional scaler or path to a saved scaler state.
+            scaler (str | Path | None): An optional scaler or path to a saved scaler state.
         """
         self.model = model
         self.device = self._validate_device(device)
@@ -49,15 +49,33 @@ class _BaseInferenceHandler(ABC):
         self._idx_to_class: Optional[Dict[int, str]] = None
         self._loaded_data_dict: Dict[str, Any] = {} #Store whatever is in the finalized file
 
-        # Load the scaler if a path is provided
+        # Load the scalers if provided
+        self.feature_scaler: Optional[DragonScaler] = None
+        self.target_scaler: Optional[DragonScaler] = None
+
         if scaler is not None:
             if isinstance(scaler, (str, Path)):
-                self.scaler = DragonScaler.load(scaler)
+                # Load the file
+                path_obj = make_fullpath(scaler, enforce="file")
+                loaded_scaler_data = torch.load(path_obj)
+                
+                # Check if it is the new unified dictionary or legacy
+                if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
+                    # New format
+                    if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
+                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER])
+                    if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
+                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER])
+                else:
+                    # Legacy format (assume feature scaler)
+                    _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
+                    self.feature_scaler = DragonScaler.load(loaded_scaler_data)
             else:
-                self.scaler = scaler
-        else:
-            self.scaler = None
-
+                # Raise error for invalid type
+                _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
+                raise ValueError()
+            
+        # Load the model state dictionary
         model_p = make_fullpath(state_dict, enforce="file")
 
         try:
@@ -178,7 +196,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
                                "multitarget regression", 
                                "multilabel binary classification"],
                  device: str = 'cpu',
-                 scaler: Optional[Union[DragonScaler, str, Path]] = None):
+                 scaler: Optional[Union[str, Path]] = None):
         """
         Initializes the handler for single-target tasks.
 
@@ -187,7 +205,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             task (str): The type of task.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            scaler (DragonScaler | str | Path | None): A DragonScaler instance or the file path to a saved DragonScaler state.
+            scaler (str | Path | None): A path to a saved DragonScaler state.
             
         Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
@@ -225,7 +243,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
 
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
-        Converts input to a torch.Tensor, applies scaling if a scaler is
+        Converts input to a torch.Tensor, applies FEATURE scaling if a scaler is
         present, and moves it to the correct device.
         """
         if isinstance(features, np.ndarray):
@@ -233,8 +251,8 @@ class DragonInferenceHandler(_BaseInferenceHandler):
         else:
             features_tensor = features.float()
 
-        if self.scaler:
-            features_tensor = self.scaler.transform(features_tensor)
+        if self.feature_scaler:
+            features_tensor = self.feature_scaler.transform(features_tensor)
 
         return features_tensor.to(self.device)
     
@@ -280,6 +298,27 @@ class DragonInferenceHandler(_BaseInferenceHandler):
         with torch.no_grad():
             output = self.model(input_tensor)
 
+            # --- Target Scaling Logic (Inverse Transform) ---
+            # Only for regression tasks and if a target scaler exists
+            if self.target_scaler:
+                if self.task not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+                    # raise error
+                    _LOGGER.error("Target scaler is only applicable for regression tasks. A target scaler was provided for a non-regression task.")
+                    raise ValueError()
+                
+                # Ensure output is 2D (N, Targets) for the scaler
+                original_shape = output.shape
+                if output.ndim == 1:
+                    output = output.reshape(-1, 1)
+                
+                # Apply inverse transform (de-scale)
+                output = self.target_scaler.inverse_transform(output)
+                
+                # Restore original shape if necessary (though usually we want 2D or 1D flat)
+                if len(original_shape) == 1:
+                    output = output.flatten()
+
+            # --- Task Specific Formatting ---
             if self.task == MLTaskKeys.MULTICLASS_CLASSIFICATION:
                 probs = torch.softmax(output, dim=1)
                 labels = torch.argmax(probs, dim=1)
@@ -289,12 +328,10 @@ class DragonInferenceHandler(_BaseInferenceHandler):
                 }
                 
             elif self.task == MLTaskKeys.BINARY_CLASSIFICATION:
-                # Assumes model output is [N, 1] (a single logit)
-                # Squeeze output from [N, 1] to [N] if necessary
                 if output.ndim == 2 and output.shape[1] == 1:
                     output = output.squeeze(1)
                     
-                probs = torch.sigmoid(output) # Probability of positive class
+                probs = torch.sigmoid(output) 
                 labels = (probs >= self._classification_threshold).int()
                 return {
                     PyTorchInferenceKeys.LABELS: labels,
@@ -307,7 +344,6 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             
             elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
                 probs = torch.sigmoid(output)
-                # Get binary predictions based on the threshold
                 labels = (probs >= self._classification_threshold).int()
                 return {
                     PyTorchInferenceKeys.LABELS: labels,
@@ -315,11 +351,9 @@ class DragonInferenceHandler(_BaseInferenceHandler):
                 }
             
             elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
-                # The output is already in the correct [batch_size, n_targets] shape
                 return {PyTorchInferenceKeys.PREDICTIONS: output}
             
             else:
-                # should never happen
                 _LOGGER.error(f"Unrecognized task '{self.task}'.")
                 raise ValueError()
 

@@ -6,6 +6,7 @@ from typing import Union, List, Optional
 from ._logger import _LOGGER
 from ._script_info import _script_info
 from .path_manager import make_fullpath
+from ._keys import ScalerKeys
 
 
 __all__ = [
@@ -15,11 +16,8 @@ __all__ = [
 
 class DragonScaler:
     """
-    Standardizes continuous features in a PyTorch dataset by subtracting the
-    mean and dividing by the standard deviation.
-
-    The scaler is fitted on a training dataset and can then be saved and
-    loaded for consistent transformation during inference.
+    Standardizes continuous features/targets by subtracting the mean and 
+    dividing by the standard deviation.
     """
     def __init__(self,
                  mean: Optional[torch.Tensor] = None,
@@ -27,11 +25,6 @@ class DragonScaler:
                  continuous_feature_indices: Optional[List[int]] = None):
         """
         Initializes the scaler.
-
-        Args:
-            mean (torch.Tensor, optional): The mean of the features to scale.
-            std (torch.Tensor, optional): The standard deviation of the features.
-            continuous_feature_indices (List[int], optional): The column indices of the features to standardize.
         """
         self.mean_ = mean
         self.std_ = std
@@ -40,17 +33,7 @@ class DragonScaler:
     @classmethod
     def fit(cls, dataset: Dataset, continuous_feature_indices: List[int], batch_size: int = 64) -> 'DragonScaler':
         """
-        Fits the scaler by computing the mean and std dev from a dataset using a
-        fast, single-pass, vectorized algorithm.
-
-        Args:
-            dataset (Dataset): The PyTorch Dataset to fit on.
-            continuous_feature_indices (List[int]): The column indices of the
-                features to standardize.
-            batch_size (int): The batch size for iterating through the dataset.
-
-        Returns:
-            DragonScaler: A new, fitted instance of the scaler.
+        Fits the scaler using a PyTorch Dataset (Method A).
         """
         if not continuous_feature_indices:
             _LOGGER.error("No continuous feature indices provided. Scaler will not be fitted.")
@@ -90,21 +73,35 @@ class DragonScaler:
             var = (running_sum_sq / count) - mean**2
             std = torch.sqrt(torch.clamp(var, min=1e-8)) # Clamp for numerical stability
 
-        _LOGGER.info(f"Scaler fitted on {count} samples for {num_continuous_features} continuous features.")
+        _LOGGER.info(f"Scaler fitted on {count} samples for {num_continuous_features} features.")
         return cls(mean=mean, std=std, continuous_feature_indices=continuous_feature_indices)
+
+    @classmethod
+    def fit_tensor(cls, data: torch.Tensor) -> 'DragonScaler':
+        """
+        Fits the scaler directly on a Tensor (Method B).
+        Useful for targets or small datasets already in memory.
+        """
+        if data.ndim == 1:
+            data = data.reshape(-1, 1)
+            
+        num_features = data.shape[1]
+        indices = list(range(num_features))
+        
+        mean = torch.mean(data, dim=0)
+        std = torch.std(data, dim=0)
+        
+        # Handle constant values (std=0) to prevent division by zero
+        std = torch.where(std == 0, torch.tensor(1.0, device=data.device), std)
+        
+        return cls(mean=mean, std=std, continuous_feature_indices=indices)
 
     def transform(self, data: torch.Tensor) -> torch.Tensor:
         """
-        Applies standardization to the specified continuous features.
-
-        Args:
-            data (torch.Tensor): The input data tensor.
-
-        Returns:
-            torch.Tensor: The transformed data tensor.
+        Applies standardization.
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
-            _LOGGER.error("Scaler has not been fitted. Returning original data.")
+            # If not fitted, return as is
             return data
 
         data_clone = data.clone()
@@ -127,15 +124,8 @@ class DragonScaler:
     def inverse_transform(self, data: torch.Tensor) -> torch.Tensor:
         """
         Applies the inverse of the standardization transformation.
-
-        Args:
-            data (torch.Tensor): The scaled data tensor.
-
-        Returns:
-            torch.Tensor: The original-scale data tensor.
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
-            _LOGGER.error("Scaler has not been fitted. Returning original data.")
             return data
             
         data_clone = data.clone()
@@ -152,51 +142,56 @@ class DragonScaler:
         
         return data_clone
 
+    def _get_state(self):
+        """Helper to get state dict."""
+        return {
+            ScalerKeys.MEAN: self.mean_,
+            ScalerKeys.STD: self.std_,
+            ScalerKeys.INDICES: self.continuous_feature_indices
+        }
+
     def save(self, filepath: Union[str, Path], verbose: bool=True):
         """
-        Saves the scaler's state (mean, std, indices) to a .pth file.
-
-        Args:
-            filepath (str | Path): The path to save the file.
+        Saves the scaler's state. 
         """
         path_obj = make_fullpath(filepath, make=True, enforce="file")
-        state = {
-            'mean': self.mean_,
-            'std': self.std_,
-            'continuous_feature_indices': self.continuous_feature_indices
-        }
+        state = self._get_state()
         torch.save(state, path_obj)
         if verbose:
             _LOGGER.info(f"DragonScaler state saved as '{path_obj.name}'.")
 
-    @staticmethod
-    def load(filepath: Union[str, Path], verbose: bool=True) -> 'DragonScaler':
+    @classmethod
+    def load(cls, filepath_or_state: Union[str, Path, dict], verbose: bool=True) -> 'DragonScaler':
         """
-        Loads a scaler's state from a .pth file.
-
-        Args:
-            filepath (str | Path): The path to the saved scaler file.
-
-        Returns:
-            DragonScaler: An instance of the scaler with the loaded state.
+        Loads a scaler's state from a .pth file OR a dictionary.
         """
-        path_obj = make_fullpath(filepath, enforce="file")
-        state = torch.load(path_obj)
+        if isinstance(filepath_or_state, (str, Path)):
+            path_obj = make_fullpath(filepath_or_state, enforce="file")
+            state = torch.load(path_obj)
+            source_name = path_obj.name
+        else:
+            state = filepath_or_state
+            source_name = "dictionary"
+            
+        # Handle cases where the state might be None (scaler was not fitted)
+        if state is None:
+            _LOGGER.warning(f"Loaded DragonScaler state is None from '{source_name}'. Returning unfitted scaler.")
+            return DragonScaler()
+
         if verbose:
-            _LOGGER.info(f"DragonScaler state loaded from '{path_obj.name}'.")
+            _LOGGER.info(f"DragonScaler state loaded from '{source_name}'.")
+            
         return DragonScaler(
-            mean=state['mean'],
-            std=state['std'],
-            continuous_feature_indices=state['continuous_feature_indices']
+            mean=state[ScalerKeys.MEAN],
+            std=state[ScalerKeys.STD],
+            continuous_feature_indices=state[ScalerKeys.INDICES]
         )
     
     def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the scaler."""
         if self.continuous_feature_indices:
             num_features = len(self.continuous_feature_indices)
-            return f"DragonScaler(fitted for {num_features} features)"
+            return f"DragonScaler(fitted for {num_features} columns)"
         return "DragonScaler(not fitted)"
-
 
 def info():
     _script_info(__all__)

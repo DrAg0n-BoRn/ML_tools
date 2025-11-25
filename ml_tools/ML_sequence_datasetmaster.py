@@ -11,7 +11,7 @@ from ._logger import _LOGGER
 from ._script_info import _script_info
 from .ML_scaler import DragonScaler
 from .ML_datasetmaster import _PytorchDataset
-from ._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys
+from ._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys, ScalerKeys
 
 
 __all__ = [
@@ -195,6 +195,13 @@ class DragonDatasetSequence:
         self._val_dataset = self._create_windowed_dataset(self.val_sequence) # type: ignore
         self._test_dataset = self._create_windowed_dataset(self.test_sequence) # type: ignore
         
+        # attach feature scaler and target scaler to datasets
+        if self.scaler is not None:
+            for ds in [self._train_dataset, self._val_dataset, self._test_dataset]:
+                if ds is not None:
+                    ds._feature_scaler = self.scaler
+                    ds._target_scaler = self.scaler
+        
         self._are_windows_generated = True
         _LOGGER.info("Feature and label windows generated for train, validation, and test sets.")
 
@@ -290,7 +297,11 @@ class DragonDatasetSequence:
     
     def save_scaler(self, directory: Union[str, Path], verbose: bool=True) -> None:
         """
-        Saves the fitted DragonScaler's state to a .pth file.
+        Saves the fitted DragonScaler's state to a .pth file using the Unified
+        dictionary format.
+        
+        Since this is univariate data, features and targets share the same
+        scaling statistics.
         
         Args:
             directory (str | Path): The directory where the scaler will be saved.
@@ -300,12 +311,21 @@ class DragonDatasetSequence:
             raise RuntimeError()
 
         save_path = make_fullpath(directory, make=True, enforce="directory")
-
         filename = f"{DatasetKeys.SCALER_PREFIX}{self.prediction_mode}.pth"
         filepath = save_path / filename
-        self.scaler.save(filepath, verbose=False)
+
+        # Unified Scaler Dictionary Format
+        # For univariate sequences, features and targets share the same scaling statistics.
+        scaler_state = self.scaler._get_state()
+        combined_state = {
+            ScalerKeys.FEATURE_SCALER: scaler_state,
+            ScalerKeys.TARGET_SCALER: scaler_state
+        }
+
+        torch.save(combined_state, filepath)
+        
         if verbose:
-            _LOGGER.info(f"Scaler saved as '{filepath.name}'.")
+            _LOGGER.info(f"Unified Scaler saved as '{filepath.name}'.")
     
     def get_last_training_sequence(self) -> numpy.ndarray:
         """
@@ -336,6 +356,27 @@ class DragonDatasetSequence:
     def target_names(self):
         return [SequenceDatasetKeys.TARGET_NAME]
     
+    @property
+    def train_dataset(self) -> Dataset:
+        if self._train_dataset is None: 
+            _LOGGER.error("Train Dataset not created.")
+            raise RuntimeError()
+        return self._train_dataset
+    
+    @property
+    def validation_dataset(self) -> Dataset:
+        if self._val_dataset is None: 
+            _LOGGER.error("Validation Dataset not yet created.")
+            raise RuntimeError()
+        return self._val_dataset
+
+    @property
+    def test_dataset(self) -> Dataset:
+        if self._test_dataset is None: 
+            _LOGGER.error("Test Dataset not yet created.")
+            raise RuntimeError()
+        return self._test_dataset
+
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Prediction Mode: {self.prediction_mode}\n"
