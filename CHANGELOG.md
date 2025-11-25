@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.3.1] 2025-11-25
+
+### Changed
+
+- ML_models_advanced:
+    - `DragonTabNet`, added mask_type function parameter
+- ML_configuration:
+    - `DragonTabNetParams`, updated parameters to match model.
+
+### Fixed
+
+- ML_models_advanced:
+    - `DragonNode`, changed 'entmax' to 'entmax15' as required by pytorch_tabular
+- ML_configuration:
+    - `DragonNodeParams`, updated parameters to match model.
+
 ## [17.3.0] 2025-11-25
 
 ### Fixed

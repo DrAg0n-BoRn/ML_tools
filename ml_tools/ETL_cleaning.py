@@ -38,7 +38,7 @@ def save_unique_values(csv_path: Union[str, Path],
             The path to the directory where the .txt files will be saved.
             The directory will be created if it does not exist.
         keep_column_order (bool):
-            If True, prepends a numeric prefix (e.g., '1_', '2_') to each
+            If True, prepends a numeric prefix to each
             output filename to maintain the original column order.
     """
     # --- 1. Input Validation ---

@@ -383,8 +383,8 @@ class _BaseModelParams(Mapping):
         # Format parameters for clean logging
         params = []
         for k, v in self.__dict__.items():
-            # If value is huge (like FeatureSchema), use its own repr or name
-            val_str = str(v)
+            # If value is huge (like FeatureSchema), use its own repr
+            val_str = repr(v)
             params.append(f"  {k}={val_str}")
             
         params_str = ",\n".join(params)
@@ -403,29 +403,31 @@ class DragonMLPParams(_BaseModelParams):
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
-                 hidden_layers: List[int] = [256, 128], 
+                 hidden_layers: List[int], 
                  drop_out: float = 0.2) -> None:
         self.in_features = in_features
         self.out_targets = out_targets
         self.hidden_layers = hidden_layers
         self.drop_out = drop_out
+
 
 class DragonAttentionMLPParams(_BaseModelParams):
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
-                 hidden_layers: List[int] = [256, 128], 
+                 hidden_layers: List[int], 
                  drop_out: float = 0.2) -> None:
         self.in_features = in_features
         self.out_targets = out_targets
         self.hidden_layers = hidden_layers
         self.drop_out = drop_out
 
+
 class DragonMultiHeadAttentionNetParams(_BaseModelParams):
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
-                 hidden_layers: List[int] = [256, 128], 
+                 hidden_layers: List[int], 
                  drop_out: float = 0.2,
                  num_heads: int = 4, 
                  attention_dropout: float = 0.1) -> None:
@@ -435,6 +437,7 @@ class DragonMultiHeadAttentionNetParams(_BaseModelParams):
         self.drop_out = drop_out
         self.num_heads = num_heads
         self.attention_dropout = attention_dropout
+
 
 class DragonTabularTransformerParams(_BaseModelParams):
     def __init__(self, *,
@@ -470,6 +473,7 @@ class DragonGateParams(_BaseModelParams):
         self.tree_depth = tree_depth
         self.dropout = dropout
 
+
 class DragonNodeParams(_BaseModelParams):
     def __init__(self, *,
                  schema: FeatureSchema,
@@ -479,7 +483,7 @@ class DragonNodeParams(_BaseModelParams):
                  num_layers: int = 2,
                  tree_depth: int = 6,
                  dropout: float = 0.1,
-                 backend_function: Literal['softmax', 'entmax'] = 'softmax'
+                 backend_function: Literal['softmax', 'entmax15'] = 'softmax'
                  ) -> None:
         self.schema = schema
         self.out_targets = out_targets
@@ -489,6 +493,7 @@ class DragonNodeParams(_BaseModelParams):
         self.tree_depth = tree_depth
         self.dropout = dropout
         self.backend_function = backend_function
+
 
 class DragonTabNetParams(_BaseModelParams):
     def __init__(self, *,
@@ -500,7 +505,8 @@ class DragonTabNetParams(_BaseModelParams):
                  gamma: float = 1.3,
                  n_independent: int = 2,
                  n_shared: int = 2,
-                 virtual_batch_size: int = 128) -> None:
+                 virtual_batch_size: int = 128,
+                 mask_type: Literal['sparsemax', 'entmax', 'softmax'] = 'sparsemax') -> None:
         self.schema = schema
         self.out_targets = out_targets
         self.n_d = n_d
@@ -510,6 +516,8 @@ class DragonTabNetParams(_BaseModelParams):
         self.n_independent = n_independent
         self.n_shared = n_shared
         self.virtual_batch_size = virtual_batch_size
+        self.mask_type = mask_type
+
 
 class DragonAutoIntParams(_BaseModelParams):
     def __init__(self, *,
@@ -971,12 +979,12 @@ class FinalizeSequencePrediction(_FinalizeModelTraining):
             # It's already 1D, (N,). This is valid.
             self.initial_sequence = last_training_sequence
         elif last_training_sequence.ndim == 2:
-            # It's 2D, check for shape (1, N)
+            # Handle both (1, N) and (N, 1)
             if last_training_sequence.shape[0] == 1:
-                # Shape is (1, N), flatten to (N,)
+                self.initial_sequence = last_training_sequence.flatten()
+            elif last_training_sequence.shape[1] == 1:
                 self.initial_sequence = last_training_sequence.flatten()
             else:
-                # Shape is (N, 1) or (N, M), which is invalid
                 _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
                 raise ValueError()
         else:

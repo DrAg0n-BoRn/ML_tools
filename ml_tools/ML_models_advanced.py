@@ -342,7 +342,8 @@ class DragonTabNet(_BasePytabWrapper):
                  gamma: float = 1.3,
                  n_independent: int = 2,
                  n_shared: int = 2,
-                 virtual_batch_size: int = 128):
+                 virtual_batch_size: int = 128,
+                 mask_type: Literal['sparsemax', 'entmax', 'softmax'] = 'sparsemax'):
         """
         Args:
             schema (FeatureSchema): The definitive schema object.
@@ -354,6 +355,10 @@ class DragonTabNet(_BasePytabWrapper):
             n_independent (int): Number of independent GLU layers in each block.
             n_shared (int): Number of shared GLU layers in each block.
             virtual_batch_size (int): Batch size for Ghost Batch Normalization.
+            mask_type (str): Masking function.
+                - 'sparsemax' for sparse feature selection.
+                - 'entmax' for moderately sparse selection.
+                - 'softmax' for dense selection (safest).
         """
         super().__init__(schema)
         self.model_name = "DragonTabNet"
@@ -366,7 +371,8 @@ class DragonTabNet(_BasePytabWrapper):
             'gamma': gamma,
             'n_independent': n_independent,
             'n_shared': n_shared,
-            'virtual_batch_size': virtual_batch_size
+            'virtual_batch_size': virtual_batch_size,
+            'mask_type': mask_type
         }
 
         # TabNet does not use standard embeddings, so we don't pass embedding_dim
@@ -383,7 +389,7 @@ class DragonTabNet(_BasePytabWrapper):
             virtual_batch_size=virtual_batch_size,
             
             # TabNet Defaults
-            mask_type="sparsemax",
+            mask_type=mask_type,
             
             # Head Configuration
             head="LinearHead",
@@ -415,6 +421,7 @@ class DragonTabNet(_BasePytabWrapper):
                 f"  n_steps={self.model_hparams.get('n_steps')},\n"
                 f"  gamma={self.model_hparams.get('gamma')},\n"
                 f"  virtual_batch_size={self.model_hparams.get('virtual_batch_size')}\n"
+                f"  mask_type='{self.model_hparams.get('mask_type')}'\n"
                 f")")
 
 
@@ -524,7 +531,7 @@ class DragonNodeModel(_BasePytabWrapper):
                  num_layers: int = 2,
                  tree_depth: int = 6,
                  dropout: float = 0.1,
-                 backend_function: Literal['softmax', 'entmax'] = 'softmax'):
+                 backend_function: Literal['softmax', 'entmax15'] = 'softmax'):
         """
         Args:
             schema (FeatureSchema): 
@@ -541,7 +548,7 @@ class DragonNodeModel(_BasePytabWrapper):
                 Depth of each tree. (Recommended: 4 to 8)
             dropout (float):
                 Dropout rate.
-            backend_function ('softmax' | 'entmax'):
+            backend_function ('softmax' | 'entmax15'):
                 Function for feature selection. 'entmax15' (sparse) or 'softmax' (dense).
                 Use 'softmax' if dealing with convergence issues.
         """
