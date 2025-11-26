@@ -389,6 +389,20 @@ class _BaseModelParams(Mapping):
             
         params_str = ",\n".join(params)
         return f"{class_name}(\n{params_str}\n)"
+    
+    def to_log(self) -> Dict[str, Any]:
+        """        
+        Safely converts complex types (like FeatureSchema) to their string 
+        representation for cleaner JSON logging.
+        """
+        clean_dict = {}
+        for k, v in self.__dict__.items():
+            if isinstance(v, FeatureSchema):
+                # Force the repr() string, otherwise json.dump treats it as a list
+                clean_dict[k] = repr(v)
+            else:
+                clean_dict[k] = v
+        return clean_dict
 
 
 # --- Public API classes ---

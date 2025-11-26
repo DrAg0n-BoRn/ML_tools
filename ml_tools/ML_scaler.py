@@ -33,48 +33,70 @@ class DragonScaler:
     @classmethod
     def fit(cls, dataset: Dataset, continuous_feature_indices: List[int], batch_size: int = 64) -> 'DragonScaler':
         """
-        Fits the scaler using a PyTorch Dataset (Method A).
+        Fits the scaler using a PyTorch Dataset (Method A) using Batched Welford's Algorithm.
         """
         if not continuous_feature_indices:
             _LOGGER.error("No continuous feature indices provided. Scaler will not be fitted.")
-            return cls()
+            raise ValueError()
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
         
-        running_sum, running_sum_sq = None, None
-        count = 0
+        # Welford's Algorithm State
+        n_total = 0
+        mean_global = None
+        m2_global = None # Sum of squares of differences from the mean
+        
         num_continuous_features = len(continuous_feature_indices)
 
         for features, _ in loader:
-            if running_sum is None:
-                device = features.device
-                running_sum = torch.zeros(num_continuous_features, device=device)
-                running_sum_sq = torch.zeros(num_continuous_features, device=device)
-
-            continuous_features = features[:, continuous_feature_indices].to(device)
+            # Extract continuous features for this batch
+            x_batch = features[:, continuous_feature_indices].to(features.device).float()
             
-            running_sum += torch.sum(continuous_features, dim=0)
-            running_sum_sq += torch.sum(continuous_features**2, dim=0) # type: ignore
-            count += continuous_features.size(0)
+            n_batch = x_batch.shape[0]
+            if n_batch == 0:
+                continue
+                
+            # Batch statistics
+            mean_batch = torch.mean(x_batch, dim=0)
+            # Sum of squared differences from the batch mean
+            m2_batch = torch.sum((x_batch - mean_batch) ** 2, dim=0)
 
-        if count == 0:
+            if n_total == 0:
+                # Initialize global stats with first batch
+                mean_global = mean_batch
+                m2_global = m2_batch
+                n_total = n_batch
+            else:
+                # Batched Welford's Update
+                # Combine existing global stats (A) with new batch stats (B)
+                delta = mean_batch - mean_global
+                new_n_total = n_total + n_batch
+                
+                # Update M2 (Sum of Squares)
+                # Formula: M2_X = M2_A + M2_B + delta^2 * (n_A * n_B / n_X)
+                m2_global += m2_batch + (delta ** 2) * (n_total * n_batch / new_n_total)
+                
+                # Update Mean
+                # Formula: mean_X = mean_A + delta * (n_B / n_X)
+                mean_global += delta * (n_batch / new_n_total)
+                
+                n_total = new_n_total
+
+        if n_total == 0:
              _LOGGER.error("Dataset is empty. Scaler cannot be fitted.")
              return cls(continuous_feature_indices=continuous_feature_indices)
 
-        # Calculate mean
-        mean = running_sum / count
-
-        # Calculate standard deviation
-        if count < 2:
-            _LOGGER.warning(f"Only one sample found. Standard deviation cannot be calculated and is set to 1.")
-            std = torch.ones_like(mean)
+        # Finalize Standard Deviation
+        # Unbiased estimator (divide by n-1)
+        if n_total < 2:
+            _LOGGER.warning(f"Only one sample found. Standard deviation set to 1.")
+            std = torch.ones_like(mean_global)
         else:
-            # var = E[X^2] - (E[X])^2
-            var = (running_sum_sq / count) - mean**2
-            std = torch.sqrt(torch.clamp(var, min=1e-8)) # Clamp for numerical stability
+            variance = m2_global / (n_total - 1)
+            std = torch.sqrt(torch.clamp(variance, min=1e-8))
 
-        _LOGGER.info(f"Scaler fitted on {count} samples for {num_continuous_features} features.")
-        return cls(mean=mean, std=std, continuous_feature_indices=continuous_feature_indices)
+        _LOGGER.info(f"Scaler fitted on {n_total} samples for {num_continuous_features} features (Welford's).")
+        return cls(mean=mean_global, std=std, continuous_feature_indices=continuous_feature_indices)
 
     @classmethod
     def fit_tensor(cls, data: torch.Tensor) -> 'DragonScaler':

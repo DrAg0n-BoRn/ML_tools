@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [17.4.0] 2025-11-26
+
+### Added
+
+- ML_configuration:
+    - added `.to_log()` method for `[Model]Params` classes and `DragonTrainingConfig` to safely create a dictionary suitable for JSON logs.
+
+### Changed
+
+- ML_scaler:
+    - `DragonScaler.fit()` now uses the Welford's algorithm for numerical stability and data scalability.
+
+### Fixed
+
+- ML_models_advanced:
+    - Silence pytorch_tabular logger up to Error level.
+    - `DragonNodeModel`, add missing configuration values to match the API.
+
 ## [17.3.1] 2025-11-25
 
 ### Changed

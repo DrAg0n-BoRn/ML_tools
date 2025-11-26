@@ -25,6 +25,11 @@ try:
 except ImportError:
     _LOGGER.error(f"GATE and NODE require 'pip install pytorch_tabular omegaconf' dependencies.")
     raise ImportError()
+else:
+    # Silence pytorch_tabular INFO logs up to error level
+    import logging
+    logging.getLogger("pytorch_tabular").setLevel(logging.ERROR)
+    logging.getLogger("pytorch_tabular.models.node.node_model").setLevel(logging.ERROR)
 
 
 __all__ = [
@@ -595,6 +600,10 @@ class DragonNodeModel(_BasePytabWrapper):
             batch_norm_continuous_input=False,
             virtual_batch_size=None,
             learning_rate=1e-3, 
+            
+            # NODE schema
+            data_aware_init_batch_size=2000, # Required by NodeConfig schema
+            augment_dim=0,
         )
 
         # Build Data Inference Config (Required by PyTabular v1.0+)
@@ -621,36 +630,44 @@ class DragonNodeModel(_BasePytabWrapper):
             train_dataset: a PyTorch Dataset.
             batch_size: Number of samples to use for initialization.
         """
-        # _LOGGER.info(f"Preparing Data-Aware Initialization batch (size={batch_size})")
-        
-        # Use a DataLoader to robustly fetch a single batch from the dataset
-        # This works with your _PytorchDataset or any standard Torch Dataset
+        # Use a DataLoader to robustly fetch a single batch
         loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         
-        # Fetch one batch
         try:
             batch = next(iter(loader))
         except StopIteration:
             _LOGGER.error("Dataset is empty. Cannot perform data-aware initialization.")
             return
 
-        # Unpack the batch (assuming [features, labels] from your DatasetMaster)
         x_tensor, _ = batch 
         
-        # Prepare input dict for pytorch_tabular
-        # Note: We must be on CPU for this initialization usually
-        x_cont = x_tensor[:, self.numerical_indices].float()
-        x_cat = x_tensor[:, self.categorical_indices].long()
+        # Prepare input dict
+        # Prepare input dict matching pytorch_tabular expectations
+        # Ensure we are on the same device as the model (CPU here)
+        device = next(self.parameters()).device
+        x_cont = x_tensor[:, self.numerical_indices].float().to(device)
+        x_cat = x_tensor[:, self.categorical_indices].long().to(device)
         
         input_dict = {
             'continuous': x_cont,
             'categorical': x_cat
         }
         
-        _LOGGER.info("Running NODE Data-Aware Initialization...")
+        # --- MOCK DATA MODULE ---
+        # datamodule.train_dataloader() -> yields the batch
+        class _MockDataModule:
+            def train_dataloader(self, batch_size=None):
+                # Accepts 'batch_size' argument to satisfy the caller
+                # Returns a list containing just the single pre-processed batch dictionary
+                return [input_dict]
+        
+        mock_dm = _MockDataModule()
+        
+        _LOGGER.info(f"Running NODE Data-Aware Initialization with {batch_size} samples...")
         try:
             with torch.no_grad():
-                self.internal_model.data_aware_initialization(input_dict)
+                # Call init on the BACKBONE, not the wrapper
+                self.internal_model.data_aware_initialization(mock_dm)
             _LOGGER.info("NODE Initialization Complete. Ready to train.")
         except Exception as e:
             _LOGGER.error(f"Failed to initialize NODE model: {e}")
