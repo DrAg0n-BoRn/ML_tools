@@ -47,7 +47,7 @@ This toolbox is designed as a collection of mutually exclusive environments due 
 
 Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation using PyTorch.
 
-⚠️ Prerequisite: PyTorch required. Follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
+➡️ Prerequisite: PyTorch required. Follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 ```Bash
 pip install "dragon-ml-toolbox[ML]"
@@ -55,7 +55,7 @@ pip install "dragon-ml-toolbox[ML]"
 
 #### Modules:
 
-```bash
+```Bash
 constants
 custom_logger
 data_exploration
@@ -92,6 +92,16 @@ SQL
 utilities
 ```
 
+Wrappers for some `pytorch_tabular` models are available:
+
+```Bash
+pip install "dragon-ml-toolbox[ML,py-tab]"
+
+# Extra Modules:
+ML_models_pytab
+ML_configuration_pytab
+```
+
 ---
 
 ### 🌳 Ensemble Learning [ensemble]
@@ -106,7 +116,7 @@ pip install "dragon-ml-toolbox[ensemble]"
 
 #### Modules:
 
-```bash
+```Bash
 constants
 custom_logger
 data_exploration

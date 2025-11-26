@@ -1,0 +1,1719 @@
+import pandas as pd
+from pandas.api.types import is_numeric_dtype, is_object_dtype
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Union, Literal, Dict, Tuple, List, Optional, Any
+from pathlib import Path
+import re
+
+from ._path_manager import sanitize_filename, make_fullpath
+from ._script_info import _script_info
+from ._logger import _LOGGER
+from ._utilities import save_dataframe_filename
+from ._schema import FeatureSchema
+
+# Keep track of all available tools, show using `info()`
+__all__ = [
+    "summarize_dataframe",
+    "drop_constant_columns",
+    "drop_rows_with_missing_data",
+    "show_null_columns",
+    "drop_columns_with_missing_data",
+    "drop_macro",
+    "clean_column_names",
+    "plot_value_distributions", 
+    "plot_continuous_vs_target",
+    "plot_categorical_vs_target",
+    "encode_categorical_features",
+    "split_features_targets", 
+    "split_continuous_binary", 
+    "clip_outliers_single", 
+    "clip_outliers_multi",
+    "drop_outlier_samples",
+    "plot_correlation_heatmap", 
+    "match_and_filter_columns_by_regex",
+    "standardize_percentages",
+    "reconstruct_one_hot",
+    "reconstruct_binary",
+    "finalize_feature_schema"
+]
+
+
+def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
+    """
+    Returns a summary DataFrame with data types, non-null counts, number of unique values,
+    missing value percentage, and basic statistics for each column.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        round_digits (int): Decimal places to round numerical statistics.
+
+    Returns:
+        pd.DataFrame: Summary table.
+    """
+    summary = pd.DataFrame({
+        'Data Type': df.dtypes,
+        'Non-Null Count': df.notnull().sum(),
+        'Unique Values': df.nunique(),
+        'Missing %': (df.isnull().mean() * 100).round(round_digits)
+    })
+
+    # For numeric columns, add summary statistics
+    numeric_cols = df.select_dtypes(include='number').columns
+    if not numeric_cols.empty:
+        summary_numeric = df[numeric_cols].describe().T[
+            ['mean', 'std', 'min', '25%', '50%', '75%', 'max']
+        ].round(round_digits)
+        summary = summary.join(summary_numeric, how='left')
+
+    print(f"DataFrame Shape: {df.shape}")
+    return summary
+
+
+def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
+    """
+    Removes columns from a pandas DataFrame that contain only a single unique 
+    value or are entirely null/NaN.
+
+    This utility is useful for cleaning data by removing constant features that 
+    have no predictive value.
+
+    Args:
+        df (pd.DataFrame): 
+            The pandas DataFrame to clean.
+        verbose (bool): 
+            If True, prints the names of the columns that were dropped. 
+            Defaults to True.
+
+    Returns:
+        pd.DataFrame: 
+            A new DataFrame with the constant columns removed.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+
+    original_columns = set(df.columns)
+    cols_to_keep = []
+
+    for col_name in df.columns:
+        column = df[col_name]
+        
+        # We can apply this logic to all columns or only focus on numeric ones.
+        # if not is_numeric_dtype(column):
+        #     cols_to_keep.append(col_name)
+        #     continue
+        
+        # Keep a column if it has more than one unique value (nunique ignores NaNs by default)
+        if column.nunique(dropna=True) > 1:
+            cols_to_keep.append(col_name)
+
+    dropped_columns = original_columns - set(cols_to_keep)
+    if verbose:
+        _LOGGER.info(f"🧹 Dropped {len(dropped_columns)} constant columns.")
+        if dropped_columns:
+            for dropped_column in dropped_columns:
+                print(f"    {dropped_column}")
+
+    return df[cols_to_keep]
+
+
+def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], threshold: float = 0.7) -> pd.DataFrame:
+    """
+    Drops rows from the DataFrame using a two-stage strategy:
+    
+    1. If `targets`, remove any row where all target columns are missing.
+    2. Among features, drop those with more than `threshold` fraction of missing values.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        targets (list[str] | None): List of target column names. 
+        threshold (float): Maximum allowed fraction of missing values in feature columns.
+
+    Returns:
+        pd.DataFrame: A cleaned DataFrame with problematic rows removed.
+    """
+    df_clean = df.copy()
+
+    # Stage 1: Drop rows with all target columns missing
+    if targets is not None:
+        # validate targets
+        valid_targets = _validate_columns(df_clean, targets)
+        target_na = df_clean[valid_targets].isnull().all(axis=1)
+        if target_na.any():
+            _LOGGER.info(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
+            df_clean = df_clean[~target_na]
+        else:
+            _LOGGER.info("No rows found where all targets are missing.")
+    else:
+        valid_targets = []
+
+    # Stage 2: Drop rows based on feature column missing values
+    feature_cols = [col for col in df_clean.columns if col not in valid_targets]
+    if feature_cols:
+        feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
+        rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
+        if len(rows_to_drop) > 0:
+            _LOGGER.info(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
+            df_clean = df_clean.drop(index=rows_to_drop)
+        else:
+            _LOGGER.info(f"No rows exceed the {threshold*100:.0f}% missing feature data threshold.")
+    else:
+        _LOGGER.warning("No feature columns available to evaluate.")
+
+    return df_clean
+
+
+def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
+    """
+    Returns a table of columns with missing values, showing both the count and
+    percentage of missing entries per column.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        round_digits (int): Number of decimal places for the percentage.
+
+    Returns:
+        pd.DataFrame: A DataFrame summarizing missing values in each column.
+    """
+    null_counts = df.isnull().sum()
+    null_percent = df.isnull().mean() * 100
+
+    # Filter only columns with at least one null
+    mask = null_counts > 0
+    null_summary = pd.DataFrame({
+        'Missing Count': null_counts[mask],
+        'Missing %': null_percent[mask].round(round_digits)
+    })
+
+    # Sort by descending percentage of missing values
+    null_summary = null_summary.sort_values(by='Missing %', ascending=False)
+    # print(null_summary)
+    return null_summary
+
+
+def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, show_nulls_after: bool = True, skip_columns: Optional[List[str]]=None) -> pd.DataFrame:
+    """
+    Drops columns with more than `threshold` fraction of missing values.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame.
+        threshold (float): Fraction of missing values above which columns are dropped.
+        show_nulls_after (bool): Prints `show_null_columns` after dropping columns. 
+        skip_columns (list[str] | None): If given, these columns wont be included in the drop process. 
+
+    Returns:
+        pd.DataFrame: A new DataFrame without the dropped columns.
+    """
+    # If skip_columns is provided, create a list of columns to check.
+    # Otherwise, check all columns.
+    cols_to_check = df.columns
+    if skip_columns:
+        # Use set difference for efficient exclusion
+        cols_to_check = df.columns.difference(skip_columns)
+
+    # Calculate the missing fraction only on the columns to be checked
+    missing_fraction = df[cols_to_check].isnull().mean()
+    
+    
+    cols_to_drop = missing_fraction[missing_fraction > threshold].index
+
+    if len(cols_to_drop) > 0:
+        _LOGGER.info(f"🧹 Dropping columns with more than {threshold*100:.0f}% missing data:")
+        print(list(cols_to_drop))
+        
+        result_df = df.drop(columns=cols_to_drop)
+        if show_nulls_after:
+            print(show_null_columns(df=result_df))
+        
+        return result_df
+    else:
+        _LOGGER.info(f"No columns have more than {threshold*100:.0f}% missing data.")
+        return df
+
+
+def drop_macro(df: pd.DataFrame, 
+               log_directory: Union[str,Path], 
+               targets: list[str], 
+               skip_targets: bool=False, 
+               threshold: float=0.7) -> pd.DataFrame:
+    """
+    Iteratively removes rows and columns with excessive missing data.
+
+    This function performs a comprehensive cleaning cycle on a DataFrame. It
+    repeatedly drops columns with constant values, followed by rows and columns that exceed
+    a specified threshold of missing values. The process continues until the
+    DataFrame's dimensions stabilize, ensuring that the interdependency between
+    row and column deletions is handled. 
+    
+    Initial and final missing data reports are saved to the specified log directory.
+
+    Args:
+        df (pd.DataFrame): The input pandas DataFrame to be cleaned.
+        log_directory (Union[str, Path]): Path to the directory where the
+            'Missing_Data_start.csv' and 'Missing_Data_final.csv' logs
+            will be saved.
+        targets (list[str]): A list of column names to be treated as target
+            variables. This list guides the row-dropping logic.
+        skip_targets (bool, optional): If True, the columns listed in `targets`
+            will be exempt from being dropped, even if they exceed the missing
+            data threshold.
+        threshold (float, optional): The proportion of missing data required to drop
+            a row or column. For example, 0.7 means a row/column will be
+            dropped if 70% or more of its data is missing.
+
+    Returns:
+        pd.DataFrame: A new, cleaned DataFrame with offending rows and columns removed.
+    """
+    # make a deep copy to work with
+    df_clean = df.copy()
+    
+    # Log initial state
+    missing_data = show_null_columns(df=df_clean)
+    save_dataframe_filename(df=missing_data.reset_index(drop=False),
+                   save_dir=log_directory,
+                   filename="Missing_Data_start")
+    
+    # Clean cycles for rows and columns
+    master = True
+    while master:
+        # track rows and columns
+        initial_rows, initial_columns = df_clean.shape
+        
+        # drop constant columns
+        df_clean = drop_constant_columns(df=df_clean)
+        
+        # clean rows
+        df_clean = drop_rows_with_missing_data(df=df_clean, targets=targets, threshold=threshold)
+        
+        # clean columns
+        if skip_targets:
+            df_clean = drop_columns_with_missing_data(df=df_clean, threshold=threshold, show_nulls_after=False, skip_columns=targets)
+        else:
+            df_clean = drop_columns_with_missing_data(df=df_clean, threshold=threshold, show_nulls_after=False)
+        
+        # cleaned?
+        remaining_rows, remaining_columns = df_clean.shape
+        if remaining_rows >= initial_rows and remaining_columns >= initial_columns:
+            master = False
+    
+    # log final state
+    missing_data = show_null_columns(df=df_clean)
+    save_dataframe_filename(df=missing_data.reset_index(drop=False),
+                   save_dir=log_directory,
+                   filename="Missing_Data_final")
+    
+    # return cleaned dataframe
+    return df_clean
+
+
+def clean_column_names(df: pd.DataFrame, replacement_char: str = '-', replacement_pattern: str = r'[\[\]{}<>,:"]', verbose: bool = True) -> pd.DataFrame:
+    """
+    Cleans DataFrame column names by replacing special characters.
+
+    This function is useful for ensuring compatibility with libraries like LightGBM,
+    which do not support special JSON characters such as `[]{}<>,:"` in feature names.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        replacement_char (str): The character to use for replacing characters.
+        replacement_pattern (str): Regex pattern to use for the replacement logic.
+        verbose (bool): If True, prints the renamed columns.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with cleaned column names.
+    """
+    new_df = df.copy()
+    
+    original_columns = new_df.columns
+    new_columns = original_columns.str.replace(replacement_pattern, replacement_char, regex=True)
+    
+    # Create a map of changes for logging
+    rename_map = {old: new for old, new in zip(original_columns, new_columns) if old != new}
+    
+    if verbose:
+        if rename_map:
+            _LOGGER.info(f"Cleaned {len(rename_map)} column name(s) containing special characters:")
+            for old, new in rename_map.items():
+                print(f"    '{old}' -> '{new}'")
+        else:
+            _LOGGER.info("No column names required cleaning.")
+            
+    new_df.columns = new_columns
+    return new_df
+
+
+def plot_value_distributions(
+    df: pd.DataFrame,
+    save_dir: Union[str, Path],
+    categorical_columns: Optional[List[str]] = None,
+    categorical_cardinality_threshold: int = 10,
+    max_categories: int = 50,
+    fill_na_with: str = "Missing"
+):
+    """
+    Plots and saves the value distributions for all columns in a DataFrame,
+    using the best plot type for each column (histogram or count plot).
+
+    Plots are saved as SVG files under two subdirectories in `save_dir`:
+    - "Distribution_Continuous" for continuous numeric features (histograms).
+    - "Distribution_Categorical" for categorical features (count plots).
+
+    Args:
+        df (pd.DataFrame): The input DataFrame to analyze.
+        save_dir (str | Path): Directory path to save the plots.
+        categorical_columns (List[str] | None): If provided, this list
+            of column names will be treated as categorical, and all other columns will be treated as continuous. This
+            overrides the `continuous_cardinality_threshold` logic.
+        categorical_cardinality_threshold (int): A numeric column will be treated
+            as 'categorical' if its number of unique values is less than or equal to this threshold. (Ignored if `categorical_columns` is set).
+        max_categories (int): The maximum number of unique categories a
+            categorical feature can have to be plotted. Features exceeding this limit will be skipped.
+        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its
+            own category. Defaults to "Missing".
+
+    Notes:
+        - `seaborn.histplot` with KDE is used for continuous features.
+        - `seaborn.countplot` is used for categorical features.
+    """
+    # 1. Setup save directories
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    numeric_dir = base_save_path / "Distribution_Continuous"
+    categorical_dir = base_save_path / "Distribution_Categorical"
+    numeric_dir.mkdir(parents=True, exist_ok=True)
+    categorical_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2. Filter columns to plot
+    columns_to_plot = df.columns.to_list()
+
+    # Setup for forced categorical logic
+    categorical_set = set(categorical_columns) if categorical_columns is not None else None
+
+    numeric_plots_saved = 0
+    categorical_plots_saved = 0
+
+    for col_name in columns_to_plot:
+        try:
+            is_numeric = is_numeric_dtype(df[col_name])
+            n_unique = df[col_name].nunique()
+
+            # --- 3. Determine Plot Type ---
+            is_continuous = False
+            if categorical_set is not None:
+                # Use the explicit list
+                if col_name not in categorical_set:
+                    is_continuous = True
+            else:
+                # Use auto-detection
+                if is_numeric and n_unique > categorical_cardinality_threshold:
+                    is_continuous = True
+            
+            # --- Case 1: Continuous Numeric (Histogram) ---
+            if is_continuous:
+                plt.figure(figsize=(10, 6))
+                # Drop NaNs for histogram, as they can't be plotted on a numeric axis
+                sns.histplot(x=df[col_name].dropna(), kde=True, bins=30)
+                plt.title(f"Distribution of '{col_name}' (Continuous)")
+                plt.xlabel(col_name)
+                plt.ylabel("Count")
+                
+                save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
+                numeric_plots_saved += 1
+
+            # --- Case 2: Categorical or Low-Cardinality Numeric (Count Plot) ---
+            else:
+                # Check max categories
+                if n_unique > max_categories:
+                    _LOGGER.warning(f"Skipping plot for '{col_name}': {n_unique} unique values > {max_categories} max_categories.")
+                    continue
+
+                # Adaptive figure size
+                fig_width = max(10, n_unique * 0.5)
+                plt.figure(figsize=(fig_width, 7))
+                
+                # Make a temporary copy for plotting to handle NaNs
+                temp_series = df[col_name].copy()
+                
+                # Handle NaNs by replacing them with the specified string
+                if temp_series.isnull().any():
+                    # Convert to object type first to allow string replacement
+                    temp_series = temp_series.astype(object).fillna(fill_na_with)
+                
+                # Convert all to string to be safe (handles low-card numeric)
+                temp_series = temp_series.astype(str)
+                
+                # Get category order by frequency
+                order = temp_series.value_counts().index
+                sns.countplot(x=temp_series, order=order, palette="viridis")
+                
+                plt.title(f"Distribution of '{col_name}' (Categorical)")
+                plt.xlabel(col_name)
+                plt.ylabel("Count")
+                
+                # Smart tick rotation
+                max_label_len = 0
+                if n_unique > 0:
+                    max_label_len = max(len(str(s)) for s in order)
+                
+                # Rotate if labels are long OR there are many categories
+                if max_label_len > 10 or n_unique > 25:
+                    plt.xticks(rotation=45, ha='right')
+                
+                save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
+                categorical_plots_saved += 1
+
+            # --- 4. Save Plot ---
+            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+            plt.tight_layout()
+            # Save as .svg
+            plt.savefig(save_path, format='svg', bbox_inches="tight")
+            plt.close()
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to plot distribution for '{col_name}'. Error: {e}")
+            plt.close()
+    
+    _LOGGER.info(f"Saved {numeric_plots_saved} continuous distribution plots to '{numeric_dir.name}'.")
+    _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution plots to '{categorical_dir.name}'.")
+
+
+def plot_continuous_vs_target(
+    df: pd.DataFrame,
+    targets: List[str],
+    save_dir: Union[str, Path],
+    features: Optional[List[str]] = None
+):
+    """
+    Plots each continuous feature against each target to visualize linear relationships.
+
+    This function is a common EDA step for regression tasks. It creates a
+    scatter plot for each feature-target pair, overlays a simple linear
+    regression line, and saves each plot as an individual .svg file.
+
+    Plots are saved in a structured way, with a subdirectory created for
+    each target variable.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        targets (List[str]): A list of target column names to plot (y-axis).
+        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
+        features (List[str] | None): A list of feature column names to plot (x-axis). If None, all non-target columns in the
+            DataFrame will be used.
+
+    Notes:
+        - Only numeric features and numeric targets are processed. Non-numeric
+          columns in the lists will be skipped with a warning.
+        - Rows with NaN in either the feature or the target are dropped
+          pairwise for each plot.
+    """
+    # 1. Validate the base save directory
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+
+    # 2. Validate helper
+    def _validate_numeric_cols(col_list: List[str], col_type: str) -> List[str]:
+        valid_cols = []
+        for col in col_list:
+            if col not in df.columns:
+                _LOGGER.warning(f"{col_type} column '{col}' not found. Skipping.")
+            elif not is_numeric_dtype(df[col]):
+                _LOGGER.warning(f"{col_type} column '{col}' is not numeric. Skipping.")
+            else:
+                valid_cols.append(col)
+        return valid_cols
+
+    # 3. Validate target columns FIRST
+    valid_targets = _validate_numeric_cols(targets, "Target")
+    if not valid_targets:
+        _LOGGER.error("No valid numeric target columns provided to plot.")
+        return
+    
+    # 4. Determine and validate feature columns
+    if features is None:
+        _LOGGER.info("No 'features' list provided. Using all non-target columns as features.")
+        target_set = set(valid_targets)
+        # Get all columns that are not in the valid_targets set
+        features_to_validate = [col for col in df.columns if col not in target_set]
+    else:
+        features_to_validate = features
+        
+    valid_features = _validate_numeric_cols(features_to_validate, "Feature")
+
+    if not valid_features:
+        _LOGGER.error("No valid numeric feature columns found to plot.")
+        return
+
+    # 5. Main plotting loop
+    total_plots_saved = 0
+    
+    for target_name in valid_targets:
+        # Create a sanitized subdirectory for this target
+        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Continuous")
+        target_save_dir = base_save_path / safe_target_dir_name
+        target_save_dir.mkdir(parents=True, exist_ok=True)
+        
+        _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+
+        for feature_name in valid_features:
+            
+            # Drop NaNs pairwise for this specific plot
+            temp_df = df[[feature_name, target_name]].dropna()
+
+            if temp_df.empty:
+                _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
+                continue
+
+            x = temp_df[feature_name]
+            y = temp_df[target_name]
+
+            # 6. Perform linear fit
+            try:
+                # Modern replacement for np.polyfit + np.poly1d. Compatible with NumPy 1.14+ and NumPy 2.0+
+                p = np.polynomial.Polynomial.fit(x, y, deg=1)
+                plot_regression_line = True
+            except (np.linalg.LinAlgError, ValueError):
+                _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
+                plot_regression_line = False
+
+            # 7. Create the plot
+            plt.figure(figsize=(10, 6))
+            ax = plt.gca()
+            
+            # Plot the raw data points
+            ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5)
+            
+            # Plot the regression line
+            if plot_regression_line:
+                ax.plot(x, p(x), "r--", label='Linear Fit') # type: ignore
+
+            ax.set_title(f'{feature_name} vs {target_name}')
+            ax.set_xlabel(feature_name)
+            ax.set_ylabel(target_name)
+            ax.legend()
+            plt.grid(True, linestyle='--', alpha=0.6)
+            plt.tight_layout()
+
+            # 8. Save the plot
+            safe_feature_name = sanitize_filename(feature_name)
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_path = target_save_dir / plot_filename
+            
+            try:
+                plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                total_plots_saved += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+            
+            # Close the figure to free up memory
+            plt.close()
+
+    _LOGGER.info(f"Successfully saved {total_plots_saved} feature-vs-target plots to '{base_save_path}'.")
+
+
+def plot_categorical_vs_target(
+    df: pd.DataFrame,
+    targets: List[str],
+    save_dir: Union[str, Path],
+    features: Optional[List[str]] = None,
+    plot_type: Literal["box", "violin"] = "box",
+    max_categories: int = 20,
+    fill_na_with: str = "Missing"
+):
+    """
+    Plots each categorical feature against each numeric target using box or violin plots.
+
+    This function is a core EDA step for regression tasks to understand the
+    relationship between a categorical independent variable and a continuous
+    dependent variable.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        targets (List[str]): A list of numeric target column names (y-axis).
+        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
+        features (List[str] | None): A list of categorical feature column names (x-axis). If None, all non-numeric (object) columns will be used.
+        plot_type (Literal["box", "violin"]): The type of plot to generate.
+        max_categories (int): The maximum number of unique categories a feature can have to be plotted. Features exceeding this limit will be skipped.
+        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category. Defaults to "Missing".
+
+    Notes:
+        - Only numeric targets are processed.
+        - Features are automatically identified as categorical if they are 'object' dtype.
+    """
+    # 1. Validate the base save directory and inputs
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    
+    if plot_type not in ["box", "violin"]:
+        _LOGGER.error(f"Invalid plot type '{plot_type}'")
+        raise ValueError()
+
+    # 2. Validate target columns (must be numeric)
+    valid_targets = []
+    for col in targets:
+        if col not in df.columns:
+            _LOGGER.warning(f"Target column '{col}' not found. Skipping.")
+        elif not is_numeric_dtype(df[col]):
+            _LOGGER.warning(f"Target column '{col}' is not numeric. Skipping.")
+        else:
+            valid_targets.append(col)
+    
+    if not valid_targets:
+        _LOGGER.error("No valid numeric target columns provided to plot.")
+        return
+
+    # 3. Determine and validate feature columns
+    features_to_plot = []
+    if features is None:
+        _LOGGER.info("No 'features' list provided. Auto-detecting categorical features.")
+        for col in df.columns:
+            if col in valid_targets:
+                continue
+            
+            # Auto-include object dtypes
+            if is_object_dtype(df[col]):
+                features_to_plot.append(col)
+            # Auto-include low-cardinality numeric features - REMOVED
+            # elif is_numeric_dtype(df[col]) and df[col].nunique() <= max_categories:
+            #     _LOGGER.info(f"Treating low-cardinality numeric column '{col}' as categorical.")
+            #     features_to_plot.append(col)
+    else:
+        # Validate user-provided list
+        for col in features:
+            if col not in df.columns:
+                _LOGGER.warning(f"Feature column '{col}' not found in DataFrame. Skipping.")
+            else:
+                features_to_plot.append(col)
+
+    if not features_to_plot:
+        _LOGGER.error("No valid categorical feature columns found to plot.")
+        return
+
+    # 4. Main plotting loop
+    total_plots_saved = 0
+    
+    for target_name in valid_targets:
+        # Create a sanitized subdirectory for this target
+        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Categorical_{plot_type}")
+        target_save_dir = base_save_path / safe_target_dir_name
+        target_save_dir.mkdir(parents=True, exist_ok=True)
+        
+        _LOGGER.info(f"Generating '{plot_type}' plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+
+        for feature_name in features_to_plot:
+            
+            # Make a temporary copy for plotting to handle NaNs and dtypes
+            temp_df = df[[feature_name, target_name]].copy()
+
+            # Check cardinality
+            n_unique = temp_df[feature_name].nunique()
+            if n_unique > max_categories:
+                _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique values > {max_categories} max_categories.")
+                continue
+            
+            # Handle NaNs by replacing them with the specified string
+            if temp_df[feature_name].isnull().any():
+                # Convert to object type first to allow string replacement
+                temp_df[feature_name] = temp_df[feature_name].astype(object).fillna(fill_na_with)
+            
+            # Convert feature to string to ensure correct plotting order
+            temp_df[feature_name] = temp_df[feature_name].astype(str)
+
+            # 5. Create the plot
+            # Increase figure width for categories
+            plt.figure(figsize=(max(10, n_unique * 1.2), 7))
+            
+            if plot_type == "box":
+                sns.boxplot(x=feature_name, y=target_name, data=temp_df)
+            elif plot_type == "violin":
+                sns.violinplot(x=feature_name, y=target_name, data=temp_df)
+
+            plt.title(f'{target_name} vs {feature_name}')
+            plt.xlabel(feature_name)
+            plt.ylabel(target_name)
+            plt.xticks(rotation=45, ha='right')
+            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+            plt.tight_layout()
+
+            # 6. Save the plot
+            safe_feature_name = sanitize_filename(feature_name)
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_path = target_save_dir / plot_filename
+            
+            try:
+                plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                total_plots_saved += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+            
+            plt.close()
+
+    _LOGGER.info(f"Successfully saved {total_plots_saved} categorical-vs-target plots to '{base_save_path}'.")
+
+
+def encode_categorical_features(
+    df: pd.DataFrame,
+    columns_to_encode: List[str],
+    encode_nulls: bool,
+    null_label: str = "Other",
+    split_resulting_dataset: bool = True,
+    verbose: bool = True
+) -> Tuple[Dict[str, Dict[str, int]], pd.DataFrame, Optional[pd.DataFrame]]:
+    """
+    Finds unique values in specified categorical columns, encodes them into integers,
+    and returns a dictionary containing the mappings for each column.
+
+    This function automates the label encoding process and generates a simple,
+    human-readable dictionary of the mappings.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        columns_to_encode (List[str]): A list of column names to be encoded.
+        encode_nulls (bool): 
+            - If True, encodes Null values as a distinct category 'null_label' with a value of 0. Other categories start from 1. 
+            - If False, Nulls are ignored and categories start from 0. 
+            
+        null_label (str): Category to encode Nulls to if `encode_nulls` is True. If a name collision with `null_label` occurs, the fallback key will be "__NULL__".
+        split_resulting_dataset (bool): 
+            - If True, returns two separate DataFrames, one with non-categorical columns and one with the encoded columns.
+            - If False, returns a single DataFrame with all columns.
+        verbose (bool): If True, prints encoding progress.
+
+    Returns:
+        Tuple:
+        
+        - Dict[str, Dict[str, int]]: A dictionary where each key is a column name and the value is its category-to-integer mapping.
+        
+        - pd.DataFrame: The original dataframe with or without encoded columns (see `split_resulting_dataset`).
+        
+        - pd.DataFrame | None: If `split_resulting_dataset` is True, the encoded columns as a new dataframe.
+        
+    ## **Note:** 
+    Use `encode_nulls=False` when encoding binary values with missing entries or a malformed encoding will be returned silently.
+    """
+    df_encoded = df.copy()
+    
+    # Validate columns
+    valid_columns = [col for col in columns_to_encode if col in df_encoded.columns]
+    missing_columns = set(columns_to_encode) - set(valid_columns)
+    if missing_columns:
+        _LOGGER.warning(f"Columns not found and will be skipped: {list(missing_columns)}")
+
+    mappings: Dict[str, Dict[str, int]] = {}
+
+    _LOGGER.info(f"Encoding {len(valid_columns)} categorical column(s).")
+    for col_name in valid_columns:
+        has_nulls = df_encoded[col_name].isnull().any()
+        
+        if encode_nulls and has_nulls:
+            # Handle nulls: "Other" -> 0, other categories -> 1, 2, 3...
+            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
+            # Start mapping from 1 for non-null values
+            mapping = {category: i + 1 for i, category in enumerate(categories)}
+            
+            # Apply mapping and fill remaining NaNs with 0
+            mapped_series = df_encoded[col_name].astype(str).map(mapping)
+            df_encoded[col_name] = mapped_series.fillna(0).astype(int)
+            
+            # --- Validate nulls category---
+            # Ensure the key for 0 doesn't collide with a real category.
+            if null_label in mapping.keys():
+                # COLLISION! null_label is a real category 
+                original_label = null_label
+                null_label = "__NULL__" # fallback
+                _LOGGER.warning(f"Column '{col_name}': '{original_label}' is a real category. Mapping nulls (0) to '{null_label}' instead.")
+            
+            # Create the complete user-facing map including "Other"
+            user_mapping = {**mapping, null_label: 0}
+            mappings[col_name] = user_mapping
+        else:
+            # ignore nulls
+            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
+            
+            mapping = {category: i for i, category in enumerate(categories)}
+            
+            df_encoded[col_name] = df_encoded[col_name].astype(str).map(mapping)
+            
+            mappings[col_name] = mapping
+            
+        if verbose:
+            cardinality = len(mappings[col_name])
+            print(f"  - Encoded '{col_name}' with {cardinality} unique values.")
+
+    # Handle the dataset splitting logic
+    if split_resulting_dataset:
+        df_categorical = df_encoded[valid_columns].to_frame() # type: ignore
+        df_non_categorical = df.drop(columns=valid_columns)
+        return mappings, df_non_categorical, df_categorical
+    else:
+        return mappings, df_encoded, None
+
+
+def split_features_targets(df: pd.DataFrame, targets: list[str]):
+    """
+    Splits a DataFrame's columns into features and targets.
+
+    Args:
+        df (pd.DataFrame): Pandas DataFrame containing the dataset.
+        targets (list[str]): List of column names to be treated as target variables.
+
+    Returns:
+        tuple: A tuple containing:
+            - pd.DataFrame: Features dataframe.
+            - pd.DataFrame: Targets dataframe.
+
+    Prints:
+        - Shape of the original dataframe.
+        - Shape of the features dataframe.
+        - Shape of the targets dataframe.
+    """
+    valid_targets = _validate_columns(df, targets)
+    df_targets = df[valid_targets]
+    df_features = df.drop(columns=valid_targets)
+    print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
+    return df_features, df_targets
+
+
+def split_continuous_binary(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split DataFrame into two DataFrames: one with continuous columns, one with binary columns.
+    Normalize binary values like 0.0/1.0 to 0/1 if detected.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame with only numeric columns.
+
+    Returns:
+        Tuple(pd.DataFrame, pd.DataFrame): (continuous_columns_df, binary_columns_df)
+
+    Raises:
+        TypeError: If any column is not numeric.
+    """
+    if not all(np.issubdtype(dtype, np.number) for dtype in df.dtypes):
+        _LOGGER.error("All columns must be numeric (int or float).")
+        raise TypeError()
+
+    binary_cols = []
+    continuous_cols = []
+
+    for col in df.columns:
+        series = df[col]
+        unique_values = set(series[~series.isna()].unique())
+
+        if unique_values.issubset({0, 1}):
+            binary_cols.append(col)
+        elif unique_values.issubset({0.0, 1.0}):
+            df[col] = df[col].apply(lambda x: 0 if x == 0.0 else (1 if x == 1.0 else x))
+            binary_cols.append(col)
+        else:
+            continuous_cols.append(col)
+
+    binary_cols.sort()
+
+    df_cont = df[continuous_cols]
+    df_bin = df[binary_cols]
+
+    print(f"Continuous columns shape: {df_cont.shape}")
+    print(f"Binary columns shape: {df_bin.shape}")
+
+    return df_cont, df_bin # type: ignore
+
+
+def plot_correlation_heatmap(df: pd.DataFrame,
+                             plot_title: str,
+                             save_dir: Union[str, Path, None] = None, 
+                             method: Literal["pearson", "kendall", "spearman"]="pearson"):
+    """
+    Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
+    
+    Args:
+        df (pd.DataFrame): The input dataset.
+        save_dir (str | Path | None): If provided, the heatmap will be saved to this directory as a svg file.
+        plot_title: The suffix "`method` Correlation Heatmap" will be automatically appended.
+        method (str): Correlation method to use. Must be one of:
+            - 'pearson' (default): measures linear correlation (assumes normally distributed data),
+            - 'kendall': rank correlation (non-parametric),
+            - 'spearman': monotonic relationship (non-parametric).
+
+    Notes:
+        - Only numeric columns are included.
+        - Annotations are disabled if there are more than 20 features.
+        - Missing values are handled via pairwise complete observations.
+    """
+    numeric_df = df.select_dtypes(include='number')
+    if numeric_df.empty:
+        _LOGGER.warning("No numeric columns found. Heatmap not generated.")
+        return
+    if method not in ["pearson", "kendall", "spearman"]:
+        _LOGGER.error(f"'method' must be pearson, kendall, or spearman.")
+        raise ValueError()
+    
+    corr = numeric_df.corr(method=method)
+
+    # Create a mask for the upper triangle
+    mask = np.triu(np.ones_like(corr, dtype=bool))
+
+    # Plot setup
+    size = max(10, numeric_df.shape[1])
+    plt.figure(figsize=(size, size * 0.8))
+
+    annot_bool = numeric_df.shape[1] <= 20
+    sns.heatmap(
+        corr,
+        mask=mask,
+        annot=annot_bool,
+        cmap='coolwarm',
+        fmt=".2f",
+        cbar_kws={"shrink": 0.8}
+    )
+    
+    # add suffix to title
+    full_plot_title = f"{plot_title} - {method.title()} Correlation Heatmap"
+    
+    plt.title(full_plot_title)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+
+    plt.tight_layout()
+    
+    if save_dir:
+        save_path = make_fullpath(save_dir, make=True)
+        # sanitize the plot title to save the file
+        sanitized_plot_title = sanitize_filename(plot_title)
+        plot_filename = sanitized_plot_title + ".svg"
+        
+        full_path = save_path / plot_filename
+        
+        plt.savefig(full_path, bbox_inches="tight", format='svg')
+        _LOGGER.info(f"Saved correlation heatmap: '{plot_filename}'")
+    
+    plt.show()
+    plt.close()
+
+# OLD IMPLEMENTATION
+# def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
+#     """
+#     Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
+#     with adaptive binning for numerical columns when appropriate.
+
+#     For each column both raw counts and relative frequencies are computed and plotted.
+
+#     Plots are saved as PNG files under two subdirectories in `save_dir`:
+#     - "Distribution_Counts" for absolute counts.
+#     - "Distribution_Frequency" for relative frequencies.
+
+#     Args:
+#         df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
+#         save_dir (str | Path): Directory path where the plots will be saved. Will be created if it does not exist.
+#         bin_threshold (int): Minimum number of unique values required to trigger binning
+#             for numerical columns.
+#         skip_cols_with_key (str | None): If provided, any column whose name contains this
+#             substring will be excluded from analysis.
+
+#     Notes:
+#         - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
+#         - All non-alphanumeric characters in column names are sanitized for safe file naming.
+#         - Colormap is automatically adapted based on the number of categories or bins.
+#     """
+#     save_path = make_fullpath(save_dir, make=True)
+    
+#     dict_to_plot_std = dict()
+#     dict_to_plot_freq = dict()
+    
+#     # cherry-pick columns
+#     if skip_cols_with_key is not None:
+#         columns = [col for col in df.columns if skip_cols_with_key not in col]
+#     else:
+#         columns = df.columns.to_list()
+    
+#     saved_plots = 0
+#     for col in columns:
+#         if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
+#             bins_number = 10
+#             binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+#             while binned.nunique() <= 2:
+#                 bins_number -= 1
+#                 binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
+#                 if bins_number <= 2:
+#                     break
+            
+#             if binned.nunique() <= 2:
+#                 view_std = df[col].value_counts(sort=False).sort_index()
+#             else:
+#                 view_std = binned.value_counts(sort=False)
+            
+#         else:
+#             view_std = df[col].value_counts(sort=False).sort_index()
+
+#         # unlikely scenario where the series is empty
+#         if view_std.sum() == 0:
+#             view_freq = view_std
+#         else:
+#             view_freq = 100 * view_std / view_std.sum() # Percentage
+#         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
+        
+#         dict_to_plot_std[col] = dict(view_std)
+#         dict_to_plot_freq[col] = dict(view_freq)
+#         saved_plots += 1
+    
+#     # plot helper
+#     def _plot_helper(dict_: dict, target_dir: Path, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
+#         for col, data in dict_.items():
+#             safe_col = sanitize_filename(col)
+            
+#             if isinstance(list(data.keys())[0], pd.Interval):
+#                 labels = [str(interval) for interval in data.keys()]
+#             else:
+#                 labels = data.keys()
+                
+#             plt.figure(figsize=(10, 6))
+#             colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data))) # type: ignore
+                
+#             plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
+#             plt.xlabel("Values", fontsize=base_fontsize)
+#             plt.ylabel(ylabel, fontsize=base_fontsize)
+#             plt.title(f"Value Distribution for '{col}'", fontsize=base_fontsize+2)
+#             plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
+#             plt.yticks(fontsize=base_fontsize-2)
+#             plt.grid(axis='y', linestyle='--', alpha=0.6)
+#             plt.gca().set_facecolor('#f9f9f9')
+#             plt.tight_layout()
+            
+#             plot_path = target_dir / f"{safe_col}.png"
+#             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+#             plt.close()
+    
+#     # Save plots
+#     freq_dir = save_path / "Distribution_Frequency"
+#     std_dir = save_path / "Distribution_Counts"
+#     freq_dir.mkdir(parents=True, exist_ok=True)
+#     std_dir.mkdir(parents=True, exist_ok=True)
+#     _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
+#     _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
+
+#     _LOGGER.info(f"Saved {saved_plots} value distribution plots.")
+
+
+def clip_outliers_single(
+    df: pd.DataFrame,
+    column: str,
+    min_val: float,
+    max_val: float
+) -> Union[pd.DataFrame, None]:
+    """
+    Clips values in the specified numeric column to the range [min_val, max_val],
+    and returns a new DataFrame where the original column is replaced by the clipped version.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        column (str): The name of the column to clip.
+        min_val (float): Minimum allowable value; values below are clipped to this.
+        max_val (float): Maximum allowable value; values above are clipped to this.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the specified column clipped in place.
+        
+        None: if a problem with the dataframe column occurred.
+    """
+    if column not in df.columns:
+        _LOGGER.warning(f"Column '{column}' not found in DataFrame.")
+        return None
+
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        _LOGGER.warning(f"Column '{column}' must be numeric.")
+        return None
+
+    new_df = df.copy(deep=True)
+    new_df[column] = new_df[column].clip(lower=min_val, upper=max_val)
+
+    _LOGGER.info(f"Column '{column}' clipped to range [{min_val}, {max_val}].")
+    return new_df
+
+
+def clip_outliers_multi(
+    df: pd.DataFrame,
+    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    verbose: bool=False
+) -> pd.DataFrame:
+    """
+    Clips values in multiple specified numeric columns to given [min, max] ranges,
+    updating values (deep copy) and skipping invalid entries.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        clip_dict (dict): A dictionary where keys are column names and values are (min_val, max_val) tuples.
+        verbose (bool): prints clipped range for each column.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with specified columns clipped.
+
+    Notes:
+        - Invalid specifications (missing column, non-numeric type, wrong tuple length)
+          will be reported but skipped.
+    """
+    new_df = df.copy()
+    skipped_columns = []
+    clipped_columns = 0
+
+    for col, bounds in clip_dict.items():
+        try:
+            if col not in df.columns:
+                _LOGGER.error(f"Column '{col}' not found in DataFrame.")
+                raise ValueError()
+
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                _LOGGER.error(f"Column '{col}' is not numeric.")
+                raise TypeError()
+
+            if not (isinstance(bounds, tuple) and len(bounds) == 2):
+                _LOGGER.error(f"Bounds for '{col}' must be a tuple of (min, max).")
+                raise ValueError()
+
+            min_val, max_val = bounds
+            new_df[col] = new_df[col].clip(lower=min_val, upper=max_val)
+            if verbose:
+                print(f"Clipped '{col}' to range [{min_val}, {max_val}].")
+            clipped_columns += 1
+
+        except Exception as e:
+            skipped_columns.append((col, str(e)))
+            continue
+        
+    _LOGGER.info(f"Clipped {clipped_columns} columns.")
+
+    if skipped_columns:
+        _LOGGER.warning("Skipped columns:")
+        for col, msg in skipped_columns:
+            print(f" - {col}")
+
+    return new_df
+
+
+def drop_outlier_samples(
+    df: pd.DataFrame,
+    bounds_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    drop_on_nulls: bool = False,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Drops entire rows where values in specified numeric columns fall outside
+    a given [min, max] range.
+
+    This function processes a copy of the DataFrame, ensuring the original is
+    not modified. It skips columns with invalid specifications.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        bounds_dict (dict): A dictionary where keys are column names and values
+                            are (min_val, max_val) tuples defining the valid range.
+        drop_on_nulls (bool): If True, rows with NaN/None in a checked column
+                           will also be dropped. If False, NaN/None are ignored.
+        verbose (bool): If True, prints the number of rows dropped for each column.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the outlier rows removed.
+
+    Notes:
+        - Invalid specifications (e.g., missing column, non-numeric type,
+          incorrectly formatted bounds) will be reported and skipped.
+    """
+    new_df = df.copy()
+    skipped_columns: List[Tuple[str, str]] = []
+    initial_rows = len(new_df)
+
+    for col, bounds in bounds_dict.items():
+        try:
+            # --- Validation Checks ---
+            if col not in df.columns:
+                _LOGGER.error(f"Column '{col}' not found in DataFrame.")
+                raise ValueError()
+
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                _LOGGER.error(f"Column '{col}' is not of a numeric data type.")
+                raise TypeError()
+
+            if not (isinstance(bounds, tuple) and len(bounds) == 2):
+                _LOGGER.error(f"Bounds for '{col}' must be a tuple of (min, max).")
+                raise ValueError()
+
+            # --- Filtering Logic ---
+            min_val, max_val = bounds
+            rows_before_drop = len(new_df)
+            
+            # Create the base mask for values within the specified range
+            # .between() is inclusive and evaluates to False for NaN
+            mask_in_bounds = new_df[col].between(min_val, max_val)
+
+            if drop_on_nulls:
+                # Keep only rows that are within bounds.
+                # Since mask_in_bounds is False for NaN, nulls are dropped.
+                final_mask = mask_in_bounds
+            else:
+                # Keep rows that are within bounds OR are null.
+                mask_is_null = new_df[col].isnull()
+                final_mask = mask_in_bounds | mask_is_null
+            
+            # Apply the final mask
+            new_df = new_df[final_mask]
+            
+            rows_after_drop = len(new_df)
+
+            if verbose:
+                dropped_count = rows_before_drop - rows_after_drop
+                if dropped_count > 0:
+                    print(
+                        f"  - Column '{col}': Dropped {dropped_count} rows with values outside range [{min_val}, {max_val}]."
+                    )
+
+        except (ValueError, TypeError) as e:
+            skipped_columns.append((col, str(e)))
+            continue
+
+    total_dropped = initial_rows - len(new_df)
+    _LOGGER.info(f"Finished processing. Total rows dropped: {total_dropped}.")
+
+    if skipped_columns:
+        _LOGGER.warning("Skipped the following columns due to errors:")
+        for col, msg in skipped_columns:
+            # Only print the column name for cleaner output as the error was already logged
+            print(f" - {col}")
+
+    return new_df
+
+
+def match_and_filter_columns_by_regex(
+    df: pd.DataFrame,
+    pattern: str,
+    case_sensitive: bool = False,
+    escape_pattern: bool = False
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Return a tuple of (filtered DataFrame, matched column names) based on a regex pattern.
+
+    Parameters:
+        df (pd.DataFrame): The DataFrame to search.
+        pattern (str): The regex pattern to match column names (use a raw string).
+        case_sensitive (bool): Whether matching is case-sensitive.
+        escape_pattern (bool): If True, the pattern is escaped with `re.escape()` to treat it literally.
+
+    Returns:
+        (Tuple[pd.DataFrame, list[str]]): A DataFrame filtered to matched columns, and a list of matching column names.
+    """
+    if escape_pattern:
+        pattern = re.escape(pattern)
+
+    mask = df.columns.str.contains(pattern, case=case_sensitive, regex=True)
+    matched_columns = df.columns[mask].to_list()
+    filtered_df = df.loc[:, mask]
+    
+    _LOGGER.info(f"{len(matched_columns)} columns match the regex pattern '{pattern}'.")
+
+    return filtered_df, matched_columns
+
+
+def standardize_percentages(
+    df: pd.DataFrame,
+    columns: list[str],
+    treat_one_as_proportion: bool = True,
+    round_digits: int = 2,
+    verbose: bool=True
+) -> pd.DataFrame:
+    """
+    Standardizes numeric columns containing mixed-format percentages.
+
+    This function cleans columns where percentages might be entered as whole
+    numbers (55) and as proportions (0.55). It assumes values
+    between 0 and 1 are proportions and multiplies them by 100.
+
+    Args:
+        df (pd.Dataframe): The input pandas DataFrame.
+        columns (list[str]): A list of column names to standardize.
+        treat_one_as_proportion (bool):
+            - If True (default): The value `1` is treated as a proportion and converted to `100%`.
+            - If False: The value `1` is treated as `1%`.
+        round_digits (int): The number of decimal places to round the final result to.
+
+    Returns:
+        (pd.Dataframe):
+        A new DataFrame with the specified columns cleaned and standardized.
+    """
+    df_copy = df.copy()
+
+    if df_copy.empty:
+        return df_copy
+
+    # This helper function contains the core cleaning logic
+    def _clean_value(x: float) -> float:
+        """Applies the standardization rule to a single value."""
+        if pd.isna(x):
+            return x
+
+        # If treat_one_as_proportion is True, the range for proportions is [0, 1]
+        if treat_one_as_proportion and 0 <= x <= 1:
+            return x * 100
+        # If False, the range for proportions is [0, 1) (1 is excluded)
+        elif not treat_one_as_proportion and 0 <= x < 1:
+            return x * 100
+
+        # Otherwise, the value is assumed to be a correctly formatted percentage
+        return x
+    
+    fixed_columns: list[str] = list()
+
+    for col in columns:
+        # --- Robustness Checks ---
+        if col not in df_copy.columns:
+            _LOGGER.warning(f"Column '{col}' not found. Skipping.")
+            continue
+
+        if not is_numeric_dtype(df_copy[col]):
+            _LOGGER.warning(f"Column '{col}' is not numeric. Skipping.")
+            continue
+
+        # --- Applying the Logic ---
+        # Apply the cleaning function to every value in the column
+        df_copy[col] = df_copy[col].apply(_clean_value)
+
+        # Round the result
+        df_copy[col] = df_copy[col].round(round_digits)
+        
+        fixed_columns.append(col)
+        
+    if verbose:
+        _LOGGER.info(f"Columns standardized:")
+        for fixed_col in fixed_columns:
+            print(f"  '{fixed_col}'")
+
+    return df_copy
+
+
+def reconstruct_one_hot(
+    df: pd.DataFrame,
+    features_to_reconstruct: List[Union[str, Tuple[str, Optional[str]]]],
+    separator: str = '_',
+    baseline_category_name: Optional[str] = "Other",
+    drop_original: bool = True,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Reconstructs original categorical columns from a one-hot encoded DataFrame.
+
+    This function identifies groups of one-hot encoded columns based on a common
+    prefix (base feature name) and a separator. It then collapses each group
+    into a single column containing the categorical value.
+
+    Args:
+        df (pd.DataFrame): 
+            The input DataFrame with one-hot encoded columns.
+        features_to_reconstruct (List[str | Tuple[str, str | None]]):
+            A list defining the features to reconstruct. This list can contain:
+            
+            - A string: (e.g., "Color")
+              This reconstructs the feature 'Color' and assumes all-zero rows represent the baseline category ("Other" by default).
+            - A tuple: (e.g., ("Pet", "Dog"))
+              This reconstructs 'Pet' and maps all-zero rows to the baseline category "Dog".
+            - A tuple with None: (e.g., ("Size", None))
+              This reconstructs 'Size' and maps all-zero rows to the NaN value.
+            Example:
+            [
+                "Mood",                      # All-zeros -> "Other"
+                ("Color", "Red"),            # All-zeros -> "Red"
+                ("Size", None)               # All-zeros -> NaN
+            ]
+        separator (str): 
+            The character separating the base name from the categorical value in 
+            the column names (e.g., '_' in 'B_a').
+        baseline_category_name (str | None):
+            The baseline category name to use by default if it is not explicitly provided.
+        drop_original (bool): 
+            If True, the original one-hot encoded columns will be dropped from 
+            the returned DataFrame.
+
+    Returns:
+        pd.DataFrame: 
+            A new DataFrame with the specified one-hot encoded features 
+            reconstructed into single categorical columns.
+    
+    <br>
+    
+    ## Note: 
+    
+    This function is designed to be robust, but users should be aware of two key edge cases:
+
+    1.  **Ambiguous Base Feature Prefixes**: If `base_feature_names` list contains names where one is a prefix of another (e.g., `['feat', 'feat_ext']`), the order is critical. The function will match columns greedily. To avoid incorrect grouping, always list the **most specific base names first** (e.g., `['feat_ext', 'feat']`).
+
+    2.  **Malformed One-Hot Data**: If a row contains multiple `1`s within the same feature group (e.g., both `B_a` and `B_c` are `1`), the function will not raise an error. It uses `.idxmax()`, which returns the first column that contains the maximum value. This means it will silently select the first category it encounters and ignore the others, potentially masking an upstream data issue.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+    
+    if not (baseline_category_name is None or isinstance(baseline_category_name, str)):
+        _LOGGER.error("The baseline_category must be None or a string.")
+        raise TypeError()
+
+    new_df = df.copy()
+    all_ohe_cols_to_drop = []
+    reconstructed_count = 0
+    
+    # --- 1. Parse and validate the reconstruction config ---
+    # This normalizes the input into a clean {base_name: baseline_val} dict
+    reconstruction_config: Dict[str, Optional[str]] = {}
+    try:
+        for item in features_to_reconstruct:
+            if isinstance(item, str):
+                # Case 1: "Color"
+                base_name = item
+                baseline_val = baseline_category_name
+            elif isinstance(item, tuple) and len(item) == 2:
+                # Case 2: ("Pet", "dog") or ("Size", None)
+                base_name, baseline_val = item
+                if not (isinstance(base_name, str) and (isinstance(baseline_val, str) or baseline_val is None)):
+                    _LOGGER.error(f"Invalid tuple format for '{item}'. Must be (str, str|None).")
+                    raise ValueError()
+            else:
+                _LOGGER.error(f"Invalid item '{item}'. Must be str or (str, str|None) tuple.")
+                raise ValueError()
+            
+            if base_name in reconstruction_config and verbose:
+                _LOGGER.warning(f"Duplicate entry for '{base_name}' found. Using the last provided configuration.")
+            
+            reconstruction_config[base_name] = baseline_val
+    
+    except Exception as e:
+        _LOGGER.error(f"Failed to parse 'features_to_reconstruct' argument: {e}")
+        raise ValueError("Invalid configuration for 'features_to_reconstruct'.") from e
+    
+    _LOGGER.info(f"Attempting to reconstruct {len(reconstruction_config)} one-hot encoded feature(s).")
+    
+    # Main logic
+    for base_name, baseline_category in reconstruction_config.items():
+        # Regex to find all columns belonging to this base feature.
+        pattern = f"^{re.escape(base_name)}{re.escape(separator)}"
+        
+        # Find matching columns
+        ohe_cols = [col for col in df.columns if re.match(pattern, col)]
+
+        if not ohe_cols:
+            _LOGGER.warning(f"No one-hot encoded columns found for base feature '{base_name}'. Skipping.")
+            continue
+
+        # For each row, find the column name with the maximum value (which is 1)
+        reconstructed_series = new_df[ohe_cols].idxmax(axis=1) # type: ignore
+
+        # Extract the categorical value (the suffix) from the column name
+        # Use n=1 in split to handle cases where the category itself might contain the separator
+        new_column_values = reconstructed_series.str.split(separator, n=1).str[1]
+        
+        # Handle rows where all OHE columns were 0 (e.g., original value was NaN or a dropped baseline).
+        all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0 # type: ignore
+        
+        if baseline_category is not None:
+            # A baseline category was provided
+            new_column_values.loc[all_zero_mask] = baseline_category
+        else:
+            # No baseline provided: assign NaN
+            new_column_values.loc[all_zero_mask] = np.nan # type: ignore
+            
+        if verbose:
+            print(f"  - Mapped 'all-zero' rows for '{base_name}' to baseline: '{baseline_category}'.")
+
+        # Assign the new reconstructed column to the DataFrame
+        new_df[base_name] = new_column_values
+        
+        all_ohe_cols_to_drop.extend(ohe_cols)
+        reconstructed_count += 1
+        if verbose:
+            print(f"  - Reconstructed '{base_name}' from {len(ohe_cols)} columns.")
+
+    # Cleanup
+    if drop_original and all_ohe_cols_to_drop:
+        # Drop the original OHE columns, ensuring no duplicates in the drop list
+        unique_cols_to_drop = list(set(all_ohe_cols_to_drop))
+        new_df.drop(columns=unique_cols_to_drop, inplace=True)
+        _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original one-hot encoded columns.")
+
+    _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
+
+    return new_df
+
+
+def reconstruct_binary(
+    df: pd.DataFrame,
+    reconstruction_map: Dict[str, Tuple[str, Any, Any]],
+    drop_original: bool = True,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Reconstructs new categorical columns from existing binary (0/1) columns.
+
+    Used to reverse a binary encoding by mapping 0 and 1 back to
+    descriptive categorical labels.
+
+    Args:
+        df (pd.DataFrame):
+            The input DataFrame.
+        reconstruction_map (Dict[str, Tuple[str, Any, Any]]):
+            A dictionary defining the reconstructions.
+            Format:
+            { "new_col_name": ("source_col_name", "label_for_0", "label_for_1") }
+            Example:
+            {
+                "Sex": ("Sex_male", "Female", "Male"),
+                "Smoker": ("Is_Smoker", "No", "Yes")
+            }
+        drop_original (bool):
+            If True, the original binary source columns (e.g., "Sex_male")
+            will be dropped from the returned DataFrame.
+        verbose (bool):
+            If True, prints the details of each reconstruction.
+
+    Returns:
+        pd.DataFrame:
+            A new DataFrame with the reconstructed categorical columns.
+
+    Raises:
+        TypeError: If `df` is not a pandas DataFrame.
+        ValueError: If `reconstruction_map` is not a dictionary or a
+                    configuration is invalid (e.g., column name collision).
+
+    Notes:
+        - The function operates on a copy of the DataFrame.
+        - Rows with `NaN` in the source column will have `NaN` in the
+          new column.
+        - Values in the source column other than 0 or 1 (e.g., 2) will
+          result in `NaN` in the new column.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+
+    if not isinstance(reconstruction_map, dict):
+        _LOGGER.error("`reconstruction_map` must be a dictionary with the required format.")
+        raise ValueError()
+
+    new_df = df.copy()
+    source_cols_to_drop: List[str] = []
+    reconstructed_count = 0
+
+    _LOGGER.info(f"Attempting to reconstruct {len(reconstruction_map)} binary feature(s).")
+
+    for new_col_name, config in reconstruction_map.items():
+        
+        # --- 1. Validation ---
+        if not (isinstance(config, tuple) and len(config) == 3):
+            _LOGGER.error(f"Config for '{new_col_name}' is invalid. Must be a 3-item tuple. Skipping.")
+            raise ValueError()
+
+        source_col, label_for_0, label_for_1 = config
+
+        if source_col not in new_df.columns:
+            _LOGGER.error(f"Source column '{source_col}' for new column '{new_col_name}' not found. Skipping.")
+            raise ValueError()
+
+        if new_col_name in new_df.columns and verbose:
+            _LOGGER.warning(f"New column '{new_col_name}' already exists and will be overwritten.")
+
+        if new_col_name == source_col:
+            _LOGGER.error(f"New column name '{new_col_name}' cannot be the same as source column '{source_col}'.")
+            raise ValueError()
+
+        # --- 2. Reconstruction ---
+        # .map() handles 0, 1, preserves NaNs, and converts any other value to NaN.
+        mapping_dict = {0: label_for_0, 1: label_for_1}
+        new_df[new_col_name] = new_df[source_col].map(mapping_dict)
+
+        # --- 3. Logging/Tracking ---
+        source_cols_to_drop.append(source_col)
+        reconstructed_count += 1
+        if verbose:
+            print(f"  - Reconstructed '{new_col_name}' from '{source_col}' (0='{label_for_0}', 1='{label_for_1}').")
+
+    # --- 4. Cleanup ---
+    if drop_original and source_cols_to_drop:
+        # Use set() to avoid duplicates if the same source col was used
+        unique_cols_to_drop = list(set(source_cols_to_drop))
+        new_df.drop(columns=unique_cols_to_drop, inplace=True)
+        _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original binary source column(s).")
+
+    _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
+
+    return new_df
+
+
+def finalize_feature_schema(
+    df_features: pd.DataFrame,
+    categorical_mappings: Optional[Dict[str, Dict[str, int]]]
+) -> FeatureSchema:
+    """
+    Analyzes the final features DataFrame to create a definitive schema.
+
+    This function is the "single source of truth" for column order
+    and type (categorical vs. continuous) for the entire ML pipeline.
+
+    It should be called at the end of the feature engineering process.
+
+    Args:
+        df_features (pd.DataFrame):
+            The final, processed DataFrame containing *only* feature columns
+            in the exact order they will be fed to the model.
+        categorical_mappings (Dict[str, Dict[str, int]] | None):
+            The mappings dictionary generated by
+            `encode_categorical_features`. Can be None if no
+            categorical features exist.
+
+    Returns:
+        FeatureSchema: A NamedTuple containing all necessary metadata for the pipeline.
+    """
+    feature_names: List[str] = df_features.columns.to_list()
+    
+    # Intermediate lists for building
+    continuous_feature_names_list: List[str] = []
+    categorical_feature_names_list: List[str] = []
+    categorical_index_map_dict: Dict[int, int] = {}
+
+    # _LOGGER.info("Finalizing feature schema...")
+
+    if categorical_mappings:
+        # --- Categorical features are present ---
+        categorical_names_set = set(categorical_mappings.keys())
+        
+        for index, name in enumerate(feature_names):
+            if name in categorical_names_set:
+                # This is a categorical feature
+                cardinality = len(categorical_mappings[name])
+                categorical_index_map_dict[index] = cardinality
+                categorical_feature_names_list.append(name)
+            else:
+                # This is a continuous feature
+                continuous_feature_names_list.append(name)
+        
+        # Use the populated dict, or None if it's empty
+        final_index_map = categorical_index_map_dict if categorical_index_map_dict else None
+    
+    else:
+        # --- No categorical features ---
+        _LOGGER.info("No categorical mappings provided. Treating all features as continuous.")
+        continuous_feature_names_list = list(feature_names)
+        # categorical_feature_names_list remains empty
+        # categorical_index_map_dict remains empty
+        final_index_map = None # Explicitly set to None to match Optional type
+
+    _LOGGER.info(f"Schema created: {len(continuous_feature_names_list)} continuous, {len(categorical_feature_names_list)} categorical.")
+    
+    # Create the final immutable instance
+    schema_instance = FeatureSchema(
+        feature_names=tuple(feature_names),
+        continuous_feature_names=tuple(continuous_feature_names_list),
+        categorical_feature_names=tuple(categorical_feature_names_list),
+        categorical_index_map=final_index_map,
+        categorical_mappings=categorical_mappings
+    )
+    
+    return schema_instance
+
+
+def _validate_columns(df: pd.DataFrame, columns: list[str]):
+    valid_columns = [column for column in columns if column in df.columns]
+    return valid_columns
+
+
+def info():
+    _script_info(__all__)

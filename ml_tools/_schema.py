@@ -1,7 +1,7 @@
 from typing import NamedTuple, Tuple, Optional, Dict, Union
 from pathlib import Path
 
-from .custom_logger import save_list_strings
+from ._custom_logger import save_list_strings
 from ._keys import DatasetKeys
 from ._logger import _LOGGER
 

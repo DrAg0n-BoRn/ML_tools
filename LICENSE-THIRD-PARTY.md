@@ -38,3 +38,6 @@ This project depends on the following third-party packages. Each is governed by 
 - [torchmetrics](https://github.com/Lightning-AI/torchmetrics/blob/master/LICENSE)
 - [zstandard](https://github.com/indygreg/python-zstandard/blob/main/LICENSE)
 - [captum](https://github.com/meta-pytorch/captum/blob/master/LICENSE)
+- [node](https://github.com/Qwicen/node/blob/master/LICENSE.md)
+- [pytorch-widedeep](https://github.com/jrzaurin/pytorch-widedeep?tab=readme-ov-file#license)
+- [pytorch-fm](https://github.com/rixwew/pytorch-fm/blob/master/LICENSE)

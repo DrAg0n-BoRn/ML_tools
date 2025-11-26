@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.0.0] 2025-11-26
+
+### Added
+
+- ML_utilities:
+    - `build_optimizer_params()`, groups model parameters formatted for PyTorch optimizers.
+
+- Revamped module with native model implementations "ML_models_advanced":
+    - `DragonGateModel`
+    - `DragonNodeModel`
+    - `DragonAutoInt`
+    - `DragonTabNet`
+
+### Changed
+
+- Clean public APIs in all modules.
+- Package dependency: `pytorch_tabular` will not be included by default in the core `ML` installation. Use the additional flag `py-tab` if needed.
+- ML_models_pytab, model wrappers moved to this module.
+    - `PyTabGateModel`
+    - `PyTabTabNet`
+    - `PyTabAutoInt`
+    - `PyTabNodeModel`
+- ML_configuration_pytab, configuration classes moved to this module.
+    - `PyTabGateParams`
+    - `PyTabNodeParams`
+    - `PyTabTabNetParams`
+    - `PyTabAutoIntParams`
+
 ## [17.4.0] 2025-11-26
 
 ### Added

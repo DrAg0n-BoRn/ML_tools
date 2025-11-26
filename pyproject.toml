@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "17.4.0"
+version = "18.0.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -29,7 +29,6 @@ ML = [
     "joblib",
     "tqdm",
     "colorlog",
-    "omegaconf",          
     
     # Math / ML
     "scikit-learn",
@@ -37,7 +36,6 @@ ML = [
     "captum",
     "evotorch",
     "torchmetrics",
-    "pytorch_tabular",
 
     # Viz / Notebook
     "matplotlib",
@@ -48,6 +46,12 @@ ML = [
     "notebook",
     "jupyterlab",
     "ipywidgets",
+]
+
+# pytorch_tabular
+py-tab = [
+    "omegaconf",
+    "pytorch_tabular",
 ]
 
 # ensemble tools
