@@ -1,4 +1,4 @@
-from ._data_exploration import (
+from ._core._data_exploration import (
     summarize_dataframe,
     drop_constant_columns,
     drop_rows_with_missing_data,

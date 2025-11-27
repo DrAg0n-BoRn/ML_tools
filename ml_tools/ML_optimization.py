@@ -1,4 +1,4 @@
-from ._ML_optimization import (
+from ._core._ML_optimization import (
     DragonOptimizer,
     FitnessEvaluator,
     create_pytorch_problem,

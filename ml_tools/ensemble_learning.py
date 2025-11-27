@@ -1,4 +1,4 @@
-from ._ensemble_learning import (
+from ._core._ensemble_learning import (
     RegressionTreeModels,
     ClassificationTreeModels,
     dataset_pipeline,

@@ -1,4 +1,4 @@
-from ._GUI_tools import (
+from ._core._GUI_tools import (
     DragonGUIConfig,
     DragonGUIFactory,
     catch_exceptions,

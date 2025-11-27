@@ -1,4 +1,4 @@
-from ._ensemble_evaluation import (
+from ._core._ensemble_evaluation import (
     evaluate_model_classification,
     plot_roc_curve,
     plot_precision_recall_curve,

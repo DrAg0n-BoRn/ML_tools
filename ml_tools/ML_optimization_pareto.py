@@ -1,4 +1,4 @@
-from ._ML_optimization_pareto import (
+from ._core._ML_optimization_pareto import (
     DragonParetoOptimizer,
     info
 )

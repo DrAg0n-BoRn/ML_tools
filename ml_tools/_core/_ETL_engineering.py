@@ -7,7 +7,7 @@ from ._utilities import load_dataframe, save_dataframe_filename
 from ._path_manager import make_fullpath
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from .constants import CHEMICAL_ELEMENT_SYMBOLS
+from ..constants import CHEMICAL_ELEMENT_SYMBOLS
 from ._keys import MagicWords
 
 

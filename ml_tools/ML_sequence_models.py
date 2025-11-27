@@ -1,4 +1,4 @@
-from ._ML_sequence_models import (
+from ._core._ML_sequence_models import (
     DragonSequenceLSTM,
     info
 )

@@ -1,4 +1,4 @@
-from ._ML_vision_models import (
+from ._core._ML_vision_models import (
     DragonResNet,
     DragonEfficientNet,
     DragonVGG,

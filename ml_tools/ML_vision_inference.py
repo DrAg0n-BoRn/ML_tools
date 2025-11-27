@@ -1,4 +1,4 @@
-from ._ML_vision_inference import (
+from ._core._ML_vision_inference import (
     DragonVisionInferenceHandler,
     info
 )

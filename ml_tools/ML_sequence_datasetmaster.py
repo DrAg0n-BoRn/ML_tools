@@ -1,4 +1,4 @@
-from ._ML_sequence_datasetmaster import (
+from ._core._ML_sequence_datasetmaster import (
     DragonDatasetSequence,
     info
 )

@@ -1,4 +1,4 @@
-from ._MICE_imputation import (
+from ._core._MICE_imputation import (
     DragonMICE,
     apply_mice,
     save_imputed_datasets,

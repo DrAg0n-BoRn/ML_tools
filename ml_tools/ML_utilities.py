@@ -1,4 +1,4 @@
-from ._ML_utilities import (
+from ._core._ML_utilities import (
     find_model_artifacts,
     build_optimizer_params,
     get_model_parameters,

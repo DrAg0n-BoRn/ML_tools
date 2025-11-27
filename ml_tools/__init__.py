@@ -1,2 +1,1 @@
-from ._custom_logger import custom_logger
-from ._schema import FeatureSchema
+from ._core._schema import FeatureSchema

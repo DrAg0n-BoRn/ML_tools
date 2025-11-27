@@ -1,4 +1,4 @@
-from ._path_manager import (
+from ._core._path_manager import (
     DragonPathManager,
     make_fullpath,
     sanitize_filename,

@@ -1,4 +1,4 @@
-from ._ML_vision_transformers import (
+from ._core._ML_vision_transformers import (
     TRANSFORM_REGISTRY,
     ResizeAspectFill,
     LetterboxResize,

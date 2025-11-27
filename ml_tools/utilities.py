@@ -1,4 +1,4 @@
-from ._utilities import (
+from ._core._utilities import (
     load_dataframe,
     load_dataframe_greedy,
     load_dataframe_with_schema,

@@ -1,4 +1,4 @@
-from ._SQL import (
+from ._core._SQL import (
     DragonSQL,
     info
 )

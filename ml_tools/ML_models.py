@@ -1,4 +1,4 @@
-from ._ML_models import (
+from ._core._ML_models import (
     DragonMLP,
     DragonAttentionMLP,
     DragonMultiHeadAttentionNet,

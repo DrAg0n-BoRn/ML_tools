@@ -1,4 +1,4 @@
-from ._ML_configuration import (
+from ._core._ML_configuration import (
     # --- Metrics Formats ---
     RegressionMetricsFormat,
     MultiTargetRegressionMetricsFormat,

@@ -1,4 +1,4 @@
-from ._serde import (
+from ._core._serde import (
     serialize_object_filename,
     serialize_object,
     deserialize_object,

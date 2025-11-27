@@ -1,4 +1,4 @@
-from ._ensemble_inference import (
+from ._core._ensemble_inference import (
     DragonEnsembleInferenceHandler,
     model_report,
     info

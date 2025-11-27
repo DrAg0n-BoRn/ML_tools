@@ -1,4 +1,4 @@
-from ._ML_evaluation import (
+from ._core._ML_evaluation import (
     plot_losses,
     classification_metrics,
     regression_metrics,

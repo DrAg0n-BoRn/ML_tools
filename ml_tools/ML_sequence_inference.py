@@ -1,4 +1,4 @@
-from ._ML_sequence_inference import (
+from ._core._ML_sequence_inference import (
     DragonSequenceInferenceHandler,
     info
 )

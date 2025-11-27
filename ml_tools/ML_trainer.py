@@ -1,4 +1,4 @@
-from ._ML_trainer import (
+from ._core._ML_trainer import (
     DragonTrainer,
     DragonDetectionTrainer,
     DragonSequenceTrainer,

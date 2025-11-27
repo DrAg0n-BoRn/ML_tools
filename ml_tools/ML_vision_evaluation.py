@@ -1,4 +1,4 @@
-from ._ML_vision_evaluation import (
+from ._core._ML_vision_evaluation import (
     segmentation_metrics,
     object_detection_metrics,
     info
