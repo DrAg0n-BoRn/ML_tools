@@ -1,5 +1,6 @@
 from ._core._ML_utilities import (
-    find_model_artifacts,
+    ArtifactFinder,
+    find_model_artifacts_multi,
     build_optimizer_params,
     get_model_parameters,
     inspect_model_architecture,
@@ -11,7 +12,8 @@ from ._core._ML_utilities import (
 )
 
 __all__ = [
-    "find_model_artifacts",
+    "ArtifactFinder",
+    "find_model_artifacts_multi",
     "build_optimizer_params",
     "get_model_parameters",
     "inspect_model_architecture",

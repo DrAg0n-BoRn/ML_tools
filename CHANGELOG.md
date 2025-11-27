@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.2.0] 2025-11-27
+
+- Fix package setuptools build bug.
+
+### Changed
+
+- ML_utilities:
+    - `find_model_artifacts()` renamed to `find_model_artifacts_multi()` to better reflect its functionality over multiple directories.
+
+### Added
+
+- ML_utilities:
+    - `ArtifactFinder`, finds, processes, and returns model training artifacts from a target directory.
+
 ## [18.1.2] 2025-11-27
 
 - Internal reorganization of modules.

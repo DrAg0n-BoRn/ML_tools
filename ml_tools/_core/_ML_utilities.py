@@ -9,12 +9,13 @@ from ._script_info import _script_info
 from ._logger import _LOGGER
 from ._keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from ._utilities import load_dataframe
-from ._custom_logger import save_list_strings, custom_logger
+from ._custom_logger import save_list_strings, custom_logger, load_list_strings
 from ._serde import serialize_object_filename
 
 
 __all__ = [
-    "find_model_artifacts",
+    "ArtifactFinder",
+    "find_model_artifacts_multi",
     "build_optimizer_params",
     "get_model_parameters",
     "inspect_model_architecture",
@@ -25,7 +26,193 @@ __all__ = [
 ]
 
 
-def find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=False) -> list[dict[str,Any]]:
+class ArtifactFinder:
+    """
+    Finds, processes, and returns model training artifacts from a target directory.
+    
+    The expected directory structure is:
+    
+    ```
+        directory
+        ├── *.pth
+        ├── scaler_*.pth          (Required if `load_scaler` is True)
+        ├── feature_names.txt
+        ├── target_names.txt
+        └── architecture.json
+    ```
+    """
+    def __init__(self, directory: Union[str, Path], load_scaler: bool) -> None:
+        """
+        Args:
+            directory (str | Path): The path to the directory that contains training artifacts.
+            load_scaler (bool): If True, requires and searches for a scaler file `scaler_*.pth`.
+        """
+        # validate directory
+        dir_path = make_fullpath(directory, enforce="directory")
+        
+        parsing_dict = _find_model_artifacts(target_directory=dir_path, load_scaler=load_scaler, verbose=False)
+        
+        self._weights_path = parsing_dict[PytorchArtifactPathKeys.WEIGHTS_PATH]
+        self._feature_names_path = parsing_dict[PytorchArtifactPathKeys.FEATURES_PATH]
+        self._target_names_path = parsing_dict[PytorchArtifactPathKeys.TARGETS_PATH]
+        self._model_architecture_path = parsing_dict[PytorchArtifactPathKeys.ARCHITECTURE_PATH]
+        self._scaler_path = None
+        
+        if load_scaler:
+            self._scaler_path = parsing_dict[PytorchArtifactPathKeys.SCALER_PATH]
+            
+        # Process text files
+        self._feature_names = self._process_text(self._feature_names_path)
+        self._target_names = self._process_text(self._target_names_path)
+        
+    def _process_text(self, text_file_path: Path):
+        list_strings = load_list_strings(text_file=text_file_path, verbose=False)
+        return list_strings
+    
+    @property
+    def feature_names(self) -> list[str]:
+        """Returns the feature names as a list of strings."""
+        return self._feature_names
+    
+    @property
+    def target_names(self) -> list[str]:
+        """Returns the target names as a list of strings."""
+        return self._target_names
+    
+    @property
+    def weights_path(self) -> Path:
+        """Returns the path to the state dictionary file."""
+        return self._weights_path
+    
+    @property
+    def scaler_path(self) -> Path:
+        """Returns the path to the scaler file."""
+        if self._scaler_path is None:
+            _LOGGER.error("No scaler file loaded. Set 'load_scaler=True'.")
+            raise ValueError()
+        else:
+            return self._scaler_path
+        
+    def __repr__(self) -> str:
+        dir_name = self._weights_path.parent.name
+        n_features = len(self._feature_names)
+        n_targets = len(self._target_names)
+        scaler_status = self._scaler_path.name if self._scaler_path else "None"
+        
+        return (
+            f"{self.__class__.__name__}\n"
+            f"    directory='{dir_name}'\n"
+            f"    weights='{self._weights_path.name}'\n"
+            f"    scaler='{scaler_status}'\n"
+            f"    features={n_features}\n" 
+            f"    targets={n_targets}"
+        )
+
+
+def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=False) -> dict[str, Path]:
+    """
+    Scans a directory to find paths to model weights, target names, feature names, and model architecture. Optionally an scaler path if `load_scaler` is True.
+    
+    The expected directory structure is as follows:
+    
+    ```
+        target_directory
+        ├── *.pth
+        ├── scaler_*.pth          (Required if `load_scaler` is True)
+        ├── feature_names.txt
+        ├── target_names.txt
+        └── architecture.json
+    ```
+    
+    Args:
+        target_directory (str | Path): The path to the directory that contains training artifacts.
+        load_scaler (bool): If True, the function requires and searches for a scaler file `scaler_*.pth`.
+        verbose (bool): If True, enables detailed logging during the search process.
+    """
+    # validate directory
+    dir_path = make_fullpath(target_directory, enforce="directory")
+    dir_name = dir_path.name
+    
+    # find files
+    model_pth_dict = list_files_by_extension(directory=dir_path, extension="pth", verbose=verbose)
+    
+    # restriction
+    if load_scaler:
+        if len(model_pth_dict) != 2:
+            _LOGGER.error(f"Directory '{dir_name}' should contain exactly 2 '.pth' files: scaler and weights.")
+            raise IOError()
+    else:
+        if len(model_pth_dict) != 1:
+            _LOGGER.error(f"Directory '{dir_name}' should contain exactly 1 '.pth' file for weights.")
+            raise IOError()
+    
+    ##### Scaler and Weights #####
+    scaler_path = None
+    weights_path = None
+    
+    # load weights and scaler if present
+    for pth_filename, pth_path in model_pth_dict.items():
+        if load_scaler and pth_filename.lower().startswith(DatasetKeys.SCALER_PREFIX):
+            scaler_path = pth_path
+        else:
+            weights_path = pth_path
+    
+    # validation
+    if not weights_path:
+        _LOGGER.error(f"Error parsing the model weights path from '{dir_name}'")
+        raise IOError()
+    
+    if load_scaler and not scaler_path:
+        _LOGGER.error(f"Error parsing the scaler path from '{dir_name}'")
+        raise IOError()
+    
+    ##### Target and Feature names #####
+    target_names_path = None
+    feature_names_path = None
+    
+    # load feature and target names
+    model_txt_dict = list_files_by_extension(directory=dir_path, extension="txt", verbose=verbose)
+    
+    for txt_filename, txt_path in model_txt_dict.items():
+        if txt_filename == DatasetKeys.FEATURE_NAMES:
+            feature_names_path = txt_path
+        elif txt_filename == DatasetKeys.TARGET_NAMES:
+            target_names_path = txt_path
+    
+    # validation
+    if not target_names_path or not feature_names_path:
+        _LOGGER.error(f"Error parsing features path or targets path from '{dir_name}'")
+        raise IOError()
+    
+    ##### load model architecture path #####
+    architecture_path = None
+    
+    model_json_dict = list_files_by_extension(directory=dir_path, extension="json", verbose=verbose)
+    
+    for json_filename, json_path in model_json_dict.items():
+        if json_filename == PytorchModelArchitectureKeys.SAVENAME:
+            architecture_path = json_path
+    
+    # validation
+    if not architecture_path:
+        _LOGGER.error(f"Error parsing the model architecture path from '{dir_name}'")
+        raise IOError()
+    
+    ##### Paths dictionary #####
+    parsing_dict = {
+        PytorchArtifactPathKeys.WEIGHTS_PATH: weights_path,
+        PytorchArtifactPathKeys.ARCHITECTURE_PATH: architecture_path,
+        PytorchArtifactPathKeys.FEATURES_PATH: feature_names_path,
+        PytorchArtifactPathKeys.TARGETS_PATH: target_names_path,
+    }
+    
+    if scaler_path is not None:
+        parsing_dict[PytorchArtifactPathKeys.SCALER_PATH] = scaler_path
+    
+    return parsing_dict
+
+
+def find_model_artifacts_multi(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=False) -> list[dict[str, Path]]:
     """
     Scans subdirectories to find paths to model weights, target names, feature names, and model architecture. Optionally an scaler path if `load_scaler` is True.
 
@@ -56,90 +243,20 @@ def find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, v
             corresponds to a model found in a subdirectory. The dictionary
             maps standardized keys to the absolute paths of the model's
             artifacts (weights, architecture, features, targets, and scaler).
-            The scaler path will be `None` if `load_scaler` is False.
     """
     # validate directory
     root_path = make_fullpath(target_directory, enforce="directory")
     
     # store results
-    all_artifacts: list[dict] = list()
+    all_artifacts: list[dict[str, Path]] = list()
     
     # find model directories
     result_dirs_dict = list_subdirectories(root_dir=root_path, verbose=verbose)
-    for dir_name, dir_path in result_dirs_dict.items():
-        # find files
-        model_pth_dict = list_files_by_extension(directory=dir_path, extension="pth", verbose=verbose)
+    for _dir_name, dir_path in result_dirs_dict.items():
         
-        # restriction
-        if load_scaler:
-            if len(model_pth_dict) != 2:
-                _LOGGER.error(f"Directory {dir_path} should contain exactly 2 '.pth' files: scaler and weights.")
-                raise IOError()
-        else:
-            if len(model_pth_dict) != 1:
-                _LOGGER.error(f"Directory {dir_path} should contain exactly 1 '.pth' file: weights.")
-                raise IOError()
-        
-        ##### Scaler and Weights #####
-        scaler_path = None
-        weights_path = None
-        
-        # load weights and scaler if present
-        for pth_filename, pth_path in model_pth_dict.items():
-            if load_scaler and pth_filename.lower().startswith(DatasetKeys.SCALER_PREFIX):
-                scaler_path = pth_path
-            else:
-                weights_path = pth_path
-        
-        # validation
-        if not weights_path:
-            _LOGGER.error(f"Error parsing the model weights path from '{dir_name}'")
-            raise IOError()
-        
-        if load_scaler and not scaler_path:
-            _LOGGER.error(f"Error parsing the scaler path from '{dir_name}'")
-            raise IOError()
-        
-        ##### Target and Feature names #####
-        target_names_path = None
-        feature_names_path = None
-        
-        # load feature and target names
-        model_txt_dict = list_files_by_extension(directory=dir_path, extension="txt", verbose=verbose)
-        
-        for txt_filename, txt_path in model_txt_dict.items():
-            if txt_filename == DatasetKeys.FEATURE_NAMES:
-                feature_names_path = txt_path
-            elif txt_filename == DatasetKeys.TARGET_NAMES:
-                target_names_path = txt_path
-        
-        # validation
-        if not target_names_path or not feature_names_path:
-            _LOGGER.error(f"Error parsing features path or targets path from '{dir_name}'")
-            raise IOError()
-        
-        ##### load model architecture path #####
-        architecture_path = None
-        
-        model_json_dict = list_files_by_extension(directory=dir_path, extension="json", verbose=verbose)
-        
-        for json_filename, json_path in model_json_dict.items():
-            if json_filename == PytorchModelArchitectureKeys.SAVENAME:
-                architecture_path = json_path
-        
-        # validation
-        if not architecture_path:
-            _LOGGER.error(f"Error parsing the model architecture path from '{dir_name}'")
-            raise IOError()
-        
-        ##### Paths dictionary #####
-        parsing_dict = {
-            PytorchArtifactPathKeys.WEIGHTS_PATH: weights_path,
-            PytorchArtifactPathKeys.ARCHITECTURE_PATH: architecture_path,
-            PytorchArtifactPathKeys.FEATURES_PATH: feature_names_path,
-            PytorchArtifactPathKeys.TARGETS_PATH: target_names_path,
-            PytorchArtifactPathKeys.SCALER_PATH: scaler_path
-        }
+        parsing_dict = _find_model_artifacts(target_directory=dir_path,
+                                            load_scaler=load_scaler,
+                                            verbose=verbose)
         
         all_artifacts.append(parsing_dict)
     
@@ -190,6 +307,8 @@ def build_optimizer_params(model: nn.Module, weight_decay: float = 0.01) -> List
             no_decay_params.append(param)
         else:
             decay_params.append(param)
+            
+    _LOGGER.info(f"Weight decay configured:\n    Decaying parameters: {len(decay_params)}\n    Non-decaying parameters: {len(no_decay_params)}")
 
     return [
         {
