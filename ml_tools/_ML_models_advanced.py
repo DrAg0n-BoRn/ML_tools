@@ -1,17 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Any, Optional, Union, Literal
-from pathlib import Path
-import json
+from typing import Dict, Any, Optional, Literal
 
-from ._ML_models import _ArchitectureHandlerMixin
-from ._path_manager import make_fullpath
+from ._models_advanced_base import _ArchitectureBuilder
 from ._schema import FeatureSchema
-from ._keys import PytorchModelArchitectureKeys
 from ._logger import _LOGGER
 from ._script_info import _script_info
-from ._model_helpers import (
+from ._models_advanced_helpers import (
     Embedding1dLayer,
     GatedFeatureLearningUnit,
     NeuralDecisionTree,
@@ -25,7 +21,8 @@ from ._model_helpers import (
     Embedding2dLayer,
     FeatTransformer, 
     AttentiveTransformer, 
-    initialize_non_glu
+    initialize_non_glu,
+    _GateHead
 )
 
 __all__ = [
@@ -43,60 +40,7 @@ __all__ = [
 # https://arxiv.org/abs/1705.08741v2
 
 
-class _GateHead(nn.Module):
-    """
-    Custom Prediction Head for GATE.
-    Aggregates outputs from multiple trees using learnable weights (eta).
-    """
-    def __init__(self, input_dim: int, output_dim: int, num_trees: int, share_head_weights: bool = True):
-        super().__init__()
-        self.num_trees = num_trees
-        self.output_dim = output_dim
-        self.share_head_weights = share_head_weights
-
-        # Decision Tree Heads
-        if share_head_weights:
-            self.head = nn.Linear(input_dim, output_dim)
-        else:
-            self.head = nn.ModuleList(
-                [nn.Linear(input_dim, output_dim) for _ in range(num_trees)]
-            )
-
-        # Learnable mixing weights (eta) for the trees
-        self.eta = nn.Parameter(torch.rand(num_trees, requires_grad=True))
-        
-        # Global Bias (T0) - initialized to 0, but often updated via data-aware init
-        self.T0 = nn.Parameter(torch.zeros(output_dim), requires_grad=True)
-
-    def forward(self, backbone_features: torch.Tensor) -> torch.Tensor:
-        # backbone_features shape: (Batch, Output_Dim_Tree, Num_Trees) if using attention?
-        # Actually GATE backbone returns: (Batch, Output_Dim_Tree, Num_Trees)
-        
-        # 1. Apply Linear Head to Tree Outputs
-        if self.share_head_weights:
-            # Transpose to (Batch, Num_Trees, Feature_Dim) to apply the same linear layer
-            # y_hat: (Batch, Num_Trees, Output_Dim)
-            y_hat = self.head(backbone_features.transpose(2, 1))
-        else:
-            # Apply separate linear layers
-            y_hat = torch.cat(
-                [h(backbone_features[:, :, i]).unsqueeze(1) for i, h in enumerate(self.head)],
-                dim=1,
-            )
-
-        # 2. Weighted Sum using Eta
-        # eta reshape: (1, Num_Trees, 1)
-        y_hat = y_hat * self.eta.reshape(1, -1, 1)
-        
-        # Sum across trees -> (Batch, Output_Dim)
-        y_hat = y_hat.sum(dim=1)
-
-        # 3. Add Global Bias
-        y_hat = y_hat + self.T0
-        return y_hat
-
-
-class DragonGateModel(nn.Module, _ArchitectureHandlerMixin):
+class DragonGateModel(nn.Module, _ArchitectureBuilder):
     """
     Native implementation of the Gated Additive Tree Ensemble (GATE).
     
@@ -135,14 +79,49 @@ class DragonGateModel(nn.Module, _ArchitectureHandlerMixin):
                  batch_norm_continuous: bool = True):
         """
         Args:
-            schema: FeatureSchema object.
-            out_targets: Number of output targets.
-            embedding_dim: Embedding dimension for categorical features.
-            gflu_stages: Number of Gated Feature Learning Unit stages.
-            num_trees: Number of Neural Decision Trees.
-            tree_depth: Depth of the trees.
-            chain_trees: If True, feeds output of tree T-1 into tree T.
-            tree_wise_attention: If True, applies Self-Attention across the tree outputs.
+            schema (FeatureSchema): 
+                Schema object containing feature names and types.
+            out_targets (int): 
+                Number of output targets (e.g., 1 for regression/binary, N for multi-class).
+            embedding_dim (int, optional): 
+                Embedding dimension for categorical features. 
+                Suggested: 8 to 64.
+            gflu_stages (int, optional): 
+                Number of Gated Feature Learning Unit stages in the backbone.
+                Higher values allow learning deeper feature interactions.
+                Suggested: 2 to 10.
+            gflu_dropout (float, optional): 
+                Dropout rate applied within GFLU stages. 
+                Suggested: 0.0 to 0.3.
+            num_trees (int, optional): 
+                Number of Neural Decision Trees to use in the ensemble.
+                Suggested: 10 to 50.
+            tree_depth (int, optional): 
+                Depth of the decision trees. Deeper trees capture more complex logic 
+                but may overfit. 
+                Suggested: 3 to 6.
+            tree_dropout (float, optional): 
+                Dropout rate applied to the tree leaves. 
+                Suggested: 0.1 to 0.3.
+            chain_trees (bool, optional): 
+                If True, feeds the output of tree T-1 into tree T (Boosting-style). 
+                If False, trees run in parallel (Bagging-style). 
+            tree_wise_attention (bool, optional): 
+                If True, applies Self-Attention across the outputs of the trees 
+                to weigh their contributions dynamically. 
+            tree_wise_attention_dropout (float, optional): 
+                Dropout rate for the tree-wise attention mechanism.
+                Suggested: 0.1.
+            binning_activation (str, optional): 
+                Activation function for the soft binning in trees. 
+                Options: 'entmoid' (sparse), 'sparsemoid', 'sigmoid'. 
+            feature_mask_function (str, optional): 
+                Activation function for feature selection/masking.
+                Options: 'entmax' (sparse), 'sparsemax', 'softmax', 't-softmax'.
+            share_head_weights (bool, optional): 
+                If True, all trees share the same linear projection head weights.
+            batch_norm_continuous (bool, optional): 
+                If True, applies Batch Normalization to continuous features before embedding.
         """
         super().__init__()
         self.schema = schema
@@ -302,7 +281,7 @@ class DragonGateModel(nn.Module, _ArchitectureHandlerMixin):
     def data_aware_initialization(self, train_dataset, num_samples: int = 2000):
         """
         Performs data-aware initialization for the global bias T0.
-        This often speeds up convergence significantly for regression.
+        This often speeds up convergence significantly.
         """
         # 1. Prepare Data
         _LOGGER.info(f"Performing GATE data-aware initialization on up to {num_samples} samples...")
@@ -377,65 +356,12 @@ class DragonGateModel(nn.Module, _ArchitectureHandlerMixin):
             **self.model_hparams
         }
         return config
-
-    @classmethod
-    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
-        """Loads a model architecture from a JSON file."""
-        user_path = make_fullpath(file_or_dir)
-        
-        if user_path.is_dir():
-            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
-            target_path = make_fullpath(user_path / json_filename, enforce="file")
-        elif user_path.is_file():
-            target_path = user_path
-        else:
-            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
-            raise IOError()
-
-        with open(target_path, 'r') as f:
-            saved_data = json.load(f)
-
-        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
-        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
-
-        if saved_class_name != cls.__name__:
-            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
-            raise ValueError()
-
-        # --- RECONSTRUCTION LOGIC ---
-        if 'schema_dict' not in config:
-            raise ValueError("Missing 'schema_dict' in config.")
-            
-        schema_data = config.pop('schema_dict')
-        
-        raw_index_map = schema_data['categorical_index_map']
-        if raw_index_map is not None:
-            rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
-        else:
-            rehydrated_index_map = None
-
-        schema = FeatureSchema(
-            feature_names=tuple(schema_data['feature_names']),
-            continuous_feature_names=tuple(schema_data['continuous_feature_names']),
-            categorical_feature_names=tuple(schema_data['categorical_feature_names']),
-            categorical_index_map=rehydrated_index_map,
-            categorical_mappings=schema_data['categorical_mappings']
-        )
-        
-        config['schema'] = schema
-        # --- End Reconstruction ---
-
-        model = cls(**config)
-        if verbose:
-            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
-        return model
     
 
-class DragonNodeModel(nn.Module, _ArchitectureHandlerMixin):
+class DragonNodeModel(nn.Module, _ArchitectureBuilder):
     """
     Native implementation of Neural Oblivious Decision Ensembles (NODE).
     
-    NODE layers multiple layers of Oblivious Differentiable Decision Trees (ODST).
     The 'Dense' architecture concatenates the outputs of previous layers to the 
     features of subsequent layers, allowing for deep feature interaction learning.
     """
@@ -467,18 +393,46 @@ class DragonNodeModel(nn.Module, _ArchitectureHandlerMixin):
                  batch_norm_continuous: bool = False):
         """
         Args:
-            schema: FeatureSchema object.
-            out_targets: Number of output targets.
-            embedding_dim: Embedding dimension.
-            num_trees: Number of trees per layer.
-            num_layers: Number of DenseODST layers.
-            tree_depth: Depth of the oblivious trees.
-            additional_tree_output_dim: Extra output channels per tree. 
-                These are used for internal representation in deeper layers 
-                but discarded for the final prediction. (Default: 3)
-            max_features: Max features to keep in the dense connection (prevents explosion).
-            choice_function: Activation for feature selection ('entmax' is sparse).
-            bin_function: Activation for binning ('entmoid' is sparse).
+            schema (FeatureSchema): 
+                Schema object containing feature names and types.
+            out_targets (int): 
+                Number of output targets.
+            embedding_dim (int, optional): 
+                Embedding dimension for categorical features.
+                Suggested: 16 to 64.
+            num_trees (int, optional): 
+                Number of Oblivious Decision Trees per layer. NODE relies on a large number 
+                of trees (wider layers) compared to standard forests.
+                Suggested: 512 to 2048.
+            num_layers (int, optional): 
+                Number of DenseODST layers. Since layers are densely connected, deeper 
+                networks increase memory usage significantly.
+                Suggested: 2 to 5.
+            tree_depth (int, optional): 
+                Depth of the oblivious trees. Oblivious trees are symmetric, so 
+                parameters scale with 2^depth.
+                Suggested: 4 to 8.
+            additional_tree_output_dim (int, optional): 
+                Extra output channels per tree. These are used for internal representation 
+                in deeper layers but discarded for the final prediction.
+                Suggested: 1 to 5.
+            max_features (int, optional): 
+                Max features to keep in the dense connection to prevent explosion in 
+                feature dimension for deeper layers. If None, keeps all.
+            input_dropout (float, optional): 
+                Dropout applied to the input of the Dense Block.
+                Suggested: 0.0 to 0.2.
+            embedding_dropout (float, optional): 
+                Dropout applied specifically to embeddings.
+                Suggested: 0.0 to 0.2.
+            choice_function (str, optional): 
+                Activation for feature selection. 'entmax' allows sparse feature selection.
+                Options: 'entmax', 'sparsemax', 'softmax'. 
+            bin_function (str, optional): 
+                Activation for the soft binning steps.
+                Options: 'entmoid', 'sparsemoid', 'sigmoid'.
+            batch_norm_continuous (bool, optional): 
+                If True, applies Batch Normalization to continuous features.
         """
         super().__init__()
         self.schema = schema
@@ -633,60 +587,8 @@ class DragonNodeModel(nn.Module, _ArchitectureHandlerMixin):
         }
         return config
 
-    @classmethod
-    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
-        """Loads a model architecture from a JSON file."""
-        user_path = make_fullpath(file_or_dir)
-        
-        if user_path.is_dir():
-            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
-            target_path = make_fullpath(user_path / json_filename, enforce="file")
-        elif user_path.is_file():
-            target_path = user_path
-        else:
-            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
-            raise IOError()
 
-        with open(target_path, 'r') as f:
-            saved_data = json.load(f)
-
-        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
-        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
-
-        if saved_class_name != cls.__name__:
-            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
-            raise ValueError()
-
-        # --- RECONSTRUCTION LOGIC ---
-        if 'schema_dict' not in config:
-            raise ValueError("Missing 'schema_dict' in config.")
-            
-        schema_data = config.pop('schema_dict')
-        
-        raw_index_map = schema_data['categorical_index_map']
-        if raw_index_map is not None:
-            rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
-        else:
-            rehydrated_index_map = None
-
-        schema = FeatureSchema(
-            feature_names=tuple(schema_data['feature_names']),
-            continuous_feature_names=tuple(schema_data['continuous_feature_names']),
-            categorical_feature_names=tuple(schema_data['categorical_feature_names']),
-            categorical_index_map=rehydrated_index_map,
-            categorical_mappings=schema_data['categorical_mappings']
-        )
-        
-        config['schema'] = schema
-        # --- End Reconstruction ---
-
-        model = cls(**config)
-        if verbose:
-            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
-        return model
-    
-
-class DragonAutoInt(nn.Module, _ArchitectureHandlerMixin):
+class DragonAutoInt(nn.Module, _ArchitectureBuilder):
     """
     Native implementation of AutoInt (Automatic Feature Interaction Learning).
     
@@ -710,15 +612,41 @@ class DragonAutoInt(nn.Module, _ArchitectureHandlerMixin):
                  batch_norm_continuous: bool = False):
         """
         Args:
-            schema: FeatureSchema object.
-            out_targets: Number of output targets.
-            embedding_dim: Initial embedding dimension for features.
-            attn_embed_dim: Projection dimension for the attention mechanism.
-            num_heads: Number of attention heads.
-            num_attn_blocks: Number of self-attention layers.
-            attention_pooling: If True, concatenates outputs of all attention blocks.
-            deep_layers: If True, adds an MLP before the attention mechanism.
-            layers: Hyphen-separated string for MLP layer sizes (e.g., "128-64").
+            schema (FeatureSchema): 
+                Schema object containing feature names and types.
+            out_targets (int): 
+                Number of output targets.
+            embedding_dim (int, optional): 
+                Initial embedding dimension for features. 
+                Suggested: 16 to 64.
+            attn_embed_dim (int, optional): 
+                Projection dimension for the attention mechanism.
+                Suggested: 16 to 64.
+            num_heads (int, optional): 
+                Number of attention heads. 
+                Suggested: 2 to 8.
+            num_attn_blocks (int, optional): 
+                Number of self-attention layers (depth of interaction learning).
+                Suggested: 2 to 5.
+            attn_dropout (float, optional): 
+                Dropout rate within the attention blocks.
+                Suggested: 0.0 to 0.2.
+            has_residuals (bool, optional): 
+                If True, adds residual connections (ResNet style) to attention blocks.
+            attention_pooling (bool, optional): 
+                If True, concatenates outputs of all attention blocks (DenseNet style).
+                If False, uses only the output of the last block.
+            deep_layers (bool, optional): 
+                If True, adds a standard MLP (Deep Layers) before the attention mechanism
+                to process features initially.
+            layers (str, optional): 
+                Hyphen-separated string for MLP layer sizes if deep_layers is True.
+            activation (str, optional): 
+                Activation function for the MLP layers.
+            embedding_dropout (float, optional): 
+                Dropout applied to the initial feature embeddings.
+            batch_norm_continuous (bool, optional): 
+                If True, applies Batch Normalization to continuous features.
         """
         super().__init__()
         self.schema = schema
@@ -927,65 +855,12 @@ class DragonAutoInt(nn.Module, _ArchitectureHandlerMixin):
         }
         return config
 
-    @classmethod
-    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
-        """Loads a model architecture from a JSON file."""
-        user_path = make_fullpath(file_or_dir)
-        
-        if user_path.is_dir():
-            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
-            target_path = make_fullpath(user_path / json_filename, enforce="file")
-        elif user_path.is_file():
-            target_path = user_path
-        else:
-            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
-            raise IOError()
 
-        with open(target_path, 'r') as f:
-            saved_data = json.load(f)
-
-        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
-        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
-
-        if saved_class_name != cls.__name__:
-            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
-            raise ValueError()
-
-        # --- RECONSTRUCTION LOGIC ---
-        if 'schema_dict' not in config:
-            raise ValueError("Missing 'schema_dict' in config.")
-            
-        schema_data = config.pop('schema_dict')
-        
-        raw_index_map = schema_data['categorical_index_map']
-        if raw_index_map is not None:
-            rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
-        else:
-            rehydrated_index_map = None
-
-        schema = FeatureSchema(
-            feature_names=tuple(schema_data['feature_names']),
-            continuous_feature_names=tuple(schema_data['continuous_feature_names']),
-            categorical_feature_names=tuple(schema_data['categorical_feature_names']),
-            categorical_index_map=rehydrated_index_map,
-            categorical_mappings=schema_data['categorical_mappings']
-        )
-        
-        config['schema'] = schema
-        # --- End Reconstruction ---
-
-        model = cls(**config)
-        if verbose:
-            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
-        return model
-
-
-class DragonTabNet(nn.Module, _ArchitectureHandlerMixin):
+class DragonTabNet(nn.Module, _ArchitectureBuilder):
     """
     Native implementation of TabNet (Attentive Interpretable Tabular Learning).
     
-    This implementation faithfully follows the original architecture,
-    including the Initial Splitter, Ghost Batch Norm, and GLU scaling.
+    Includes the Initial Splitter, Ghost Batch Norm, and GLU scaling.
     """
     def __init__(self, *,
                  schema: FeatureSchema,
@@ -1002,16 +877,39 @@ class DragonTabNet(nn.Module, _ArchitectureHandlerMixin):
                  batch_norm_continuous: bool = False):
         """
         Args:
-            schema: FeatureSchema object.
-            out_targets: Number of output targets.
-            n_d: Dimension of the prediction layer.
-            n_a: Dimension of the attention layer.
-            n_steps: Number of sequential attention steps.
-            gamma: Relaxation parameter for sparsity.
-            n_independent: Number of independent GLU layers in each block.
-            n_shared: Number of shared GLU layers in each block.
-            virtual_batch_size: Batch size for Ghost Batch Normalization.
-            mask_type: Masking function ('sparsemax' is default).
+            schema (FeatureSchema): 
+                Schema object containing feature names and types.
+            out_targets (int): 
+                Number of output targets.
+            n_d (int, optional): 
+                Dimension of the prediction layer (decision step).
+                Suggested: 8 to 64.
+            n_a (int, optional): 
+                Dimension of the attention layer (masking step).
+                Suggested: 8 to 64.
+            n_steps (int, optional): 
+                Number of sequential attention steps (architecture depth).
+                Suggested: 3 to 10.
+            gamma (float, optional): 
+                Relaxation parameter for sparsity in the mask.
+                Suggested: 1.0 to 2.0.
+            n_independent (int, optional): 
+                Number of independent Gated Linear Unit (GLU) layers in each block.
+                Suggested: 1 to 5.
+            n_shared (int, optional): 
+                Number of shared GLU layers across all blocks.
+                Suggested: 1 to 5.
+            virtual_batch_size (int, optional): 
+                Batch size for Ghost Batch Normalization.
+                Suggested: 128 to 1024.
+            momentum (float, optional): 
+                Momentum for Batch Normalization.
+                Suggested: 0.01 to 0.4.
+            mask_type (str, optional): 
+                Masking function to use. 'sparsemax' enforces sparsity.
+                Options: 'sparsemax', 'entmax', 'softmax'.
+            batch_norm_continuous (bool, optional): 
+                If True, applies Batch Normalization to continuous features before processing.
         """
         super().__init__()
         self.schema = schema
@@ -1174,56 +1072,6 @@ class DragonTabNet(nn.Module, _ArchitectureHandlerMixin):
             **self.model_hparams
         }
         return config
-
-    @classmethod
-    def load(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
-        """Loads a model architecture from a JSON file."""
-        user_path = make_fullpath(file_or_dir)
-        
-        if user_path.is_dir():
-            json_filename = PytorchModelArchitectureKeys.SAVENAME + ".json"
-            target_path = make_fullpath(user_path / json_filename, enforce="file")
-        elif user_path.is_file():
-            target_path = user_path
-        else:
-            _LOGGER.error(f"Invalid path: '{file_or_dir}'")
-            raise IOError()
-
-        with open(target_path, 'r') as f:
-            saved_data = json.load(f)
-
-        saved_class_name = saved_data[PytorchModelArchitectureKeys.MODEL]
-        config = saved_data[PytorchModelArchitectureKeys.CONFIG]
-
-        if saved_class_name != cls.__name__:
-            _LOGGER.error(f"Model class mismatch. File specifies '{saved_class_name}', but '{cls.__name__}' was expected.")
-            raise ValueError()
-
-        if 'schema_dict' not in config:
-            raise ValueError("Missing 'schema_dict' in config.")
-            
-        schema_data = config.pop('schema_dict')
-        
-        raw_index_map = schema_data['categorical_index_map']
-        if raw_index_map is not None:
-            rehydrated_index_map = {int(k): v for k, v in raw_index_map.items()}
-        else:
-            rehydrated_index_map = None
-
-        schema = FeatureSchema(
-            feature_names=tuple(schema_data['feature_names']),
-            continuous_feature_names=tuple(schema_data['continuous_feature_names']),
-            categorical_feature_names=tuple(schema_data['categorical_feature_names']),
-            categorical_index_map=rehydrated_index_map,
-            categorical_mappings=schema_data['categorical_mappings']
-        )
-        
-        config['schema'] = schema
-
-        model = cls(**config)
-        if verbose:
-            _LOGGER.info(f"Successfully loaded architecture for '{saved_class_name}'")
-        return model
     
 
 def info():

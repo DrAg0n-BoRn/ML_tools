@@ -969,4 +969,55 @@ class AttentiveTransformer(nn.Module):
         x = torch.mul(x, priors)
         x = self.selector(x)
         return x
-    
+
+class _GateHead(nn.Module):
+    """
+    Custom Prediction Head for GATE.
+    Aggregates outputs from multiple trees using learnable weights (eta).
+    """
+    def __init__(self, input_dim: int, output_dim: int, num_trees: int, share_head_weights: bool = True):
+        super().__init__()
+        self.num_trees = num_trees
+        self.output_dim = output_dim
+        self.share_head_weights = share_head_weights
+
+        # Decision Tree Heads
+        if share_head_weights:
+            self.head = nn.Linear(input_dim, output_dim)
+        else:
+            self.head = nn.ModuleList(
+                [nn.Linear(input_dim, output_dim) for _ in range(num_trees)]
+            )
+
+        # Learnable mixing weights (eta) for the trees
+        self.eta = nn.Parameter(torch.rand(num_trees, requires_grad=True))
+        
+        # Global Bias (T0) - initialized to 0, but often updated via data-aware init
+        self.T0 = nn.Parameter(torch.zeros(output_dim), requires_grad=True)
+
+    def forward(self, backbone_features: torch.Tensor) -> torch.Tensor:
+        # backbone_features shape: (Batch, Output_Dim_Tree, Num_Trees) if using attention?
+        # Actually GATE backbone returns: (Batch, Output_Dim_Tree, Num_Trees)
+        
+        # 1. Apply Linear Head to Tree Outputs
+        if self.share_head_weights:
+            # Transpose to (Batch, Num_Trees, Feature_Dim) to apply the same linear layer
+            # y_hat: (Batch, Num_Trees, Output_Dim)
+            y_hat = self.head(backbone_features.transpose(2, 1))
+        else:
+            # Apply separate linear layers
+            y_hat = torch.cat(
+                [h(backbone_features[:, :, i]).unsqueeze(1) for i, h in enumerate(self.head)],
+                dim=1,
+            )
+
+        # 2. Weighted Sum using Eta
+        # eta reshape: (1, Num_Trees, 1)
+        y_hat = y_hat * self.eta.reshape(1, -1, 1)
+        
+        # Sum across trees -> (Batch, Output_Dim)
+        y_hat = y_hat.sum(dim=1)
+
+        # 3. Add Global Bias
+        y_hat = y_hat + self.T0
+        return y_hat

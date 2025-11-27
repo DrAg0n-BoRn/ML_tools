@@ -213,12 +213,13 @@ constants
 custom_logger
 GUI_tools
 ML_models
+ML_models_advanced
 ML_sequence_models
-ML_vision_models
+ML_vision_models # Requires: torchvision and Pillow
 ML_inference
 ML_sequence_inference
-ML_vision_inference
-ML_vision_transformers
+ML_vision_inference # Requires: torchvision and Pillow
+ML_vision_transformers # Requires: torchvision and Pillow
 ML_scaler
 path_manager
 ```

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.1.0] 2025-11-27
+
+### Added
+
+- custom_logger:
+    - `train_logger()`, for quickly saving training logs to JSON.
+
+### Added
+
+- ML_models_advanced: Added to all models
+    - Enhanced docstring for model initialization.
+    - Added `__repr__` following PyTorch format for model architecture representation.
+
 ## [18.0.0] 2025-11-26
 
 ### Added

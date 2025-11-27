@@ -1,5 +1,6 @@
 from ._custom_logger import (
     custom_logger,
+    train_logger,
     save_list_strings,
     load_list_strings,
     compare_lists,
@@ -8,6 +9,7 @@ from ._custom_logger import (
 
 __all__ = [
     "custom_logger",
+    "train_logger",
     "save_list_strings",
     "load_list_strings",
     "compare_lists"

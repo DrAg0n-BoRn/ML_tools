@@ -14,6 +14,7 @@ from ._logger import _LOGGER
 
 __all__ = [
     "custom_logger",
+    "train_logger",
     "save_list_strings",
     "load_list_strings",
     "compare_lists"
@@ -322,6 +323,19 @@ def compare_lists(
         _LOGGER.error(f"Failed to save comparison report to {save_path}: \n{e}")
 
     return results
+
+
+def train_logger(data: dict, save_directory: Union[str, Path]):
+    """
+    Logs training data to JSON, adding a timestamp to the filename.
+    """
+    custom_logger(
+        data=data,
+        save_directory=save_directory,
+        log_name="training_log",
+        add_timestamp=True,
+        dict_as='json'
+    )
 
 
 def info():

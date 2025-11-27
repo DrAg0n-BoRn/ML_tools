@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "18.0.0"
+version = "18.1.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -19,7 +19,7 @@ Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
 Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-# Machine Learning main toolbox. Additionally Requires PyTorch with CUDA / MPS support
+# Machine Learning main toolbox. Additionally Requires PyTorch and torchvision with CUDA / MPS support
 ML = [
     # Core
     "numpy<2.0",          # Pinned for PyTorch extension compatibility
@@ -123,10 +123,11 @@ gui-boost = [
     "lightgbm", 
 ]
 
-# GUI for Pytorch - Additionally Requires PyTorch with CUDA / MPS support. 
-# Optional: Pil / Torchvision / pytorch_tabular / omegaconf / matplotlib / seaborn
+# GUI for Pytorch 
+# Optional: Pil / Torchvision / matplotlib / seaborn
 gui-torch = [
     "numpy<2.0",
+    "torch",
     "FreeSimpleGUI>=5.2",
 ]
 
