@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.3.0] 2025-11-27
+
+### Added
+
+- New module: "schema", exposing the `FeatureSchema` class.
+    - `FeatureSchema.to_json()`, Saves the 'FeatureSchema.json' to a directory. 
+    - `FeatureSchema.from_json()`, Loads the 'FeatureSchema.json' from a directory.
+
+### Deleted
+
+- serde: FeatureSchema serialization.
+    - `serialize_schema()`
+    - `deserialize_schema()` 
+
 ## [18.2.0] 2025-11-27
 
 - Fix package setuptools build bug.

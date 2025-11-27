@@ -6,15 +6,12 @@ from pathlib import Path
 from ._path_manager import make_fullpath, sanitize_filename
 from ._script_info import _script_info
 from ._logger import _LOGGER
-from ._schema import FeatureSchema
 
 
 __all__ = [
     "serialize_object_filename",
     "serialize_object",
     "deserialize_object",
-    "serialize_schema",
-    "deserialize_schema"
 ]
 
 
@@ -146,46 +143,6 @@ def deserialize_object(
                 _LOGGER.info(f"Loaded object '{obj}' from '{true_filepath}'.")
         
         return obj # type: ignore
-
-
-def serialize_schema(schema: FeatureSchema, file_path: Path):
-    """
-    Serializes a FeatureSchema object to a .joblib file.
-
-    This is a high-level wrapper around `serialize_object` that
-    specifically handles `FeatureSchema` instances and ensures
-    errors are raised on failure.
-
-    Args:
-        schema (FeatureSchema): The schema object to serialize.
-        file_path (Path): The full file path to save the schema to.
-    """
-    serialize_object(obj=schema,
-                     file_path=file_path,
-                     verbose=True,
-                     raise_on_error=True)
-    
-    
-def deserialize_schema(file_path: Path):
-    """
-    Deserializes a FeatureSchema object from a .joblib file.
-
-    This is a high-level wrapper around `deserialize_object` that
-    validates the loaded object is an instance of `FeatureSchema`.
-
-    Args:
-        file_path (Path): The full file path of the serialized schema.
-
-    Returns:
-        FeatureSchema: The deserialized schema object.
-    
-    Raises:
-        TypeError: If the deserialized object is not an instance of `FeatureSchema`.
-    """
-    schema = deserialize_object(filepath=file_path,
-                                expected_type=FeatureSchema,
-                                verbose=True)
-    return schema
 
 
 def info():

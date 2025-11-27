@@ -87,6 +87,7 @@ ML_vision_models
 ML_vision_transformers
 optimization_tools
 path_manager
+schema
 serde
 SQL
 utilities
@@ -129,6 +130,7 @@ math_utilities
 optimization_tools
 path_manager
 PSO_optimization
+schema
 serde
 SQL
 utilities
@@ -193,6 +195,7 @@ custom_logger
 GUI_tools
 ensemble_inference
 path_manager
+schema
 serde
 ```
 
@@ -222,6 +225,7 @@ ML_vision_inference # Requires: torchvision and Pillow
 ML_vision_transformers # Requires: torchvision and Pillow
 ML_scaler
 path_manager
+schema
 ```
 
 ---
