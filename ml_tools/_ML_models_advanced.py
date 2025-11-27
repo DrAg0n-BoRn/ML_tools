@@ -40,7 +40,7 @@ __all__ = [
 # https://arxiv.org/abs/1705.08741v2
 
 
-class DragonGateModel(nn.Module, _ArchitectureBuilder):
+class DragonGateModel(_ArchitectureBuilder):
     """
     Native implementation of the Gated Additive Tree Ensemble (GATE).
     
@@ -358,7 +358,7 @@ class DragonGateModel(nn.Module, _ArchitectureBuilder):
         return config
     
 
-class DragonNodeModel(nn.Module, _ArchitectureBuilder):
+class DragonNodeModel(_ArchitectureBuilder):
     """
     Native implementation of Neural Oblivious Decision Ensembles (NODE).
     
@@ -588,7 +588,7 @@ class DragonNodeModel(nn.Module, _ArchitectureBuilder):
         return config
 
 
-class DragonAutoInt(nn.Module, _ArchitectureBuilder):
+class DragonAutoInt(_ArchitectureBuilder):
     """
     Native implementation of AutoInt (Automatic Feature Interaction Learning).
     
@@ -856,7 +856,7 @@ class DragonAutoInt(nn.Module, _ArchitectureBuilder):
         return config
 
 
-class DragonTabNet(nn.Module, _ArchitectureBuilder):
+class DragonTabNet(_ArchitectureBuilder):
     """
     Native implementation of TabNet (Attentive Interpretable Tabular Learning).
     
