@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.4.0] 2025-11-28
+
+### Added
+
+- New module: "ML_finalize_handler", implementing the `FinalizedFileHandler` class.
+    - Handles loading and validation of finalized PyTorch model artifacts.
+    - Robustly handles legacy (weights-only) schemas as a fallback.
+    - Ensures safe CPU-first loading before device transfer.
+
+- ML_configuration:
+    - `FinalizeSequenceSequencePrediction`, specific configuration to create a finalized-file
+    - `FinalizeSequenceValuePrediction`, specific configuration to create a finalized-file
+    - All finalizer classes add the specific training task.
+
+### Changed
+
+- ML_inference:
+    - `DragonInferenceHandler`: Refactored to use `FinalizedFileHandler`.
+        - The `task` argument is now optional (automatically inferred from file metadata).
+        - Improved device handling by loading state dictionary on CPU first.
+
+- ML_vision_inference:
+    - `DragonVisionInferenceHandler`: Refactored to use `FinalizedFileHandler`.
+        - The `task` argument is now optional.
+
+- ML_sequence_inference:
+    - `DragonSequenceInferenceHandler`: Refactored to use `FinalizedFileHandler`.
+        - The `prediction_mode` argument is now optional.
+
+- ML_trainer: Added support for updated finalizer configuration files.
+
+### Deleted
+
+- ML_configuration:
+    - `FinalizeSequencePrediction`, replaced by more specific configuration classes.
+
 ## [18.3.1] 2025-11-28
 
 ### Fixed

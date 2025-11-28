@@ -35,7 +35,8 @@ from ._ML_configuration import (RegressionMetricsFormat,
                             FinalizeMultiTargetRegression,
                             FinalizeRegression,
                             FinalizeObjectDetection,
-                            FinalizeSequencePrediction)
+                            FinalizeSequenceSequencePrediction,
+                            FinalizeSequenceValuePrediction)
 
 from ._script_info import _script_info
 from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, SequenceDatasetKeys, ScalerKeys
@@ -1411,6 +1412,7 @@ class DragonTrainer(_BaseDragonTrainer):
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+            PyTorchCheckpointKeys.TASK: finalize_config.task
         }
 
         # Parse config
@@ -1793,6 +1795,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+            PyTorchCheckpointKeys.TASK: finalize_config.task
         }
         
         if finalize_config.class_map is not None:
@@ -2268,7 +2271,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     def finalize_model_training(self, 
                                 save_dir: Union[str, Path], 
                                 model_checkpoint: Union[Path, Literal['latest', 'current']],
-                                finalize_config: FinalizeSequencePrediction):
+                                finalize_config: Union[FinalizeSequenceSequencePrediction, FinalizeSequenceValuePrediction]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
@@ -2282,8 +2285,11 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 - "current": Uses the model's state as it is at the end of the `fit()` call.
             finalize_config (FinalizeSequencePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
-        if not isinstance(finalize_config, FinalizeSequencePrediction):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeSequencePrediction', but got {type(finalize_config).__name__}.")
+        if self.kind == MLTaskKeys.SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeSequenceSequencePrediction):
+            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: {type(finalize_config).__name__}.")
+            raise TypeError()
+        elif self.kind == MLTaskKeys.SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeSequenceValuePrediction):
+            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: {type(finalize_config).__name__}.")
             raise TypeError()
 
         # handle save path
@@ -2297,6 +2303,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
             PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
+            PyTorchCheckpointKeys.TASK: finalize_config.task
         }
         
         if finalize_config.sequence_length is not None:

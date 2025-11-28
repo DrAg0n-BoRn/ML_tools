@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Union, Literal, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
+from ._ML_finalize_handler import FinalizedFileHandler
 from ._ML_scaler import DragonScaler
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from ._path_manager import make_fullpath
-from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys
+from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys, MagicWords
 
 
 __all__ = [
@@ -23,14 +24,15 @@ class _BaseInferenceHandler(ABC):
     """
     Abstract base class for PyTorch inference handlers.
 
-    Manages common tasks like loading a model's state dictionary, validating
-    the target device, and preprocessing input features.
+    Manages common tasks like loading a model's state dictionary via FinalizedFileHandler,
+    validating the target device, and preprocessing input features.
     """
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
                  device: str = 'cpu',
-                 scaler: Optional[Union[str, Path]] = None):
+                 scaler: Optional[Union[str, Path]] = None,
+                 task: Optional[str] = None):
         """
         Initializes the handler.
 
@@ -39,6 +41,7 @@ class _BaseInferenceHandler(ABC):
             state_dict (str | Path): Path to the saved .pth model state_dict file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path | None): An optional scaler or path to a saved scaler state.
+            task (str | None): The specific machine learning task. If None, it attempts to read it from the finalized-file.
         """
         self.model = model
         self.device = self._validate_device(device)
@@ -47,88 +50,69 @@ class _BaseInferenceHandler(ABC):
         self._loaded_class_map: bool = False
         self._class_map: Optional[dict[str,int]] = None
         self._idx_to_class: Optional[Dict[int, str]] = None
-        self._loaded_data_dict: Dict[str, Any] = {} #Store whatever is in the finalized file
+        
+        # --- 1. Load File Handler ---
+        # This loads the content on CPU and validates structure
+        self._file_handler = FinalizedFileHandler(state_dict)
+        
+        # --- 2. Task Resolution ---
+        file_task = self._file_handler.task
+        
+        if task is None:
+            # User didn't provide task, must be in file
+            if file_task == MagicWords.UNKNOWN:
+                _LOGGER.error(f"Task not specified in arguments and not found in file '{make_fullpath(state_dict).name}'.")
+                raise ValueError()
+            self.task = file_task
+            _LOGGER.info(f"Task '{self.task}' detected from file.")
+        else:
+            # User provided task
+            if file_task != MagicWords.UNKNOWN and file_task != task:
+                _LOGGER.warning(f"Provided task '{task}' differs from file metadata task '{file_task}'. Using provided task '{task}'.")
+            self.task = task
 
-        # Load the scalers if provided
+        # --- 3. Load Model Weights ---
+        # Weights are already loaded in file_handler (on CPU)
+        try:
+            self.model.load_state_dict(self._file_handler.model_state_dict)
+        except RuntimeError as e:
+            _LOGGER.error(f"State dict mismatch: {e}")
+            raise
+
+        # --- 4. Load Metadata (Thresholds, Class Maps) ---
+        if self._file_handler.classification_threshold is not None:
+            self._classification_threshold = self._file_handler.classification_threshold
+            self._loaded_threshold = True
+            
+        if self._file_handler.class_map is not None:
+            self.set_class_map(self._file_handler.class_map)
+            # set_class_map sets _loaded_class_map to True
+        
+        # --- 5. Move to Device ---
+        self.model.to(self.device)
+        self.model.eval()
+        _LOGGER.info(f"Model loaded and moved to {self.device}.")
+
+        # --- 6. Load Scalers ---
         self.feature_scaler: Optional[DragonScaler] = None
         self.target_scaler: Optional[DragonScaler] = None
 
         if scaler is not None:
             if isinstance(scaler, (str, Path)):
-                # Load the file
                 path_obj = make_fullpath(scaler, enforce="file")
                 loaded_scaler_data = torch.load(path_obj)
                 
-                # Check if it is the new unified dictionary or legacy
                 if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
-                    # New format
                     if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
                         self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER])
                     if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
                         self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER])
                 else:
-                    # Legacy format (assume feature scaler)
                     _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
                     self.feature_scaler = DragonScaler.load(loaded_scaler_data)
             else:
-                # Raise error for invalid type
                 _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
                 raise ValueError()
-            
-        # Load the model state dictionary
-        model_p = make_fullpath(state_dict, enforce="file")
-
-        try:
-            # Load whatever is in the file
-            loaded_data = torch.load(model_p, map_location=self.device)
-            
-            # Check if it's dictionary or a old weights-only file
-            if isinstance(loaded_data, dict):
-                self._loaded_data_dict = loaded_data # Store the dict
-                
-                if PyTorchCheckpointKeys.MODEL_STATE in loaded_data:
-                    # It's a new training checkpoint, extract the weights
-                    self.model.load_state_dict(loaded_data[PyTorchCheckpointKeys.MODEL_STATE])
-                    
-                    # attempt to get a custom classification threshold
-                    if PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD in loaded_data:
-                        try:
-                            self._classification_threshold = float(loaded_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD])
-                        except Exception as e_int:
-                            _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' but an error occurred when retrieving it:\n{e_int}")
-                            self._classification_threshold = 0.5
-                        else:
-                            _LOGGER.info(f"'{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}' found and set to {self._classification_threshold}")
-                            self._loaded_threshold = True
-                            
-                    # attempt to get a class map
-                    if PyTorchCheckpointKeys.CLASS_MAP in loaded_data:
-                        try:
-                            self._class_map = loaded_data[PyTorchCheckpointKeys.CLASS_MAP]
-                        except Exception as e_int:
-                            _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASS_MAP}' but an error occurred when retrieving it:\n{e_int}")
-                        else:
-                            if isinstance(self._class_map, dict):
-                                self._loaded_class_map = True
-                                self.set_class_map(self._class_map)
-                            else:
-                                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.CLASS_MAP}' but it is not a dict: '{type(self._class_map)}'.")
-                                self._class_map = None        
-                else:
-                    # It's a state_dict, load it directly
-                    self.model.load_state_dict(loaded_data)
-            
-            else:
-                 # It's an old state_dict (just weights), load it directly
-                self.model.load_state_dict(loaded_data)
-            
-            _LOGGER.info(f"Model state loaded from '{model_p.name}'.")
-                
-            self.model.to(self.device)
-            self.model.eval()  # Set the model to evaluation mode
-        except Exception as e:
-            _LOGGER.error(f"Failed to load model state from '{model_p}': {e}")
-            raise
 
     def _validate_device(self, device: str) -> torch.device:
         """Validates the selected device and returns a torch.device object."""
@@ -145,14 +129,8 @@ class _BaseInferenceHandler(ABC):
         """
         Sets the class name mapping to translate predicted integer labels back into string names.
         
-        If a class_map was previously loaded from a model configuration, this
-        method will log a warning and refuse to update the value. This
-        prevents accidentally overriding a setting from a loaded checkpoint.
-        
-        To bypass this safety check set `force_overwrite` to `True`.
-
         Args:
-            class_map (Dict[str, int]): The class_to_idx dictionary (e.g., {'cat': 0, 'dog': 1}).
+            class_map (Dict[str, int]): The class_to_idx dictionary.
             force_overwrite (bool): If True, allows overwriting a map that was loaded from a configuration file.
         """
         if self._loaded_class_map:
@@ -165,11 +143,9 @@ class _BaseInferenceHandler(ABC):
                 warning_message += " Overwriting it for this inference instance."
                 _LOGGER.warning(warning_message)
         
-        # Store the map and invert it for fast lookup
         self._class_map = class_map
         self._idx_to_class = {v: k for k, v in class_map.items()}
-        # Mark as 'loaded' by the user, even if it wasn't from a file, to prevent accidental changes later if _loaded_class_map was false.
-        self._loaded_class_map = True # Protect this newly set map
+        self._loaded_class_map = True
         _LOGGER.info("Class map set for label-to-name translation.")
 
     @abstractmethod
@@ -190,11 +166,11 @@ class DragonInferenceHandler(_BaseInferenceHandler):
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["regression", 
+                 task: Optional[Literal["regression", 
                                "binary classification", 
                                "multiclass classification", 
                                "multitarget regression", 
-                               "multilabel binary classification"],
+                               "multilabel binary classification"]] = None,
                  device: str = 'cpu',
                  scaler: Optional[Union[str, Path]] = None):
         """
@@ -203,43 +179,43 @@ class DragonInferenceHandler(_BaseInferenceHandler):
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
-            task (str): The type of task.
+            task (str, optional): The type of task. If None, it will be detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path | None): A path to a saved DragonScaler state.
             
         Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
         # Call the parent constructor to handle model loading, device, and scaler
-        super().__init__(model, state_dict, device, scaler)
-
-        if task not in [MLTaskKeys.REGRESSION,
-                        MLTaskKeys.BINARY_CLASSIFICATION, 
-                        MLTaskKeys.MULTICLASS_CLASSIFICATION,
-                        MLTaskKeys.MULTITARGET_REGRESSION,
-                        MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
-            _LOGGER.error(f"'task' not recognized: '{task}'.")
+        # The parent constructor resolves 'task'
+        super().__init__(model=model, 
+                         state_dict=state_dict, 
+                         device=device, 
+                         scaler=scaler, 
+                         task=task)
+        
+        # --- Validation of resolved task ---
+        valid_tasks = [
+            MLTaskKeys.REGRESSION,
+            MLTaskKeys.BINARY_CLASSIFICATION, 
+            MLTaskKeys.MULTICLASS_CLASSIFICATION,
+            MLTaskKeys.MULTITARGET_REGRESSION,
+            MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION
+        ]
+        
+        if self.task not in valid_tasks:
+            _LOGGER.error(f"'task' recognized as '{self.task}', but this inference handler only supports: {valid_tasks}.")
             raise ValueError()
-        self.task = task
+
         self.target_ids: Optional[list[str]] = None
         self._target_ids_set: bool = False
         
-        # attempt to get target name or target names
-        if PyTorchCheckpointKeys.TARGET_NAME in self._loaded_data_dict:
-            try:
-                target_from_dict = [self._loaded_data_dict[PyTorchCheckpointKeys.TARGET_NAME]]
-            except Exception as e_int:
-                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.TARGET_NAME}' but an error occurred when retrieving it:\n{e_int}")
-                self.target_ids = None
-            else:
-                self.set_target_ids([target_from_dict]) # type: ignore
-        elif PyTorchCheckpointKeys.TARGET_NAMES in self._loaded_data_dict:
-            try:
-                targets_from_dict = self._loaded_data_dict[PyTorchCheckpointKeys.TARGET_NAMES]
-            except Exception as e_int:
-                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.TARGET_NAMES}' but an error occurred when retrieving it:\n{e_int}")
-                self.target_ids = None
-            else:
-                self.set_target_ids(targets_from_dict) # type: ignore
+        # --- Attempt to load target names from FinalizedFileHandler ---
+        if self._file_handler.target_names is not None:
+            self.set_target_ids(self._file_handler.target_names)
+        elif self._file_handler.target_name is not None:
+            self.set_target_ids([self._file_handler.target_name])
+        else:
+            _LOGGER.warning("No target names found in file metadata.")
 
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
@@ -259,6 +235,7 @@ class DragonInferenceHandler(_BaseInferenceHandler):
     def set_target_ids(self, target_names: list[str], force_overwrite: bool=False):
         """
         Assigns the provided list of strings as the target variable names.
+        
         If target IDs have already been set, this method will log a warning.
 
         Args:

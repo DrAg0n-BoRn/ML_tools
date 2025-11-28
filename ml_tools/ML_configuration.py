@@ -23,7 +23,8 @@ from ._core._ML_configuration import (
     FinalizeMultiTargetRegression,  
     FinalizeRegression,  
     FinalizeObjectDetection,  
-    FinalizeSequencePrediction,
+    FinalizeSequenceSequencePrediction,
+    FinalizeSequenceValuePrediction,
     
     # --- Model Parameter Configs ---  
     DragonMLPParams,  
@@ -65,7 +66,8 @@ __all__ = [
     "FinalizeMultiTargetRegression",
     "FinalizeRegression",
     "FinalizeObjectDetection",
-    "FinalizeSequencePrediction",
+    "FinalizeSequenceSequencePrediction",
+    "FinalizeSequenceValuePrediction",
     
     # --- Model Parameter Configs ---
     "DragonMLPParams",

@@ -624,6 +624,8 @@ def save_pretrained_transforms(model: nn.Module, output_dir: Union[str, Path]):
     """
     Checks a model for the 'self._pretrained_default_transforms' attribute, if found,
     serializes the returned transform object as a .joblib file.
+    
+    Used for wrapper vision models when initialized with pre-trained weights.
 
     This saves the callable transform object itself for
     later use, such as passing it directly to the 'transform_source'

@@ -28,7 +28,7 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 task: Literal["binary image classification", "multiclass image classification", "binary segmentation", "multiclass segmentation", "object detection"],
+                 task: Optional[Literal["binary image classification", "multiclass image classification", "binary segmentation", "multiclass segmentation", "object detection"]] = None,
                  device: str = 'cpu',
                  transform_source: Optional[Union[str, Path, Callable]] = None):
         """
@@ -37,7 +37,7 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
         Args:
             model (nn.Module): An instantiated PyTorch model from ML_vision_models.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
-            task (str): The type of vision task.
+            task (str, optional): The type of vision task. If None, detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             transform_source (str | Path | Callable | None): 
                 - A path to a .json recipe file (str or Path).
@@ -46,16 +46,30 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
         
         Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
-        super().__init__(model, state_dict, device, None)
+        # Parent initializes FinalizedFileHandler, loads task, weights, etc.
+        super().__init__(model=model, 
+                         state_dict=state_dict, 
+                         device=device, 
+                         scaler=None, 
+                         task=task)
+
+        # --- Validate Task ---
+        valid_tasks = [
+            MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
+            MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, 
+            MLTaskKeys.BINARY_SEGMENTATION, 
+            MLTaskKeys.MULTICLASS_SEGMENTATION, 
+            MLTaskKeys.OBJECT_DETECTION
+        ]
+        
+        if self.task not in valid_tasks:
+            _LOGGER.error(f"'task' recognized as '{self.task}', but this handler only supports: {valid_tasks}.")
+            raise ValueError()
 
         self._transform: Optional[Callable] = None
         self._is_transformed: bool = False
-
-        if task not in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION, MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION, MLTaskKeys.OBJECT_DETECTION]:
-            _LOGGER.error(f"Unsupported task: '{task}'.")
-            raise ValueError()
-        self.task = task
         
+        # --- Model specific channels ---
         self.expected_in_channels: int = 3 # Default to RGB
         if hasattr(model, 'in_channels'):
             self.expected_in_channels = model.in_channels # type: ignore
@@ -136,7 +150,6 @@ class DragonVisionInferenceHandler(_BaseInferenceHandler):
             - Segmentation: {labels, probabilities} (labels is the mask)
             - Object Detection: {predictions} (List of dicts)
         """
-        
         processed_inputs = self._preprocess_batch(inputs)
         
         with torch.no_grad():

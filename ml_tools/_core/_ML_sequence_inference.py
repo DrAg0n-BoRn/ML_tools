@@ -29,8 +29,8 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
     def __init__(self,
                  model: nn.Module,
                  state_dict: Union[str, Path],
-                 prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
                  scaler: Union[str, Path],
+                 task: Optional[Literal["sequence-to-sequence", "sequence-to-value"]]=None,
                  device: str = 'cpu'):
         """
         Initializes the handler for sequence tasks.
@@ -38,46 +38,47 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
             state_dict (str | Path): Path to the saved .pth model state_dict file.
-            prediction_mode (str): The type of sequence task.
+            task (str, optional): The type of sequence task. If None, detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
-            scaler (DragonScaler | str | Path): File path to a saved DragonScaler state. This is required
-                to correctly scale inputs and de-scale predictions.
+            scaler (str | Path): File path to a saved DragonScaler state. This is required to correctly scale inputs and de-scale predictions.
         """
         # Call the parent constructor to handle model loading and device
-        super().__init__(model, state_dict, device, scaler)
+        super().__init__(model=model, 
+                         state_dict=state_dict, 
+                         device=device, 
+                         scaler=scaler, 
+                         task=task)
         
         self.sequence_length: Optional[int] = None
         self.initial_sequence: Optional[np.ndarray] = None
+        
+        valid_tasks = [
+            MLTaskKeys.SEQUENCE_SEQUENCE, 
+            MLTaskKeys.SEQUENCE_VALUE
+        ]
 
-        if prediction_mode not in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
-            _LOGGER.error(f"'prediction_mode' not recognized: '{prediction_mode}'.")
+        if self.task not in valid_tasks:
+            _LOGGER.error(f"'task' recognized as '{self.task}', but this handler only supports: {valid_tasks}.")
             raise ValueError()
-        self.prediction_mode = prediction_mode
         
         if self.feature_scaler is None and self.target_scaler is None:
             _LOGGER.error("A scaler is required to scale inputs and de-scale predictions.")
             raise ValueError()
         
-        # Load sequence length from the loaded dict (populated by _BaseInferenceHandler)
-        if PyTorchCheckpointKeys.SEQUENCE_LENGTH in self._loaded_data_dict:
-            try:
-                self.sequence_length = int(self._loaded_data_dict[PyTorchCheckpointKeys.SEQUENCE_LENGTH])
-                _LOGGER.info(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' found and set to {self.sequence_length}")
-            except Exception as e_int:
-                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' but an error occurred when retrieving it:\n{e_int}")
+        # Load sequence length from the FinalizedFileHandler
+        if self._file_handler.sequence_length is not None:
+            self.sequence_length = self._file_handler.sequence_length
+            _LOGGER.info(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' found and set to {self.sequence_length}")
         else:
             _LOGGER.warning(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' not found in model file. Forecasting validation will be skipped.")
             
-        # Load initial sequence
-        if PyTorchCheckpointKeys.INITIAL_SEQUENCE in self._loaded_data_dict:
-            try:
-                self.initial_sequence = self._loaded_data_dict[PyTorchCheckpointKeys.INITIAL_SEQUENCE]
-                _LOGGER.info(f"Default 'initial_sequence' for forecasting loaded from model file.")
-                # Optional: Validate shape
-                if self.sequence_length and len(self.initial_sequence) != self.sequence_length: # type: ignore
-                    _LOGGER.warning(f"Loaded 'initial_sequence' length ({len(self.initial_sequence)}) mismatches 'sequence_length' ({self.sequence_length}).") # type: ignore
-            except Exception as e_seq:
-                _LOGGER.warning(f"State Dictionary has the key '{PyTorchCheckpointKeys.INITIAL_SEQUENCE}' but an error occurred when retrieving it:\n{e_seq}")
+        # Load initial sequence from FinalizedFileHandler
+        if self._file_handler.initial_sequence is not None:
+            self.initial_sequence = self._file_handler.initial_sequence
+            _LOGGER.info(f"Default 'initial_sequence' for forecasting loaded from model file.")
+            # Optional: Validate shape
+            if self.sequence_length and len(self.initial_sequence) != self.sequence_length: # type: ignore
+                _LOGGER.warning(f"Loaded 'initial_sequence' length ({len(self.initial_sequence)}) mismatches 'sequence_length' ({self.sequence_length}).") # type: ignore
         else:
             _LOGGER.info("No default 'initial_sequence' found in model file. Must be provided for forecasting.")
 
@@ -137,20 +138,20 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         scaler_to_use = self.target_scaler if self.target_scaler else None
         
         if scaler_to_use:
-            if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+            if self.task == MLTaskKeys.SEQUENCE_VALUE:
                 # output is (batch) -> reshape to (batch, 1) for scaler
                 output_reshaped = output.reshape(-1, 1)
                 descaled_output = scaler_to_use.inverse_transform(output_reshaped)
                 descaled_output = descaled_output.squeeze(-1) # (batch)
             
-            elif self.prediction_mode == MLTaskKeys.SEQUENCE_SEQUENCE:
+            elif self.task == MLTaskKeys.SEQUENCE_SEQUENCE:
                 # output is (batch, seq_len)
                 batch_size, seq_len = output.shape
                 output_flat = output.reshape(-1, 1)
                 descaled_flat = scaler_to_use.inverse_transform(output_flat)
                 descaled_output = descaled_flat.reshape(batch_size, seq_len)
             else:
-                 _LOGGER.error(f"Invalid prediction mode: {self.prediction_mode}")
+                 _LOGGER.error(f"Invalid prediction mode: {self.task}")
                  raise RuntimeError()
         else:
             descaled_output = output
@@ -213,7 +214,7 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         """
         tensor_results = self.predict(features)
         
-        if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+        if self.task == MLTaskKeys.SEQUENCE_VALUE:
              # Prediction is a 0-dim tensor, .item() gets the scalar
              return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
         else: # sequence-to-sequence
@@ -282,7 +283,7 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
                 model_output = self.model(input_tensor).squeeze() 
                 
                 # Extract the single new prediction
-                if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+                if self.task == MLTaskKeys.SEQUENCE_VALUE:
                     scaled_prediction = model_output
                 else: 
                     scaled_prediction = model_output[-1]

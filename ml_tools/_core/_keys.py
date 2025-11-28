@@ -3,6 +3,7 @@ class MagicWords:
     LATEST = "latest"
     CURRENT = "current"
     RENAME = "rename"
+    UNKNOWN = "unknown"
 
 
 class PyTorchLogKeys:
@@ -104,7 +105,11 @@ class PyTorchCheckpointKeys:
     BEST_SCORE = "best_score"
     HISTORY = "history"
     CHECKPOINT_NAME = "PyModelCheckpoint"
-    # Finalized config
+    
+    ### Finalized config
+    # EPOCH
+    # MODEL_STATE
+    TASK = "task"
     CLASSIFICATION_THRESHOLD = "classification_threshold"
     CLASS_MAP = "class_map"
     SEQUENCE_LENGTH = "sequence_length"

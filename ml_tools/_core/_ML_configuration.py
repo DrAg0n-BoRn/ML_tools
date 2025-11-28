@@ -6,6 +6,7 @@ from ._schema import FeatureSchema
 from ._script_info import _script_info
 from ._logger import _LOGGER
 from ._path_manager import sanitize_filename
+from ._keys import MLTaskKeys
 
 
 __all__ = [
@@ -33,7 +34,8 @@ __all__ = [
     "FinalizeMultiTargetRegression",
     "FinalizeRegression",
     "FinalizeObjectDetection",
-    "FinalizeSequencePrediction",
+    "FinalizeSequenceSequencePrediction",
+    "FinalizeSequenceValuePrediction",
     
     # --- Model Parameter Configs ---
     "DragonMLPParams",
@@ -827,6 +829,7 @@ class _FinalizeModelTraining:
         self.class_map: Optional[dict[str,int]] = None
         self.initial_sequence: Optional[np.ndarray] = None
         self.sequence_length: Optional[int] = None
+        self.task: str = 'UNKNOWN'
 
 
 class FinalizeRegression(_FinalizeModelTraining):
@@ -843,6 +846,7 @@ class FinalizeRegression(_FinalizeModelTraining):
         """
         super().__init__(filename=filename)
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
+        self.task = MLTaskKeys.REGRESSION
     
     
 class FinalizeMultiTargetRegression(_FinalizeModelTraining):
@@ -860,6 +864,7 @@ class FinalizeMultiTargetRegression(_FinalizeModelTraining):
         super().__init__(filename=filename)
         safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
         self.target_names = safe_names
+        self.task = MLTaskKeys.MULTITARGET_REGRESSION
 
 
 class FinalizeBinaryClassification(_FinalizeModelTraining):
@@ -883,6 +888,7 @@ class FinalizeBinaryClassification(_FinalizeModelTraining):
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.BINARY_CLASSIFICATION
 
 
 class FinalizeMultiClassClassification(_FinalizeModelTraining):
@@ -903,6 +909,7 @@ class FinalizeMultiClassClassification(_FinalizeModelTraining):
         super().__init__(filename=filename)
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.MULTICLASS_CLASSIFICATION
     
     
 class FinalizeBinaryImageClassification(_FinalizeModelTraining):
@@ -924,6 +931,7 @@ class FinalizeBinaryImageClassification(_FinalizeModelTraining):
         super().__init__(filename=filename)
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.BINARY_IMAGE_CLASSIFICATION
 
 
 class FinalizeMultiClassImageClassification(_FinalizeModelTraining):
@@ -941,6 +949,7 @@ class FinalizeMultiClassImageClassification(_FinalizeModelTraining):
         """
         super().__init__(filename=filename)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
     
     
 class FinalizeMultiLabelBinaryClassification(_FinalizeModelTraining):
@@ -961,6 +970,7 @@ class FinalizeMultiLabelBinaryClassification(_FinalizeModelTraining):
         safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
         self.target_names = safe_names
         self.classification_threshold = _validate_threshold(classification_threshold)
+        self.task = MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION
 
 
 class FinalizeBinarySegmentation(_FinalizeModelTraining):
@@ -979,6 +989,7 @@ class FinalizeBinarySegmentation(_FinalizeModelTraining):
         super().__init__(filename=filename)
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.BINARY_SEGMENTATION
     
     
 class FinalizeMultiClassSegmentation(_FinalizeModelTraining):
@@ -994,6 +1005,7 @@ class FinalizeMultiClassSegmentation(_FinalizeModelTraining):
         """
         super().__init__(filename=filename)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.MULTICLASS_SEGMENTATION
 
 
 class FinalizeObjectDetection(_FinalizeModelTraining):
@@ -1009,10 +1021,11 @@ class FinalizeObjectDetection(_FinalizeModelTraining):
         """
         super().__init__(filename=filename)
         self.class_map = _validate_class_map(class_map)
+        self.task = MLTaskKeys.OBJECT_DETECTION
 
 
-class FinalizeSequencePrediction(_FinalizeModelTraining):
-    """Parameters for finalizing a sequence prediction model."""
+class FinalizeSequenceSequencePrediction(_FinalizeModelTraining):
+    """Parameters for finalizing a sequence-to-sequence prediction model."""
     def __init__(self,
                  filename: str,
                  last_training_sequence: np.ndarray,
@@ -1048,6 +1061,47 @@ class FinalizeSequencePrediction(_FinalizeModelTraining):
         
         # Save the length of the validated 1D sequence
         self.sequence_length = len(self.initial_sequence) # type: ignore
+        self.task = MLTaskKeys.SEQUENCE_SEQUENCE
+
+
+class FinalizeSequenceValuePrediction(_FinalizeModelTraining):
+    """Parameters for finalizing a sequence-to-value prediction model."""
+    def __init__(self,
+                 filename: str,
+                 last_training_sequence: np.ndarray,
+                 ) -> None:
+        """Initializes the finalization parameters.
+
+        Args:
+            filename (str): The name of the file to be saved.
+            last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+        """
+        super().__init__(filename=filename)
+        
+        if not isinstance(last_training_sequence, np.ndarray):
+            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
+            raise TypeError()
+        
+        if last_training_sequence.ndim == 1:
+            # It's already 1D, (N,). This is valid.
+            self.initial_sequence = last_training_sequence
+        elif last_training_sequence.ndim == 2:
+            # Handle both (1, N) and (N, 1)
+            if last_training_sequence.shape[0] == 1:
+                self.initial_sequence = last_training_sequence.flatten()
+            elif last_training_sequence.shape[1] == 1:
+                self.initial_sequence = last_training_sequence.flatten()
+            else:
+                _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
+                raise ValueError()
+        else:
+            # It's 3D or more, which is not supported
+            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
+            raise ValueError()
+        
+        # Save the length of the validated 1D sequence
+        self.sequence_length = len(self.initial_sequence) # type: ignore
+        self.task = MLTaskKeys.SEQUENCE_VALUE
 
 
 def _validate_string(string: str, attribute_name: str, extension: Optional[str]=None) -> str:
