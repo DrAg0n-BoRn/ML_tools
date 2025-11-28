@@ -6,6 +6,12 @@ from ._custom_logger import save_list_strings
 from ._keys import DatasetKeys
 from ._logger import _LOGGER
 from ._path_manager import make_fullpath
+from ._script_info import _script_info
+
+
+__all__ = [
+    "FeatureSchema"
+]
 
 
 _SCHEMA_FILENAME = "FeatureSchema.json"
@@ -170,3 +176,7 @@ class FeatureSchema(NamedTuple):
         return (
             f"FeatureSchema(total={total}, continuous={cont}, categorical={cat}, index_map={index_map}, categorical_map={cat_map})"
         )
+
+
+def info():
+    _script_info(__all__)

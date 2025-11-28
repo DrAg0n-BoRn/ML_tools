@@ -1,6 +1,4 @@
 from ._core._ML_callbacks import (
-    History,
-    TqdmProgressBar,
     DragonEarlyStopping,
     DragonModelCheckpoint,
     DragonLRScheduler,
@@ -8,8 +6,6 @@ from ._core._ML_callbacks import (
 )
 
 __all__ = [
-    "History", 
-    "TqdmProgressBar",
     "DragonEarlyStopping",  
     "DragonModelCheckpoint",
     "DragonLRScheduler"

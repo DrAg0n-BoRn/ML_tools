@@ -786,8 +786,9 @@ def encode_categorical_features(
         
         - pd.DataFrame | None: If `split_resulting_dataset` is True, the encoded columns as a new dataframe.
         
-    ## **Note:** 
-    Use `encode_nulls=False` when encoding binary values with missing entries or a malformed encoding will be returned silently.
+    ## **Important:** 
+    1. Do not encode 'Ordinal Features' (e.g., Low=1, Med=2, High=3), these must be treated as numerical (continuous).
+    2. Use `encode_nulls=False` when encoding binary values with missing entries or a malformed encoding will be returned silently.
     """
     df_encoded = df.copy()
     

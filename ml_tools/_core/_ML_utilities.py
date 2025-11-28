@@ -81,8 +81,13 @@ class ArtifactFinder:
     
     @property
     def weights_path(self) -> Path:
-        """Returns the path to the state dictionary file."""
+        """Returns the path to the state dictionary pth file."""
         return self._weights_path
+    
+    @property
+    def model_architecture_path(self) -> Path:
+        """Returns the path to the model architecture json file."""
+        return self._model_architecture_path
     
     @property
     def scaler_path(self) -> Path:
@@ -103,6 +108,7 @@ class ArtifactFinder:
             f"{self.__class__.__name__}\n"
             f"    directory='{dir_name}'\n"
             f"    weights='{self._weights_path.name}'\n"
+            f"    architecture='{self._model_architecture_path.name}'\n"
             f"    scaler='{scaler_status}'\n"
             f"    features={n_features}\n" 
             f"    targets={n_targets}"

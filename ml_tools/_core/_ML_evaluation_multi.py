@@ -90,7 +90,7 @@ def multi_target_regression_metrics(
     _LOGGER.debug("--- Multi-Target Regression Evaluation ---")
 
     for i, name in enumerate(target_names):
-        print(f"  -> Evaluating target: '{name}'")
+        # print(f"  -> Evaluating target: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i]
         sanitized_name = sanitize_filename(name)
