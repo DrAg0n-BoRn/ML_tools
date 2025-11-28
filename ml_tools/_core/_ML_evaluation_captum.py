@@ -7,9 +7,13 @@ import torch
 from torch import nn
 
 from ._path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import CaptumKeys
+
+
+_LOGGER = get_logger("Captum")
+
 
 # --- Dependency Check ---
 try:

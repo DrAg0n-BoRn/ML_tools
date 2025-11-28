@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.5.1] 2025-11-28
+
+- Minor logging fixes
+
+## [18.5.0] 2025-11-28
+
+### Changed
+
+- Improved logging output in all modules.
+- data_exploration:
+    - `encode_categorical_features()`, added validation to check for constant columns during the encoding process.
+
+### Renamed
+
+- Module "handle_excel" renamed to "excel_handler"
+
+### Fixed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.run()`, fixed a bug when trying to work on data from a read-only tensor.
+
+
 ## [18.4.0] 2025-11-28
 
 ### Added

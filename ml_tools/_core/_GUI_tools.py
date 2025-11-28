@@ -7,8 +7,11 @@ from typing import Any, Dict, Tuple, List, Literal, Union, Optional, Callable
 import numpy as np
 
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._keys import _OneHotOtherPlaceholder
+
+
+_LOGGER = get_logger("GUI Tools")
 
 
 __all__ = [

@@ -5,10 +5,13 @@ from pathlib import Path
 import json
 import random
 
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import VisionTransformRecipeKeys
 from ._path_manager import make_fullpath
+
+
+_LOGGER = get_logger("Transformers")
 
 
 __all__ = [

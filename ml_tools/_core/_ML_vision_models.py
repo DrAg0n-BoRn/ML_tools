@@ -7,8 +7,11 @@ from typing import List, Dict, Any, Literal, Optional
 from abc import ABC, abstractmethod
 
 from ._ML_models import _ArchitectureHandlerMixin
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
+
+
+_LOGGER = get_logger("DragonModel")
 
 
 __all__ = [

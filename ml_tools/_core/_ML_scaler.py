@@ -3,10 +3,13 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from typing import Union, List, Optional
 
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._path_manager import make_fullpath
 from ._keys import ScalerKeys
+
+
+_LOGGER = get_logger("DragonScaler")
 
 
 __all__ = [

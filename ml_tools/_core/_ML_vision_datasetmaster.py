@@ -14,10 +14,13 @@ import inspect
 
 from ._ML_vision_transformers import TRANSFORM_REGISTRY, _save_recipe
 from ._path_manager import make_fullpath
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import VisionTransformRecipeKeys, ObjectDetectionKeys
 from ._custom_logger import custom_logger
+
+
+_LOGGER = get_logger("DragonDataset")
 
 
 __all__ = [

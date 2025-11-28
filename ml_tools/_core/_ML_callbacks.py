@@ -6,8 +6,11 @@ from pathlib import Path
 
 from ._path_manager import make_fullpath
 from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
+
+
+_LOGGER = get_logger("Callbacks")
 
 
 __all__ = [
@@ -258,6 +261,7 @@ class DragonModelCheckpoint(_Callback):
             old_best_str = f"{self.best:.4f}" if self.best not in [np.inf, -np.inf] else "inf"
             
             # Create a descriptive filename
+            self.save_dir.mkdir(parents=True, exist_ok=True)
             current_string = str(round(current, ndigits=2)).replace('.', '_')
             filename = f"epoch{epoch}_{self._checkpoint_name}-{current_string}.pth"
             new_filepath = self.save_dir / filename
@@ -296,6 +300,7 @@ class DragonModelCheckpoint(_Callback):
         """Saves the latest model and keeps only the most recent ones."""
         current = logs.get(self.monitor)
         
+        self.save_dir.mkdir(parents=True, exist_ok=True)
         current_string = str(round(current, ndigits=2)).replace('.', '_')
         filename = f"epoch{epoch}_{self._checkpoint_name}-{current_string}.pth"
         filepath = self.save_dir / filename

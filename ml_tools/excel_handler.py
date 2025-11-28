@@ -1,4 +1,4 @@
-from ._core._handle_excel import (
+from ._core._excel_handler import (
     find_excel_files,
     unmerge_and_split_excel,
     unmerge_and_split_from_directory,

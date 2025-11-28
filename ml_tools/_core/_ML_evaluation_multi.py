@@ -23,13 +23,16 @@ from typing import Union, List, Literal, Optional
 import warnings
 
 from ._path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import SHAPKeys
 from ._ML_configuration import (MultiTargetRegressionMetricsFormat,
                                _BaseRegressionFormat,
                                MultiLabelBinaryClassificationMetricsFormat,
                                _BaseMultiLabelFormat)
+
+
+_LOGGER = get_logger("Evaluation Multi")
 
 
 __all__ = [

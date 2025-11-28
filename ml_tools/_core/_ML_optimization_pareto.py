@@ -17,10 +17,13 @@ from ._optimization_tools import create_optimization_bounds, plot_optimal_featur
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
 from ._path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import PyTorchInferenceKeys, MLTaskKeys
 from ._schema import FeatureSchema
+
+
+_LOGGER = get_logger("Pareto Optimizer")
 
 
 __all__ = [
@@ -133,8 +136,7 @@ class DragonParetoOptimizer:
     def run(self, 
             generations: int, 
             save_dir: Union[str, Path],
-            log_interval: int = 10,
-            verbose: bool = True) -> pd.DataFrame:
+            log_interval: int = 10) -> pd.DataFrame:
         """
         Execute the optimization with progress tracking and periodic logging.
 
@@ -142,42 +144,45 @@ class DragonParetoOptimizer:
             generations (int): Number of generations to evolve.
             save_dir (str|Path): Directory to save results and plots.
             log_interval (int): How often (in generations) to log population statistics.
-            verbose (bool): If True, enables logging and progress bar.
 
         Returns:
             pd.DataFrame: A DataFrame containing the non-dominated solutions (Pareto Front).
         """
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        log_file = save_path / "optimization_log.txt"
         
-        if verbose:
-            _LOGGER.info(f"🧬 Starting NSGA-II (GeneticAlgorithm) for {generations} generations...")
+        _LOGGER.info(f"🧬 Starting NSGA-II (GeneticAlgorithm) for {generations} generations...")
+        
+        # Initialize log file
+        with open(log_file, "w") as f:
+            f.write(f"Pareto Optimization Log - {generations} Generations\n")
+            f.write("=" * 60 + "\n")
 
         # --- Optimization Loop with Progress Bar ---
-        # We use a manual loop instead of self.algorithm.run() to inject logging/tqdm
-        with tqdm(total=generations, desc="Evolving Pareto Front", disable=not verbose, unit="gen") as pbar:
+        with tqdm(total=generations, desc="Evolving Pareto Front", unit="gen") as pbar:
             for gen in range(1, generations + 1):
                 self.algorithm.step()
                 
-                # Periodic Logging of Population Stats
-                if verbose and (gen % log_interval == 0 or gen == generations):
+                # Periodic Logging of Population Stats to FILE
+                if gen % log_interval == 0 or gen == generations:
                     stats_msg = [f"Gen {gen}:"]
                     
-                    # Get current population values (shape: [pop_size, n_targets])
-                    # These are the raw predictions from the model
+                    # Get current population values
                     current_evals = self.algorithm.population.evals
                     
                     for i, target_name in enumerate(self.ordered_target_names):
-                        # Extract column for this target
-                        # Note: EvoTorch evals are on the same device as the problem
                         vals = current_evals[:, i]
-                        
                         v_mean = float(vals.mean())
                         v_min = float(vals.min())
                         v_max = float(vals.max())
                         
                         stats_msg.append(f"{target_name}: {v_mean:.3f} (Range: {v_min:.3f}-{v_max:.3f})")
                     
-                    _LOGGER.info(" | ".join(stats_msg))
+                    log_line = " | ".join(stats_msg)
+                    
+                    # Write to file
+                    with open(log_file, "a") as f:
+                        f.write(log_line + "\n")
                 
                 pbar.update(1)
 
@@ -185,8 +190,11 @@ class DragonParetoOptimizer:
         # Manually identify the Pareto front from the final population using domination counts
         final_pop = self.algorithm.population
         
+        # Clone the evals tensor. EvoTorch 'evals' is often a ReadOnlyTensor or BatchedTensorImpl
+        evals_tensor = final_pop.evals.clone()
+        
         # Calculate domination counts (0 means non-dominated / Pareto optimal)
-        domination_counts = func_ops.domination_counts(final_pop.evals, objective_sense=self.objective_senses)
+        domination_counts = func_ops.domination_counts(evals_tensor, objective_sense=self.objective_senses)
         is_pareto = (domination_counts == 0)
         
         pareto_pop = final_pop[is_pareto]
@@ -242,9 +250,8 @@ class DragonParetoOptimizer:
         filename = "Pareto_Front_Solutions"
         save_dataframe_filename(pareto_df, save_path, filename)
         
-        if verbose:
-            _LOGGER.info(f"✅ Optimization complete. Found {len(pareto_df)} non-dominated solutions.")
-            _LOGGER.info(f"💾 Solutions saved to '{save_path}/{filename}.csv'")
+        _LOGGER.info(f"Optimization complete. Found {len(pareto_df)} non-dominated solutions.")
+        # _LOGGER.info(f"💾 Solutions saved to '{save_path}/{filename}.csv'")
 
         # --- Plotting ---
         self._generate_plots(pareto_df, save_path)

@@ -2,10 +2,13 @@ import torch
 from torch import nn
 from typing import Literal
 
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import MLTaskKeys
 from ._ML_models import _ArchitectureHandlerMixin
+
+
+_LOGGER = get_logger("DragonModel")
 
 
 __all__ = [

@@ -1,5 +1,6 @@
 import logging
 import sys
+from typing import Optional, Union, Dict, Any
 
 # Step 1: Conditionally import colorlog
 try:
@@ -21,76 +22,67 @@ BASE_INFO_FORMAT = '\n🐉 %(asctime)s [%(emoji)s %(levelname)s] - %(message)s'
 BASE_WARN_FORMAT = '\n🐉 %(asctime)s [%(emoji)s %(levelname)s] [%(filename)s:%(lineno)d] - %(message)s'
 
 
-# --- Unified Formatter ---
-# Determine the base class and format strings based on colorlog availability
-if colorlog:
-    # If colorlog is available, use it as the base and use colorized formats.
-    _BaseFormatter = colorlog.ColoredFormatter
-    _INFO_FORMAT = BASE_INFO_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
-    _WARN_FORMAT = BASE_WARN_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
-else:
-    # Otherwise, fall back to the standard logging.Formatter.
-    _BaseFormatter = logging.Formatter
-    _INFO_FORMAT = BASE_INFO_FORMAT
-    _WARN_FORMAT = BASE_WARN_FORMAT
-
-
-class _UnifiedFormatter(_BaseFormatter): # type: ignore
+class _UnifiedFormatter(logging.Formatter):
     """
     A unified log formatter that adds emojis, uses level-specific formats,
     and applies colors if colorlog is available.
     """
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, datefmt: Optional[str] = None, log_colors: Optional[Dict[str, str]] = None):
         """Initializes the formatter, creating sub-formatters for each level."""
-        # The base class __init__ is called implicitly. We prepare our custom formatters here.
-        self.datefmt = kwargs.get('datefmt')
-        
-        # We need to pass the correct arguments to the correct formatter type
-        if colorlog:
-            log_colors = kwargs.get('log_colors', {})
-            self.info_formatter = colorlog.ColoredFormatter(_INFO_FORMAT, datefmt=self.datefmt, log_colors=log_colors)
-            self.warn_formatter = colorlog.ColoredFormatter(_WARN_FORMAT, datefmt=self.datefmt, log_colors=log_colors)
-        else:
-            self.info_formatter = logging.Formatter(_INFO_FORMAT, datefmt=self.datefmt)
-            self.warn_formatter = logging.Formatter(_WARN_FORMAT, datefmt=self.datefmt)
+        # Initialize the base logging.Formatter correctly
+        super().__init__(datefmt=datefmt)
 
-    def format(self, record):
+        # Prepare formats based on availability of colorlog
+        if colorlog and log_colors:
+            # Add color codes to the base formats
+            info_fmt = BASE_INFO_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
+            warn_fmt = BASE_WARN_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
+            
+            self.info_formatter = colorlog.ColoredFormatter(info_fmt, datefmt=datefmt, log_colors=log_colors)
+            self.warn_formatter = colorlog.ColoredFormatter(warn_fmt, datefmt=datefmt, log_colors=log_colors)
+        else:
+            # Fallback to standard logging
+            self.info_formatter = logging.Formatter(BASE_INFO_FORMAT, datefmt=datefmt)
+            self.warn_formatter = logging.Formatter(BASE_WARN_FORMAT, datefmt=datefmt)
+
+    def format(self, record: logging.LogRecord) -> str:
         """Adds a custom emoji attribute to the record before formatting."""
         # Add the new attribute to the record. Use .get() for a safe default.
         record.emoji = LEVEL_EMOJIS.get(record.levelno, "")
-        
+
         # Select the appropriate formatter and let it handle the rest.
         if record.levelno >= logging.WARNING:
             return self.warn_formatter.format(record)
-        else:
-            return self.info_formatter.format(record)
+        return self.info_formatter.format(record)
 
 
-def _get_logger(name: str = "ml_tools", level: int = logging.INFO):
+class _ContextAdapter(logging.LoggerAdapter):
     """
-    Initializes and returns a configured logger instance.
-    
-    - `logger.info()`
-    - `logger.warning()`
-    - `logger.error()` the program can potentially recover.
-    - `logger.exception()` inside an except block.
-    - `logger.critical()` the program is going to crash.
+    Wraps the logger to automatically prepend the context name to the message.
+    """
+    def process(self, msg: Any, kwargs: Dict[str, Any]) -> tuple[Any, Dict[str, Any]]:
+        # Retrieve the context name from the extra dict passed during init
+        context = self.extra.get('context_name', 'Unknown') # type: ignore
+        return f"[{context}] {msg}", kwargs
+
+
+def _setup_main_logger(name: str = "ml_tools", level: int = logging.INFO) -> logging.Logger:
+    """
+    Internal function to configure the singleton logger instance.
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # Prevents adding handlers multiple times if the function is called again
+    # Prevents adding handlers multiple times if imported multiple times
     if not logger.handlers:
-        # Prepare arguments for the unified formatter
-        formatter_kwargs = {
+        formatter_kwargs: Dict[str, Any] = {
             'datefmt': '%Y-%m-%d %H:%M'
         }
-        
-        # Use colorlog's handler if available, and add color arguments
+
+        # Setup Handler
         if colorlog:
             handler = colorlog.StreamHandler()
-            formatter_kwargs["log_colors"] = { # type: ignore
+            formatter_kwargs["log_colors"] = {
                 'DEBUG':    'cyan',
                 'INFO':     'green',
                 'WARNING':  'yellow',
@@ -99,19 +91,38 @@ def _get_logger(name: str = "ml_tools", level: int = logging.INFO):
             }
         else:
             handler = logging.StreamHandler(sys.stdout)
-        
-        # Create and set the single, unified formatter
+
+        # Initialize the Unified Formatter with specific kwargs
         formatter = _UnifiedFormatter(**formatter_kwargs)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    
+
     logger.propagate = False
-    
     return logger
 
 
-# Create a single logger instance to be imported by other modules
-_LOGGER = _get_logger()
+# Initialize the main configured logger instance once
+_ROOT_LOGGER = _setup_main_logger()
+
+
+def get_logger(name: Optional[str] = None) -> Union[logging.Logger, logging.LoggerAdapter]:
+    """
+    Returns a logger. If a name is provided, returns an Adapter that prefixes 
+    log messages with '[name]'.
+    
+    Usage:
+        from ._logger import get_logger
+        _LOGGER = get_logger("InferenceHandler")
+        
+        #### Output: 🐉 ... [✅ INFO] - [InferenceHandler] Message
+    """
+    if name:
+        return _ContextAdapter(_ROOT_LOGGER, {'context_name': name})
+    return _ROOT_LOGGER
+
+
+# Maintain backward compatibility for scripts importing _LOGGER directly
+_LOGGER = _ROOT_LOGGER
 
 
 def _log_and_exit(message: str, exit_code: int = 1):
@@ -130,3 +141,9 @@ if __name__ == "__main__":
         _LOGGER.exception("Critical error during calculation.")
     
     _LOGGER.critical("Total failure.")
+    
+    test_logger = get_logger("SUPER CONTEXT")
+    
+    test_logger.info("hello")
+    test_logger.warning("world")
+    test_logger.error("for coders")

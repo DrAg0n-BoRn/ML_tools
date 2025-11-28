@@ -18,7 +18,7 @@ from ._serde import serialize_object_filename
 from ._path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
 from ._keys import EnsembleKeys
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._ensemble_evaluation import (evaluate_model_classification,
                                   plot_roc_curve,
                                   plot_precision_recall_curve,
@@ -31,6 +31,9 @@ import warnings # Ignore warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
+
+
+_LOGGER = get_logger("Ensemble Learning")
 
 
 __all__ = [

@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Literal
 
 from ._models_advanced_base import _ArchitectureBuilder
 from ._schema import FeatureSchema
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._models_advanced_helpers import (
     Embedding1dLayer,
@@ -24,6 +24,10 @@ from ._models_advanced_helpers import (
     initialize_non_glu,
     _GateHead
 )
+
+
+_LOGGER = get_logger("DragonModel")
+
 
 __all__ = [
     "DragonGateModel",

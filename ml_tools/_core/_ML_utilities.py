@@ -6,11 +6,14 @@ from torch import nn
 
 from ._path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from ._utilities import load_dataframe
 from ._custom_logger import save_list_strings, custom_logger, load_list_strings
 from ._serde import serialize_object_filename
+
+
+_LOGGER = get_logger("Torch Utilities")
 
 
 __all__ = [

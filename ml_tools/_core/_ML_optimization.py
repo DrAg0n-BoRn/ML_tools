@@ -17,10 +17,13 @@ from ._utilities import save_dataframe_filename
 from ._math_utilities import discretize_categorical_values
 from ._ML_inference import DragonInferenceHandler
 from ._path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import PyTorchInferenceKeys, MLTaskKeys
 from ._schema import FeatureSchema
+
+
+_LOGGER = get_logger("Optimizer")
 
 
 __all__ = [

@@ -4,9 +4,12 @@ import json
 
 from ._custom_logger import save_list_strings
 from ._keys import DatasetKeys
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._path_manager import make_fullpath
 from ._script_info import _script_info
+
+
+_LOGGER = get_logger("FeatureSchema")
 
 
 __all__ = [

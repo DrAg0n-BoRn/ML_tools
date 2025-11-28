@@ -4,7 +4,10 @@ import math
 from typing import Union, Sequence, Optional
 
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
+
+
+_LOGGER = get_logger("Math Utilities")
 
 
 __all__ = [

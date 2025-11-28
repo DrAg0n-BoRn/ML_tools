@@ -11,11 +11,15 @@ from contextlib import nullcontext
 from ._serde import deserialize_object
 from ._math_utilities import threshold_binary_values, threshold_binary_values_batch
 from ._path_manager import sanitize_filename, make_fullpath, list_files_by_extension
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._keys import EnsembleKeys
 from ._script_info import _script_info
 from ._SQL import DragonSQL
 from ._optimization_tools import _save_result
+
+
+_LOGGER = get_logger("PSO")
+
 
 """
 DEPRECATED

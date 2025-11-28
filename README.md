@@ -173,7 +173,7 @@ pip install "dragon-ml-toolbox[excel]"
 
 ```Bash
 custom_logger
-handle_excel
+excel_handler
 path_manager
 ```
 

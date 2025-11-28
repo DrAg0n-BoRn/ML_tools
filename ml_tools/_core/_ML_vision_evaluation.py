@@ -16,12 +16,15 @@ import json
 from torchmetrics.detection import MeanAveragePrecision
 
 from ._path_manager import make_fullpath
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import VisionKeys
 from ._ML_configuration import (BinarySegmentationMetricsFormat,
                                MultiClassSegmentationMetricsFormat,
                                _BaseSegmentationFormat)
+
+
+_LOGGER = get_logger("Vision Evaluation")
 
 
 __all__ = [

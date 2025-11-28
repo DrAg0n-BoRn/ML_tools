@@ -3,9 +3,12 @@ import pandas as pd
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Literal
 
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._path_manager import make_fullpath, sanitize_filename
+
+
+_LOGGER = get_logger("DragonSQL")
 
 
 __all__ = [

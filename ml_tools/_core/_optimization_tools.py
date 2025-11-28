@@ -6,10 +6,13 @@ import pandas as pd
 
 from ._path_manager import make_fullpath, list_csv_paths, sanitize_filename
 from ._utilities import yield_dataframes_from_dir
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._SQL import DragonSQL
 from ._schema import FeatureSchema
+
+
+_LOGGER = get_logger("Optimization Tools")
 
 
 __all__ = [

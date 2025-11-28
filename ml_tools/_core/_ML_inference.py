@@ -8,9 +8,12 @@ from abc import ABC, abstractmethod
 from ._ML_finalize_handler import FinalizedFileHandler
 from ._ML_scaler import DragonScaler
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._path_manager import make_fullpath
 from ._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys, MagicWords
+
+
+_LOGGER = get_logger("Inference Handler")
 
 
 __all__ = [
@@ -55,6 +58,9 @@ class _BaseInferenceHandler(ABC):
         # This loads the content on CPU and validates structure
         self._file_handler = FinalizedFileHandler(state_dict)
         
+        # Silence warnings of the filehandler internally
+        self._file_handler._verbose = False
+        
         # --- 2. Task Resolution ---
         file_task = self._file_handler.task
         
@@ -91,7 +97,7 @@ class _BaseInferenceHandler(ABC):
         # --- 5. Move to Device ---
         self.model.to(self.device)
         self.model.eval()
-        _LOGGER.info(f"Model loaded and moved to {self.device}.")
+        _LOGGER.info(f"Model loaded and moved to {self.device} in evaluation mode.")
 
         # --- 6. Load Scalers ---
         self.feature_scaler: Optional[DragonScaler] = None
@@ -104,9 +110,11 @@ class _BaseInferenceHandler(ABC):
                 
                 if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
                     if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
-                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER])
+                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for feature scaling.")
                     if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
-                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER])
+                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for target scaling.")
                 else:
                     _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
                     self.feature_scaler = DragonScaler.load(loaded_scaler_data)
@@ -146,7 +154,7 @@ class _BaseInferenceHandler(ABC):
         self._class_map = class_map
         self._idx_to_class = {v: k for k, v in class_map.items()}
         self._loaded_class_map = True
-        _LOGGER.info("Class map set for label-to-name translation.")
+        _LOGGER.info("InferenceHandler: Class map set for label-to-name translation.")
 
     @abstractmethod
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> Dict[str, torch.Tensor]:

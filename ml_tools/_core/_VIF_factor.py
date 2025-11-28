@@ -9,8 +9,11 @@ from pathlib import Path
 
 from ._utilities import yield_dataframes_from_dir, save_dataframe_filename
 from ._path_manager import sanitize_filename, make_fullpath
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
+
+
+_LOGGER = get_logger("VIF")
 
 
 __all__ = [

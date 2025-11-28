@@ -9,9 +9,13 @@ import re
 
 from ._path_manager import sanitize_filename, make_fullpath
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._utilities import save_dataframe_filename
 from ._schema import FeatureSchema
+
+
+_LOGGER = get_logger("Data Exploration")
+
 
 # Keep track of all available tools, show using `info()`
 __all__ = [
@@ -804,9 +808,22 @@ def encode_categorical_features(
     for col_name in valid_columns:
         has_nulls = df_encoded[col_name].isnull().any()
         
+        # Get unique values once to check cardinality and generate categories
+        raw_unique_values = df_encoded[col_name].dropna().unique()
+        
+        # --- Check for constant columns ---
+        if len(raw_unique_values) <= 1:
+            # Exception: If we are encoding nulls and nulls exist, this is effectively a binary feature (Null vs Value)
+            is_effectively_binary = encode_nulls and has_nulls
+            
+            if not is_effectively_binary:
+                _LOGGER.warning(f"Column '{col_name}' has only {len(raw_unique_values)} unique value(s). Consider dropping it before encoding as it offers no predictive variance.")
+
+        # Prepare categories (sorted string representation)
+        categories = sorted([str(cat) for cat in raw_unique_values])
+        
         if encode_nulls and has_nulls:
             # Handle nulls: "Other" -> 0, other categories -> 1, 2, 3...
-            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
             # Start mapping from 1 for non-null values
             mapping = {category: i + 1 for i, category in enumerate(categories)}
             
@@ -826,9 +843,7 @@ def encode_categorical_features(
             user_mapping = {**mapping, null_label: 0}
             mappings[col_name] = user_mapping
         else:
-            # ignore nulls
-            categories = sorted([str(cat) for cat in df_encoded[col_name].dropna().unique()])
-            
+            # ignore nulls: categories start from 0
             mapping = {category: i for i, category in enumerate(categories)}
             
             df_encoded[col_name] = df_encoded[col_name].astype(str).map(mapping)

@@ -9,9 +9,12 @@ from typing import Optional, Union
 from ._utilities import load_dataframe, merge_dataframes, save_dataframe_filename
 from ._math_utilities import threshold_binary_values, discretize_categorical_values
 from ._path_manager import sanitize_filename, make_fullpath, list_csv_paths
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._schema import FeatureSchema
+
+
+_LOGGER = get_logger("MICE")
 
 
 __all__ = [

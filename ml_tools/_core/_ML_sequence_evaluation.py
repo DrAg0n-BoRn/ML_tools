@@ -12,9 +12,12 @@ from pathlib import Path
 from typing import Union, Optional
 
 from ._path_manager import make_fullpath
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._ML_configuration import SequenceValueMetricsFormat, SequenceSequenceMetricsFormat, _BaseSequenceValueFormat, _BaseSequenceSequenceFormat
+
+
+_LOGGER = get_logger("Sequence Evaluation")
 
 
 __all__ = [

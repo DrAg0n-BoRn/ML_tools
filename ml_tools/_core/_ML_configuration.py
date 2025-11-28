@@ -4,9 +4,12 @@ import numpy as np
 
 from ._schema import FeatureSchema
 from ._script_info import _script_info
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._path_manager import sanitize_filename
 from ._keys import MLTaskKeys
+
+
+_LOGGER = get_logger("Configuration")
 
 
 __all__ = [

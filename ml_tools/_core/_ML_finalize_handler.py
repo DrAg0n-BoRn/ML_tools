@@ -4,10 +4,13 @@ import numpy as np
 from typing import Union, Any, Optional
 from pathlib import Path
 
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._path_manager import make_fullpath
 from ._keys import PyTorchCheckpointKeys, MagicWords
+
+
+_LOGGER = get_logger("Finalized-File")
 
 
 __all__ = [
@@ -49,6 +52,9 @@ class FinalizedFileHandler:
         self._target_name: Optional[str] = None
         self._target_names: Optional[list[str]] = None
         self._model_state_dict: Optional[Any] = None
+        
+        # Set warning outputs
+        self._verbose: bool=True
         
         # validate path
         pth_path = make_fullpath(finalized_file_path, enforce="file")
@@ -93,7 +99,7 @@ class FinalizedFileHandler:
             raise IOError()
         
     def _none_checker(self, attribute: Any, atr_name: str) -> None:
-        if attribute is None:
+        if attribute is None and self._verbose:
             if self._task != MagicWords.UNKNOWN:
                 message = f"Task '{self._task}' does not have a parameter '{atr_name}'."
             else:

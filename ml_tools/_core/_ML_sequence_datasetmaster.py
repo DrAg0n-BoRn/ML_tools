@@ -7,11 +7,14 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from ._path_manager import make_fullpath
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._ML_scaler import DragonScaler
 from ._ML_datasetmaster import _PytorchDataset
 from ._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys, ScalerKeys
+
+
+_LOGGER = get_logger("DragonDataset")
 
 
 __all__ = [

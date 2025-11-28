@@ -8,13 +8,16 @@ from abc import ABC
 from pathlib import Path
 
 from ._path_manager import make_fullpath, sanitize_filename
-from ._logger import _LOGGER
+from ._logger import get_logger
 from ._script_info import _script_info
 from ._custom_logger import save_list_strings
 from ._ML_scaler import DragonScaler
 from ._keys import DatasetKeys, MLTaskKeys, ScalerKeys
 from ._schema import FeatureSchema
 from ._custom_logger import custom_logger
+
+
+_LOGGER = get_logger("DragonDataset")
 
 
 __all__ = [
