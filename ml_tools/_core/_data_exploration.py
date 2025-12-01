@@ -1659,7 +1659,7 @@ def reconstruct_multibinary(
     neg_label: str = "No",
     case_sensitive: bool = False,
     verbose: bool = True
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, List[str]]:
     """
     Identifies binary columns matching a regex pattern and converts their numeric 
     values (0/1) into categorical string labels (e.g., "No"/"Yes").
@@ -1676,7 +1676,9 @@ def reconstruct_multibinary(
         verbose (bool): If True, prints a summary of the operation.
 
     Returns:
-        pd.DataFrame: A new DataFrame with the matched columns converted to Strings.
+        Tuple(pd.DataFrame, List[str]): 
+            - A new DataFrame with the matched columns converted to Strings.
+            - A list of the column names that were modified.
     """
     if not isinstance(df, pd.DataFrame):
         _LOGGER.error("Input must be a pandas DataFrame.")
@@ -1716,7 +1718,7 @@ def reconstruct_multibinary(
     if verbose:
         _LOGGER.info(f"Reconstructed {converted_count} binary columns matching '{pattern}'.")
 
-    return new_df
+    return new_df, target_columns
 
 
 def finalize_feature_schema(

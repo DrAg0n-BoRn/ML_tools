@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.6.1] 2025-12-01
+
+### Changed
+
+- data_exploration:
+    - `reconstruct_multibinary()`, now returns a tuple with the new DataFrame and a list of modified columns.
+
 ## [18.6.0] 2025-12-01
 
 ### Added
