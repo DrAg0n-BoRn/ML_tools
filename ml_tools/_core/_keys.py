@@ -88,13 +88,15 @@ class SHAPKeys:
     FEATURE_COLUMN = "feature"
     SHAP_VALUE_COLUMN = "mean_abs_shap_value"
     SAVENAME = "shap_summary"
-    
+
+
 class CaptumKeys:
     """Keys for Captum functions"""
     FEATURE_COLUMN = "feature"
     IMPORTANCE_COLUMN = "importance"
     SAVENAME = "captum_summary"
     PLOT_NAME = "captum_importance_plot"
+
 
 class PyTorchCheckpointKeys:
     """Keys for saving/loading a training checkpoint dictionary."""
@@ -193,6 +195,13 @@ class SequenceDatasetKeys:
 class ParetoOptimizationKeys:
     """Used by the ML optimization pareto module."""
     PARETO_PLOTS_DIR = "Pareto_Plots"
+
+
+class SchemaKeys:
+    """Used by the schema module."""
+    SCHEMA_FILENAME = "FeatureSchema.json"
+    GUI_SCHEMA_FILENAME = "GUISchema.json"
+
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.8.0] 2025-12-01
+
+### Added
+
+- schema:
+    - `create_guischema_template()`, generates a boilerplate 'GUISchema.json' file based on a FeatureSchema and additional parameters.
+- GUI_tools:
+    - `DragonFeatureMaster.from_guischema()`, loads configuration from a 'GUISchema.json' file.
+
 ## [18.7.0] 2025-12-01
 
 ### Changed

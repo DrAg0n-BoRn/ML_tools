@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 
 from ._custom_logger import save_list_strings
-from ._keys import DatasetKeys
+from ._keys import DatasetKeys, SchemaKeys
 from ._logger import get_logger
 from ._path_manager import make_fullpath
 from ._script_info import _script_info
@@ -13,11 +13,9 @@ _LOGGER = get_logger("FeatureSchema")
 
 
 __all__ = [
-    "FeatureSchema"
+    "FeatureSchema",
+    "create_guischema_template",
 ]
-
-
-_SCHEMA_FILENAME = "FeatureSchema.json"
 
 
 class FeatureSchema(NamedTuple):
@@ -46,7 +44,7 @@ class FeatureSchema(NamedTuple):
         """
         # validate path
         dir_path = make_fullpath(directory, enforce="directory")
-        file_path = dir_path / _SCHEMA_FILENAME
+        file_path = dir_path / SchemaKeys.SCHEMA_FILENAME
         
         try:
             # Convert named tuple to dict
@@ -57,7 +55,7 @@ class FeatureSchema(NamedTuple):
                 json.dump(data, f, indent=4)
                 
             if verbose:
-                _LOGGER.info(f"FeatureSchema saved to '{dir_path.name}/{_SCHEMA_FILENAME}'")
+                _LOGGER.info(f"FeatureSchema saved to '{dir_path.name}/{SchemaKeys.SCHEMA_FILENAME}'")
                 
         except (IOError, TypeError) as e:
             _LOGGER.error(f"Failed to save FeatureSchema to JSON: {e}")
@@ -72,7 +70,7 @@ class FeatureSchema(NamedTuple):
         """
         # validate directory
         dir_path = make_fullpath(directory, enforce="directory")
-        file_path = dir_path / _SCHEMA_FILENAME
+        file_path = dir_path / SchemaKeys.SCHEMA_FILENAME
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -179,6 +177,113 @@ class FeatureSchema(NamedTuple):
         return (
             f"FeatureSchema(total={total}, continuous={cont}, categorical={cat}, index_map={index_map}, categorical_map={cat_map})"
         )
+
+
+def create_guischema_template(
+    directory: Union[str, Path],
+    feature_schema: FeatureSchema,
+    targets: list[str],
+    continuous_ranges: Dict[str, Tuple[float, float]],
+    multibinary_groups: Union[Dict[str, list[str]], None] = None,
+) -> None:
+    """
+    Generates a 'GUISchema.json' boilerplate file based on the Model FeatureSchema.
+    
+    The generated JSON contains entries with empty "gui_name" fields for manual mapping.
+    Leave 'gui_name' empty to use auto-formatted Title Case.
+    
+    Args:
+        directory (str | Path): Where to save the json file.
+        feature_schema (FeatureSchema): The source FeatureSchema object.
+        targets (list[str]): List of target names as used in the ML pipeline.
+        continuous_ranges (Dict[str, Tuple[float, float]]): Dict {model_name: (min, max)}.
+        multibinary_groups (Dict[str, list[str]] | None): Optional Dict {GUI_Group_Name: [model_col_1, model_col_2]}.
+                            Used to group binary columns into a single multi-select list.
+    """
+    dir_path = make_fullpath(directory, make=True, enforce="directory")
+        
+    schema = feature_schema
+    output_data: Dict[str, Any] = {
+        "targets": [],
+        "continuous": [],
+        "binary": [],
+        "multi_binary": {}, # Structure: GroupName: [{model: x, gui: ""}]
+        "categorical": []
+    }
+
+    # Track handled columns to prevent duplicates in binary/categorical
+    handled_cols = set()
+
+    # 1. Targets
+    for t in targets:
+        output_data["targets"].append({
+            "model_name": t,
+            "gui_name": "" # User to fill
+        })
+
+    # 2. Continuous
+    # Validate ranges against schema
+    schema_cont_set = set(schema.continuous_feature_names)
+    for name, min_max in continuous_ranges.items():
+        if name in schema_cont_set:
+            output_data["continuous"].append({
+                "model_name": name,
+                "gui_name": "",
+                "min": min_max[0],
+                "max": min_max[1]
+            })
+            handled_cols.add(name)
+        else:
+            _LOGGER.warning(f"GUISchema: Provided range for '{name}', but it is not in FeatureSchema continuous list.")
+
+    # 3. Multi-Binary Groups
+    if multibinary_groups:
+            # Check for validity within the generic feature list
+            all_feats = set(schema.feature_names)
+            
+            for group_name, cols in multibinary_groups.items():
+                group_options = []
+                for col in cols:
+                    if col not in all_feats:
+                        _LOGGER.warning(f"GUISchema: Multi-binary column '{col}' not found in FeatureSchema.")
+                    
+                    group_options.append({
+                        "model_name": col,
+                        "gui_name": "" 
+                    })
+                    handled_cols.add(col)
+                output_data["multi_binary"][group_name] = group_options
+
+    # 4. Binary & Categorical (Derived from Schema Mappings)
+    if schema.categorical_mappings:
+        for name, mapping in schema.categorical_mappings.items():
+            if name in handled_cols:
+                continue
+            
+            # Heuristic: Cardinality 2 = Binary, >2 = Categorical
+            if len(mapping) == 2:
+                output_data["binary"].append({
+                    "model_name": name,
+                    "gui_name": "" # User to fill
+                })
+            else:
+                # For categorical, we also allow renaming the specific options
+                options_with_names = {k: "" for k in mapping.keys()} # Default gui_option = model_option
+                
+                output_data["categorical"].append({
+                    "model_name": name,
+                    "gui_name": "", # User to fill feature name
+                    "mapping": mapping, # Preserved for reference
+                    "option_labels": options_with_names # User can edit keys here
+                })
+
+    save_path = dir_path / SchemaKeys.GUI_SCHEMA_FILENAME
+    try:
+        with open(save_path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=4)
+        _LOGGER.info(f"GUISchema template generated at: {save_path}")
+    except IOError as e:
+        _LOGGER.error(f"Failed to save GUISchema template: {e}")
 
 
 def info():

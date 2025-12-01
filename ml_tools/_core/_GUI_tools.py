@@ -5,10 +5,12 @@ import FreeSimpleGUI as sg
 from functools import wraps
 from typing import Any, Dict, Tuple, List, Literal, Union, Optional, Callable
 import numpy as np
+import json
 
 from ._script_info import _script_info
+from ._path_manager import make_fullpath
 from ._logger import get_logger
-from ._keys import _OneHotOtherPlaceholder
+from ._keys import _OneHotOtherPlaceholder, SchemaKeys
 
 
 _LOGGER = get_logger("GUI Tools")
@@ -546,7 +548,8 @@ class DragonFeatureMaster:
         """
         # Validation
         if continuous_features is None and binary_features is None and one_hot_features is None and categorical_features is None and multi_binary_features is None:
-            raise ValueError("No features provided.")
+            _LOGGER.error("No features provided to DragonFeatureMaster.")
+            raise ValueError()
         
         # Targets
         self._targets_values = self._handle_targets(targets)
@@ -605,6 +608,86 @@ class DragonFeatureMaster:
             
         # all features attribute
         self._all_features = self._get_all_gui_features()
+        
+    @classmethod
+    def from_guischema(cls, json_path: Union[str, Path]) -> 'DragonFeatureMaster':
+        """
+        Loads configuration from a JSON file (standardized via create_guischema_template).
+        
+        Args:
+            json_path: Path to the GUISchema.json file.
+        """
+        
+        path = make_fullpath(json_path, enforce='file')
+        # name must match expected schema from keys
+        if not path.name == SchemaKeys.GUI_SCHEMA_FILENAME:
+            _LOGGER.error(f"Schema filename mismatch. Expected '{SchemaKeys.GUI_SCHEMA_FILENAME}', got '{path.name}'")
+            raise ValueError()
+
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        def _resolve_name(item: dict, model_key: str = "model_name") -> str:
+            """Returns gui_name if present, else Title Case of model_name."""
+            user_input = item.get("gui_name", "").strip()
+            if user_input:
+                return user_input
+            # Fallback: snake_case -> Snake Case -> Title Case
+            return item[model_key].replace("_", " ").title()
+
+        # 1. Targets
+        targets = {}
+        for item in data.get("targets", []):
+            g_name = _resolve_name(item)
+            targets[g_name] = item["model_name"]
+            
+        # 2. Continuous
+        continuous = {}
+        for item in data.get("continuous", []):
+            g_name = _resolve_name(item)
+            continuous[g_name] = (item["model_name"], item["min"], item["max"])
+            
+        # 3. Binary
+        binary = {}
+        for item in data.get("binary", []):
+            g_name = _resolve_name(item)
+            binary[g_name] = item["model_name"]
+            
+        # 4. Multi-Binary
+        multi_binary = {}
+        raw_multi = data.get("multi_binary", {})
+        for group_gui_name, options_list in raw_multi.items():
+            group_dict = {}
+            for opt in options_list:
+                opt_gui = _resolve_name(opt)
+                group_dict[opt_gui] = opt["model_name"]
+            multi_binary[group_gui_name] = group_dict
+            
+        # 5. Categorical
+        categorical = []
+        for item in data.get("categorical", []):
+            g_name = _resolve_name(item)
+            model_name = item["model_name"]
+            original_map = item["mapping"] # { "Red": 0, "Blue": 1 }
+            custom_labels = item.get("option_labels", {}) # { "Red": "Crimson", "Blue": "" }
+            
+            final_map = {}
+            for mod_opt, int_val in original_map.items():
+                # Check if user provided a custom label for this option
+                user_label = custom_labels.get(mod_opt, "").strip()
+                final_label = user_label if user_label else mod_opt
+                final_map[final_label] = int_val
+                
+            categorical.append((g_name, model_name, final_map))
+
+        return cls(
+            targets=targets,
+            continuous_features=continuous if continuous else None,
+            binary_features=binary if binary else None,
+            multi_binary_features=multi_binary if multi_binary else None,
+            categorical_features=categorical if categorical else None,
+            add_one_hot_other_placeholder=False
+        )
         
     def _handle_targets(self, targets: Dict[str, str]):
         # Make dictionary GUI name: range values

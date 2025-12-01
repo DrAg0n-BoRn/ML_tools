@@ -42,3 +42,4 @@ This project depends on the following third-party packages. Each is governed by 
 - [node](https://github.com/Qwicen/node/blob/master/LICENSE.md)
 - [pytorch-widedeep](https://github.com/jrzaurin/pytorch-widedeep?tab=readme-ov-file#license)
 - [pytorch-fm](https://github.com/rixwew/pytorch-fm/blob/master/LICENSE)
+- [plotly](https://github.com/plotly/plotly.py/blob/main/LICENSE.txt)
