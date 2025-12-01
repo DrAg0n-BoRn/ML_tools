@@ -2,10 +2,15 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+from matplotlib.collections import LineCollection
 import seaborn as sns
 from pathlib import Path
 from typing import Literal, Union, Tuple, List, Optional, Dict
 from tqdm import tqdm
+import plotly.express as px
+import plotly.graph_objects as go
 
 from evotorch.algorithms import GeneticAlgorithm
 from evotorch import Problem
@@ -273,7 +278,8 @@ class DragonParetoOptimizer:
         # 3. Specific 2D/3D Scatter plots
         if n_objectives == 2:
             self._plot_pareto_2d(df, plot_dir)
-        elif n_objectives == 3:
+        # Visualization for the first three targets if more than 3 exist
+        elif n_objectives >= 3:
             self._plot_pareto_3d(df, plot_dir)
             
         # 4. Input Feature Distributions
@@ -289,26 +295,141 @@ class DragonParetoOptimizer:
         """Creates a normalized parallel coordinates plot of the targets."""
         targets_df = df[self.ordered_target_names].copy()
         
-        # Normalize for visualization (Min-Max scaling)
+        # Normalize (Min-Max scaling)
         norm_df = (targets_df - targets_df.min()) / (targets_df.max() - targets_df.min())
-        norm_df['Solution_Index'] = range(len(norm_df))
-
-        plt.figure(figsize=(12, 6))
-        pd.plotting.parallel_coordinates(norm_df, 'Solution_Index', color='#4c72b0', alpha=0.3)
-        plt.title("Parallel Coordinates of Pareto Front (Normalized)", fontsize=14)
-        plt.legend().remove() # Remove legend as it's just indices
-        plt.ylabel("Normalized Value")
+        
+        # Use the last column as the color scale (Gradient)
+        color_col = self.ordered_target_names[-1]
+        color_values = norm_df[color_col].values
+        
+        # --- 1. Static Matplotlib Plot (with Gradient) ---
+        fig, ax = plt.subplots(figsize=(14, 7))
+        
+        # use LineCollection for efficient gradient plotting
+        # Create segments: shape (n_lines, n_points, 2)
+        # x coordinates are 0, 1, 2... corresponding to columns
+        x_coords = range(len(self.ordered_target_names))
+        segments = []
+        for i in range(len(norm_df)):
+            y_coords = norm_df.iloc[i].values
+            segments.append(list(zip(x_coords, y_coords)))
+            
+        lc = LineCollection(segments, cmap='viridis', alpha=0.4)
+        lc.set_array(color_values) # Map colors to the last objective
+        lc.set_linewidth(1.5)
+        
+        ax.add_collection(lc) # type: ignore
+        ax.set_xlim(-0.1, len(self.ordered_target_names) - 0.9)
+        ax.set_ylim(-0.05, 1.05)
+        
+        # Customizing axes
+        ax.set_xticks(x_coords)
+        ax.set_xticklabels(self.ordered_target_names, rotation=15)
+        ax.set_ylabel("Normalized Value (0=Worst, 1=Best)")
+        ax.set_title(f"Parallel Coordinates (Colored by {color_col})", fontsize=14)
+        ax.grid(axis='x', linestyle='--', alpha=0.7)
+        
+        # Add Colorbar
+        cbar = plt.colorbar(lc, ax=ax, pad=0.02)
+        cbar.set_label(f"Normalized {color_col}")
+        
         plt.tight_layout()
         plt.savefig(save_dir / "Pareto_Parallel_Coords.svg")
         plt.close()
 
+        # --- 2. Interactive Plotly Plot ---
+        _LOGGER.debug("Generating interactive Parallel Coordinates with Plotly...")
+        
+        # Plotly expects the raw values (it handles normalization internally for the visual if needed, 
+        # but usually it's better to show real units in the interactive tooltip).
+        # We construct dimensions manually to ensure correct labeling.
+        dims = []
+        for col in self.ordered_target_names:
+            dims.append(dict(
+                range=[df[col].min(), df[col].max()],
+                label=col,
+                values=df[col]
+            ))
+
+        fig = go.Figure(data=go.Parcoords(
+            line=dict(
+                color=df[color_col],
+                colorscale='Viridis',
+                showscale=True,
+                colorbar=dict(title=color_col)
+            ),
+            dimensions=dims
+        ))
+        
+        fig.update_layout(
+            title="Interactive Parallel Coordinates (Drag axes to filter)",
+            height=600
+        )
+        
+        html_path = save_dir / "Pareto_Parallel_Coords_Interactive.html"
+        fig.write_html(str(html_path))
+
     def _plot_pairgrid(self, df: pd.DataFrame, save_dir: Path):
-        """Matrix of scatter plots for targets."""
-        g = sns.PairGrid(df[self.ordered_target_names]) # type: ignore
-        g.map_upper(sns.scatterplot, color="#4c72b0", alpha=0.6)
-        g.map_lower(sns.scatterplot, color="#4c72b0", alpha=0.6)
-        g.map_diag(sns.histplot, color="#4c72b0")
-        g.savefig(save_dir / "Pareto_PairGrid.svg")
+        """
+        Matrix of scatter plots for targets.
+        Enhanced to color points by the last objective and improve readability.
+        """
+        cols = self.ordered_target_names
+        
+        # Define the variable to use for coloring (Gradient)
+        # use the last column (usually the Z-axis in 3D plots)
+        hue_col = cols[-1] if len(cols) > 0 else None
+        
+        # --- 1. Initialize PairGrid ---
+        # height=4 increases the physical size of each subplot (default is 2.5)
+        # df[cols] is a dataframe, add safe cast
+        g = sns.PairGrid(df[cols], diag_sharey=False, height=4, aspect=1.1) # type: ignore
+        
+        # --- 2. Custom Scatter Function ---
+        # This allows us to pass a continuous 'hue' (gradient) based on the last column without breaking PairGrid (which usually expects categorical hues).
+        def scatter_with_continuous_hue(x, y, **kwargs):
+            # Map hue to the 'hue_col' values derived from the original dataframe
+            # Note: x.index aligns with df.index
+            ax = plt.gca()
+            points = ax.scatter(x, y, c=df.loc[x.index, hue_col], 
+                                cmap='viridis', s=70, alpha=0.8, edgecolors='w', linewidth=0.5)
+            return points
+
+        # --- 3. Map Plots ---
+        # Lower & Upper: Scatter plots colored by the 3rd objective
+        g.map_upper(scatter_with_continuous_hue)
+        g.map_lower(scatter_with_continuous_hue)
+        
+        # Diagonal: Histogram with KDE overlay
+        g.map_diag(sns.histplot, kde=True, color='#4c72b0', alpha=0.6, linewidth=0)
+
+        # --- 4. Aesthetics & Labels ---
+        # Add a title
+        g.figure.suptitle(f"Pareto Front Trade-offs (Color: {hue_col})", y=1.02, fontsize=16)
+
+        # Rotate axis labels to allow fitting more text without overlap
+        for ax in g.axes.flatten():
+            # Rotate X-axis labels
+            for label in ax.get_xticklabels():
+                label.set_rotation(30)
+                label.set_ha('right')
+            
+            # Ensure grids are on for readability
+            ax.grid(True, linestyle='--', alpha=0.3)
+
+        # Add a manual colorbar for context
+        # We attach it to the figure, referencing the last created scatter plot collection
+        if hue_col:
+            # Create a dummy scalar mappable for the colorbar
+            norm = mcolors.Normalize(vmin=df[hue_col].min(), vmax=df[hue_col].max())
+            sm = cm.ScalarMappable(cmap='viridis', norm=norm)
+            sm.set_array([])
+            
+            # Place colorbar
+            cbar_ax = g.figure.add_axes([0.92, 0.3, 0.02, 0.4]) # [left, bottom, width, height]
+            g.figure.colorbar(sm, cax=cbar_ax, label=hue_col)
+
+        plt.savefig(save_dir / "Pareto_PairGrid.svg", bbox_inches='tight')
         plt.close()
 
     def _plot_pareto_2d(self, df: pd.DataFrame, save_dir: Path):
@@ -353,10 +474,12 @@ class DragonParetoOptimizer:
     def _plot_pareto_3d(self, df: pd.DataFrame, save_dir: Path):
         """
         3D scatter plot with depth coloring and multiple viewing angles.
+        
+        Also generates an interactive HTML plot with plotly.
         """
         x_name, y_name, z_name = self.ordered_target_names[:3]
         
-        fig = plt.figure(figsize=(12, 9))
+        fig = plt.figure(figsize=(14, 10))
         ax = fig.add_subplot(111, projection='3d')
         
         # 1. Color by Z-value to provide depth cues
@@ -372,14 +495,16 @@ class DragonParetoOptimizer:
             depthshade=True # Matplotlib shading based on distance
         )
         
-        ax.set_xlabel(x_name, labelpad=10)
-        ax.set_ylabel(y_name, labelpad=10)
-        ax.set_zlabel(z_name, labelpad=10)
-        ax.set_title(f"3D Pareto Front: {x_name} vs {y_name} vs {z_name}", fontsize=12)
+        ax.set_xlabel(x_name, labelpad=15)
+        ax.set_ylabel(y_name, labelpad=15)
+        ax.set_zlabel(z_name, labelpad=15)
+        ax.set_title(f"3D Pareto Front: {x_name} vs {y_name} vs {z_name}", fontsize=12, pad=20)
         
         # Add colorbar to quantify the depth
         cbar = plt.colorbar(sc, ax=ax, pad=0.1, shrink=0.6)
-        cbar.set_label(z_name)
+        cbar.set_label(z_name, labelpad=15)
+        
+        plt.tight_layout()
 
         # 2. Save Multiple Angles (Since the output is static)
         # View 1: Default
@@ -394,6 +519,30 @@ class DragonParetoOptimizer:
         plt.savefig(save_dir / "Pareto_3D_View_Side.svg", bbox_inches='tight')
         
         plt.close()
+        
+        # --- 2. Plotly Interactive Plot ---
+        _LOGGER.debug("Generating interactive 3D plot with Plotly...")
+        fig_html = px.scatter_3d(
+            df, 
+            x=x_name, 
+            y=y_name, 
+            z=z_name,
+            color=z_name,
+            title=f"Interactive Pareto Front: {x_name} vs {y_name} vs {z_name}",
+            labels={
+                x_name: x_name,
+                y_name: y_name,
+                z_name: z_name
+            },
+            opacity=0.8
+        )
+        
+        # Update marker size
+        fig_html.update_traces(marker=dict(size=5, line=dict(width=1, color='DarkSlateGrey')))
+        
+        # Save HTML
+        html_path = save_dir / "Pareto_3D_Interactive.html"
+        fig_html.write_html(str(html_path))
 
 
 class ParetoFitnessEvaluator:

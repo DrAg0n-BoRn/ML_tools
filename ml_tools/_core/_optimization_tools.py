@@ -185,7 +185,7 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
     # --- Data Loading and Preparation ---
     _LOGGER.info(f"📁 Starting analysis from results in: '{results_dir}'")
     data_to_plot = []
-    for df, df_name in yield_dataframes_from_dir(results_path):
+    for df, df_name in yield_dataframes_from_dir(results_path, verbose=True):
         if df.shape[1] < 2:
             _LOGGER.warning(f"Skipping '{df_name}': must have at least 2 columns (feature + target).")
             continue
@@ -221,9 +221,9 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
     # --- Plotting Loop ---
     for feature_name in features:
         plt.figure(figsize=(12, 7))
-        # Use .copy() to avoid SettingWithCopyWarning
-        # feature_df = long_df[long_df['feature'] == feature_name].copy()
-        feature_df = long_df[long_df['feature'] == feature_name]
+        
+        # .copy() to ensure we are working with a distinct object, preventing SettingWithCopyWarning
+        feature_df = long_df[long_df['feature'] == feature_name].copy()
 
         # --- Type-checking logic ---
         # Attempt to convert 'value' column to numeric.

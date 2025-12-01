@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.6.0] 2025-12-01
+
+### Added
+
+- New dependency: `plotly`, for interactive plots.
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer._plot_pareto_3d()`, 3D interactive HTML output using Plotly.
+- data_exploration:
+    - `reconstruct_multibinary()`, identifies binary columns matching a regex pattern and encodes them.
+
+### Changed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer._plot_pareto_3d()`, improved static 3D plot aesthetics with enhanced labeling and layout.
+    - `DragonParetoOptimizer._plot_pareto_2d()`, improved 2D plot aesthetics with enhanced labeling and layout.
+    - `DragonParetoOptimizer._plot_parallel_coordinates()`, improved plot aesthetics with enhanced labeling and layout.
+- data_exploration:
+    - `reconstruct_binary()`, allows overwriting existing columns when encoding.
+
+### Fixed
+
+- optimization_tools:
+    - `plot_optimal_feature_distributions()`, improved data handling to prevent SettingWithCopyWarning in pandas.
+
 ## [18.5.1] 2025-11-28
 
 - Minor logging fixes

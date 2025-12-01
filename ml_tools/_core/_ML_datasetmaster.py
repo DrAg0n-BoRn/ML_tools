@@ -282,16 +282,22 @@ class _BaseDatasetMaker(ABC):
         # Construct the consolidated dictionary
         combined_state = {}
         
+        print_message = "Saved "
+        
         if self.feature_scaler:
             combined_state[ScalerKeys.FEATURE_SCALER] = self.feature_scaler._get_state()
+            print_message += "feature scaler "
             
         if self.target_scaler:
+            if self.feature_scaler:
+                print_message += "and "
             combined_state[ScalerKeys.TARGET_SCALER] = self.target_scaler._get_state()
+            print_message += "target scaler "
             
         torch.save(combined_state, filepath)
         
         if verbose:
-            _LOGGER.info(f"Scalers for dataset '{self.id}' saved as '{filepath.name}'.")
+            _LOGGER.info(f"{print_message}to '{filepath.name}'.")
             
     def save_class_map(self, directory: Union[str,Path], verbose: bool=True) -> None:
         if not self.class_map:

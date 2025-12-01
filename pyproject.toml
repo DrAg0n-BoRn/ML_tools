@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "18.5.1"
+version = "18.6.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -40,6 +40,7 @@ ML = [
     # Viz / Notebook
     "matplotlib",
     "seaborn",
+    "plotly",              # Interactive plots
     "Pillow",
     "ipython",
     "ipykernel",

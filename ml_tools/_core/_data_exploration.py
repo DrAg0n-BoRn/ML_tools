@@ -40,6 +40,7 @@ __all__ = [
     "standardize_percentages",
     "reconstruct_one_hot",
     "reconstruct_binary",
+    "reconstruct_multibinary",
     "finalize_feature_schema"
 ]
 
@@ -1623,33 +1624,97 @@ def reconstruct_binary(
         if source_col not in new_df.columns:
             _LOGGER.error(f"Source column '{source_col}' for new column '{new_col_name}' not found. Skipping.")
             raise ValueError()
-
-        if new_col_name in new_df.columns and verbose:
+        
+        if new_col_name in new_df.columns and new_col_name != source_col and verbose:
             _LOGGER.warning(f"New column '{new_col_name}' already exists and will be overwritten.")
 
-        if new_col_name == source_col:
-            _LOGGER.error(f"New column name '{new_col_name}' cannot be the same as source column '{source_col}'.")
-            raise ValueError()
-
         # --- 2. Reconstruction ---
-        # .map() handles 0, 1, preserves NaNs, and converts any other value to NaN.
         mapping_dict = {0: label_for_0, 1: label_for_1}
         new_df[new_col_name] = new_df[source_col].map(mapping_dict)
 
         # --- 3. Logging/Tracking ---
-        source_cols_to_drop.append(source_col)
+        # Only mark source for dropping if it's NOT the same as the new column
+        if source_col != new_col_name:
+            source_cols_to_drop.append(source_col)
+
         reconstructed_count += 1
         if verbose:
             print(f"  - Reconstructed '{new_col_name}' from '{source_col}' (0='{label_for_0}', 1='{label_for_1}').")
 
     # --- 4. Cleanup ---
     if drop_original and source_cols_to_drop:
-        # Use set() to avoid duplicates if the same source col was used
         unique_cols_to_drop = list(set(source_cols_to_drop))
         new_df.drop(columns=unique_cols_to_drop, inplace=True)
         _LOGGER.info(f"Dropped {len(unique_cols_to_drop)} original binary source column(s).")
 
     _LOGGER.info(f"Successfully reconstructed {reconstructed_count} feature(s).")
+
+    return new_df
+
+
+def reconstruct_multibinary(
+    df: pd.DataFrame,
+    pattern: str,
+    pos_label: str = "Yes",
+    neg_label: str = "No",
+    case_sensitive: bool = False,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Identifies binary columns matching a regex pattern and converts their numeric 
+    values (0/1) into categorical string labels (e.g., "No"/"Yes").
+
+    This allows mass-labeling of binary features so they are treated as proper 
+    categorical variables with meaningful keys during subsequent encoding steps.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        pattern (str): Regex pattern to identify the group of binary columns.
+        pos_label (str): The label to assign to 1 or True (default "Yes").
+        neg_label (str): The label to assign to 0 or False (default "No").
+        case_sensitive (bool): If True, regex matching is case-sensitive.
+        verbose (bool): If True, prints a summary of the operation.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the matched columns converted to Strings.
+    """
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input must be a pandas DataFrame.")
+        raise TypeError()
+
+    new_df = df.copy()
+
+    # 1. Find columns matching the regex
+    mask = new_df.columns.str.contains(pattern, case=case_sensitive, regex=True)
+    target_columns = new_df.columns[mask].to_list()
+
+    if not target_columns:
+        _LOGGER.warning(f"No columns found matching pattern '{pattern}'. Returning original DataFrame.")
+        return new_df
+
+    # 2. Define robust mapping (handles ints, floats, and booleans)
+    # Note: Any value not in this map will become NaN
+    mapping_dict = {
+        0: neg_label, 
+        0.0: neg_label, 
+        False: neg_label,
+        1: pos_label, 
+        1.0: pos_label, 
+        True: pos_label
+    }
+
+    converted_count = 0
+    
+    # 3. Apply mapping
+    for col in target_columns:
+        # Check if column is numeric or boolean before attempting map to avoid destroying existing strings
+        if is_numeric_dtype(new_df[col]) or is_object_dtype(new_df[col]):
+            # We cast to object implicitly by mapping to strings
+            new_df[col] = new_df[col].map(mapping_dict)
+            converted_count += 1
+
+    if verbose:
+        _LOGGER.info(f"Reconstructed {converted_count} binary columns matching '{pattern}'.")
 
     return new_df
 

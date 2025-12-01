@@ -20,6 +20,7 @@ from ._core._data_exploration import (
     standardize_percentages,
     reconstruct_one_hot,
     reconstruct_binary,
+    reconstruct_multibinary,
     finalize_feature_schema,
     info
 )
@@ -46,5 +47,6 @@ __all__ = [
     "standardize_percentages",
     "reconstruct_one_hot",
     "reconstruct_binary",
+    "reconstruct_multibinary",
     "finalize_feature_schema"
 ]
