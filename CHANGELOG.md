@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.7.0] 2025-12-01
+
+### Changed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.run()`, no longer generates 3D plots by default.
+    - `DragonParetoOptimizer.plot_pareto_3d()`, generate 3D interactive plots. Accepts an optional `hue_target` parameter to color points based on a specific target.
+
+### Fixed
+
+- optimization_tools:
+    - `plot_optimal_feature_distributions()`, fixed a bug when plotting the legend for 'target'.
+
 ## [18.6.1] 2025-12-01
 
 ### Changed

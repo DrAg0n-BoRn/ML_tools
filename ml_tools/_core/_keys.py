@@ -190,6 +190,10 @@ class SequenceDatasetKeys:
     TARGET_NAME = "Next_Step"
     
 
+class ParetoOptimizationKeys:
+    """Used by the ML optimization pareto module."""
+    PARETO_PLOTS_DIR = "Pareto_Plots"
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"

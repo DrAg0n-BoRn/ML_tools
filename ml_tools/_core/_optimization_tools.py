@@ -207,7 +207,8 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
         melted_df = features_df.melt(var_name='feature', value_name='value')
         # --------------------
         
-        melted_df['target'] = df_name
+        # melted_df['target'] = df_name
+        melted_df['target'] = '\n'.join(target_columns) if target_columns else df_name
         data_to_plot.append(melted_df)
     
     if not data_to_plot:

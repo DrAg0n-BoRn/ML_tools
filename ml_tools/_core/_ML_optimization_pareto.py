@@ -24,7 +24,7 @@ from ._utilities import save_dataframe_filename
 from ._path_manager import make_fullpath, sanitize_filename
 from ._logger import get_logger
 from ._script_info import _script_info
-from ._keys import PyTorchInferenceKeys, MLTaskKeys
+from ._keys import PyTorchInferenceKeys, MLTaskKeys, ParetoOptimizationKeys
 from ._schema import FeatureSchema
 
 
@@ -73,6 +73,10 @@ class DragonParetoOptimizer:
         self.schema = schema
         self.target_objectives = target_objectives
         self.discretize_start_at_zero = discretize_start_at_zero
+        
+        # Initialize state for results
+        self.pareto_front: Optional[pd.DataFrame] = None
+        self._metrics_dir: Optional[Path] = None
 
         # --- 1. Validation ---
         if self.inference_handler.task != MLTaskKeys.MULTITARGET_REGRESSION:
@@ -155,6 +159,8 @@ class DragonParetoOptimizer:
         """
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         log_file = save_path / "optimization_log.txt"
+        
+        self._metrics_dir = save_path
         
         _LOGGER.info(f"🧬 Starting NSGA-II (GeneticAlgorithm) for {generations} generations...")
         
@@ -252,6 +258,8 @@ class DragonParetoOptimizer:
                     )
         
         # --- Save ---
+        self.pareto_front = pareto_df
+        
         filename = "Pareto_Front_Solutions"
         save_dataframe_filename(pareto_df, save_path, filename)
         
@@ -265,7 +273,7 @@ class DragonParetoOptimizer:
     
     def _generate_plots(self, df: pd.DataFrame, save_dir: Path):
         """Orchestrates the generation of visualizations."""
-        plot_dir = make_fullpath(save_dir / "ParetoPlots", make=True)
+        plot_dir = make_fullpath(save_dir / ParetoOptimizationKeys.PARETO_PLOTS_DIR, make=True)
         
         n_objectives = len(self.ordered_target_names)
         
@@ -275,12 +283,9 @@ class DragonParetoOptimizer:
         # 2. Pairplot (Good for inspecting trade-offs)
         self._plot_pairgrid(df, plot_dir)
         
-        # 3. Specific 2D/3D Scatter plots
+        # 3. Specific 2D Scatter plots
         if n_objectives == 2:
             self._plot_pareto_2d(df, plot_dir)
-        # Visualization for the first three targets if more than 3 exist
-        elif n_objectives >= 3:
-            self._plot_pareto_3d(df, plot_dir)
             
         # 4. Input Feature Distributions
         # This utilizes the existing tool to plot histograms/KDEs of the INPUTS that resulted in these Pareto optimal solutions.
@@ -405,29 +410,24 @@ class DragonParetoOptimizer:
 
         # --- 4. Aesthetics & Labels ---
         # Add a title
-        g.figure.suptitle(f"Pareto Front Trade-offs (Color: {hue_col})", y=1.02, fontsize=16)
+        g.figure.suptitle(f"Pareto Front Trade-offs (Hue: {hue_col})", y=1.02, fontsize=16)
 
-        # Rotate axis labels to allow fitting more text without overlap
+        # Iterate over all axes to manually adjust fonts and rotation
         for ax in g.axes.flatten():
-            # Rotate X-axis labels
+            # Manually increase axis label size (Column names)
+            ax.xaxis.label.set_size(14)
+            ax.yaxis.label.set_size(14)
+            
+            # Manually increase tick label size (Values)
+            ax.tick_params(axis='both', which='major', labelsize=12)
+
+            # Rotate X-axis labels to prevent overlap
             for label in ax.get_xticklabels():
                 label.set_rotation(30)
                 label.set_ha('right')
             
             # Ensure grids are on for readability
             ax.grid(True, linestyle='--', alpha=0.3)
-
-        # Add a manual colorbar for context
-        # We attach it to the figure, referencing the last created scatter plot collection
-        if hue_col:
-            # Create a dummy scalar mappable for the colorbar
-            norm = mcolors.Normalize(vmin=df[hue_col].min(), vmax=df[hue_col].max())
-            sm = cm.ScalarMappable(cmap='viridis', norm=norm)
-            sm.set_array([])
-            
-            # Place colorbar
-            cbar_ax = g.figure.add_axes([0.92, 0.3, 0.02, 0.4]) # [left, bottom, width, height]
-            g.figure.colorbar(sm, cax=cbar_ax, label=hue_col)
 
         plt.savefig(save_dir / "Pareto_PairGrid.svg", bbox_inches='tight')
         plt.close()
@@ -471,79 +471,109 @@ class DragonParetoOptimizer:
         plt.savefig(save_dir / f"Pareto_2D_{sanitize_filename(x_name)}_vs_{sanitize_filename(y_name)}.svg")
         plt.close()
         
-    def _plot_pareto_3d(self, df: pd.DataFrame, save_dir: Path):
+    def plot_pareto_3d(self, 
+                       x_target: Union[int, str],
+                       y_target: Union[int, str],
+                       z_target: Union[int, str],
+                       hue_target: Optional[Union[int, str]] = None,
+                       save_dir: Optional[Union[str, Path]] = None,):
         """
-        3D scatter plot with depth coloring and multiple viewing angles.
+        Public API to generate 3D visualizations for specific targets.
         
-        Also generates an interactive HTML plot with plotly.
+        Args:
+            x_target (int|str): Index or name of the target for the X axis.
+            y_target (int|str): Index or name of the target for the Y axis.
+            z_target (int|str): Index or name of the target for the Z axis.
+            hue_target (int|str, optional): Index or name of the target for coloring. Defaults to z_target if None.
+            save_dir (str|Path, optional): Directory to save plots. Defaults to the directory used during optimization.
         """
-        x_name, y_name, z_name = self.ordered_target_names[:3]
+        if save_dir is None:
+            if self._metrics_dir is None:
+                _LOGGER.error("No save directory specified and no previous optimization directory found.")
+                raise ValueError()
+            save_dir = self._metrics_dir
         
+        save_path_root = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        save_path = make_fullpath(save_path_root / ParetoOptimizationKeys.PARETO_PLOTS_DIR, make=True, enforce="directory")
+        
+        df = self.pareto_front
+        if df is None:
+            _LOGGER.error("Pareto front data is not available. Please run the optimization first.")
+            raise ValueError()
+        
+        # Helper to resolve index/name to string column name
+        def resolve_name(t: Union[int, str]) -> str:
+            if isinstance(t, int):
+                if 0 <= t < len(self.ordered_target_names):
+                    return self.ordered_target_names[t]
+                _LOGGER.error(f"Target index {t} is out of bounds. Valid range is 0 to {len(self.ordered_target_names)-1}.")
+                raise IndexError()
+            if t not in df.columns:
+                _LOGGER.error(f"Target '{t}' not found in DataFrame columns.")
+                raise ValueError()
+            return t
+
+        # Resolve columns
+        x_name = resolve_name(x_target)
+        y_name = resolve_name(y_target)
+        z_name = resolve_name(z_target)
+        hue_name = resolve_name(hue_target) if hue_target is not None else z_name
+
+        _LOGGER.info(f"Generating 3D Pareto Plot: {x_name} vs {y_name} vs {z_name} (Hue: {hue_name})")
+
+        # --- 1. Static Matplotlib Plot ---
         fig = plt.figure(figsize=(14, 10))
         ax = fig.add_subplot(111, projection='3d')
         
-        # 1. Color by Z-value to provide depth cues
         sc = ax.scatter(
             df[x_name], 
             df[y_name], 
             df[z_name], 
-            c=df[z_name], 
+            c=df[hue_name], 
             cmap='viridis', 
             s=80, 
             alpha=0.8, 
             edgecolor='k',
-            depthshade=True # Matplotlib shading based on distance
+            depthshade=True
         )
         
         ax.set_xlabel(x_name, labelpad=15)
         ax.set_ylabel(y_name, labelpad=15)
         ax.set_zlabel(z_name, labelpad=15)
-        ax.set_title(f"3D Pareto Front: {x_name} vs {y_name} vs {z_name}", fontsize=12, pad=20)
+        ax.set_title(f"3D Pareto Front", fontsize=14, pad=15)
         
-        # Add colorbar to quantify the depth
+        # Colorbar
         cbar = plt.colorbar(sc, ax=ax, pad=0.1, shrink=0.6)
-        cbar.set_label(z_name, labelpad=15)
+        cbar.set_label(hue_name, labelpad=15)
         
         plt.tight_layout()
 
-        # 2. Save Multiple Angles (Since the output is static)
-        # View 1: Default
-        plt.savefig(save_dir / "Pareto_3D_View_Default.svg", bbox_inches='tight')
+        # create a subdirectory to keep plots organized and avoid overwriting
+        fname_suffix = f"{sanitize_filename(x_name)}_{sanitize_filename(y_name)}_{sanitize_filename(z_name)}"
+        sub_dir_path = save_path / fname_suffix
+        sub_dir_path.mkdir(parents=True, exist_ok=True)
         
-        # View 2: Top-down-ish (XY plane emphasis)
-        ax.view_init(elev=60, azim=45)
-        plt.savefig(save_dir / "Pareto_3D_View_TopDown.svg", bbox_inches='tight')
-        
-        # View 3: Side profile (XZ/YZ emphasis)
-        ax.view_init(elev=20, azim=135)
-        plt.savefig(save_dir / "Pareto_3D_View_Side.svg", bbox_inches='tight')
-        
+        # Save Standard View
+        plt.savefig(sub_dir_path / f"Pareto_3D.svg", bbox_inches='tight')
         plt.close()
         
-        # --- 2. Plotly Interactive Plot ---
-        _LOGGER.debug("Generating interactive 3D plot with Plotly...")
+        # --- 2. Interactive Plotly Plot ---
         fig_html = px.scatter_3d(
             df, 
             x=x_name, 
             y=y_name, 
             z=z_name,
-            color=z_name,
-            title=f"Interactive Pareto Front: {x_name} vs {y_name} vs {z_name}",
-            labels={
-                x_name: x_name,
-                y_name: y_name,
-                z_name: z_name
-            },
+            color=hue_name,
+            title=f"Interactive 3D Pareto Front",
+            labels={x_name: x_name, y_name: y_name, z_name: z_name, hue_name: hue_name},
             opacity=0.8
         )
         
-        # Update marker size
         fig_html.update_traces(marker=dict(size=5, line=dict(width=1, color='DarkSlateGrey')))
         
-        # Save HTML
-        html_path = save_dir / "Pareto_3D_Interactive.html"
+        html_path = sub_dir_path / f"Pareto_3D_Interactive.html"
         fig_html.write_html(str(html_path))
-
 
 class ParetoFitnessEvaluator:
     """
