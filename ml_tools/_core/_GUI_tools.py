@@ -610,20 +610,21 @@ class DragonFeatureMaster:
         self._all_features = self._get_all_gui_features()
         
     @classmethod
-    def from_guischema(cls, json_path: Union[str, Path]) -> 'DragonFeatureMaster':
+    def from_guischema(cls, root_dir: Union[str, Path]) -> 'DragonFeatureMaster':
         """
         Loads configuration from a JSON file (standardized via create_guischema_template).
         
         Args:
-            json_path: Path to the GUISchema.json file.
+            root_dir: Directory containing the GUISchema.json file.
         """
         
-        path = make_fullpath(json_path, enforce='file')
-        # name must match expected schema from keys
-        if not path.name == SchemaKeys.GUI_SCHEMA_FILENAME:
-            _LOGGER.error(f"Schema filename mismatch. Expected '{SchemaKeys.GUI_SCHEMA_FILENAME}', got '{path.name}'")
-            raise ValueError()
-
+        dir_path = make_fullpath(root_dir, enforce='directory')
+        path = dir_path / SchemaKeys.GUI_SCHEMA_FILENAME
+        
+        if not path.exists():
+            _LOGGER.error(f"GUISchema file not found at: {root_dir}")
+            raise FileNotFoundError()
+        
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             

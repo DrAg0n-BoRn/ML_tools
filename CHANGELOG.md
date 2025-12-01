@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.8.1] 2025-12-01
+
+### Changed
+
+- GUI_tools:
+    - `DragonFeatureMaster.from_guischema()`, loads the GUISchema file from a given directory.
+
+### Fixed
+
+- schema:
+    - `FeatureSchema.from_json()`, added path validation to fail early in case of an error.
+
 ## [18.8.0] 2025-12-01
 
 ### Added

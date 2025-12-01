@@ -72,6 +72,10 @@ class FeatureSchema(NamedTuple):
         dir_path = make_fullpath(directory, enforce="directory")
         file_path = dir_path / SchemaKeys.SCHEMA_FILENAME
         
+        if not file_path.exists():
+            _LOGGER.error(f"FeatureSchema file not found at '{directory}'")
+            raise FileNotFoundError()
+        
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data: Dict[str, Any] = json.load(f)
@@ -281,7 +285,7 @@ def create_guischema_template(
     try:
         with open(save_path, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=4)
-        _LOGGER.info(f"GUISchema template generated at: {save_path}")
+        _LOGGER.info(f"GUISchema template generated at: '{save_path.name}/{SchemaKeys.GUI_SCHEMA_FILENAME}'")
     except IOError as e:
         _LOGGER.error(f"Failed to save GUISchema template: {e}")
 
