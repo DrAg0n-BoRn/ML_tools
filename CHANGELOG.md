@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.9.0] 2025-12-02
+
+### Changed
+
+- math_utilities:
+    - `discretize_categorical_values()`, now returns float values for the entire array to preserve precision in mixed-type arrays.
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.save_solutions()`, save solutions with optional value casting for integer columns.
+    - `DragonParetoOptimizer.run()`, no longer saves solutions automatically. Use `save_solutions()` method instead.
+
 ## [18.8.1] 2025-12-01
 
 ### Changed

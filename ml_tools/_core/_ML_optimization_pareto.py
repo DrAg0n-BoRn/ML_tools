@@ -257,19 +257,68 @@ class DragonParetoOptimizer:
                         lambda x: inv_map.get(int(x), x) if not pd.isna(x) else x
                     )
         
-        # --- Save ---
+        # --- Store DataFrame ---
         self.pareto_front = pareto_df
         
-        filename = "Pareto_Front_Solutions"
-        save_dataframe_filename(pareto_df, save_path, filename)
-        
         _LOGGER.info(f"Optimization complete. Found {len(pareto_df)} non-dominated solutions.")
-        # _LOGGER.info(f"💾 Solutions saved to '{save_path}/{filename}.csv'")
 
         # --- Plotting ---
         self._generate_plots(pareto_df, save_path)
 
         return pareto_df
+    
+    def save_solutions(self, 
+                       filename: str = "Pareto_Front_Solutions", 
+                       save_dir: Optional[Union[str, Path]] = None, 
+                       columns_to_round: Optional[List[str]] = None) -> None:
+        """
+        Saves the current Pareto front to a CSV file, with optional integer rounding 
+        for specific continuous columns.
+
+        Args:
+            save_dir (str | Path | None): Directory to save the CSV. If None, uses the optimization directory.
+            filename (str): Name of the file (without .csv extension).
+            columns_to_round (List[str], optional): List of continuous column names that should be rounded to the nearest integer.
+        """
+        if self.pareto_front is None:
+            _LOGGER.error("Cannot save solutions: No Pareto front found. Run the optimizer first.")
+            raise ValueError()
+        
+        # handle directory
+        if save_dir is None:
+            if self._metrics_dir is None:
+                _LOGGER.error("No save directory specified and no optimization directory found. Run the optimizer first.")
+                raise ValueError()
+            save_dir = self._metrics_dir
+
+        # Create a copy to avoid modifying the internal state
+        df_to_save = self.pareto_front.copy()
+
+        # Apply rounding to specific columns
+        if columns_to_round:
+            # Validate columns exist
+            missing_cols = [c for c in columns_to_round if c not in df_to_save.columns]
+            if missing_cols:
+                _LOGGER.error(f"Save failed: The following columns to round were not found in the results: {missing_cols}")
+                raise ValueError()
+
+            for col in columns_to_round:
+                # Round to nearest integer (handle floating point drift) and cast to int
+                # This ensures 4.999 becomes 5, and saves as "5" not "5.0"
+                df_to_save[col] = df_to_save[col].round().astype(int)
+                _LOGGER.debug(f"Column '{col}' rounded to nearest integer.")
+
+        # Save using the existing utility
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        
+        # sanitize filename and add extension if missing
+        sanitized_filename = sanitize_filename(filename)
+        if not sanitized_filename.lower().endswith(".csv"):
+            sanitized_filename += ".csv"
+        
+        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=sanitized_filename)
+        
+        _LOGGER.info(f"💾 Pareto solutions saved to '{save_path.name}/{sanitized_filename}'")
     
     def _generate_plots(self, df: pd.DataFrame, save_dir: Path):
         """Orchestrates the generation of visualizations."""

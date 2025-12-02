@@ -199,7 +199,7 @@ def discretize_categorical_values(
     Returns
     -------
     np.ndarray
-        A new array with the specified columns converted to integer categories.
+        A new array with the specified columns converted to integer-like values.
         Shape matches the input array's original shape.
     """
     # --- Input Validation ---
@@ -248,7 +248,10 @@ def discretize_categorical_values(
         # 3. Clamp the values and update the output array
         output_array[:, col_idx] = np.clip(rounded_col, min_bound, max_bound)
     
-    final_output = output_array.astype(np.int32)
+    # NOTE: do NOT cast to int32, return the array as is (floats).
+    # Categorical columns are now "integer-like floats" (1.0, 2.0, etc), preserving the precision of the continuous columns in the same array.
+    # final_output = output_array.astype(np.int32)
+    final_output = output_array
     
     # --- Output Shape Handling ---
     if original_was_1d:
