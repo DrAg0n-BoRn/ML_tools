@@ -17,8 +17,9 @@ from evotorch import Problem
 from evotorch.operators import SimulatedBinaryCrossOver, GaussianMutation
 from evotorch.operators import functional as func_ops
 
+from ._SQL import DragonSQL
 from ._ML_inference import DragonInferenceHandler
-from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions
+from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
 from ._path_manager import make_fullpath, sanitize_filename
@@ -268,17 +269,23 @@ class DragonParetoOptimizer:
         return pareto_df
     
     def save_solutions(self, 
-                       filename: str = "Pareto_Front_Solutions", 
+                       filename: str = "Pareto_Solutions", 
                        save_dir: Optional[Union[str, Path]] = None, 
-                       columns_to_round: Optional[List[str]] = None) -> None:
+                       columns_to_round: Optional[List[str]] = None,
+                       save_to_sql: bool = False,
+                       sql_table_name: Optional[str] = None,
+                       sql_if_exists: Literal['fail', 'replace', 'append'] = 'replace') -> None:
         """
         Saves the current Pareto front to a CSV file, with optional integer rounding 
-        for specific continuous columns.
+        for specific continuous columns. Optionally saves to a SQL database.
 
         Args:
             save_dir (str | Path | None): Directory to save the CSV. If None, uses the optimization directory.
             filename (str): Name of the file (without .csv extension).
             columns_to_round (List[str], optional): List of continuous column names that should be rounded to the nearest integer.
+            save_to_sql (bool): If True, also writes the results to a SQLite database in the save_dir.
+            sql_table_name (str, optional): Specific table name for SQL. If None, uses 'filename'.
+            sql_if_exists (str): Behavior if SQL table exists ('fail', 'replace', 'append').
         """
         if self.pareto_front is None:
             _LOGGER.error("Cannot save solutions: No Pareto front found. Run the optimizer first.")
@@ -287,7 +294,7 @@ class DragonParetoOptimizer:
         # handle directory
         if save_dir is None:
             if self._metrics_dir is None:
-                _LOGGER.error("No save directory specified and no optimization directory found. Run the optimizer first.")
+                _LOGGER.error("No save directory specified and no optimization directory found.")
                 raise ValueError()
             save_dir = self._metrics_dir
 
@@ -314,18 +321,33 @@ class DragonParetoOptimizer:
                 df_to_save[col] = df_to_save[col].round().astype(int)
                 _LOGGER.debug(f"Column '{col}' rounded to nearest integer.")
 
-        # Save using the existing utility
+        # Save CSV
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         
         # sanitize filename and add extension if missing
         sanitized_filename = sanitize_filename(filename)
-        if not sanitized_filename.lower().endswith(".csv"):
-            sanitized_filename += ".csv"
+        csv_filename = sanitized_filename if sanitized_filename.lower().endswith(".csv") else f"{sanitized_filename}.csv"
         
-        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=sanitized_filename)
+        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename)
+        _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'")
         
-        _LOGGER.info(f"💾 Pareto solutions saved to '{save_path.name}/{sanitized_filename}'")
-    
+        # --- 2. Save SQL (Optional) ---
+        if save_to_sql:
+            db_path = save_path / ParetoOptimizationKeys.SQL_DATABASE_FILENAME
+            target_table = sql_table_name if sql_table_name else sanitized_filename.rstrip(".csv")
+
+            try:
+                with DragonSQL(db_path) as db:
+                    db.insert_from_dataframe(
+                        table_name=target_table,
+                        df=df_to_save,
+                        if_exists=sql_if_exists
+                    )
+                _LOGGER.info(f"💾 Pareto solutions saved to SQL Table '{target_table}' in '{db_path.name}'")
+            except Exception as e:
+                _LOGGER.error(f"Failed to save solutions to SQL: {e}")
+                # do not raise here to ensure the CSV save (which happened first) is not considered 'failed'
+
     def _generate_plots(self, df: pd.DataFrame, save_dir: Path):
         """Orchestrates the generation of visualizations."""
         plot_dir = make_fullpath(save_dir / ParetoOptimizationKeys.PARETO_PLOTS_DIR, make=True)
@@ -345,8 +367,9 @@ class DragonParetoOptimizer:
         # 4. Input Feature Distributions
         # This utilizes the existing tool to plot histograms/KDEs of the INPUTS that resulted in these Pareto optimal solutions.
         _LOGGER.debug("Generating input feature distribution plots...")
-        plot_optimal_feature_distributions(
-            results_dir=save_dir, 
+        plot_optimal_feature_distributions_from_dataframe(
+            dataframe=df,
+            save_dir=save_dir,
             verbose=False,
             target_columns=self.ordered_target_names # Exclude targets from being plotted as features
         )

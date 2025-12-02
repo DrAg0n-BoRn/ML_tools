@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.10.0] 2025-12-02
+
+### Added
+
+- optimization_tools:
+    - `plot_optimal_feature_distributions_from_dataframe()`, Plots feature distributions from a given DataFrame of optimal solutions.
+
+### Changed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.run()`, uses the new `plot_optimal_feature_distributions_from_dataframe()` function to plot input feature distributions directly from the DataFrame of optimal solutions.
+    - `DragonParetoOptimizer.save_solutions()`, optionally saves to a SQL database.
+
 ## [18.9.1] 2025-12-02
 
 ### Fixed
