@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.9.1] 2025-12-02
+
+### Fixed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.save_solutions()`, added validation to ensure integer casting only applies to continuous columns according to the FeatureSchema.
+
 ## [18.9.0] 2025-12-02
 
 ### Changed

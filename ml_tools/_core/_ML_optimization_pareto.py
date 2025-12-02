@@ -302,6 +302,12 @@ class DragonParetoOptimizer:
                 _LOGGER.error(f"Save failed: The following columns to round were not found in the results: {missing_cols}")
                 raise ValueError()
 
+            # columns should be continuous columns only, validate against schema
+            invalid_cols = [c for c in columns_to_round if c not in self.schema.continuous_feature_names]
+            if invalid_cols:
+                _LOGGER.error(f"Save failed: The following columns to round are not continuous features: {invalid_cols}")
+                raise ValueError()
+
             for col in columns_to_round:
                 # Round to nearest integer (handle floating point drift) and cast to int
                 # This ensures 4.999 becomes 5, and saves as "5" not "5.0"
