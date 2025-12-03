@@ -204,6 +204,13 @@ class SchemaKeys:
     GUI_SCHEMA_FILENAME = "GUISchema.json"
 
 
+class _EvaluationConfig:
+    """Set config values for evaluation modules."""
+    DPI = 250
+    REGRESSION_PLOT_SIZE = (9, 6)
+    SEQUENCE_PLOT_SIZE = (9, 6)
+
+
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
     OTHER_GUI = "OTHER"

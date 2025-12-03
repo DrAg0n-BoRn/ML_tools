@@ -24,7 +24,7 @@ import warnings
 from ._path_manager import make_fullpath, sanitize_filename
 from ._logger import get_logger
 from ._script_info import _script_info
-from ._keys import SHAPKeys, PyTorchLogKeys
+from ._keys import SHAPKeys, PyTorchLogKeys, _EvaluationConfig
 from ._ML_configuration import (RegressionMetricsFormat,
                                BinaryClassificationMetricsFormat,
                                MultiClassClassificationMetricsFormat,
@@ -45,8 +45,9 @@ __all__ = [
     "plot_attention_importance"
 ]
 
-DPI_value = 250
-REGRESSION_PLOT_SIZE = (9, 6)
+
+DPI_value = _EvaluationConfig.DPI
+REGRESSION_PLOT_SIZE = _EvaluationConfig.REGRESSION_PLOT_SIZE
 
 
 def plot_losses(history: dict, save_dir: Union[str, Path]):

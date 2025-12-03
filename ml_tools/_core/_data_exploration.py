@@ -271,7 +271,7 @@ def show_null_columns(
                 # Reference line
                 plt.axhline(y=100, color='black', linestyle='-', linewidth=0.5, alpha=0.3)
                 
-                plt.legend(loc='lower left', framealpha=0.95)
+                plt.legend(loc='lower right', framealpha=0.95)
                 plt.tight_layout()
 
                 # Save

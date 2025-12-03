@@ -25,7 +25,7 @@ import warnings
 from ._path_manager import make_fullpath, sanitize_filename
 from ._logger import get_logger
 from ._script_info import _script_info
-from ._keys import SHAPKeys
+from ._keys import SHAPKeys, _EvaluationConfig
 from ._ML_configuration import (MultiTargetRegressionMetricsFormat,
                                _BaseRegressionFormat,
                                MultiLabelBinaryClassificationMetricsFormat,
@@ -41,8 +41,9 @@ __all__ = [
     "multi_target_shap_summary_plot",
 ]
 
-DPI_value = 250
-REGRESSION_PLOT_SIZE = (9, 6)
+
+DPI_value = _EvaluationConfig.DPI
+REGRESSION_PLOT_SIZE = _EvaluationConfig.REGRESSION_PLOT_SIZE
 
 
 def multi_target_regression_metrics(

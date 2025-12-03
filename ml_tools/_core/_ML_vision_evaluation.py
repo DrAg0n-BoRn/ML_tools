@@ -18,7 +18,7 @@ from torchmetrics.detection import MeanAveragePrecision
 from ._path_manager import make_fullpath
 from ._logger import get_logger
 from ._script_info import _script_info
-from ._keys import VisionKeys
+from ._keys import VisionKeys, _EvaluationConfig
 from ._ML_configuration import (BinarySegmentationMetricsFormat,
                                MultiClassSegmentationMetricsFormat,
                                _BaseSegmentationFormat)
@@ -32,7 +32,8 @@ __all__ = [
     "object_detection_metrics"
 ]
 
-DPI_value = 250
+
+DPI_value = _EvaluationConfig.DPI
 
 
 def segmentation_metrics(

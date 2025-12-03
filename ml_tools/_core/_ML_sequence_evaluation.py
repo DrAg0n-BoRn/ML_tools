@@ -15,6 +15,7 @@ from ._path_manager import make_fullpath
 from ._logger import get_logger
 from ._script_info import _script_info
 from ._ML_configuration import SequenceValueMetricsFormat, SequenceSequenceMetricsFormat, _BaseSequenceValueFormat, _BaseSequenceSequenceFormat
+from ._keys import _EvaluationConfig
 
 
 _LOGGER = get_logger("Sequence Evaluation")
@@ -25,7 +26,9 @@ __all__ = [
     "sequence_to_sequence_metrics"
 ]
 
-DPI_value = 250
+
+DPI_value = _EvaluationConfig.DPI
+SEQUENCE_PLOT_SIZE = _EvaluationConfig.SEQUENCE_PLOT_SIZE
 
 
 def sequence_to_value_metrics(
@@ -82,7 +85,7 @@ def sequence_to_value_metrics(
 
     # --- Save residual plot ---
     residuals = y_true - y_pred
-    fig_res, ax_res = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+    fig_res, ax_res = plt.subplots(figsize=SEQUENCE_PLOT_SIZE, dpi=DPI_value)
     ax_res.scatter(y_pred, residuals, 
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
@@ -98,7 +101,7 @@ def sequence_to_value_metrics(
     plt.close(fig_res)
 
     # --- Save true vs predicted plot ---
-    fig_tvp, ax_tvp = plt.subplots(figsize=(8, 6), dpi=DPI_value)
+    fig_tvp, ax_tvp = plt.subplots(figsize=SEQUENCE_PLOT_SIZE, dpi=DPI_value)
     ax_tvp.scatter(y_true, y_pred, 
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
