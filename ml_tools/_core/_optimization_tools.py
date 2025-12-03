@@ -184,7 +184,8 @@ def plot_optimal_feature_distributions(results_dir: Union[str, Path],
     list_csv_paths(results_path, verbose=False)
 
     # --- Data Loading and Preparation ---
-    _LOGGER.info(f"📁 Starting analysis from results in: '{results_dir}'")
+    _LOGGER.debug(f"📁 Starting analysis from results in: '{results_dir}'")
+    
     data_to_plot = []
     for df, df_name in yield_dataframes_from_dir(results_path, verbose=True):
         if df.shape[1] < 2:
@@ -253,7 +254,7 @@ def plot_optimal_feature_distributions_from_dataframe(dataframe: pd.DataFrame,
     root_path = make_fullpath(save_dir, make=True, enforce="directory")
     output_path = make_fullpath(root_path / "DistributionPlots", make=True, enforce="directory")
     
-    _LOGGER.info(f"📁 Starting analysis from provided DataFrame. Output: '{output_path}'")
+    _LOGGER.debug(f"📁 Starting analysis from provided DataFrame. Output: '{output_path}'")
 
     if dataframe.empty:
         _LOGGER.error("Provided dataframe is empty.")
@@ -293,7 +294,7 @@ def _generate_and_save_feature_plots(long_df: pd.DataFrame, output_path: Path, v
     features = long_df['feature'].unique()
     unique_targets = long_df['target'].unique()
     
-    _LOGGER.info(f"Found data for {len(features)} features across {len(unique_targets)} targets. Generating plots...")
+    _LOGGER.info(f"📊 Found data for {len(features)} features across {len(unique_targets)} targets. Generating plots...")
 
     for feature_name in features:
         plt.figure(figsize=(12, 7))
@@ -309,7 +310,7 @@ def _generate_and_save_feature_plots(long_df: pd.DataFrame, output_path: Path, v
             
             # --- PLOT 1: CATEGORICAL (String-based) ---
             if verbose:
-                _LOGGER.info(f"Plotting '{feature_name}' as categorical (bar plot).")
+                print(f"    Plotting '{feature_name}' as categorical (bar plot).")
             
             # Calculate percentages for a clean bar plot
             norm_df = (feature_df.groupby('target')['value']
@@ -329,7 +330,7 @@ def _generate_and_save_feature_plots(long_df: pd.DataFrame, output_path: Path, v
         else:
             # --- PLOT 2: CONTINUOUS (Numeric-based) ---
             if verbose:
-                _LOGGER.info(f"Plotting '{feature_name}' as continuous (KDE plot).")
+                print(f"    Plotting '{feature_name}' as continuous (KDE plot).")
             
             ax = sns.kdeplot(data=feature_df, x='numeric_value', hue='target',
                              fill=True, alpha=0.1, warn_singular=False)

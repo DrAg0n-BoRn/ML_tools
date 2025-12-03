@@ -285,7 +285,7 @@ def create_guischema_template(
     try:
         with open(save_path, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=4)
-        _LOGGER.info(f"GUISchema template generated at: '{save_path.name}/{SchemaKeys.GUI_SCHEMA_FILENAME}'")
+        _LOGGER.info(f"GUISchema template generated at: '{dir_path.name}/{SchemaKeys.GUI_SCHEMA_FILENAME}'")
     except IOError as e:
         _LOGGER.error(f"Failed to save GUISchema template: {e}")
 

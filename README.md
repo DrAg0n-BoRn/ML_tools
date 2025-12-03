@@ -248,5 +248,5 @@ After installation, import modules like this:
 
 ```python
 from ml_tools.serde import serialize_object, deserialize_object
-from ml_tools import custom_logger
+from ml_tools.custom_logger import train_logger
 ```
