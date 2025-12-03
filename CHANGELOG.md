@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [18.12.0] 2025-12-03
+
+### Added
+
+- New module: "plot_fonts"
+    - `configure_cjk_fonts()`, configures Matplotlib to use CJK fonts for proper rendering of Chinese, Japanese, and Korean characters in plots.
+
+### Fixed
+
+- data_exploration:
+    - `drop_rows_with_missing_data()`, fixed an edge case bug where all rows were dropped when passing an empty list of columns to check.
+
 ## [18.11.0] 2025-12-03
 
 ### Changed

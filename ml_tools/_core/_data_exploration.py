@@ -142,17 +142,22 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
     df_clean = df.copy()
 
     # Stage 1: Drop rows with all target columns missing
-    if targets is not None:
+    valid_targets = []
+    if targets:
         # validate targets
         valid_targets = _validate_columns(df_clean, targets)
-        target_na = df_clean[valid_targets].isnull().all(axis=1)
-        if target_na.any():
-            _LOGGER.info(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
-            df_clean = df_clean[~target_na]
+        
+        # Only proceed if we actually have columns to check
+        if valid_targets:
+            target_na = df_clean[valid_targets].isnull().all(axis=1)
+            if target_na.any():
+                _LOGGER.info(f"🧹 Dropping {target_na.sum()} rows with all target columns missing.")
+                df_clean = df_clean[~target_na]
+            else:
+                _LOGGER.info("No rows found where all targets are missing.")
         else:
-            _LOGGER.info("No rows found where all targets are missing.")
-    else:
-        valid_targets = []
+            _LOGGER.error("Targets list provided but no matching columns found in DataFrame.")
+            raise ValueError()
 
     # Stage 2: Drop rows based on feature column missing values
     feature_cols = [col for col in df_clean.columns if col not in valid_targets]
