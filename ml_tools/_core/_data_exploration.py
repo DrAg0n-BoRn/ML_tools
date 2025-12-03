@@ -170,14 +170,25 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
     return df_clean
 
 
-def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
+def show_null_columns(
+    df: pd.DataFrame, 
+    round_digits: int = 2,
+    plot_to_dir: Optional[Union[str, Path]] = None,
+    plot_filename: Optional[str] = None
+) -> pd.DataFrame:
     """
     Returns a table of columns with missing values, showing both the count and
     percentage of missing entries per column.
+    
+    Optionally generates a visualization of the missing data profile.
 
     Parameters:
         df (pd.DataFrame): The input DataFrame.
         round_digits (int): Number of decimal places for the percentage.
+        plot_to_dir (str | Path | None): If provided, saves a visualization of the 
+            missing data to this directory.
+        plot_filename (str): The filename for the saved plot (without extension). 
+            Used only if `plot_to_dir` is set.
 
     Returns:
         pd.DataFrame: A DataFrame summarizing missing values in each column.
@@ -194,7 +205,86 @@ def show_null_columns(df: pd.DataFrame, round_digits: int = 2):
 
     # Sort by descending percentage of missing values
     null_summary = null_summary.sort_values(by='Missing %', ascending=False)
-    # print(null_summary)
+    
+    # --- Visualization Logic ---
+    if plot_to_dir:
+        if null_summary.empty:
+            _LOGGER.info("No missing data found. Skipping plot generation.")
+        else:
+            try:
+                # Validate and create save directory
+                save_path = make_fullpath(plot_to_dir, make=True, enforce="directory")
+                
+                # Prepare data
+                features = null_summary.index.tolist()
+                missing_pct = np.array(null_summary['Missing %'].values)
+                present_pct = 100 - missing_pct
+                n_features = len(features)
+                
+                # Dynamic width
+                width = max(10, n_features * 0.4)
+                plt.figure(figsize=(width, 8))
+
+                # Stacked Bar Chart Logic
+                
+                # Grid behind bars
+                plt.grid(axis='y', linestyle='--', alpha=0.5, zorder=0)
+
+                # 1. Present Data: Solid Green
+                plt.bar(
+                    features, 
+                    present_pct, 
+                    color='tab:green', 
+                    label='Present', 
+                    width=0.6, 
+                    zorder=3
+                )
+
+                # 2. Missing Data: Transparent Red Fill + Solid Red Hatch
+                # define facecolor (fill) with alpha, but edgecolor (lines) without alpha.
+                plt.bar(
+                    features, 
+                    missing_pct, 
+                    bottom=present_pct, 
+                    facecolor=(1.0, 1.0, 1.0, 0.2), # RGBA
+                    edgecolor='tab:red',             # Solid red for the hatch lines
+                    hatch='///',                     # hatch pattern
+                    linewidth=0.4,                   # Ensure lines are thick enough to see
+                    label='Missing', 
+                    width=0.6, 
+                    zorder=3
+                )
+
+                # Styling
+                plt.ylim(0, 100)
+                plt.ylabel("Data Completeness (%)", fontsize=13)
+                plt.yticks(np.arange(0, 101, 10))
+                plot_title = f"Missing Data - {plot_filename.replace('_', ' ')}" if plot_filename else "Missing Data"
+                plt.title(plot_title)
+                plt.xticks(rotation=45, ha='right', fontsize=9)
+                
+                # Reference line
+                plt.axhline(y=100, color='black', linestyle='-', linewidth=0.5, alpha=0.3)
+                
+                plt.legend(loc='lower left', framealpha=0.95)
+                plt.tight_layout()
+
+                # Save
+                if plot_filename is None or plot_filename.strip() == "":
+                    plot_filename = "Missing_Data_Profile"
+                else:
+                    plot_filename =  "Missing_Data_" + sanitize_filename(plot_filename)
+    
+                full_filename = plot_filename + ".svg"
+                plt.savefig(save_path / full_filename, format='svg', bbox_inches="tight")
+                plt.close()
+                
+                _LOGGER.info(f"Saved missing data plot as '{full_filename}'")
+                
+            except Exception as e:
+                _LOGGER.error(f"Failed to generate missing data plot. Error: {e}")
+                plt.close()
+
     return null_summary
 
 
@@ -222,7 +312,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     missing_fraction = df[cols_to_check].isnull().mean()
     
     
-    cols_to_drop = missing_fraction[missing_fraction > threshold].index
+    cols_to_drop = missing_fraction[missing_fraction > threshold].index # type: ignore
 
     if len(cols_to_drop) > 0:
         _LOGGER.info(f"🧹 Dropping columns with more than {threshold*100:.0f}% missing data:")
@@ -274,11 +364,15 @@ def drop_macro(df: pd.DataFrame,
     # make a deep copy to work with
     df_clean = df.copy()
     
-    # Log initial state
-    missing_data = show_null_columns(df=df_clean)
-    save_dataframe_filename(df=missing_data.reset_index(drop=False),
+    # Log initial state + Plot
+    missing_data_start = show_null_columns(
+        df=df_clean, 
+        plot_to_dir=log_directory, 
+        plot_filename="Original"
+    )
+    save_dataframe_filename(df=missing_data_start.reset_index(drop=False),
                    save_dir=log_directory,
-                   filename="Missing_Data_start")
+                   filename="Missing_Data_Original")
     
     # Clean cycles for rows and columns
     master = True
@@ -303,11 +397,15 @@ def drop_macro(df: pd.DataFrame,
         if remaining_rows >= initial_rows and remaining_columns >= initial_columns:
             master = False
     
-    # log final state
-    missing_data = show_null_columns(df=df_clean)
-    save_dataframe_filename(df=missing_data.reset_index(drop=False),
+    # log final state + plot
+    missing_data_final = show_null_columns(
+        df=df_clean,
+        plot_to_dir=log_directory,
+        plot_filename="Processed"
+    )
+    save_dataframe_filename(df=missing_data_final.reset_index(drop=False),
                    save_dir=log_directory,
-                   filename="Missing_Data_final")
+                   filename="Missing_Data_Processed")
     
     # return cleaned dataframe
     return df_clean

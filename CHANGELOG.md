@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.11.0] 2025-12-03
+
+### Changed
+
+- data_exploration:
+    - `show_null_columns()`, optional plot output to visualize missing data per column.
+    - `drop_macro()`, generates plots before and after cleaning to visualize missing data.
+
 ## [18.10.1] 2025-12-03
 
 - Minor logging fixes.

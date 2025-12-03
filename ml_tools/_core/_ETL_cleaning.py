@@ -104,7 +104,7 @@ def save_unique_values(csv_path: Union[str, Path],
             _LOGGER.exception(f"Error writing to file {file_path}.")
         else:
             if verbose:
-                _LOGGER.info(f"Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
+                print(f"    Successfully saved {len(sorted_uniques)} unique values from '{column_name}'.")
             counter += 1
 
     _LOGGER.info(f"{counter} files of unique values created.")
@@ -144,7 +144,7 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', '∼': '~',
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
         '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=', '·': '', '⋅': '',
-        '¯': '-',
+        '¯': '-', '＿': '_',
         
         # Commas (avoid commas in entries)
         '，': ';',
