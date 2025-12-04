@@ -63,6 +63,8 @@ ETL_cleaning
 ETL_engineering
 math_utilities
 ML_callbacks
+ML_chaining_inference
+ML_chaining_utilities
 ML_configuration
 ML_datasetmaster
 ML_evaluation_captum

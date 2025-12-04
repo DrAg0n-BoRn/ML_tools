@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.0.0] 2025-12-04
+
+- Major release introducing model chaining capabilities for sequential ML workflows.
+
+### Added
+
+- New module: "ML_chaining_utilities"
+    - `augment_dataset_with_predictions()`, Augments a DataFrame with model predictions as new columns.
+    - `augment_dataset_with_predictions_multi()`, Augments a DataFrame with predictions from multiple models.
+    - `prepare_chaining_dataset()`, Prepares a DataFrame for chaining by separating features and targets.
+    - `DragonChainOrchestrator`, Manages the data flow for a sequential chain of ML models (Model 1 -> Model 2 -> ... -> Model N).
+
+- New_module: "ML_chaining_inference"`
+    - `DragonChainInference`, Chains multiple model inference handlers to perform a unified inference process.
+
+### Changed
+
+- ML_optimization_pareto:
+    - `_ParetoFitnessEvaluator`, now supports both standard `DragonInferenceHandler` and the new `DragonChainInference` for multi-objective optimization.
+    - `DragonParetoOptimizer`, updated to handle chained inference scenarios seamlessly.
+
 ## [18.13.0] 2025-12-04
 
 ### Changed

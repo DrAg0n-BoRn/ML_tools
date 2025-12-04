@@ -19,6 +19,7 @@ from evotorch.operators import functional as func_ops
 
 from ._SQL import DragonSQL
 from ._ML_inference import DragonInferenceHandler
+from ._ML_chaining_inference import DragonChainInference
 from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
@@ -34,7 +35,7 @@ _LOGGER = get_logger("Pareto Optimizer")
 
 __all__ = [
     "DragonParetoOptimizer"
-    ]
+]
 
 
 class DragonParetoOptimizer:
@@ -45,6 +46,7 @@ class DragonParetoOptimizer:
     where improving one target would worsen another.
 
     Features:
+    - Supports DragonInferenceHandler (Multi-Target Regression) AND DragonChainInference.
     - Supports mixed optimization directions (e.g., Maximize Profit, Minimize Risk).
     - Handles categorical constraints via feature schema.
     - Automatically generates Pareto plots (2D/3D Scatter and Parallel Coordinates).
@@ -52,17 +54,17 @@ class DragonParetoOptimizer:
     """
 
     def __init__(self,
-                 inference_handler: DragonInferenceHandler,
+                 inference_handler: Union[DragonInferenceHandler, DragonChainInference],
                  schema: FeatureSchema,
                  target_objectives: Dict[str, Literal["min", "max"]],
                  continuous_bounds_map: Dict[str, Tuple[float, float]],
-                 population_size: int = 200,
+                 population_size: int = 400,
                  discretize_start_at_zero: bool = True):
         """
         Initialize the Pareto Optimizer.
 
         Args:
-            inference_handler (DragonInferenceHandler): Validated model handler.
+            inference_handler (DragonInferenceHandler | DragonChainInference): Validated model handler.
             schema (FeatureSchema): Feature schema for bounds and types.
             target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
                 Example: {"price": "max", "error": "min"}
@@ -78,11 +80,16 @@ class DragonParetoOptimizer:
         # Initialize state for results
         self.pareto_front: Optional[pd.DataFrame] = None
         self._metrics_dir: Optional[Path] = None
+        
+        # Detect and validate handler
+        self.is_chain = isinstance(self.inference_handler, DragonChainInference)
 
         # --- 1. Validation ---
-        if self.inference_handler.task != MLTaskKeys.MULTITARGET_REGRESSION:
-            _LOGGER.error(f"DragonParetoOptimizer requires '{MLTaskKeys.MULTITARGET_REGRESSION}'. Got '{self.inference_handler.task}'.")
-            raise ValueError()
+        if not self.is_chain:
+            # Standard Handler Validation
+            if self.inference_handler.task != MLTaskKeys.MULTITARGET_REGRESSION: # type: ignore
+                 _LOGGER.error(f"DragonParetoOptimizer with a standard handler requires '{MLTaskKeys.MULTITARGET_REGRESSION}'. Got '{self.inference_handler.task}'.") # type: ignore
+                 raise ValueError()
 
         if not self.inference_handler.target_ids:
             _LOGGER.error("Inference Handler has no 'target_ids' defined.")
@@ -92,12 +99,17 @@ class DragonParetoOptimizer:
         self.target_indices = []
         self.objective_senses = []
         self.ordered_target_names = []
+        
+        available_targets = self.inference_handler.target_ids
 
         for name, direction in target_objectives.items():
-            if name not in self.inference_handler.target_ids:
-                raise ValueError(f"Target '{name}' not found in model targets: {self.inference_handler.target_ids}")
+            if name not in available_targets:
+                _LOGGER.error(f"Target '{name}' not found in model targets: {available_targets}")
+                raise ValueError()
             
-            idx = self.inference_handler.target_ids.index(name)
+            # For standard handlers, we need indices to slice the output tensor.
+            # For chain handlers, we just rely on name matching, but we track index for consistency.
+            idx = available_targets.index(name)
             self.target_indices.append(idx)
             self.objective_senses.append(direction)
             self.ordered_target_names.append(name)
@@ -115,20 +127,24 @@ class DragonParetoOptimizer:
         self.upper_bounds = list(bounds[1])
 
         # --- 3. Evaluator Setup ---
-        self.evaluator = ParetoFitnessEvaluator(
+        self.evaluator = _ParetoFitnessEvaluator(
             inference_handler=inference_handler,
-            target_indices=self.target_indices,
+            target_indices=self.target_indices, # Used by Standard Handler
+            target_names=self.ordered_target_names, # Used by Chain Handler
             categorical_index_map=schema.categorical_index_map,
-            discretize_start_at_zero=discretize_start_at_zero
+            discretize_start_at_zero=discretize_start_at_zero,
+            is_chain=self.is_chain
         )
 
         # --- 4. EvoTorch Problem & Algorithm ---
+        device = inference_handler.handlers[0].device if self.is_chain else inference_handler.device # type: ignore
+        
         self.problem = Problem(
             objective_sense=self.objective_senses,
             objective_func=self.evaluator,
             solution_length=len(self.lower_bounds),
             bounds=(self.lower_bounds, self.upper_bounds),
-            device=inference_handler.device,
+            device=device,
             vectorized=True
         )
 
@@ -216,12 +232,12 @@ class DragonParetoOptimizer:
             pareto_pop = final_pop
         
         # Inputs (Features)
-        features_tensor = pareto_pop.values.cpu().numpy()
+        features_tensor = pareto_pop.values.cpu().numpy() # type: ignore
         
         # Outputs (Targets) - We re-evaluate to get exact predictions aligned with our names.
         with torch.no_grad():
              # We use the internal evaluator logic to get the exact target values corresponding to indices
-            targets_tensor = self.evaluator(pareto_pop.values).cpu().numpy()
+            targets_tensor = self.evaluator(pareto_pop.values).cpu().numpy() # type: ignore
 
         # --- Post-Process Features (Discretization) ---
         # Ensure categorical columns are perfect integers
@@ -619,7 +635,7 @@ class DragonParetoOptimizer:
         sc = ax.scatter(
             df[x_name], 
             df[y_name], 
-            df[z_name], 
+            df[z_name],  # type: ignore
             c=df[hue_name], 
             cmap='viridis', 
             s=80, 
@@ -665,22 +681,34 @@ class DragonParetoOptimizer:
         html_path = sub_dir_path / f"Pareto_3D_Interactive.html"
         fig_html.write_html(str(html_path))
 
-class ParetoFitnessEvaluator:
+class _ParetoFitnessEvaluator:
     """
     Evaluates fitness for Multi-Objective optimization.
     Returns a tensor of shape (batch_size, n_selected_targets).
+    
+    Handles both Standard DragonInferenceHandler and DragonChainInference.
     """
     def __init__(self,
-                 inference_handler: DragonInferenceHandler,
+                 inference_handler: Union[DragonInferenceHandler, DragonChainInference],
                  target_indices: List[int],
+                 target_names: List[str],
                  categorical_index_map: Optional[Dict[int, int]] = None,
-                 discretize_start_at_zero: bool = True):
+                 discretize_start_at_zero: bool = True,
+                 is_chain: bool = False):
         
         self.inference_handler = inference_handler
         self.target_indices = target_indices
+        self.target_names = target_names
         self.categorical_index_map = categorical_index_map
         self.discretize_start_at_zero = discretize_start_at_zero
-        self.device = inference_handler.device
+        # Determine device from handler (Chain or Standard)
+        if is_chain:
+            # Chain stores a list of handlers, grab device from the first
+            self.device = inference_handler.handlers[0].device # type: ignore
+        else:
+            self.device = inference_handler.device # type: ignore
+            
+        self.is_chain = is_chain
 
     def __call__(self, solution_tensor: torch.Tensor) -> torch.Tensor:
         # Clone to allow modification
@@ -695,13 +723,35 @@ class ParetoFitnessEvaluator:
                 max_b = cardinality - 1 if self.discretize_start_at_zero else cardinality
                 processed_tensor[:, col_idx] = torch.clamp(rounded, min_b, max_b)
 
-        # 2. Inference
-        # Returns dict with key PREDICTIONS -> tensor shape (batch, total_targets)
-        preds = self.inference_handler.predict_batch(processed_tensor)[PyTorchInferenceKeys.PREDICTIONS]
-        
-        # 3. Filter for selected targets
-        # Return shape (batch, n_selected_targets)
-        return preds[:, self.target_indices]
+        # 2. Inference & Selection
+        if self.is_chain:
+            # --- Chain Logic ---
+            # Output is Dict[target_name, Tensor(N, 1 or N)]
+            raw_output = self.inference_handler.predict_batch(processed_tensor)
+            
+            # Extract specific targets in order and stack them
+            selected_tensors = []
+            for name in self.target_names:
+                if name not in raw_output:
+                    _LOGGER.error(f"Target '{name}' not found in chain inference output.")
+                    raise KeyError()
+                
+                t = raw_output[name]
+                # Ensure it is (Batch, 1) before stacking
+                if t.ndim == 1:
+                    t = t.unsqueeze(1)
+                selected_tensors.append(t)
+            
+            # Stack along dim 1 -> (Batch, N_Selected_Targets)
+            return torch.cat(selected_tensors, dim=1)
+            
+        else:
+            # --- Standard Logic ---
+            # Output is Dict['predictions', Tensor(N, Total_Targets)]
+            preds = self.inference_handler.predict_batch(processed_tensor)[PyTorchInferenceKeys.PREDICTIONS]
+            
+            # Slice specific indices -> (Batch, N_Selected_Targets)
+            return preds[:, self.target_indices]
 
 
 def info():
