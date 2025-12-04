@@ -272,6 +272,7 @@ class DragonParetoOptimizer:
                        filename: str = "Pareto_Solutions", 
                        save_dir: Optional[Union[str, Path]] = None, 
                        columns_to_round: Optional[List[str]] = None,
+                       float_precision: int = 4,
                        save_to_sql: bool = False,
                        sql_table_name: Optional[str] = None,
                        sql_if_exists: Literal['fail', 'replace', 'append'] = 'replace') -> None:
@@ -283,6 +284,7 @@ class DragonParetoOptimizer:
             save_dir (str | Path | None): Directory to save the CSV. If None, uses the optimization directory.
             filename (str): Name of the file (without .csv extension).
             columns_to_round (List[str], optional): List of continuous column names that should be rounded to the nearest integer.
+            float_precision (int): Number of decimal places to round standard float columns.
             save_to_sql (bool): If True, also writes the results to a SQLite database in the save_dir.
             sql_table_name (str, optional): Specific table name for SQL. If None, uses 'filename'.
             sql_if_exists (str): Behavior if SQL table exists ('fail', 'replace', 'append').
@@ -320,6 +322,16 @@ class DragonParetoOptimizer:
                 # This ensures 4.999 becomes 5, and saves as "5" not "5.0"
                 df_to_save[col] = df_to_save[col].round().astype(int)
                 _LOGGER.debug(f"Column '{col}' rounded to nearest integer.")
+                
+        # Validate float precision using a default value if invalid
+        if float_precision < 0:
+            float_precision = 4
+            _LOGGER.warning("Invalid float_precision provided. Using default of 4.")
+        
+        # Select columns that are still floats (excludes those converted to int above)
+        float_cols = df_to_save.select_dtypes(include=['float', 'float32', 'float64']).columns
+        if len(float_cols) > 0:
+            df_to_save[float_cols] = df_to_save[float_cols].round(float_precision)
 
         # Save CSV
         save_path = make_fullpath(save_dir, make=True, enforce="directory")

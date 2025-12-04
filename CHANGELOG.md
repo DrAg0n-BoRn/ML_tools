@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [18.13.0] 2025-12-04
+
+### Changed
+
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer.save_solutions()`, added `float_precision` parameter to control decimal places for float columns when saving solutions.
+- data_exploration:
+    - `show_null_columns()`, added `use_all_columns` parameter to include all columns in the summary and plot, even those with no missing values.
+    - `drop_macro()`, calls `show_null_columns()` with `use_all_columns=True` to visualize all columns before and after cleaning.
+- ETL_cleaning:
+    - `basic_clean_drop()`, calls `data_exploration.show_null_columns()` with `use_all_columns=True` to visualize all columns before and after cleaning.
+
 ## [18.12.1] 2025-12-03
 
 - Internal optimizations and logging improvements.

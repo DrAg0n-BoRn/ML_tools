@@ -179,7 +179,8 @@ def show_null_columns(
     df: pd.DataFrame, 
     round_digits: int = 2,
     plot_to_dir: Optional[Union[str, Path]] = None,
-    plot_filename: Optional[str] = None
+    plot_filename: Optional[str] = None,
+    use_all_columns: bool = False
 ) -> pd.DataFrame:
     """
     Returns a table of columns with missing values, showing both the count and
@@ -194,6 +195,8 @@ def show_null_columns(
             missing data to this directory.
         plot_filename (str): The filename for the saved plot (without extension). 
             Used only if `plot_to_dir` is set.
+        use_all_columns (bool): If True, includes all columns in the summary and plot,
+            even those with no missing values.
 
     Returns:
         pd.DataFrame: A DataFrame summarizing missing values in each column.
@@ -201,12 +204,18 @@ def show_null_columns(
     null_counts = df.isnull().sum()
     null_percent = df.isnull().mean() * 100
 
-    # Filter only columns with at least one null
-    mask = null_counts > 0
-    null_summary = pd.DataFrame({
-        'Missing Count': null_counts[mask],
-        'Missing %': null_percent[mask].round(round_digits)
-    })
+    if use_all_columns:
+        null_summary = pd.DataFrame({
+            'Missing Count': null_counts,
+            'Missing %': null_percent.round(round_digits)
+        })
+    else:
+        # Filter only columns with at least one null
+        mask = null_counts > 0
+        null_summary = pd.DataFrame({
+            'Missing Count': null_counts[mask],
+            'Missing %': null_percent[mask].round(round_digits)
+        })
 
     # Sort by descending percentage of missing values
     null_summary = null_summary.sort_values(by='Missing %', ascending=False)
@@ -373,7 +382,8 @@ def drop_macro(df: pd.DataFrame,
     missing_data_start = show_null_columns(
         df=df_clean, 
         plot_to_dir=log_directory, 
-        plot_filename="Original"
+        plot_filename="Original",
+        use_all_columns=True
     )
     save_dataframe_filename(df=missing_data_start.reset_index(drop=False),
                    save_dir=log_directory,
@@ -406,7 +416,8 @@ def drop_macro(df: pd.DataFrame,
     missing_data_final = show_null_columns(
         df=df_clean,
         plot_to_dir=log_directory,
-        plot_filename="Processed"
+        plot_filename="Processed",
+        use_all_columns=True
     )
     save_dataframe_filename(df=missing_data_final.reset_index(drop=False),
                    save_dir=log_directory,
