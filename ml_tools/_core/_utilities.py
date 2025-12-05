@@ -363,9 +363,10 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
     elif isinstance(df, pl.DataFrame):
         # Transform empty strings to Null
         df_to_save = df.with_columns(
-            pl.when(pl.col(pl.Utf8).str.strip_chars() == "")
+            pl.when(pl.col(pl.String).str.strip_chars() == "")
             .then(None)
-            .otherwise(pl.col(pl.Utf8))
+            .otherwise(pl.col(pl.String))
+            .name.keep()
         )
         # Save
         df_to_save.write_csv(output_path)
