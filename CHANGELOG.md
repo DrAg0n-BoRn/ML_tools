@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.1.0] 2025-12-08
+
+### Changed
+
+- ETL_engineering:
+    - `BinaryTransformer`, now supports regex patterns.
+    - `MultiBinaryDummifier`, now supports regex patterns.
+    - `KeywordDummifier`, now supports regex patterns.
+    - `NumberExtractor`, robust default regex to match numbers in various formats.
+    - `MultiNumberExtractor`, robust default regex to match numbers in various formats.
+    - `TemperatureExtractor`, robust default regex to match temperature values in various formats.
+    - `MultiTemperatureExtractor`, robust default regex to match temperature values in various formats.
+
 ## [19.0.1] 2025-12-05
 
 ### Changed

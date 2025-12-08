@@ -183,7 +183,8 @@ class DragonProcessor:
                             # Case 1: Transformer's output column name contains the input name.
                             # Action: Replace the input name with the desired prefix.
                             # Example: input='color', output='color_red', prefix='spec' -> 'spec_red'
-                            if input_col_name in col:
+                            # if input_col_name in col:
+                            if col.startswith(input_col_name):
                                 new_names[col] = col.replace(input_col_name, prefix, 1)
                             
                             # Case 2: Transformer's output is an independent name.
@@ -281,21 +282,28 @@ class DragonProcessor:
 class BinaryTransformer:
     """
     A transformer that maps string values to a binary 1 or 0 based on keyword matching.
-
-    Must supply a list of keywords for either the 'true' case (1) or the 'false' case (0), but not both.
-
-    Args:
-        true_keywords (List[str] | None):
-            If a string contains any of these keywords, the output is 1, otherwise 0.
-        false_keywords (List[str] | None):
-            If a string contains any of these keywords, the output is 0, otherwise 1.
     """
     def __init__(
         self,
         true_keywords: Optional[List[str]] = None,
         false_keywords: Optional[List[str]] = None,
         case_insensitive: bool = True,
+        use_regex: bool = False
     ):
+        """
+        Must supply a list of keywords for either the 'true' case (1) or the 'false' case (0), but not both.
+        
+        Args:
+            true_keywords (List[str] | None):
+                If a string contains any of these keywords, the output is 1, otherwise 0.
+            false_keywords (List[str] | None):
+                If a string contains any of these keywords, the output is 0, otherwise 1.
+            case_insensitive (bool):
+                If True, matching ignores case.
+            use_regex (bool):
+                - If True, keywords are treated as raw regex patterns (allowing \\b, ^, $, etc.).
+                - If False, keywords are escaped and treated as literals.
+        """
         # --- Validation: Enforce one and only one option ---
         if true_keywords is not None and false_keywords is not None:
             _LOGGER.error("Provide either 'true_keywords' or 'false_keywords', but not both.")
@@ -311,10 +319,15 @@ class BinaryTransformer:
             raise ValueError()
 
         self.mode: str = "true_mode" if true_keywords is not None else "false_mode"
+        self.use_regex = use_regex
         
         # --- Create the regex string pattern ---
-        # Escape keywords to treat them as literals
-        base_pattern = "|".join(re.escape(k) for k in self.keywords)
+        if self.use_regex:
+            # Join patterns directly without escaping
+            base_pattern = "|".join(self.keywords)
+        else:
+            # Escape keywords to treat them as literals
+            base_pattern = "|".join(re.escape(k) for k in self.keywords)
 
         # For polars, add case-insensitivity flag `(?i)` to the pattern string itself
         if case_insensitive:
@@ -391,20 +404,28 @@ class AutoDummifier:
 class MultiBinaryDummifier:
     """
     A one-to-many transformer that creates multiple binary columns from a single
-    text column based on a list of keywords.
-
-    For each keyword provided, this transformer generates a corresponding column
-    with a value of 1 if the keyword is present in the input string, and 0 otherwise.
-    It is designed to be used within the DragonProcessor pipeline.
-
-    Args:
-        keywords (List[str]):
-            A list of strings, where each string is a keyword to search for. A separate
-            binary column will be created for each keyword.
-        case_insensitive (bool):
-            If True, keyword matching ignores case.
+    text column based on a list of keywords or regex patterns.
     """
-    def __init__(self, keywords: List[str], case_insensitive: bool = True):
+    def __init__(self, 
+                 keywords: List[str], 
+                 case_insensitive: bool = True,
+                 use_regex: bool = False):
+        """ 
+        For each keyword provided, this transformer generates a corresponding column
+        with a value of 1 if the keyword is present in the input string, and 0 otherwise.
+        It is designed to be used within the DragonProcessor pipeline.
+
+        Args:
+            keywords (List[str]):
+                A list of strings, where each string is a keyword to search for. A separate
+                binary column will be created for each keyword.
+            case_insensitive (bool):
+                If True, keyword matching ignores case.
+            use_regex (bool):
+                - If True, keywords are treated as raw regex patterns (allowing \\b, ^, $, etc.).
+                - If False, keywords are escaped and treated as literals.
+        """
+        
         if not isinstance(keywords, list) or not all(isinstance(k, str) for k in keywords):
             _LOGGER.error("The 'keywords' argument must be a list of strings.")
             raise TypeError()
@@ -414,6 +435,7 @@ class MultiBinaryDummifier:
 
         self.keywords = keywords
         self.case_insensitive = case_insensitive
+        self.use_regex = use_regex
 
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
@@ -431,8 +453,15 @@ class MultiBinaryDummifier:
         
         output_expressions = []
         for keyword in self.keywords:
-            # Escape keyword to treat it as a literal, not a regex pattern
-            base_pattern = re.escape(keyword)
+            # If using regex, trust the user's pattern. 
+            # If not, escape it to ensure it is treated as a literal.
+            if self.use_regex:
+                base_pattern = keyword
+                # Sanitize the column name for the output since regex patterns can be messy
+                clean_suffix = re.sub(r"[^a-zA-Z0-9]+", "", keyword)
+            else:
+                base_pattern = re.escape(keyword)
+                clean_suffix = keyword
 
             # Add case-insensitivity flag `(?i)` if needed
             pattern = f"(?i){base_pattern}" if self.case_insensitive else base_pattern
@@ -444,7 +473,7 @@ class MultiBinaryDummifier:
                 .when(str_column.str.contains(pattern))
                 .then(pl.lit(1, dtype=pl.UInt8))
                 .otherwise(pl.lit(0, dtype=pl.UInt8))
-                .alias(f"{column_base_name}_{keyword}") # name for DragonProcessor
+                .alias(f"{column_base_name}_{clean_suffix}") 
             )
             output_expressions.append(expr)
 
@@ -455,21 +484,31 @@ class KeywordDummifier:
     """
     A configurable transformer that creates one-hot encoded columns based on
     keyword matching in a Polars Series.
-
-    Operates on a "first match wins" principle.
-
-    Args:
-        group_names (List[str]): 
-            A list of strings, where each string is the name of a category.
-            This defines the matching priority and the base column names of the
-            DataFrame returned by the transformation.
-        group_keywords (List[List[str]]): 
-            A list of lists of strings. Each inner list corresponds to a 
-            `group_name` at the same index and contains the keywords to search for.
-        case_insensitive (bool):
-            If True, keyword matching ignores case.
     """
-    def __init__(self, group_names: List[str], group_keywords: List[List[str]], case_insensitive: bool = True):
+    def __init__(
+        self, 
+        group_names: List[str], 
+        group_keywords: List[List[str]], 
+        case_insensitive: bool = True,
+        use_regex: bool = False
+    ):
+        """
+        Operates on a "first match wins" principle.
+
+        Args:
+            group_names (List[str]): 
+                A list of strings, where each string is the name of a category.
+                This defines the matching priority and the base column names of the
+                DataFrame returned by the transformation.
+            group_keywords (List[List[str]]): 
+                A list of lists of strings. Each inner list corresponds to a 
+                `group_name` at the same index and contains the keywords to search for.
+            case_insensitive (bool):
+                If True, keyword matching ignores case.
+            use_regex (bool):
+                If True, keywords are treated as raw regex patterns (allowing \\b, ^, $, etc.).
+                If False, keywords are escaped and treated as literals.
+        """
         if len(group_names) != len(group_keywords):
             _LOGGER.error("Initialization failed: 'group_names' and 'group_keywords' must have the same length.")
             raise ValueError()
@@ -477,6 +516,7 @@ class KeywordDummifier:
         self.group_names = group_names
         self.group_keywords = group_keywords
         self.case_insensitive = case_insensitive
+        self.use_regex = use_regex
 
     def __call__(self, column: pl.Series) -> pl.DataFrame:
         """
@@ -494,8 +534,11 @@ class KeywordDummifier:
         categorize_expr = pl.when(pl.lit(False)).then(pl.lit(None, dtype=pl.Utf8))
         
         for name, keywords in zip(self.group_names, self.group_keywords):
-            # Create the base regex pattern by escaping and joining keywords
-            base_pattern = "|".join(re.escape(k) for k in keywords)
+            # Decide whether to escape keywords or treat them as raw regex
+            if self.use_regex:
+                base_pattern = "|".join(keywords)
+            else:
+                base_pattern = "|".join(re.escape(k) for k in keywords)
             
             # Add the case-insensitive flag `(?i)` to the pattern string
             if self.case_insensitive:
@@ -533,26 +576,26 @@ class NumberExtractor:
     """
     A configurable transformer that extracts a single number from a Polars string series using a regular expression.
 
-    An instance can be used as a 'transform' callable within the
-    `DragonProcessor` pipeline.
-
-    Args:
-        regex_pattern (str):
-            The regular expression used to find the number. This pattern
-            MUST contain exactly one capturing group `(...)`. Defaults to a standard pattern for integers and floats.
-        dtype (str):
-            The desired data type for the output column. Defaults to "float".
-        round_digits (int | None):
-            If the dtype is 'float', you can specify the number of decimal
-            places to round the result to. This parameter is ignored if
-            dtype is 'int'.
+    An instance can be used as a 'transform' callable within the `DragonProcessor` pipeline.
     """
     def __init__(
         self,
-        regex_pattern: str = r"(\d+\.?\d*)",
+        regex_pattern: str = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)",
         dtype: Literal["float", "int"] = "float",
         round_digits: Optional[int] = 2,
     ):
+        """ 
+        Args:
+            regex_pattern (str):
+                The regular expression used to find the number. This pattern MUST contain exactly one capturing group `(...)`.
+                Defaults to handling positive/negative integers, floats, and scientific notation (e.g., -1.23e-4).
+            dtype (str):
+                The desired data type for the output column. Defaults to "float".
+            round_digits (int | None):
+                If the dtype is 'float', you can specify the number of decimal
+                places to round the result to. This parameter is ignored if
+                dtype is 'int'.
+        """
         # --- Validation ---
         if not isinstance(regex_pattern, str):
             _LOGGER.error("regex_pattern must be a string.")
@@ -610,29 +653,30 @@ class NumberExtractor:
 class MultiNumberExtractor:
     """
     Extracts multiple numbers from a single polars string column into several new columns.
-
-    This transformer is designed for one-to-many mappings, such as parsing coordinates (10, 25) into separate columns.
-
-    Args:
-        num_outputs (int):
-            Number of numeric columns to create.
-        regex_pattern (str):
-            The regex pattern to find all numbers. Must contain one
-            capturing group around the number part.
-            Defaults to a standard pattern for integers and floats.
-        dtype (str):
-            The desired data type for the output columns. Defaults to "float".
-        fill_value (int | float | None):
-            A value to fill in if a number is not found at a given position (if positive match).
-            - For example, if `num_outputs=2` and only one number is found in a string, the second output column will be filled with this value. If None, it will be filled with null.
     """
     def __init__(
         self,
         num_outputs: int,
-        regex_pattern: str = r"(\d+\.?\d*)",
+        regex_pattern: str = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)",
         dtype: Literal["float", "int"] = "float",
         fill_value: Optional[Union[int, float]] = None
     ):
+        """ 
+        This transformer is designed for one-to-many mappings, such as parsing coordinates (10, 25) into separate columns.
+
+        Args:
+            num_outputs (int):
+                Number of numeric columns to create.
+            regex_pattern (str):
+                The regex pattern to find all numbers. Must contain one
+                capturing group around the number part.
+                Defaults to handling positive/negative integers, floats, and scientific notation (e.g., -1.23e-4).
+            dtype (str):
+                The desired data type for the output columns. Defaults to "float".
+            fill_value (int | float | None):
+                A value to fill in if a number is not found at a given position (if positive match).
+                - For example, if `num_outputs=2` and only one number is found in a string, the second output column will be filled with this value. If None, it will be filled with null.
+        """
         # --- Validation ---
         if not isinstance(num_outputs, int) or num_outputs <= 0:
             _LOGGER.error("num_outputs must be a positive integer.")
@@ -701,32 +745,34 @@ class TemperatureExtractor:
     It can extract a single value using a specific regex or find all numbers in
     a string and calculate their average. It also supports converting the final
     Celsius value to Kelvin or Rankine.
-
-    Args:
-        regex_pattern (str):
-            The regex to find a single temperature. MUST contain exactly one
-            capturing group `(...)`. This is ignored if `average_mode` is True.
-        average_mode (bool):
-            If True, extracts all numbers from the string and returns their average.
-            This overrides the `regex_pattern` with a generic number-finding regex.
-        convert (str | None):
-            If "K", converts the final Celsius value to Kelvin.
-            If "R", converts the final Celsius value to Rankine.
-            If None (default), the value remains in Celsius.
     """
     def __init__(
         self,
-        regex_pattern: str = r"(\d+\.?\d*)",
+        regex_pattern: str = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)",
         average_mode: bool = False,
         convert: Optional[Literal["K", "R"]] = None,
     ):
+        """ 
+        Args:
+            regex_pattern (str):
+                The regex to find a single temperature. MUST contain exactly one
+                capturing group `(...)`. This is ignored if `average_mode` is True.
+                Defaults to matching positive floats/integers and scientific notation (e.g., -1.23e-4).
+            average_mode (bool):
+                If True, extracts all numbers from the string and returns their average.
+                This overrides the `regex_pattern` with a generic number-finding regex.
+            convert (str | None):
+                If "K", converts the final Celsius value to Kelvin.
+                If "R", converts the final Celsius value to Rankine.
+                If None (default), the value remains in Celsius.
+        """
         # --- Store configuration ---
         self.average_mode = average_mode
         self.convert = convert
         self.regex_pattern = regex_pattern
         
         # Generic pattern for average mode, defined once for efficiency.
-        self._avg_mode_pattern = r"(\d+\.?\d*)"
+        self._avg_mode_pattern = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)"
 
         # --- Validation ---
         if not self.average_mode:
@@ -788,33 +834,34 @@ class MultiTemperatureExtractor:
     """
     Extracts multiple temperature values from a single string column into
     several new columns, assuming the source values are in Celsius.
-
-    This one-to-many transformer is designed for cases where multiple readings
-    are packed into one field, like "Min: 10C, Max: 25C".
-
-    Args:
-        num_outputs (int):
-            The number of numeric columns to create.
-        regex_pattern (str):
-            The regex to find all numbers. Must contain exactly one capturing
-            group around the number part (e.g., r"(-?\\d+\\.?\\d*)").
-        convert (str | None):
-            If "K", converts the final Celsius values to Kelvin.
-            If "R", converts the final Celsius values to Rankine.
-            If None (default), the values remain in Celsius.
-        fill_value (int | float | None):
-            A value to use if a temperature is not found at a given position.
-            For example, if `num_outputs=3` and only two temperatures are
-            found, the third column will be filled with this value. If None,
-            it will be filled with null.
     """
     def __init__(
         self,
         num_outputs: int,
-        regex_pattern: str = r"(\d+\.?\d*)",
+        regex_pattern: str = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)",
         convert: Optional[Literal["K", "R"]] = None,
         fill_value: Optional[Union[int, float]] = None
     ):
+        """ 
+        This one-to-many transformer is designed for cases where multiple readings
+        are packed into one field, like "Min: 10C, Max: 25C".
+
+        Args:
+            num_outputs (int):
+                The number of numeric columns to create.
+            regex_pattern (str):
+                The regex to find all numbers. Must contain exactly one capturing group around the number part.
+                Defaults to handling integers, floats, and scientific notation (e.g., -1.23e-4).
+            convert (str | None):
+                If "K", converts the final Celsius values to Kelvin.
+                If "R", converts the final Celsius values to Rankine.
+                If None (default), the values remain in Celsius.
+            fill_value (int | float | None):
+                A value to use if a temperature is not found at a given position.
+                For example, if `num_outputs=3` and only two temperatures are
+                found, the third column will be filled with this value. If None,
+                it will be filled with null.
+        """
         # --- Validation ---
         if not isinstance(num_outputs, int) or num_outputs <= 0:
             _LOGGER.error("'num_outputs' must be a positive integer.")
@@ -1162,24 +1209,25 @@ class RegexMapper:
 class ValueBinner:
     """
     A transformer that discretizes a continuous numerical column into a finite number of bins.
-
-    Each bin is assigned an integer label (0, 1, 2, ...).
-
-    Args:
-        breaks (List[int | float]):
-            A list of numbers defining the boundaries of the bins. The list
-            must be sorted in ascending order and contain at least two values.
-            For example, `breaks=[0, 18, 40, 65]` creates three bins.
-        left_closed (bool):
-            Determines which side of the interval is inclusive.
-            - If `False` (default): Intervals are (lower, upper].
-            - If `True`: Intervals are [lower, upper).
     """
     def __init__(
         self,
         breaks: List[Union[int, float]],
         left_closed: bool = False,
     ):
+        """  
+        Each bin is assigned an integer label (0, 1, 2, ...).
+
+        Args:
+            breaks (List[int | float]):
+                A list of numbers defining the boundaries of the bins. The list
+                must be sorted in ascending order and contain at least two values.
+                For example, `breaks=[0, 18, 40, 65]` creates three bins.
+            left_closed (bool):
+                Determines which side of the interval is inclusive.
+                - If `False` (default): Intervals are (lower, upper].
+                - If `True`: Intervals are [lower, upper).
+        """
         # --- Validation ---
         if not isinstance(breaks, list) or len(breaks) < 2:
             _LOGGER.error("The 'breaks' argument must be a list of at least two numbers.")

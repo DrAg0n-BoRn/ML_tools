@@ -294,7 +294,7 @@ def _generate_and_save_feature_plots(long_df: pd.DataFrame, output_path: Path, v
     features = long_df['feature'].unique()
     unique_targets = long_df['target'].unique()
     
-    _LOGGER.info(f"📊 Found data for {len(features)} features across {len(unique_targets)} targets. Generating plots...")
+    _LOGGER.info(f"📊 Found data for {len(features)} features. Generating plots...")
 
     for feature_name in features:
         plt.figure(figsize=(12, 7))
