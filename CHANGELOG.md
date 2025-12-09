@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.2.0] 2025-12-09
+
+### Added
+
+- ETL_cleaning:
+    - `drop_macro_polars()`, High-performance implementation of iterative row/column pruning using Polars.
+    - `DragonColumnCleaner.preview()`, preview cleaning on a column without modifying the original data.
+
+### Changed
+
+- ETL_cleaning:
+    - `basic_clean_drop()`, now uses `drop_macro_polars()` for improved performance with large datasets.
+    - `DragonDataFrameCleaner`, internal cleaning logic optimized for Polars DataFrames and LazyFrames.`
+
 ## [19.1.0] 2025-12-08
 
 ### Changed

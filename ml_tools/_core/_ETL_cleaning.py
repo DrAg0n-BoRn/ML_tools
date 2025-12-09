@@ -1,10 +1,9 @@
 import polars as pl
-import pandas as pd
 from pathlib import Path
-from typing import Union, List, Dict
+from typing import Union, List, Dict, Optional
 
 from ._path_manager import sanitize_filename, make_fullpath
-from ._data_exploration import drop_macro
+from ._data_exploration import show_null_columns
 from ._utilities import save_dataframe_filename, load_dataframe
 from ._script_info import _script_info
 from ._logger import get_logger
@@ -14,30 +13,32 @@ _LOGGER = get_logger("ETL Cleaning")
 
 
 __all__ = [
+    "DragonColumnCleaner",
+    "DragonDataFrameCleaner",
     "save_unique_values",
     "basic_clean",
     "basic_clean_drop",
-    "DragonColumnCleaner",
-    "DragonDataFrameCleaner"
+    "drop_macro_polars",
 ]
 
 
 ################ Unique Values per column #################
-def save_unique_values(csv_path: Union[str, Path], 
+def save_unique_values(csv_path_or_df: Union[str, Path, pl.DataFrame], 
                        output_dir: Union[str, Path], 
+                       use_columns: Optional[List[str]] = None,
                        verbose: bool=False,
                        keep_column_order: bool = True,
                        add_value_separator: bool = False) -> None:
     """
-    Loads a CSV file, then analyzes it and saves the unique non-null values
+    Loads a CSV file or Polars DataFrame, then analyzes it and saves the unique non-null values
     from each column into a separate text file exactly as they appear.
 
     This is useful for understanding the raw categories or range of values
     within a dataset before and after cleaning.
 
     Args:
-        csv_path (str | Path):
-            The file path to the input CSV file.
+        csv_path_or_df (str | Path | pl.DataFrame):
+            The file path to the input CSV file or a Polars DataFrame.
         output_dir (str | Path):
             The path to the directory where the .txt files will be saved.
             The directory will be created if it does not exist.
@@ -46,64 +47,72 @@ def save_unique_values(csv_path: Union[str, Path],
             output filename to maintain the original column order.
         add_value_separator (bool):
             If True, adds a separator line between each unique value.
+        use_columns (List[str] | None):
+            If provided, only these columns will be processed. If None, all columns will be processed.
+        verbose (bool):
+            If True, prints the number of unique values saved for each column.
     """
-    # --- 1. Input Validation ---
-    csv_path = make_fullpath(input_path=csv_path, enforce="file")
-    output_dir = make_fullpath(input_path=output_dir, make=True)
-
-    # --- 2. Load Data ---
-    try:
-        # Load all columns as strings to preserve original formatting
-        df = pd.read_csv(csv_path, dtype=str, encoding='utf-8')
-    except FileNotFoundError as e:
-        _LOGGER.error(f"The file was not found at '{csv_path}'.")
-        raise e
-    except Exception as e2:
-        _LOGGER.error(f"An error occurred while reading the CSV file.")
-        raise e2
+    # 1 Handle input DataFrame or path
+    if isinstance(csv_path_or_df, pl.DataFrame):
+        df = csv_path_or_df
+        if use_columns is not None:
+            # Validate columns exist
+            valid_cols = [c for c in use_columns if c in df.columns]
+            if not valid_cols:
+                _LOGGER.error("None of the specified columns in 'use_columns' exist in the provided DataFrame.")
+                raise ValueError()
+            df = df.select(valid_cols)
     else:
-        _LOGGER.info(f"Data loaded from '{csv_path}'")
+        csv_path = make_fullpath(input_path=csv_path_or_df, enforce="file")
+        df = load_dataframe(df_path=csv_path, use_columns=use_columns, kind="polars", all_strings=True)[0]
         
-    # --- 3. Process Each Column ---
+    output_dir = make_fullpath(input_path=output_dir, make=True, enforce='directory')
+    
+    if df.height == 0:
+        _LOGGER.warning("The input DataFrame is empty. No unique values to save.")
+        return
+    
+    # --- 2. Process Each Column ---
     counter = 0
+    
+    # Iterate over columns using Polars methods
     for i, column_name in enumerate(df.columns):
-        # _LOGGER.info(f"Processing column: '{column_name}'...")
-
-        # --- Get unique values AS IS ---
         try:
-            # Drop nulls, get unique values, and sort them.
-            # The values are preserved exactly as they are in the cells.
-            unique_values = df[column_name].dropna().unique()
-            sorted_uniques = sorted(unique_values)
+            # Efficiently get unique non-null values and sort them
+            # We use drop_nulls() on the specific series
+            unique_series = df.select(pl.col(column_name)).drop_nulls().unique().sort(column_name)
+            
+            # Convert to a python list for writing
+            sorted_uniques = unique_series.to_series().to_list()
+        
         except Exception:
-            _LOGGER.exception(f"Could not process column '{column_name}'.")
+            _LOGGER.error(f"Could not process column '{column_name}'.")
             continue
 
         if not sorted_uniques:
             _LOGGER.warning(f"Column '{column_name}' has no unique non-null values. Skipping.")
             continue
 
-        # --- Sanitize column name to create a valid filename ---
+        # --- 3. Filename Generation ---
         sanitized_name = sanitize_filename(column_name)
         if not sanitized_name.strip('_'):
             sanitized_name = f'column_{i}'
         
-        # --- create filename prefix ---
-        # If keep_column_order is True, create a prefix like "1_", "2_", etc.
         prefix = f"{i + 1}_" if keep_column_order else ''
-        
         file_path = output_dir / f"{prefix}{sanitized_name}_unique_values.txt"
 
-        # --- Write to file ---
+        # --- 4. Write to File ---
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(f"# Unique values for column: '{column_name}'\n")
                 f.write(f"# Total unique non-null values: {len(sorted_uniques)}\n")
                 f.write("-" * 30 + "\n")
+                
                 for value in sorted_uniques:
                     f.write(f"{value}\n")
                     if add_value_separator:
                         f.write("-" * 30 + "\n")
+                        
         except IOError:
             _LOGGER.exception(f"Error writing to file {file_path}.")
         else:
@@ -148,7 +157,7 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         '》': '>', '《': '<', '：': ':', '。': '.', '；': ';', '【': '[', '】': ']', '∼': '~',
         '（': '(', '）': ')', '？': '?', '！': '!', '～': '~', '＠': '@', '＃': '#', '＋': '+', '－': '-',
         '＄': '$', '％': '%', '＾': '^', '＆': '&', '＊': '*', '＼': '-', '｜': '|', '≈':'=', '·': '', '⋅': '',
-        '¯': '-', '＿': '_',
+        '¯': '-', '＿': '-',
         
         # Commas (avoid commas in entries)
         '，': ';',
@@ -212,7 +221,7 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         
         # Instantiate and run the main dataframe cleaner
         df_cleaner = DragonDataFrameCleaner(cleaners=column_cleaners)
-        df_cleaned = df_cleaner.clean(df_in, clone_df=False) # Use clone_df=False for efficiency
+        df_cleaned = df_cleaner.clean(df_in) 
         
         # apply lowercase to all string columns
         if all_lowercase:
@@ -229,7 +238,7 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         return df_final
 
 
-def _path_manager(path_in: Union[str,Path], path_out: Union[str,Path]):
+def _local_path_manager(path_in: Union[str,Path], path_out: Union[str,Path]):
     # Handle paths
     input_path = make_fullpath(path_in, enforce="file")
     
@@ -239,7 +248,7 @@ def _path_manager(path_in: Union[str,Path], path_out: Union[str,Path]):
     return input_path, output_path
 
 
-def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path], all_lowercase: bool=True):
+def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path], all_lowercase: bool=False):
     """
     Performs a comprehensive, standardized cleaning on all columns of a CSV file.
 
@@ -261,7 +270,7 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
         
     """
     # Handle paths
-    input_path, output_path = _path_manager(path_in=input_filepath, path_out=output_filepath)
+    input_path, output_path = _local_path_manager(path_in=input_filepath, path_out=output_filepath)
         
     # load polars df
     df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
@@ -276,21 +285,14 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     
 
 def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str,Path], log_directory: Union[str,Path], targets: list[str], 
-                     skip_targets: bool=False, threshold: float=0.8, all_lowercase: bool=True):
+                     skip_targets: bool=False, threshold: float=0.8, all_lowercase: bool=False):
     """
     Performs standardized cleaning followed by iterative removal of rows and 
     columns with excessive missing data.
 
-    This function combines the functionality of `basic_clean` and `drop_macro`. It first 
-    applies a comprehensive normalization process to all columns in the input CSV file, 
-    ensuring consistent formatting and proper null value handling. The cleaned data is then 
-    converted to a pandas DataFrame, where iterative row and column dropping is applied 
-    to remove redundant or incomplete data.  
-
-    The iterative dropping cycle continues until no further rows or columns meet the 
-    removal criteria, ensuring that dependencies between row and column deletions are 
-    fully resolved. Logs documenting the missing data profile before and after the 
-    dropping process are saved to the specified log directory.  
+    This function combines the functionality of `basic_clean` and `drop_macro_polars`. It first 
+    applies a comprehensive normalization process to all columns in the input CSV file.
+    Then it applies iterative row and column dropping to remove redundant or incomplete data.
 
     Args:
         input_filepath (str | Path):
@@ -317,7 +319,7 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
     log_path = make_fullpath(log_directory, make=True, enforce="directory")
     
     # Handle df paths
-    input_path, output_path = _path_manager(path_in=input_filepath, path_out=output_filepath)
+    input_path, output_path = _local_path_manager(path_in=input_filepath, path_out=output_filepath)
     
     # load polars df
     df, _ = load_dataframe(df_path=input_path, kind="polars", all_strings=True)
@@ -325,15 +327,12 @@ def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str
     # CLEAN
     df_cleaned = _cleaner_core(df_in=df, all_lowercase=all_lowercase)
     
-    # switch to pandas
-    df_cleaned_pandas = df_cleaned.to_pandas()
-    
-    # Drop macro
-    df_final = drop_macro(df=df_cleaned_pandas,
-                          log_directory=log_path,
-                          targets=targets,
-                          skip_targets=skip_targets,
-                          threshold=threshold)
+    # Drop macro (Polars implementation)
+    df_final = drop_macro_polars(df=df_cleaned,
+                                  log_directory=log_path,
+                                  targets=targets,
+                                  skip_targets=skip_targets,
+                                  threshold=threshold)
     
     # Save cleaned dataframe
     save_dataframe_filename(df=df_final, save_dir=output_path.parent, filename=output_path.name)
@@ -353,59 +352,91 @@ class DragonColumnCleaner:
         - Define rules from most specific to more general to create a fallback system.
         - Beware of chain replacements (rules matching strings that have already been
           changed by a previous rule in the same cleaner).
-
-    Args:
-        column_name (str):
-            The name of the column to be cleaned.
-        rules (Dict[str, str]):
-            A dictionary of regex patterns to replacement strings. Can use
-            backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
-            uses a '$' prefix for backreferences.
-        case_insensitive (bool):
-            If True (default), regex matching ignores case.
-
-    ## Usage Example
-
-    ```python
-    id_rules = {
-        # Matches 'ID-12345' or 'ID 12345' and reformats to 'ID:12345'
-        r'ID[- ](\\d+)': r'ID:$1'
-    }
-
-    id_cleaner = DragonColumnCleaner(column_name='user_id', rules=id_rules)
-    # This object would then be passed to a DragonDataFrameCleaner.
-    ```
     """
     def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
+        """
+        Args:
+            column_name (str):
+                The name of the column to be cleaned.
+            rules (Dict[str, str]):
+                A dictionary of regex patterns to replacement strings. Can use
+                backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
+                uses a '$' prefix for backreferences.
+            case_insensitive (bool):
+                If True (default), regex matching ignores case.
+
+        ## Usage Example
+
+        ```python
+        id_rules = {
+            # Matches 'ID-12345' or 'ID 12345' and reformats to 'ID:12345'
+            r'ID[- ](\\d+)': r'ID:$1'
+        }
+
+        id_cleaner = DragonColumnCleaner(column_name='user_id', rules=id_rules)
+        # This object would then be passed to a DragonDataFrameCleaner.
+        ```
+        """
         if not isinstance(column_name, str) or not column_name:
             _LOGGER.error("The 'column_name' must be a non-empty string.")
             raise TypeError()
         if not isinstance(rules, dict):
             _LOGGER.error("The 'rules' argument must be a dictionary.")
             raise TypeError()
+        # validate rules
+        for pattern, replacement in rules.items():
+            if not isinstance(pattern, str):
+                _LOGGER.error("All keys in 'rules' must be strings representing regex patterns.")
+                raise TypeError()
+            if replacement is not None and not isinstance(replacement, str):
+                _LOGGER.error("All values in 'rules' must be strings or None (for nullification).")
+                raise TypeError()
 
         self.column_name = column_name
         self.rules = rules
         self.case_insensitive = case_insensitive
 
+    def preview(self, csv_path: Union[str, Path], report_dir: Union[str, Path], add_value_separator: bool=False):
+        """
+        Generates a preview report of unique values in the specified column after applying the current cleaning rules.
+        
+        Args:
+            csv_path (str | Path):
+                The path to the CSV file containing the data to clean.
+            report_dir (str | Path):
+                The directory where the preview report will be saved.
+            add_value_separator (bool):
+                If True, adds a separator line between each unique value in the report.
+        """
+        # Load DataFrame
+        df, _ = load_dataframe(df_path=csv_path, use_columns=[self.column_name], kind="polars", all_strings=True)
+        
+        preview_cleaner = DragonDataFrameCleaner(cleaners=[self])
+        df_preview = preview_cleaner.clean(df)
+        
+        # Apply cleaning rules to a copy of the column for preview
+        save_unique_values(csv_path_or_df=df_preview, 
+                           output_dir=report_dir, 
+                           use_columns=[self.column_name], 
+                           verbose=False,
+                           keep_column_order=False,
+                           add_value_separator=add_value_separator)
+
 
 class DragonDataFrameCleaner:
     """
     Orchestrates cleaning multiple columns in a Polars DataFrame.
-
-    This class takes a list of DragonColumnCleaner objects and applies their defined
-    rules to the corresponding columns of a DataFrame using high-performance
-    Polars expressions.
-
-    Args:
-        cleaners (List[DragonColumnCleaner]):
-            A list of DragonColumnCleaner configuration objects.
-
-    Raises:
-        TypeError: If 'cleaners' is not a list or contains non-DragonColumnCleaner objects.
-        ValueError: If multiple DragonColumnCleaner objects target the same column.
     """
     def __init__(self, cleaners: List[DragonColumnCleaner]):
+        """
+        Takes a list of DragonColumnCleaner objects and applies their defined
+        rules to the corresponding columns of a DataFrame using high-performance
+        Polars expressions wit memory optimization.
+
+        Args:
+            cleaners (List[DragonColumnCleaner]):
+                A list of DragonColumnCleaner configuration objects.
+        """
         if not isinstance(cleaners, list):
             _LOGGER.error("The 'cleaners' argument must be a list of DragonColumnCleaner objects.")
             raise TypeError()
@@ -422,61 +453,77 @@ class DragonDataFrameCleaner:
 
         self.cleaners = cleaners
 
-    def clean(self, df: pl.DataFrame, clone_df: bool=True) -> pl.DataFrame:
+    def clean(self, df: Union[pl.DataFrame, pl.LazyFrame], 
+              rule_batch_size: int = 50) -> pl.DataFrame:
         """
-        Applies all defined cleaning rules to the Polars DataFrame.
+        Applies cleaning rules. Supports Lazy execution to handle OOM issues.
 
         Args:
-            df (pl.DataFrame): The Polars DataFrame to clean.
-            clone_df (bool): Whether to work on a clone to prevent undesired changes.
+            df (pl.DataFrame | pl.LazyFrame): 
+                The data to clean.
+            rule_batch_size (int): 
+                Splits the regex rules into chunks of this size. Helps prevent memory errors or memory spikes 
+                during query optimization.
 
         Returns:
-            pl.DataFrame: A new, cleaned Polars DataFrame.
-
-        Raises:
-            ValueError: If any columns specified in the cleaners are not found
-                        in the input DataFrame.
+            pl.DataFrame: The cleaned, collected DataFrame.
         """
-        rule_columns = {c.column_name for c in self.cleaners}
-        df_columns = set(df.columns)
-        missing_columns = rule_columns - df_columns
-
-        if missing_columns:
-            _LOGGER.error("The following columns specified in cleaning rules were not found in the DataFrame:")
-            for miss_col in sorted(list(missing_columns)):
-                print(f"\t- {miss_col}")
-            raise ValueError()
-
-        if clone_df:
-            df_cleaned = df.clone()
+        # 1. Validate Columns (Only if eager, or simple schema check if lazy)
+        # Note: For LazyFrames, we assume columns exist or let it fail at collection.
+        if isinstance(df, pl.DataFrame):
+            df_cols = set(df.columns)
+            rule_cols = {c.column_name for c in self.cleaners}
+            missing = rule_cols - df_cols
+            if missing:
+                _LOGGER.error(f"The following columns specified in cleaners are missing from the DataFrame: {missing}")
+                raise ValueError()
+            
+            
+            # lazy internally
+            lf = df.lazy()
         else:
-            df_cleaned = df
+            # It should be a LazyFrame, check type
+            if not isinstance(df, pl.LazyFrame):
+                _LOGGER.error("The 'df' argument must be a Polars DataFrame or LazyFrame.")
+                raise TypeError()
+            # It is already a LazyFrame
+            lf = df
+
+        # 2. Build Expression Chain
+        final_lf = lf
         
-        # Build and apply a series of expressions for each column
         for cleaner in self.cleaners:
             col_name = cleaner.column_name
             
-            # Start with the column, cast to String for replacement operations
-            col_expr = pl.col(col_name).cast(pl.String)
-
-            # Sequentially chain 'replace_all' expressions for each rule
-            for pattern, replacement in cleaner.rules.items():
-                final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
+            # Get all rules as a list of items
+            all_rules = list(cleaner.rules.items())
+            
+            # Process in batches of 'rule_batch_size'
+            for i in range(0, len(all_rules), rule_batch_size):
+                rule_batch = all_rules[i : i + rule_batch_size]
                 
-                if replacement is None:
-                    # If replacement is None, use a when/then expression to set matching values to null
-                    col_expr = pl.when(col_expr.str.contains(final_pattern)) \
-                                .then(None) \
-                                .otherwise(col_expr)
-                else:
-                    col_expr = col_expr.str.replace_all(final_pattern, replacement)
-            
-            # Execute the expression chain for the column
-            df_cleaned = df_cleaned.with_columns(col_expr.alias(col_name))
-            
-        _LOGGER.info(f"Cleaned {len(self.cleaners)} columns.")
-            
-        return df_cleaned
+                # Start expression for this batch
+                col_expr = pl.col(col_name).cast(pl.String)
+                
+                for pattern, replacement in rule_batch:
+                    final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
+                    
+                    if replacement is None:
+                        col_expr = pl.when(col_expr.str.contains(final_pattern)) \
+                                    .then(None) \
+                                    .otherwise(col_expr)
+                    else:
+                        col_expr = col_expr.str.replace_all(final_pattern, replacement)
+                
+                # Apply this batch of rules to the LazyFrame
+                final_lf = final_lf.with_columns(col_expr.alias(col_name))
+
+        # 3. Collect Results
+        try:
+            return final_lf.collect(engine="streaming")
+        except Exception as e:
+            _LOGGER.error("An error occurred during the cleaning process.")
+            raise e
     
     def load_clean_save(self, input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
         """
@@ -496,7 +543,7 @@ class DragonDataFrameCleaner:
         """
         df, _ = load_dataframe(df_path=input_filepath, kind="polars", all_strings=True)
         
-        df_clean = self.clean(df=df, clone_df=False)
+        df_clean = self.clean(df=df)
         
         if isinstance(output_filepath, str):
             output_filepath = make_fullpath(input_path=output_filepath, enforce="file")
@@ -504,6 +551,114 @@ class DragonDataFrameCleaner:
         save_dataframe_filename(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
         
         return None
+
+
+def _generate_null_report(df: pl.DataFrame, save_dir: Path, filename: str):
+    """
+    Internal helper to generate and save a CSV report of missing data percentages using Polars.
+    """
+    total_rows = df.height
+    if total_rows == 0:
+        return
+
+    null_stats = df.null_count()
+    
+    # Construct a report DataFrame
+    report = pl.DataFrame({
+        "column": df.columns,
+        "null_count": null_stats.transpose().to_series(),
+    }).with_columns(
+        (pl.col("null_count") / total_rows * 100).round(2).alias("missing_percent")
+    ).sort("missing_percent", descending=True)
+    
+    save_dataframe_filename(df=report, save_dir=save_dir, filename=filename)
+
+
+def drop_macro_polars(df: pl.DataFrame, 
+                       log_directory: Path, 
+                       targets: list[str], 
+                       skip_targets: bool, 
+                       threshold: float) -> pl.DataFrame:
+    """
+    High-performance implementation of iterative row/column pruning using Polars.
+    Includes temporary Pandas conversion for visualization.
+    """
+    df_clean = df.clone()
+    
+    # --- Helper to generate plot safely ---
+    def _plot_safe(df_pl: pl.DataFrame, filename: str):
+        try:
+            # converting to pandas just for the plot
+            # use_pyarrow_extension_array=True is  faster
+            df_pd = df_pl.to_pandas(use_pyarrow_extension_array=True)
+            show_null_columns(df_pd, plot_to_dir=log_directory, plot_filename=filename, use_all_columns=True)
+        except Exception as e:
+            _LOGGER.warning(f"Skipping plot generation due to error: {e}")
+    
+    # 1. Log Initial State
+    _generate_null_report(df_clean, log_directory, "Missing_Data_Original")
+    _plot_safe(df_clean, "Original")
+    
+    master = True
+    while master:
+        initial_rows, initial_cols = df_clean.shape
+        
+        # --- A. Drop Constant Columns ---
+        # Keep columns where n_unique > 1. 
+        # Note: n_unique in Polars ignores nulls by default (similar to pandas dropna=True).
+        # We assume if a column is all nulls, it should also be dropped (n_unique=0).
+        cols_to_keep = [
+            col for col in df_clean.columns 
+            if df_clean[col].n_unique() > 1
+        ]
+        df_clean = df_clean.select(cols_to_keep)
+        
+        # --- B. Drop Rows (Targets) ---
+        # Drop rows where ALL target columns are null
+        valid_targets = [t for t in targets if t in df_clean.columns]
+        if valid_targets:
+            df_clean = df_clean.filter(
+                ~pl.all_horizontal(pl.col(valid_targets).is_null())
+            )
+            
+        # --- C. Drop Rows (Features Threshold) ---
+        # Drop rows where missing data fraction in FEATURE columns > threshold
+        feature_cols = [c for c in df_clean.columns if c not in valid_targets]
+        if feature_cols:
+            # We want to KEEP rows where (null_count / total_features) <= threshold
+            df_clean = df_clean.filter(
+                (pl.sum_horizontal(pl.col(feature_cols).is_null()) / len(feature_cols)) <= threshold
+            )
+            
+        # --- D. Drop Columns (Threshold) ---
+        # Drop columns where missing data fraction > threshold
+        current_height = df_clean.height
+        if current_height > 0:
+            null_counts = df_clean.null_count().row(0) # tuple of counts
+            cols_to_drop = []
+            
+            for col_idx, col_name in enumerate(df_clean.columns):
+                # Check if we should skip this column (if it's a target and skip_targets=True)
+                if skip_targets and col_name in valid_targets:
+                    continue
+                
+                missing_frac = null_counts[col_idx] / current_height
+                if missing_frac > threshold:
+                    cols_to_drop.append(col_name)
+            
+            if cols_to_drop:
+                df_clean = df_clean.drop(cols_to_drop)
+
+        # --- E. Check Convergence ---
+        remaining_rows, remaining_cols = df_clean.shape
+        if remaining_rows >= initial_rows and remaining_cols >= initial_cols:
+            master = False
+
+    # 2. Log Final State
+    _generate_null_report(df_clean, log_directory, "Missing_Data_Processed")
+    _plot_safe(df_clean, "Processed")
+    
+    return df_clean
 
 
 def info():
