@@ -323,9 +323,8 @@ def _generate_and_save_feature_plots(long_df: pd.DataFrame, output_path: Path, v
             plt.ylabel("Frequency (%)", fontsize=12)
             ax.set_ylim(0, 100) 
             
-            # Rotate x-labels if there are many categories
-            if norm_df['value'].nunique() > 10:
-                plt.xticks(rotation=45, ha='right')
+            # always rotate x-ticks for categorical clarity
+            plt.xticks(rotation=45, ha='right')
 
         else:
             # --- PLOT 2: CONTINUOUS (Numeric-based) ---

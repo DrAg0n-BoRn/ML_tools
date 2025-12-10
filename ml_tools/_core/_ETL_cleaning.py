@@ -284,8 +284,13 @@ def basic_clean(input_filepath: Union[str,Path], output_filepath: Union[str,Path
     _LOGGER.info(f"Data successfully cleaned.")
     
 
-def basic_clean_drop(input_filepath: Union[str,Path], output_filepath: Union[str,Path], log_directory: Union[str,Path], targets: list[str], 
-                     skip_targets: bool=False, threshold: float=0.8, all_lowercase: bool=False):
+def basic_clean_drop(input_filepath: Union[str,Path], 
+                     output_filepath: Union[str,Path], 
+                     log_directory: Union[str,Path], 
+                     targets: list[str], 
+                     skip_targets: bool=False, 
+                     threshold: float=0.8, 
+                     all_lowercase: bool=False):
     """
     Performs standardized cleaning followed by iterative removal of rows and 
     columns with excessive missing data.
@@ -353,7 +358,7 @@ class DragonColumnCleaner:
         - Beware of chain replacements (rules matching strings that have already been
           changed by a previous rule in the same cleaner).
     """
-    def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = True):
+    def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = False):
         """
         Args:
             column_name (str):
@@ -363,7 +368,7 @@ class DragonColumnCleaner:
                 backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
                 uses a '$' prefix for backreferences.
             case_insensitive (bool):
-                If True (default), regex matching ignores case.
+                If True, regex matching ignores case.
 
         ## Usage Example
 
@@ -396,7 +401,11 @@ class DragonColumnCleaner:
         self.rules = rules
         self.case_insensitive = case_insensitive
 
-    def preview(self, csv_path: Union[str, Path], report_dir: Union[str, Path], add_value_separator: bool=False):
+    def preview(self, 
+                csv_path: Union[str, Path], 
+                report_dir: Union[str, Path], 
+                add_value_separator: bool=False,
+                rule_batch_size: int = 150):
         """
         Generates a preview report of unique values in the specified column after applying the current cleaning rules.
         
@@ -407,12 +416,14 @@ class DragonColumnCleaner:
                 The directory where the preview report will be saved.
             add_value_separator (bool):
                 If True, adds a separator line between each unique value in the report.
+            rule_batch_size (int):
+                Splits the regex rules into chunks of this size. Helps prevent memory errors.
         """
         # Load DataFrame
         df, _ = load_dataframe(df_path=csv_path, use_columns=[self.column_name], kind="polars", all_strings=True)
         
         preview_cleaner = DragonDataFrameCleaner(cleaners=[self])
-        df_preview = preview_cleaner.clean(df)
+        df_preview = preview_cleaner.clean(df, rule_batch_size=rule_batch_size)
         
         # Apply cleaning rules to a copy of the column for preview
         save_unique_values(csv_path_or_df=df_preview, 
@@ -454,7 +465,7 @@ class DragonDataFrameCleaner:
         self.cleaners = cleaners
 
     def clean(self, df: Union[pl.DataFrame, pl.LazyFrame], 
-              rule_batch_size: int = 50) -> pl.DataFrame:
+              rule_batch_size: int = 150) -> pl.DataFrame:
         """
         Applies cleaning rules. Supports Lazy execution to handle OOM issues.
 
@@ -462,8 +473,7 @@ class DragonDataFrameCleaner:
             df (pl.DataFrame | pl.LazyFrame): 
                 The data to clean.
             rule_batch_size (int): 
-                Splits the regex rules into chunks of this size. Helps prevent memory errors or memory spikes 
-                during query optimization.
+                Splits the regex rules into chunks of this size. Helps prevent memory errors.
 
         Returns:
             pl.DataFrame: The cleaned, collected DataFrame.
@@ -525,7 +535,10 @@ class DragonDataFrameCleaner:
             _LOGGER.error("An error occurred during the cleaning process.")
             raise e
     
-    def load_clean_save(self, input_filepath: Union[str,Path], output_filepath: Union[str,Path]):
+    def load_clean_save(self, 
+                        input_filepath: Union[str,Path], 
+                        output_filepath: Union[str,Path],
+                        rule_batch_size: int = 150):
         """
         This convenience method encapsulates the entire cleaning process into a
         single call. It loads a DataFrame from a specified file, applies all
@@ -540,10 +553,12 @@ class DragonDataFrameCleaner:
                 The path to the input data file.
             output_filepath (Union[str, Path]):
                 The full path, where the cleaned data file will be saved.
+            rule_batch_size (int):
+                Splits the regex rules into chunks of this size. Helps prevent memory errors.
         """
         df, _ = load_dataframe(df_path=input_filepath, kind="polars", all_strings=True)
         
-        df_clean = self.clean(df=df)
+        df_clean = self.clean(df=df, rule_batch_size=rule_batch_size)
         
         if isinstance(output_filepath, str):
             output_filepath = make_fullpath(input_path=output_filepath, enforce="file")

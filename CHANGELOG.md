@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.2.1] 2025-12-10
+
+### Fixed
+
+- optimization_tools: 
+    - `plot_optimal_feature_distributions()` and `plot_optimal_feature_distributions_from_dataframe()`, always rotate x-ticks for categorical clarity.
+
+### Changed
+
+- ETL_cleaning:
+    - `DragonColumnCleaner`, changed default `case_insensitive` parameter to `False` for consistency.
+    - `DragonDataFrameCleaner`, changed default batch size for regex rules to 150 for memory efficiency.
+    - `DragonDataFrameCleaner.load_clean_save()`, added `rule_batch_size` parameter to split regex rules into smaller chunks for memory efficiency.
+    - `DragonColumnCleaner.preview()`, added `rule_batch_size` parameter to split regex rules into smaller chunks for memory efficiency.
+
 ## [19.2.0] 2025-12-09
 
 ### Added
