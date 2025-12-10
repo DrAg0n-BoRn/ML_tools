@@ -78,9 +78,20 @@ def save_unique_values(csv_path_or_df: Union[str, Path, pl.DataFrame],
     # Iterate over columns using Polars methods
     for i, column_name in enumerate(df.columns):
         try:
+            col_expr = pl.col(column_name)
+            
+            # Check if the column is string-based (String or Utf8)
+            dtype = df.schema[column_name]
+            if dtype in (pl.String, pl.Utf8):
+                 # Filter out actual empty strings AND whitespace-only strings
+                dataset = df.select(col_expr).filter(
+                    col_expr.str.strip_chars().str.len_chars() > 0
+                )
+            else:
+                dataset = df.select(col_expr)
+
             # Efficiently get unique non-null values and sort them
-            # We use drop_nulls() on the specific series
-            unique_series = df.select(pl.col(column_name)).drop_nulls().unique().sort(column_name)
+            unique_series = dataset.drop_nulls().unique().sort(column_name)
             
             # Convert to a python list for writing
             sorted_uniques = unique_series.to_series().to_list()
@@ -358,15 +369,18 @@ class DragonColumnCleaner:
         - Beware of chain replacements (rules matching strings that have already been
           changed by a previous rule in the same cleaner).
     """
-    def __init__(self, column_name: str, rules: Dict[str, str], case_insensitive: bool = False):
+    def __init__(self, 
+                 column_name: str, 
+                 rules: Union[Dict[str, Union[str, None]], Dict[str, str]], 
+                 case_insensitive: bool = False):
         """
         Args:
             column_name (str):
                 The name of the column to be cleaned.
-            rules (Dict[str, str]):
-                A dictionary of regex patterns to replacement strings. Can use
-                backreferences (e.g., r'$1 $2') for captured groups. Note that Polars
-                uses a '$' prefix for backreferences.
+            rules (Dict[str, str | None]):
+                A dictionary of regex patterns to replacement strings. 
+                - Replacement can be None to indicate that matching values should be converted to null.
+                - Can use backreferences (e.g., r'$1 $2') for captured groups. Note that Polars uses a '$' prefix for backreferences.
             case_insensitive (bool):
                 If True, regex matching ignores case.
 
