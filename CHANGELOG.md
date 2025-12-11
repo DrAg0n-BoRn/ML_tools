@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.3.0] 2025-12-11
+
+### Changed
+
+- ETL_engineering:
+    - `MultiNumberExtractor`, updated default regex pattern to match only positive numbers for consistency.
+    - `MultiBinaryDummifier`, updated regex handling for clean column names, allowing hyphens.
+
 ## [19.2.4] 2025-12-11
 
 - Set Python version requirement to 3.12.* in the package metadata.

@@ -453,15 +453,27 @@ class MultiBinaryDummifier:
         
         output_expressions = []
         for keyword in self.keywords:
-            # If using regex, trust the user's pattern. 
-            # If not, escape it to ensure it is treated as a literal.
+            # --- NAME GENERATION LOGIC ---
+            if self.use_regex:
+                # 1. Remove regex control sequences (e.g., \b, \d, \w) so they don't end up in the name
+                temp_name = re.sub(r"\\[a-zA-Z]", "", keyword)
+            else:
+                temp_name = keyword
+
+            # 2. Strip leading/trailing whitespace
+            temp_name = temp_name.strip()
+
+            # 3. Convert intermediate spaces to hyphens (e.g. "new metal" -> "new-metal")
+            temp_name = re.sub(r"\s+", "-", temp_name)
+
+            # 4. Final Sanitize: Remove anything that isn't a Letter, Number, or Hyphen.
+            clean_suffix = re.sub(r"[^a-zA-Z0-9\-]+", "", temp_name)
+
+            # --- MATCHING LOGIC ---
             if self.use_regex:
                 base_pattern = keyword
-                # Sanitize the column name for the output since regex patterns can be messy
-                clean_suffix = re.sub(r"[^a-zA-Z0-9]+", "", keyword)
             else:
                 base_pattern = re.escape(keyword)
-                clean_suffix = keyword
 
             # Add case-insensitivity flag `(?i)` if needed
             pattern = f"(?i){base_pattern}" if self.case_insensitive else base_pattern
@@ -657,7 +669,7 @@ class MultiNumberExtractor:
     def __init__(
         self,
         num_outputs: int,
-        regex_pattern: str = r"(-?\d+\.?\d*(?:[eE][+-]?\d+)?)",
+        regex_pattern: str = r"(\d+\.?\d*(?:[eE][+-]?\d+)?)",
         dtype: Literal["float", "int"] = "float",
         fill_value: Optional[Union[int, float]] = None
     ):
@@ -670,7 +682,7 @@ class MultiNumberExtractor:
             regex_pattern (str):
                 The regex pattern to find all numbers. Must contain one
                 capturing group around the number part.
-                Defaults to handling positive/negative integers, floats, and scientific notation (e.g., -1.23e-4).
+                Defaults to handling positive integers, floats, and scientific notation (e.g., 1.23e-4).
             dtype (str):
                 The desired data type for the output columns. Defaults to "float".
             fill_value (int | float | None):
