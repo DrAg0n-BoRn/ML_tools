@@ -2,8 +2,6 @@ test.ipynb
 .vscode
 __pycache__
 .DS_Store
-.python-version
-.python-info
 *.egg-info
 dist
 Makefile
