@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "19.2.2"
+version = "19.2.3"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -58,7 +58,8 @@ py-tab = [
 # ensemble tools
 ensemble = [
     # Core
-    "numpy>=2.0",         # Root dependency
+    # "numpy>=2.0",         # Root dependency
+    "numpy",               # should be >2.0
     "numba>=0.60",        # Required for NumPy 2.0 JIT compilation
     "shap>=0.46",         # Required to use the newer Numba
     
@@ -117,7 +118,8 @@ excel = [
 # GUI for boost algorithms
 # Optional: matplotlib / seaborn
 gui-boost = [
-    "numpy>=2.0",
+    # "numpy>=2.0",
+    "numpy", # should be >2.0
     "joblib",
     "FreeSimpleGUI>=5.2",
     "xgboost", 
