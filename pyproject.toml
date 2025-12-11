@@ -1,12 +1,12 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "19.2.3"
+version = "19.2.4"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
