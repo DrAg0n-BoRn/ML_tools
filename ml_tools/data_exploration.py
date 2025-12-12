@@ -22,6 +22,7 @@ from ._core._data_exploration import (
     reconstruct_binary,
     reconstruct_multibinary,
     finalize_feature_schema,
+    apply_feature_schema,
     info
 )
 
@@ -48,5 +49,6 @@ __all__ = [
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
-    "finalize_feature_schema"
+    "finalize_feature_schema",
+    "apply_feature_schema",
 ]

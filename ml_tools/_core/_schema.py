@@ -15,6 +15,7 @@ _LOGGER = get_logger("FeatureSchema")
 __all__ = [
     "FeatureSchema",
     "create_guischema_template",
+    "make_multibinary_groups",
 ]
 
 
@@ -208,11 +209,11 @@ def create_guischema_template(
         
     schema = feature_schema
     output_data: Dict[str, Any] = {
-        "targets": [],
-        "continuous": [],
-        "binary": [],
-        "multi_binary": {}, # Structure: GroupName: [{model: x, gui: ""}]
-        "categorical": []
+        SchemaKeys.TARGETS: [],
+        SchemaKeys.CONTINUOUS: [],
+        SchemaKeys.BINARY: [],
+        SchemaKeys.MULTIBINARY: {}, # Structure: GroupName: [{model: x, gui: ""}]
+        SchemaKeys.CATEGORICAL: []
     }
 
     # Track handled columns to prevent duplicates in binary/categorical
@@ -220,9 +221,9 @@ def create_guischema_template(
 
     # 1. Targets
     for t in targets:
-        output_data["targets"].append({
-            "model_name": t,
-            "gui_name": "" # User to fill
+        output_data[SchemaKeys.TARGETS].append({
+            SchemaKeys.MODEL_NAME: t,
+            SchemaKeys.GUI_NAME: "" # User to fill
         })
 
     # 2. Continuous
@@ -230,11 +231,11 @@ def create_guischema_template(
     schema_cont_set = set(schema.continuous_feature_names)
     for name, min_max in continuous_ranges.items():
         if name in schema_cont_set:
-            output_data["continuous"].append({
-                "model_name": name,
-                "gui_name": "",
-                "min": min_max[0],
-                "max": min_max[1]
+            output_data[SchemaKeys.CONTINUOUS].append({
+                SchemaKeys.MODEL_NAME: name,
+                SchemaKeys.GUI_NAME: "",
+                SchemaKeys.MIN_VALUE: min_max[0],
+                SchemaKeys.MAX_VALUE: min_max[1]
             })
             handled_cols.add(name)
         else:
@@ -242,21 +243,30 @@ def create_guischema_template(
 
     # 3. Multi-Binary Groups
     if multibinary_groups:
-            # Check for validity within the generic feature list
-            all_feats = set(schema.feature_names)
-            
-            for group_name, cols in multibinary_groups.items():
-                group_options = []
-                for col in cols:
-                    if col not in all_feats:
-                        _LOGGER.warning(f"GUISchema: Multi-binary column '{col}' not found in FeatureSchema.")
-                    
-                    group_options.append({
-                        "model_name": col,
-                        "gui_name": "" 
-                    })
-                    handled_cols.add(col)
-                output_data["multi_binary"][group_name] = group_options
+        # Check for validity within the generic feature list
+        all_feats = set(schema.feature_names)
+        
+        for group_name, cols in multibinary_groups.items():
+            # Validation: Groups cannot be empty
+            if not cols:
+                # warn and skip
+                _LOGGER.warning(f"GUISchema: Multi-binary group '{group_name}' is empty and will be skipped.")
+                continue
+
+            group_options = []
+            for col in cols:
+                # Validation: Columns must exist in schema
+                if col not in all_feats:
+                    # warn and skip
+                    _LOGGER.warning(f"GUISchema: Multi-binary column '{col}' in group '{group_name}' not found in FeatureSchema. Skipping.")
+                    continue
+                # else, add to group
+                group_options.append({
+                    SchemaKeys.MODEL_NAME: col,
+                    SchemaKeys.GUI_NAME: "" 
+                })
+                handled_cols.add(col)
+            output_data[SchemaKeys.MULTIBINARY][group_name] = group_options
 
     # 4. Binary & Categorical (Derived from Schema Mappings)
     if schema.categorical_mappings:
@@ -266,19 +276,19 @@ def create_guischema_template(
             
             # Heuristic: Cardinality 2 = Binary, >2 = Categorical
             if len(mapping) == 2:
-                output_data["binary"].append({
-                    "model_name": name,
-                    "gui_name": "" # User to fill
+                output_data[SchemaKeys.BINARY].append({
+                    SchemaKeys.MODEL_NAME: name,
+                    SchemaKeys.GUI_NAME: "" # User to fill
                 })
             else:
                 # For categorical, we also allow renaming the specific options
                 options_with_names = {k: "" for k in mapping.keys()} # Default gui_option = model_option
                 
-                output_data["categorical"].append({
-                    "model_name": name,
-                    "gui_name": "", # User to fill feature name
-                    "mapping": mapping, # Preserved for reference
-                    "option_labels": options_with_names # User can edit keys here
+                output_data[SchemaKeys.CATEGORICAL].append({
+                    SchemaKeys.MODEL_NAME: name,
+                    SchemaKeys.GUI_NAME: "", # User to fill feature name
+                    SchemaKeys.MAPPING: mapping, # Original mapping
+                    SchemaKeys.OPTIONAL_LABELS: options_with_names # User can edit keys here
                 })
 
     save_path = dir_path / SchemaKeys.GUI_SCHEMA_FILENAME
@@ -288,6 +298,58 @@ def create_guischema_template(
         _LOGGER.info(f"GUISchema template generated at: '{dir_path.name}/{SchemaKeys.GUI_SCHEMA_FILENAME}'")
     except IOError as e:
         _LOGGER.error(f"Failed to save GUISchema template: {e}")
+
+
+def make_multibinary_groups(
+    feature_schema: FeatureSchema,
+    group_prefixes: list[str],
+    separator: str = "_"
+) -> Dict[str, list[str]]:
+    """
+    Helper to automate creating the multibinary_groups dictionary for create_guischema_template.
+
+    Iterates through provided prefixes and groups categorical features that contain
+    the pattern '{prefix}{separator}'.
+
+    Args:
+        feature_schema: The loaded FeatureSchema containing categorical feature names.
+        group_prefixes: A list of group prefixes to search for.
+        separator: The separator used in Multibinary Encoding (default '_').
+
+    Returns:
+        Dict[str, list[str]]: A dictionary mapping group names to their found column names.
+    """
+    groups: Dict[str, list[str]] = {}
+    
+    # check that categorical features exist
+    if not feature_schema.categorical_feature_names:
+        _LOGGER.error("FeatureSchema has no categorical features defined.")
+        raise ValueError()
+    
+    # validate separator
+    if not separator or not isinstance(separator, str):
+        _LOGGER.error(f"Invalid separator '{separator}' of type {type(separator)}.")
+        raise ValueError()
+
+    for prefix in group_prefixes:
+        if not prefix or not isinstance(prefix, str):
+            _LOGGER.error(f"Invalid prefix '{prefix}' of type {type(prefix)}.")
+            raise ValueError()
+        
+        search_term = f"{prefix}{separator}"
+        
+        # check if substring exists in the column name. must begin with prefix+separator
+        cols = [
+            name for name in feature_schema.categorical_feature_names
+            if name.startswith(search_term)
+        ]
+
+        if cols:
+            groups[prefix] = cols
+        else:
+            _LOGGER.warning(f"No columns found for group '{prefix}' using search term '{search_term}'")
+
+    return groups
 
 
 def info():

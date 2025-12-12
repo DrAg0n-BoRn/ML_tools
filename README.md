@@ -4,8 +4,8 @@ A collection of machine learning pipelines and utilities, structured as modular 
 
 ### Features:
 
-- Modular scripts for data exploration, logging, machine learning, and more.
-- Designed for seamless integration as a Git submodule or installable Python package.
+- Modular scripts for data science workflows, including data exploration, ETL, model training, evaluation, and inference.
+- Support for PyTorch-based models, ensemble learning (XGBoost, LightGBM), and MICE imputation.
 
 ## Installation
 
@@ -15,26 +15,24 @@ A collection of machine learning pipelines and utilities, structured as modular 
 
 Install the latest stable release from PyPI:
 
+Using pip:
+
 ```bash
 pip install dragon-ml-toolbox
 ```
 
-### Via conda-forge
+Using UV:
+
+```bash
+uv add dragon-ml-toolbox
+```
+
+### Via conda-forge (Deprecated)
 
 Install from the conda-forge channel:
 
 ```bash
 conda install -c conda-forge dragon-ml-toolbox
-```
-
-### Via GitHub (Editable)
-
-Clone the repository and install in editable mode:
-
-```bash
-git clone https://github.com/DrAg0n-BoRn/ML_tools.git
-cd ML_tools
-pip install -e .
 ```
 
 ## Modular Installation
@@ -110,8 +108,6 @@ ML_configuration_pytab
 ### 🌳 Ensemble Learning [ensemble]
 
 Comprehensive set of tools for typical data science workflows focused on **XGBoost** and **LightGBM**.
-
-*Note: Optimizes for NumPy >= 2.0.*
 
 ```Bash
 pip install "dragon-ml-toolbox[ensemble]"

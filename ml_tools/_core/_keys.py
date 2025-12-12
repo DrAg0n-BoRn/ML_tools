@@ -202,6 +202,18 @@ class SchemaKeys:
     """Used by the schema module."""
     SCHEMA_FILENAME = "FeatureSchema.json"
     GUI_SCHEMA_FILENAME = "GUISchema.json"
+    # GUI Schema
+    TARGETS = "targets"
+    CONTINUOUS = "continuous"
+    BINARY = "binary"
+    MULTIBINARY = "multibinary"
+    CATEGORICAL = "categorical"
+    MODEL_NAME = "model_name"
+    GUI_NAME = "gui_name"
+    MIN_VALUE = "min_value"
+    MAX_VALUE = "max_value"
+    MAPPING = "mapping"
+    OPTIONAL_LABELS = "optional_labels"
 
 
 class _EvaluationConfig:

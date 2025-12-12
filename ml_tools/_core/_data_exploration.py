@@ -41,7 +41,8 @@ __all__ = [
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
-    "finalize_feature_schema"
+    "finalize_feature_schema",
+    "apply_feature_schema"
 ]
 
 
@@ -98,12 +99,15 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
     if not isinstance(df, pd.DataFrame):
         _LOGGER.error("Input must be a pandas DataFrame.")
         raise TypeError()
+    
+    # make copy to avoid modifying original
+    df_clean = df.copy()
 
     original_columns = set(df.columns)
     cols_to_keep = []
 
-    for col_name in df.columns:
-        column = df[col_name]
+    for col_name in df_clean.columns:
+        column = df_clean[col_name]
         
         # We can apply this logic to all columns or only focus on numeric ones.
         # if not is_numeric_dtype(column):
@@ -120,8 +124,14 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
         if dropped_columns:
             for dropped_column in dropped_columns:
                 print(f"    {dropped_column}")
+                
+    # Return a new DataFrame with only the columns to keep
+    df_clean = df_clean[cols_to_keep]
+    
+    if isinstance(df_clean, pd.Series):
+        df_clean = df_clean.to_frame()
 
-    return df[cols_to_keep]
+    return df_clean
 
 
 def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], threshold: float = 0.7) -> pd.DataFrame:
@@ -163,7 +173,7 @@ def drop_rows_with_missing_data(df: pd.DataFrame, targets: Optional[list[str]], 
     feature_cols = [col for col in df_clean.columns if col not in valid_targets]
     if feature_cols:
         feature_na_frac = df_clean[feature_cols].isnull().mean(axis=1)
-        rows_to_drop = feature_na_frac[feature_na_frac > threshold].index
+        rows_to_drop = feature_na_frac[feature_na_frac > threshold].index # type: ignore
         if len(rows_to_drop) > 0:
             _LOGGER.info(f"🧹 Dropping {len(rows_to_drop)} rows with more than {threshold*100:.0f}% missing feature data.")
             df_clean = df_clean.drop(index=rows_to_drop)
@@ -1118,109 +1128,6 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     plt.show()
     plt.close()
 
-# OLD IMPLEMENTATION
-# def plot_value_distributions(df: pd.DataFrame, save_dir: Union[str, Path], bin_threshold: int=10, skip_cols_with_key: Union[str, None]=None):
-#     """
-#     Plots and saves the value distributions for all (or selected) columns in a DataFrame, 
-#     with adaptive binning for numerical columns when appropriate.
-
-#     For each column both raw counts and relative frequencies are computed and plotted.
-
-#     Plots are saved as PNG files under two subdirectories in `save_dir`:
-#     - "Distribution_Counts" for absolute counts.
-#     - "Distribution_Frequency" for relative frequencies.
-
-#     Args:
-#         df (pd.DataFrame): The input DataFrame whose columns are to be analyzed.
-#         save_dir (str | Path): Directory path where the plots will be saved. Will be created if it does not exist.
-#         bin_threshold (int): Minimum number of unique values required to trigger binning
-#             for numerical columns.
-#         skip_cols_with_key (str | None): If provided, any column whose name contains this
-#             substring will be excluded from analysis.
-
-#     Notes:
-#         - Binning is adaptive: if quantile binning results in ≤ 2 unique bins, raw values are used instead.
-#         - All non-alphanumeric characters in column names are sanitized for safe file naming.
-#         - Colormap is automatically adapted based on the number of categories or bins.
-#     """
-#     save_path = make_fullpath(save_dir, make=True)
-    
-#     dict_to_plot_std = dict()
-#     dict_to_plot_freq = dict()
-    
-#     # cherry-pick columns
-#     if skip_cols_with_key is not None:
-#         columns = [col for col in df.columns if skip_cols_with_key not in col]
-#     else:
-#         columns = df.columns.to_list()
-    
-#     saved_plots = 0
-#     for col in columns:
-#         if pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > bin_threshold:
-#             bins_number = 10
-#             binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-#             while binned.nunique() <= 2:
-#                 bins_number -= 1
-#                 binned = pd.qcut(df[col], q=bins_number, duplicates='drop')
-#                 if bins_number <= 2:
-#                     break
-            
-#             if binned.nunique() <= 2:
-#                 view_std = df[col].value_counts(sort=False).sort_index()
-#             else:
-#                 view_std = binned.value_counts(sort=False)
-            
-#         else:
-#             view_std = df[col].value_counts(sort=False).sort_index()
-
-#         # unlikely scenario where the series is empty
-#         if view_std.sum() == 0:
-#             view_freq = view_std
-#         else:
-#             view_freq = 100 * view_std / view_std.sum() # Percentage
-#         # view_freq = df[col].value_counts(normalize=True, bins=10)  # relative percentages
-        
-#         dict_to_plot_std[col] = dict(view_std)
-#         dict_to_plot_freq[col] = dict(view_freq)
-#         saved_plots += 1
-    
-#     # plot helper
-#     def _plot_helper(dict_: dict, target_dir: Path, ylabel: Literal["Frequency", "Counts"], base_fontsize: int=12):
-#         for col, data in dict_.items():
-#             safe_col = sanitize_filename(col)
-            
-#             if isinstance(list(data.keys())[0], pd.Interval):
-#                 labels = [str(interval) for interval in data.keys()]
-#             else:
-#                 labels = data.keys()
-                
-#             plt.figure(figsize=(10, 6))
-#             colors = plt.cm.tab20.colors if len(data) <= 20 else plt.cm.viridis(np.linspace(0, 1, len(data))) # type: ignore
-                
-#             plt.bar(labels, data.values(), color=colors[:len(data)], alpha=0.85)
-#             plt.xlabel("Values", fontsize=base_fontsize)
-#             plt.ylabel(ylabel, fontsize=base_fontsize)
-#             plt.title(f"Value Distribution for '{col}'", fontsize=base_fontsize+2)
-#             plt.xticks(rotation=45, ha='right', fontsize=base_fontsize-2)
-#             plt.yticks(fontsize=base_fontsize-2)
-#             plt.grid(axis='y', linestyle='--', alpha=0.6)
-#             plt.gca().set_facecolor('#f9f9f9')
-#             plt.tight_layout()
-            
-#             plot_path = target_dir / f"{safe_col}.png"
-#             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-#             plt.close()
-    
-#     # Save plots
-#     freq_dir = save_path / "Distribution_Frequency"
-#     std_dir = save_path / "Distribution_Counts"
-#     freq_dir.mkdir(parents=True, exist_ok=True)
-#     std_dir.mkdir(parents=True, exist_ok=True)
-#     _plot_helper(dict_=dict_to_plot_std, target_dir=std_dir, ylabel="Counts")
-#     _plot_helper(dict_=dict_to_plot_freq, target_dir=freq_dir, ylabel="Frequency")
-
-#     _LOGGER.info(f"Saved {saved_plots} value distribution plots.")
-
 
 def clip_outliers_single(
     df: pd.DataFrame,
@@ -1405,6 +1312,10 @@ def drop_outlier_samples(
         for col, msg in skipped_columns:
             # Only print the column name for cleaner output as the error was already logged
             print(f" - {col}")
+            
+    # if new_df is a series, convert to dataframe
+    if isinstance(new_df, pd.Series):
+        new_df = new_df.to_frame()
 
     return new_df
 
@@ -1435,6 +1346,10 @@ def match_and_filter_columns_by_regex(
     filtered_df = df.loc[:, mask]
     
     _LOGGER.info(f"{len(matched_columns)} columns match the regex pattern '{pattern}'.")
+    
+    # if filtered df is a series, convert to dataframe
+    if isinstance(filtered_df, pd.Series):
+        filtered_df = filtered_df.to_frame()
 
     return filtered_df, matched_columns
 
@@ -1631,7 +1546,7 @@ def reconstruct_one_hot(
 
         # Extract the categorical value (the suffix) from the column name
         # Use n=1 in split to handle cases where the category itself might contain the separator
-        new_column_values = reconstructed_series.str.split(separator, n=1).str[1]
+        new_column_values = reconstructed_series.str.split(separator, n=1).str[1] # type: ignore
         
         # Handle rows where all OHE columns were 0 (e.g., original value was NaN or a dropped baseline).
         all_zero_mask = new_df[ohe_cols].sum(axis=1) == 0 # type: ignore
@@ -1806,7 +1721,7 @@ def reconstruct_multibinary(
 
     if not target_columns:
         _LOGGER.warning(f"No columns found matching pattern '{pattern}'. Returning original DataFrame.")
-        return new_df
+        return new_df, list()
 
     # 2. Define robust mapping (handles ints, floats, and booleans)
     # Note: Any value not in this map will become NaN
@@ -1905,6 +1820,100 @@ def finalize_feature_schema(
     )
     
     return schema_instance
+
+
+def apply_feature_schema(
+    df: pd.DataFrame,
+    schema: FeatureSchema,
+    targets: Optional[List[str]] = None,
+    unknown_value: int = 99999,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Aligns the input DataFrame with the provided FeatureSchema.
+
+    This function aligns data for inference/fine-tuning by enforcing the schema's
+    structure and encoding.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        schema (FeatureSchema): The schema defining feature names, types, and mappings.
+        targets (list[str] | None): Optional list of target column names.
+        unknown_value (int): Integer value to assign to unknown categorical levels.
+                             Defaults to 99999 to avoid collision with existing categories.
+        verbose (bool): If True, logs info about dropped extra columns.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the exact column order and encoding defined by the schema.
+
+    Raises:
+        ValueError: If any required feature or target column is missing.
+    """
+    # 1. Setup
+    df_processed = df.copy()
+    targets = targets if targets is not None else []
+    
+    # 2. Validation: Strict Column Presence
+    missing_features = [col for col in schema.feature_names if col not in df_processed.columns]
+    if missing_features:
+        _LOGGER.error(f"Schema Mismatch: Missing required features: {missing_features}")
+        raise ValueError()
+    
+    # target columns should not be part of feature columns
+    if targets:
+        overlapping_columns = set(schema.feature_names).intersection(set(targets))
+        if overlapping_columns:
+            _LOGGER.error(f"Schema Mismatch: Target columns overlap with feature columns: {overlapping_columns}")
+            raise ValueError()
+        
+        # targets were provided, check their presence
+        missing_targets = [col for col in targets if col not in df_processed.columns]
+        if missing_targets:
+            _LOGGER.error(f"Target Mismatch: Missing target columns: {missing_targets}")
+            raise ValueError()
+
+    # 3. Apply Categorical Encoding
+    if schema.categorical_feature_names and schema.categorical_mappings:
+        for col_name in schema.categorical_feature_names:
+            # Should never happen due to schema construction, but double-check and raise
+            if col_name not in schema.categorical_mappings:
+                _LOGGER.error(f"Schema Inconsistency: No mapping found for categorical feature '{col_name}'.")
+                raise ValueError()
+
+            mapping = schema.categorical_mappings[col_name]
+            
+            # Apply mapping (unknowns become NaN)
+            df_processed[col_name] = df_processed[col_name].astype(str).map(mapping)
+            
+            # Handle Unknown Categories
+            if df_processed[col_name].isnull().any():
+                n_missing = df_processed[col_name].isnull().sum()
+                _LOGGER.warning(f"Feature '{col_name}': Found {n_missing} unknown categories. Mapping to {unknown_value}.")
+                
+                # Fill unknowns with the specified integer
+                df_processed[col_name] = df_processed[col_name].fillna(unknown_value)
+            
+            df_processed[col_name] = df_processed[col_name].astype(int)
+
+    # 4. Reorder and Filter
+    final_column_order = list(schema.feature_names) + targets
+    
+    extra_cols = set(df_processed.columns) - set(final_column_order)
+    if extra_cols:
+        _LOGGER.info(f"Dropping {len(extra_cols)} extra columns not present in schema.")
+        if verbose:
+            for extra_column in extra_cols:
+                print(f"  - Dropping column: '{extra_column}'")
+
+    df_final = df_processed[final_column_order]
+    
+    _LOGGER.info(f"Schema applied successfully. Final shape: {df_final.shape}")
+    
+    # df_final should be a dataframe
+    if isinstance(df_final, pd.Series):
+        df_final = df_final.to_frame()
+
+    return df_final
 
 
 def _validate_columns(df: pd.DataFrame, columns: list[str]):

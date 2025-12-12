@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "19.3.0"
+version = "19.4.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -72,7 +72,7 @@ ensemble = [
     "colorlog",
 
     # Math / ML
-    "scikit-learn>=1.5",  # Required for numpy 2.0
+    "scikit-learn>=1.5,<1.8",  # Required >1.5 for numpy 2.0 but less than 1.8 for compatibility with imbalanced-learn
     "imbalanced-learn",
     "xgboost",
     "lightgbm",

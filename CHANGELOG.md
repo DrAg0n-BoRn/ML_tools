@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.4.0] 2025-12-12
+
+### Changed
+
+- schema:
+    - `create_guischema_template()`, enhanced validation for multi-binary groups in GUISchema:
+        - Empty groups will be skipped with a warning.
+        - Columns not found in FeatureSchema will be skipped with a warning.
+        - GUISchema.json, updated to use consistent key names.
+
+- GUI_tools:
+    - `DragonFeatureMaster.from_guischema()`, updated to use consistent key names in GUISchema.json. Old keys are not supported.
+
+### Added
+
+- data_exploration:
+    - `apply_feature_schema()`, Aligns the input DataFrame with the provided FeatureSchema.
+- schema:
+    - `make_multibinary_groups()`, Generates multi-binary groups for the GUISchema based on column name patterns in the FeatureSchema.
+
 ## [19.3.0] 2025-12-11
 
 ### Changed

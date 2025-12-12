@@ -628,9 +628,9 @@ class DragonFeatureMaster:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             
-        def _resolve_name(item: dict, model_key: str = "model_name") -> str:
+        def _resolve_name(item: dict, model_key: str = SchemaKeys.MODEL_NAME) -> str:
             """Returns gui_name if present, else Title Case of model_name."""
-            user_input = item.get("gui_name", "").strip()
+            user_input = item.get(SchemaKeys.GUI_NAME, "").strip()
             if user_input:
                 return user_input
             # Fallback: snake_case -> Snake Case -> Title Case
@@ -638,39 +638,39 @@ class DragonFeatureMaster:
 
         # 1. Targets
         targets = {}
-        for item in data.get("targets", []):
+        for item in data.get(SchemaKeys.TARGETS, []):
             g_name = _resolve_name(item)
-            targets[g_name] = item["model_name"]
+            targets[g_name] = item[SchemaKeys.MODEL_NAME]
             
         # 2. Continuous
         continuous = {}
-        for item in data.get("continuous", []):
+        for item in data.get(SchemaKeys.CONTINUOUS, []):
             g_name = _resolve_name(item)
-            continuous[g_name] = (item["model_name"], item["min"], item["max"])
+            continuous[g_name] = (item[SchemaKeys.MODEL_NAME], item[SchemaKeys.MIN_VALUE], item[SchemaKeys.MAX_VALUE])
             
         # 3. Binary
         binary = {}
-        for item in data.get("binary", []):
+        for item in data.get(SchemaKeys.BINARY, []):
             g_name = _resolve_name(item)
-            binary[g_name] = item["model_name"]
+            binary[g_name] = item[SchemaKeys.MODEL_NAME]
             
         # 4. Multi-Binary
         multi_binary = {}
-        raw_multi = data.get("multi_binary", {})
+        raw_multi = data.get(SchemaKeys.MULTIBINARY, {})
         for group_gui_name, options_list in raw_multi.items():
             group_dict = {}
             for opt in options_list:
                 opt_gui = _resolve_name(opt)
-                group_dict[opt_gui] = opt["model_name"]
+                group_dict[opt_gui] = opt[SchemaKeys.MODEL_NAME]
             multi_binary[group_gui_name] = group_dict
             
         # 5. Categorical
         categorical = []
-        for item in data.get("categorical", []):
+        for item in data.get(SchemaKeys.CATEGORICAL, []):
             g_name = _resolve_name(item)
-            model_name = item["model_name"]
-            original_map = item["mapping"] # { "Red": 0, "Blue": 1 }
-            custom_labels = item.get("option_labels", {}) # { "Red": "Crimson", "Blue": "" }
+            model_name = item[SchemaKeys.MODEL_NAME]
+            original_map = item[SchemaKeys.MAPPING] # { "Red": 0, "Blue": 1 }
+            custom_labels = item.get(SchemaKeys.OPTIONAL_LABELS, {}) # { "Red": "Crimson", "Blue": "" }
             
             final_map = {}
             for mod_opt, int_val in original_map.items():
