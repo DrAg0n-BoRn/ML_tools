@@ -17,7 +17,7 @@ from ._path_manager import make_fullpath
 from ._logger import get_logger
 from ._script_info import _script_info
 from ._keys import VisionTransformRecipeKeys, ObjectDetectionKeys
-from ._custom_logger import custom_logger
+from ._IO_tools import custom_logger
 
 
 _LOGGER = get_logger("DragonDataset")

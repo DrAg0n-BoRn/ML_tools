@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.5.0] 2025-12-13
+
+### Changed
+
+- Module: "custom_logger" renamed to "IO_tools".
+- IO_tools:
+    - `train_logger()`, Modified parameters to log training configurations, model parameters, and training history to a JSON file.
+- ML_utilities:
+    - `ArtifactFinder`, added support for loading a FeatureSchema from the model artifacts directory.
+
 ## [19.4.0] 2025-12-12
 
 ### Changed

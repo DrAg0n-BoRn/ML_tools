@@ -9,8 +9,9 @@ from ._script_info import _script_info
 from ._logger import get_logger
 from ._keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys, SHAPKeys, UtilityKeys, PyTorchCheckpointKeys
 from ._utilities import load_dataframe
-from ._custom_logger import save_list_strings, custom_logger, load_list_strings
+from ._IO_tools import save_list_strings, custom_logger, load_list_strings
 from ._serde import serialize_object_filename
+from ._schema import FeatureSchema
 
 
 _LOGGER = get_logger("Torch Utilities")
@@ -41,14 +42,16 @@ class ArtifactFinder:
         ├── scaler_*.pth          (Required if `load_scaler` is True)
         ├── feature_names.txt
         ├── target_names.txt
-        └── architecture.json
+        ├── architecture.json
+        └── FeatureSchema.json     (Required if `load_schema` is True)
     ```
     """
-    def __init__(self, directory: Union[str, Path], load_scaler: bool) -> None:
+    def __init__(self, directory: Union[str, Path], load_scaler: bool, load_schema: bool) -> None:
         """
         Args:
             directory (str | Path): The path to the directory that contains training artifacts.
             load_scaler (bool): If True, requires and searches for a scaler file `scaler_*.pth`.
+            load_schema (bool): If True, requires and searches for a FeatureSchema file `FeatureSchema.json`.
         """
         # validate directory
         dir_path = make_fullpath(directory, enforce="directory")
@@ -60,10 +63,14 @@ class ArtifactFinder:
         self._target_names_path = parsing_dict[PytorchArtifactPathKeys.TARGETS_PATH]
         self._model_architecture_path = parsing_dict[PytorchArtifactPathKeys.ARCHITECTURE_PATH]
         self._scaler_path = None
+        self._schema = None
         
         if load_scaler:
             self._scaler_path = parsing_dict[PytorchArtifactPathKeys.SCALER_PATH]
             
+        if load_schema:
+            self._schema = FeatureSchema.from_json(directory=dir_path)
+
         # Process text files
         self._feature_names = self._process_text(self._feature_names_path)
         self._target_names = self._process_text(self._target_names_path)
@@ -101,11 +108,21 @@ class ArtifactFinder:
         else:
             return self._scaler_path
         
+    @property
+    def feature_schema(self) -> FeatureSchema:
+        """Returns the FeatureSchema object."""
+        if self._schema is None:
+            _LOGGER.error("No FeatureSchema loaded. Set 'load_schema=True'.")
+            raise ValueError()
+        else:
+            return self._schema
+        
     def __repr__(self) -> str:
         dir_name = self._weights_path.parent.name
         n_features = len(self._feature_names)
         n_targets = len(self._target_names)
         scaler_status = self._scaler_path.name if self._scaler_path else "None"
+        schema_status = "Loaded" if self._schema else "None"
         
         return (
             f"{self.__class__.__name__}\n"
@@ -113,6 +130,7 @@ class ArtifactFinder:
             f"    weights='{self._weights_path.name}'\n"
             f"    architecture='{self._model_architecture_path.name}'\n"
             f"    scaler='{scaler_status}'\n"
+            f"    schema='{schema_status}'\n"
             f"    features={n_features}\n" 
             f"    targets={n_targets}"
         )

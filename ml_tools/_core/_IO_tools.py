@@ -12,7 +12,7 @@ from ._script_info import _script_info
 from ._logger import get_logger
 
 
-_LOGGER = get_logger("Logger")
+_LOGGER = get_logger("IO")
 
 
 __all__ = [
@@ -328,10 +328,59 @@ def compare_lists(
     return results
 
 
-def train_logger(data: dict, save_directory: Union[str, Path]):
+def train_logger(train_config: Union[dict, Any],
+                 model_parameters: Union[dict, Any],
+                 train_history: Union[dict, None],
+                 save_directory: Union[str, Path]):
     """
     Logs training data to JSON, adding a timestamp to the filename.
+    
+    Args:
+        train_config (dict | Any): Training configuration parameters.
+        model_parameters (dict | Any): Model parameters.
+        train_history (dict | None): Training history log.
+        save_directory (str | Path): Directory to save the log file.
     """
+    # train_config should be a dict or a custom object with the ".to_log()" method
+    if not isinstance(train_config, dict):
+        if hasattr(train_config, "to_log") and callable(getattr(train_config, "to_log")):
+            train_config_dict: dict = train_config.to_log()
+        else:
+            _LOGGER.error("'train_config' must be a dict or an object with a 'to_log()' method.")
+            raise ValueError()
+    else:
+        # check for empty dict
+        if not train_config:
+            _LOGGER.error("'train_config' dictionary is empty.")
+            raise ValueError()
+        
+        train_config_dict = train_config
+        
+    # model_parameters should be a dict or a custom object with the ".to_log()" method
+    if not isinstance(model_parameters, dict):
+        if hasattr(model_parameters, "to_log") and callable(getattr(model_parameters, "to_log")):
+            model_parameters_dict: dict = model_parameters.to_log()
+        else:
+            _LOGGER.error("'model_parameters' must be a dict or an object with a 'to_log()' method.")
+            raise ValueError()
+    else:
+        # check for empty dict
+        if not model_parameters:
+            _LOGGER.error("'model_parameters' dictionary is empty.")
+            raise ValueError()
+        
+        model_parameters_dict = model_parameters
+    
+    # make base dictionary
+    data: dict = train_config_dict | model_parameters_dict
+    
+    # add training history if provided and is not empty
+    if train_history is not None:
+        if not train_history:
+            _LOGGER.error("'train_history' dictionary was provided but is empty.")
+            raise ValueError()
+        data.update(train_history)
+    
     custom_logger(
         data=data,
         save_directory=save_directory,

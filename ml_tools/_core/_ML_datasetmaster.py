@@ -10,11 +10,11 @@ from pathlib import Path
 from ._path_manager import make_fullpath, sanitize_filename
 from ._logger import get_logger
 from ._script_info import _script_info
-from ._custom_logger import save_list_strings
+from ._IO_tools import save_list_strings
 from ._ML_scaler import DragonScaler
 from ._keys import DatasetKeys, MLTaskKeys, ScalerKeys
 from ._schema import FeatureSchema
-from ._custom_logger import custom_logger
+from ._IO_tools import custom_logger
 
 
 _LOGGER = get_logger("DragonDataset")
@@ -301,6 +301,13 @@ class _BaseDatasetMaker(ABC):
             _LOGGER.info(f"{print_message}to '{filepath.name}'.")
             
     def save_class_map(self, directory: Union[str,Path], verbose: bool=True) -> None:
+        """  
+        Saves the class map dictionary to a JSON file.
+        
+        Args:
+            directory (str | Path): Directory to save the class map.
+            verbose (bool): Whether to print log messages.
+        """
         if not self.class_map:
             _LOGGER.warning(f"No class_map defined. Skipping.")
             return
@@ -316,6 +323,13 @@ class _BaseDatasetMaker(ABC):
             _LOGGER.info(f"Class map for '{self.id}' saved as '{log_name}.json'.")
 
     def save_artifacts(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """
+        Saves all dataset artifacts: feature names, target names, scalers, and class map (if applicable).
+        
+        Args:
+            directory (str | Path): Directory to save artifacts.
+            verbose (bool): Whether to print log messages.
+        """
         self.save_feature_names(directory=directory, verbose=verbose)
         self.save_target_names(directory=directory, verbose=verbose)
         if self.feature_scaler is not None or self.target_scaler is not None:
