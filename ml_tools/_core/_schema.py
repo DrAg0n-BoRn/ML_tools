@@ -348,6 +348,9 @@ def make_multibinary_groups(
             groups[prefix] = cols
         else:
             _LOGGER.warning(f"No columns found for group '{prefix}' using search term '{search_term}'")
+            
+    # log resulting groups
+    _LOGGER.info(f"Multibinary groups created: {list(groups.keys())}")
 
     return groups
 

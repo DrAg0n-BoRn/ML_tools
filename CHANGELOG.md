@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.6.0] 2025-12-14
+
+### Added
+
+- IO_tools:
+    - `save_json()`, saves a dictionary or list to a JSON file.
+    - `load_json()`, loads a JSON file with strict root type validation.
+- optimization_tools:
+    - `make_continuous_bounds_template()`, creates a JSON template for manual entry of continuous feature optimization bounds.
+    - `load_continuous_bounds_template()`, loads the continuous feature bounds template from JSON.
+
+### Changed
+
+- optimization_tools:
+    - `create_optimization_bounds()`, modified `continuous_bounds_map` parameter to accept both tuples and lists for bounds. Added validation to ensure correct types and lengths.
+
 ## [19.5.0] 2025-12-13
 
 ### Changed

@@ -198,6 +198,11 @@ class ParetoOptimizationKeys:
     SQL_DATABASE_FILENAME = "OptimizationResults.db"
 
 
+class OptimizationToolsKeys:
+    """Used by the optimization tools module."""
+    OPTIMIZATION_BOUNDS_FILENAME = "optimization_bounds"
+
+
 class SchemaKeys:
     """Used by the schema module."""
     SCHEMA_FILENAME = "FeatureSchema.json"

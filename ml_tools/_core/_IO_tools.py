@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime
-from typing import Union, List, Dict, Any, Literal
+from typing import Union, List, Dict, Any, Literal, overload
 import traceback
 import json
 import csv
@@ -18,6 +18,8 @@ _LOGGER = get_logger("IO")
 __all__ = [
     "custom_logger",
     "train_logger",
+    "save_json",
+    "load_json",
     "save_list_strings",
     "load_list_strings",
     "compare_lists"
@@ -170,6 +172,102 @@ def _log_exception_to_log(exc: BaseException, path: Path) -> None:
 def _log_dict_to_json(data: Dict[Any, Any], path: Path) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def save_json(
+    data: Union[Dict[Any, Any], List[Any]],
+    directory: Union[str, Path],
+    filename: str,
+    verbose: bool = True
+) -> None:
+    """
+    Saves a dictionary or list as a JSON file.
+
+    Args:
+        data (dict | list): The data to save.
+        directory (str | Path): The directory to save the file in.
+        filename (str): The name of the file (extension .json will be added if missing).
+        verbose (bool): Whether to log success messages.
+    """
+    target_dir = make_fullpath(directory, make=True, enforce="directory")
+    sanitized_name = sanitize_filename(filename)
+
+    if not sanitized_name.endswith(".json"):
+        sanitized_name += ".json"
+
+    full_path = target_dir / sanitized_name
+
+    try:
+        with open(full_path, 'w', encoding='utf-8') as f:
+            # Using _RobustEncoder ensures compatibility with non-standard types (like 'type' objects)
+            json.dump(data, f, indent=4, ensure_ascii=False, cls=_RobustEncoder)
+
+        if verbose:
+            _LOGGER.info(f"JSON file saved as '{full_path.name}'.")
+
+    except Exception as e:
+        _LOGGER.error(f"Failed to save JSON to '{full_path}': {e}")
+        raise
+
+
+# 1. Define Overloads (for the type checker)
+@overload
+def load_json(
+    file_path: Union[str, Path], 
+    expected_type: Literal["dict"] = "dict",
+    verbose: bool = True
+) -> Dict[Any, Any]: ...
+
+@overload
+def load_json(
+    file_path: Union[str, Path], 
+    expected_type: Literal["list"],
+    verbose: bool = True
+) -> List[Any]: ...
+
+
+def load_json(
+    file_path: Union[str, Path], 
+    expected_type: Literal["dict", "list"] = "dict",
+    verbose: bool = True
+) -> Union[Dict[Any, Any], List[Any]]:
+    """
+    Loads a JSON file.
+
+    Args:
+        file_path (str | Path): The path to the JSON file.
+        expected_type ('dict' | 'list'): strict check for the root type of the JSON.
+        verbose (bool): Whether to log success/failure messages.
+
+    Returns:
+        dict | list: The loaded JSON data.
+    """
+    target_path = make_fullpath(file_path, enforce="file")
+    
+    # Map string literals to actual python types
+    type_map = {"dict": dict, "list": list}
+    target_type = type_map.get(expected_type, dict)
+
+    try:
+        with open(target_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if not isinstance(data, target_type):
+            _LOGGER.error(f"JSON root is type {type(data)}, expected {expected_type}.")
+            raise ValueError()
+
+        if verbose:
+            _LOGGER.info(f"Loaded JSON data from '{target_path.name}'.")
+        
+        return data
+
+    except json.JSONDecodeError as e:
+        _LOGGER.error(f"Failed to decode JSON from '{target_path}': {e.msg}")
+        raise ValueError()
+        
+    except Exception as e:
+        _LOGGER.error(f"Error loading JSON from '{target_path}': {e}")
+        raise
 
 
 def save_list_strings(list_strings: list[str], directory: Union[str,Path], filename: str, verbose: bool=True):

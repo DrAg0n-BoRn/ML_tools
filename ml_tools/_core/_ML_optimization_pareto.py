@@ -23,6 +23,7 @@ from ._ML_chaining_inference import DragonChainInference
 from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
+from ._IO_tools import save_json
 from ._path_manager import make_fullpath, sanitize_filename
 from ._logger import get_logger
 from ._script_info import _script_info
@@ -57,7 +58,7 @@ class DragonParetoOptimizer:
                  inference_handler: Union[DragonInferenceHandler, DragonChainInference],
                  schema: FeatureSchema,
                  target_objectives: Dict[str, Literal["min", "max"]],
-                 continuous_bounds_map: Dict[str, Tuple[float, float]],
+                 continuous_bounds_map: Union[Dict[str, Tuple[float, float]], Dict[str, List[float]]],
                  population_size: int = 400,
                  discretize_start_at_zero: bool = True):
         """
@@ -83,6 +84,9 @@ class DragonParetoOptimizer:
         
         # Detect and validate handler
         self.is_chain = isinstance(self.inference_handler, DragonChainInference)
+        
+        # used for debug
+        self._debug: bool = False
 
         # --- 1. Validation ---
         if not self.is_chain:
@@ -358,6 +362,37 @@ class DragonParetoOptimizer:
         
         save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename)
         _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'")
+        
+        # Save optimization bounds as JSON for reference (debug mode)
+        if self._debug:
+            try:
+                # Create a human-readable map of feature_name -> [low, high]
+                bounds_data = {}
+                for i, name in enumerate(self.schema.feature_names):
+                    low = self.lower_bounds[i]
+                    high = self.upper_bounds[i]
+
+                    # Check if this feature is categorical
+                    # Categorical bounds are internally floats like (-0.5, 3.5) for [0, 3] (cardinality 4)
+                    # We revert this logic for readability: int(low + 0.5) to int(high - 0.5)
+                    if self.schema.categorical_index_map and i in self.schema.categorical_index_map:
+                        readable_low = int(low + 0.5)
+                        readable_high = int(high - 0.5)
+                        bounds_data[name] = [readable_low, readable_high]
+                    else:
+                        # Continuous features are kept as floats
+                        bounds_data[name] = [low, high]
+                
+                save_json(
+                    data=bounds_data, 
+                    directory=save_path, 
+                    filename="all_optimization_bounds.json", 
+                    verbose=False
+                )
+                _LOGGER.info(f"💾 Optimization bounds saved to: '{save_path.name}/all_optimization_bounds.json'")
+                
+            except Exception as e:
+                _LOGGER.warning(f"Failed to save optimization bounds to JSON: {e}")
         
         # --- 2. Save SQL (Optional) ---
         if save_to_sql:

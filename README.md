@@ -27,7 +27,7 @@ Using UV:
 uv add dragon-ml-toolbox
 ```
 
-### Via conda-forge (Deprecated)
+### Via conda-forge
 
 Install from the conda-forge channel:
 
@@ -55,7 +55,7 @@ pip install "dragon-ml-toolbox[ML]"
 
 ```Bash
 constants
-custom_logger
+IO_tools
 data_exploration
 ETL_cleaning
 ETL_engineering
@@ -117,7 +117,7 @@ pip install "dragon-ml-toolbox[ensemble]"
 
 ```Bash
 constants
-custom_logger
+IO_tools
 data_exploration
 ensemble_evaluation
 ensemble_inference
@@ -148,7 +148,7 @@ pip install "dragon-ml-toolbox[mice]"
 
 ```Bash
 constants
-custom_logger
+IO_tools
 math_utilities
 MICE_imputation
 serde
@@ -170,7 +170,7 @@ pip install "dragon-ml-toolbox[excel]"
 #### Modules:
 
 ```Bash
-custom_logger
+IO_tools
 excel_handler
 path_manager
 ```
@@ -189,7 +189,7 @@ pip install "dragon-ml-toolbox[gui-boost]"
 
 ```Bash
 constants
-custom_logger
+IO_tools
 GUI_tools
 ensemble_inference
 path_manager
@@ -211,7 +211,7 @@ pip install "dragon-ml-toolbox[gui-torch]"
 
 ```Bash
 constants
-custom_logger
+IO_tools
 GUI_tools
 ML_models
 ML_models_advanced
@@ -246,5 +246,5 @@ After installation, import modules like this:
 
 ```python
 from ml_tools.serde import serialize_object, deserialize_object
-from ml_tools.custom_logger import train_logger
+from ml_tools.IO_tools import train_logger
 ```
