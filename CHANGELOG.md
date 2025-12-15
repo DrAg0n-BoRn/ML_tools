@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.8.1] 2025-12-15
+
+### Added
+
+- New module "keys" to use consistent key names across the package.
+    - `InferenceKeys`, used by inference handlers.
+    - `CheckpointCallbackKeys`, used by the checkpoint callback.
+    - `FinalizedFileKeys`, used for finalized model files.
+
 ## [19.8.0] 2025-12-15
 
 ### Changed

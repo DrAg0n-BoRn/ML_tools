@@ -23,6 +23,12 @@ class PyTorchLogKeys:
     BATCH_SIZE = 'size'
 
 
+class _CheckpointCallbackKeys:
+    """Checkpoint callback keys."""
+    TRAIN_LOSS = PyTorchLogKeys.TRAIN_LOSS
+    VALIDATION_LOSS = PyTorchLogKeys.VAL_LOSS
+
+
 class ScalerKeys:
     """Keys for saving/loading scaler artifacts."""
     MEAN = "mean"
@@ -47,7 +53,7 @@ class EnsembleKeys:
 
 
 class PyTorchInferenceKeys:
-    """Keys for the output dictionaries of PyTorchInferenceHandler."""
+    """Keys for the output dictionaries of InferenceHandler classes."""
     # For regression tasks
     PREDICTIONS = "predictions"
     
@@ -118,6 +124,19 @@ class PyTorchCheckpointKeys:
     INITIAL_SEQUENCE = "initial_sequence"
     TARGET_NAME = "target_name"
     TARGET_NAMES = "target_names"
+
+
+class _FinalizedFileKeys:
+    """Keys for finalized model files."""
+    MODEL_WEIGHTS = PyTorchCheckpointKeys.MODEL_STATE
+    EPOCH = PyTorchCheckpointKeys.EPOCH
+    TASK = PyTorchCheckpointKeys.TASK
+    CLASSIFICATION_THRESHOLD = PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD
+    CLASS_MAP = PyTorchCheckpointKeys.CLASS_MAP
+    SEQUENCE_LENGTH = PyTorchCheckpointKeys.SEQUENCE_LENGTH
+    INITIAL_SEQUENCE = PyTorchCheckpointKeys.INITIAL_SEQUENCE
+    TARGET_NAME = PyTorchCheckpointKeys.TARGET_NAME
+    TARGET_NAMES = PyTorchCheckpointKeys.TARGET_NAMES
 
 
 class UtilityKeys:

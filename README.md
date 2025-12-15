@@ -55,10 +55,11 @@ pip install "dragon-ml-toolbox[ML]"
 
 ```Bash
 constants
-IO_tools
 data_exploration
 ETL_cleaning
 ETL_engineering
+IO_tools
+keys
 math_utilities
 ML_callbacks
 ML_chaining_inference
@@ -213,6 +214,7 @@ pip install "dragon-ml-toolbox[gui-torch]"
 constants
 IO_tools
 GUI_tools
+keys
 ML_models
 ML_models_advanced
 ML_sequence_models
