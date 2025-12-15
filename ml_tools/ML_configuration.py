@@ -37,7 +37,8 @@ from ._core._ML_configuration import (
     DragonAutoIntParams,
     
     # --- Training Config ---  
-    DragonTrainingConfig,  
+    DragonTrainingConfig,
+    DragonParetoConfig,
     info
 )
 
@@ -80,5 +81,6 @@ __all__ = [
     "DragonAutoIntParams",
     
     # --- Training Config ---
-    "DragonTrainingConfig"
+    "DragonTrainingConfig",
+    "DragonParetoConfig",
 ]

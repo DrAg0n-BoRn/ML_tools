@@ -196,6 +196,11 @@ class ParetoOptimizationKeys:
     """Used by the ML optimization pareto module."""
     PARETO_PLOTS_DIR = "Pareto_Plots"
     SQL_DATABASE_FILENAME = "OptimizationResults.db"
+    HISTORY_PLOTS_DIR = "History"
+    
+    # Plot Config values
+    FONT_PAD = 10
+    DPI = 400
 
 
 class OptimizationToolsKeys:

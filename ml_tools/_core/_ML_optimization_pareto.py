@@ -20,6 +20,7 @@ from evotorch.operators import functional as func_ops
 from ._SQL import DragonSQL
 from ._ML_inference import DragonInferenceHandler
 from ._ML_chaining_inference import DragonChainInference
+from ._ML_configuration import DragonParetoConfig
 from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
@@ -57,26 +58,21 @@ class DragonParetoOptimizer:
     def __init__(self,
                  inference_handler: Union[DragonInferenceHandler, DragonChainInference],
                  schema: FeatureSchema,
-                 target_objectives: Dict[str, Literal["min", "max"]],
-                 continuous_bounds_map: Union[Dict[str, Tuple[float, float]], Dict[str, List[float]]],
-                 population_size: int = 400,
-                 discretize_start_at_zero: bool = True):
+                 config: DragonParetoConfig):
         """
         Initialize the Pareto Optimizer.
 
         Args:
             inference_handler (DragonInferenceHandler | DragonChainInference): Validated model handler.
             schema (FeatureSchema): Feature schema for bounds and types.
-            target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
-                Example: {"price": "max", "error": "min"}
-            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}.
-            population_size (int): Size of the genetic population.
-            discretize_start_at_zero (bool): Categorical encoding start index.
+            config (DragonParetoConfig): Configuration for the Pareto optimizer.
         """
         self.inference_handler = inference_handler
         self.schema = schema
-        self.target_objectives = target_objectives
-        self.discretize_start_at_zero = discretize_start_at_zero
+        self.config = config
+        
+        self.target_objectives = config.target_objectives
+        self.discretize_start_at_zero = config.discretize_start_at_zero
         
         # Initialize state for results
         self.pareto_front: Optional[pd.DataFrame] = None
@@ -106,7 +102,7 @@ class DragonParetoOptimizer:
         
         available_targets = self.inference_handler.target_ids
 
-        for name, direction in target_objectives.items():
+        for name, direction in self.target_objectives.items():
             if name not in available_targets:
                 _LOGGER.error(f"Target '{name}' not found in model targets: {available_targets}")
                 raise ValueError()
@@ -124,8 +120,8 @@ class DragonParetoOptimizer:
         # Uses the external tool which reads the schema to set correct bounds for both continuous and categorical
         bounds = create_optimization_bounds(
             schema=schema,
-            continuous_bounds_map=continuous_bounds_map,
-            start_at_zero=discretize_start_at_zero
+            continuous_bounds_map=config.continuous_bounds_map,
+            start_at_zero=self.discretize_start_at_zero
         )
         self.lower_bounds = list(bounds[0])
         self.upper_bounds = list(bounds[1])
@@ -136,7 +132,7 @@ class DragonParetoOptimizer:
             target_indices=self.target_indices, # Used by Standard Handler
             target_names=self.ordered_target_names, # Used by Chain Handler
             categorical_index_map=schema.categorical_index_map,
-            discretize_start_at_zero=discretize_start_at_zero,
+            discretize_start_at_zero=self.discretize_start_at_zero,
             is_chain=self.is_chain
         )
 
@@ -155,7 +151,7 @@ class DragonParetoOptimizer:
         # GeneticAlgorithm. It automatically applies NSGA-II logic (Pareto sorting) when problem is multi-objective.
         self.algorithm = GeneticAlgorithm(
             self.problem,
-            popsize=population_size,
+            popsize=config.population_size,
             operators=[
                 SimulatedBinaryCrossOver(self.problem, tournament_size=3, eta=20.0, cross_over_rate=1.0),
                 GaussianMutation(self.problem, stdev=0.1)
@@ -163,21 +159,17 @@ class DragonParetoOptimizer:
             re_evaluate=False # model is deterministic
         )
 
-    def run(self, 
-            generations: int, 
-            save_dir: Union[str, Path],
-            log_interval: int = 10) -> pd.DataFrame:
+    def run(self) -> pd.DataFrame:
         """
         Execute the optimization with progress tracking and periodic logging.
-
-        Args:
-            generations (int): Number of generations to evolve.
-            save_dir (str|Path): Directory to save results and plots.
-            log_interval (int): How often (in generations) to log population statistics.
 
         Returns:
             pd.DataFrame: A DataFrame containing the non-dominated solutions (Pareto Front).
         """
+        generations = self.config.generations
+        save_dir = self.config.save_directory
+        log_interval = self.config.log_interval
+        
         save_path = make_fullpath(save_dir, make=True, enforce="directory")
         log_file = save_path / "optimization_log.txt"
         
@@ -189,26 +181,41 @@ class DragonParetoOptimizer:
         with open(log_file, "w") as f:
             f.write(f"Pareto Optimization Log - {generations} Generations\n")
             f.write("=" * 60 + "\n")
+            
+        # History tracking for visualization
+        history_records = []
 
         # --- Optimization Loop with Progress Bar ---
         with tqdm(total=generations, desc="Evolving Pareto Front", unit="gen") as pbar:
             for gen in range(1, generations + 1):
                 self.algorithm.step()
                 
+                # Capture stats for history (every generation for smooth plots)
+                current_evals = self.algorithm.population.evals.clone() # type: ignore
+                
+                gen_stats = {}
+                for i, target_name in enumerate(self.ordered_target_names):
+                    vals = current_evals[:, i]
+                    v_mean = float(vals.mean())
+                    v_min = float(vals.min())
+                    v_max = float(vals.max())
+                    
+                    # Store for plotting
+                    history_records.append({
+                        "Generation": gen,
+                        "Target": target_name,
+                        "Mean": v_mean,
+                        "Min": v_min,
+                        "Max": v_max
+                    })
+                    
+                    gen_stats[target_name] = (v_mean, v_min, v_max)
+                
                 # Periodic Logging of Population Stats to FILE
                 if gen % log_interval == 0 or gen == generations:
                     stats_msg = [f"Gen {gen}:"]
-                    
-                    # Get current population values
-                    current_evals = self.algorithm.population.evals
-                    
-                    for i, target_name in enumerate(self.ordered_target_names):
-                        vals = current_evals[:, i]
-                        v_mean = float(vals.mean())
-                        v_min = float(vals.min())
-                        v_max = float(vals.max())
-                        
-                        stats_msg.append(f"{target_name}: {v_mean:.3f} (Range: {v_min:.3f}-{v_max:.3f})")
+                    for t_name, (v_mean, v_min, v_max) in gen_stats.items():
+                        stats_msg.append(f"{t_name}: {v_mean:.3f} (Range: {v_min:.3f}-{v_max:.3f})")
                     
                     log_line = " | ".join(stats_msg)
                     
@@ -217,6 +224,12 @@ class DragonParetoOptimizer:
                         f.write(log_line + "\n")
                 
                 pbar.update(1)
+        
+        # --- Post-Optimization Visualization ---
+        if history_records:
+            _LOGGER.debug("Generating optimization history plots...")
+            history_df = pd.DataFrame(history_records)
+            self._plot_optimization_history(history_df, save_path)
 
         # --- Extract Pareto Front ---
         # Manually identify the Pareto front from the final population using domination counts
@@ -289,10 +302,6 @@ class DragonParetoOptimizer:
         return pareto_df
     
     def save_solutions(self, 
-                       filename: str = "Pareto_Solutions", 
-                       save_dir: Optional[Union[str, Path]] = None, 
-                       columns_to_round: Optional[List[str]] = None,
-                       float_precision: int = 4,
                        save_to_sql: bool = False,
                        sql_table_name: Optional[str] = None,
                        sql_if_exists: Literal['fail', 'replace', 'append'] = 'replace') -> None:
@@ -301,12 +310,8 @@ class DragonParetoOptimizer:
         for specific continuous columns. Optionally saves to a SQL database.
 
         Args:
-            save_dir (str | Path | None): Directory to save the CSV. If None, uses the optimization directory.
-            filename (str): Name of the file (without .csv extension).
-            columns_to_round (List[str], optional): List of continuous column names that should be rounded to the nearest integer.
-            float_precision (int): Number of decimal places to round standard float columns.
             save_to_sql (bool): If True, also writes the results to a SQLite database in the save_dir.
-            sql_table_name (str, optional): Specific table name for SQL. If None, uses 'filename'.
+            sql_table_name (str, optional): Specific table name for SQL. If None, uses the solutions filename.
             sql_if_exists (str): Behavior if SQL table exists ('fail', 'replace', 'append').
         """
         if self.pareto_front is None:
@@ -314,11 +319,15 @@ class DragonParetoOptimizer:
             raise ValueError()
         
         # handle directory
-        if save_dir is None:
-            if self._metrics_dir is None:
-                _LOGGER.error("No save directory specified and no optimization directory found.")
-                raise ValueError()
-            save_dir = self._metrics_dir
+        save_path = self._metrics_dir
+        if save_path is None:
+            _LOGGER.error("No save directory found. Cannot save solutions.")
+            raise ValueError()
+        
+        # unpack values from config
+        filename = self.config.solutions_filename
+        columns_to_round = self.config.columns_to_round
+        float_precision = self.config.float_precision
 
         # Create a copy to avoid modifying the internal state
         df_to_save = self.pareto_front.copy()
@@ -354,8 +363,6 @@ class DragonParetoOptimizer:
             df_to_save[float_cols] = df_to_save[float_cols].round(float_precision)
 
         # Save CSV
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
-        
         # sanitize filename and add extension if missing
         sanitized_filename = sanitize_filename(filename)
         csv_filename = sanitized_filename if sanitized_filename.lower().endswith(".csv") else f"{sanitized_filename}.csv"
@@ -577,7 +584,7 @@ class DragonParetoOptimizer:
         """Standard 2D scatter plot."""
         x_name, y_name = self.ordered_target_names[0], self.ordered_target_names[1]
         
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=self.config.plot_size, dpi=ParetoOptimizationKeys.DPI)
         
         # Use a color gradient based on the Y-axis to make "better" values visually distinct
         sns.scatterplot(
@@ -592,7 +599,7 @@ class DragonParetoOptimizer:
             legend=False
         )
         
-        plt.title(f"Pareto Front: {x_name} vs {y_name}", fontsize=14)
+        plt.title(f"Pareto Front: {x_name} vs {y_name}", fontsize=self.config.plot_font_size + 2, pad=ParetoOptimizationKeys.FONT_PAD)
         plt.grid(True, linestyle='--', alpha=0.6)
         
         # Add simple annotation for the 'corners' (extremes)
@@ -616,8 +623,7 @@ class DragonParetoOptimizer:
                        x_target: Union[int, str],
                        y_target: Union[int, str],
                        z_target: Union[int, str],
-                       hue_target: Optional[Union[int, str]] = None,
-                       save_dir: Optional[Union[str, Path]] = None,):
+                       hue_target: Optional[Union[int, str]] = None):
         """
         Public API to generate 3D visualizations for specific targets.
         
@@ -626,15 +632,11 @@ class DragonParetoOptimizer:
             y_target (int|str): Index or name of the target for the Y axis.
             z_target (int|str): Index or name of the target for the Z axis.
             hue_target (int|str, optional): Index or name of the target for coloring. Defaults to z_target if None.
-            save_dir (str|Path, optional): Directory to save plots. Defaults to the directory used during optimization.
         """
-        if save_dir is None:
-            if self._metrics_dir is None:
-                _LOGGER.error("No save directory specified and no previous optimization directory found.")
-                raise ValueError()
-            save_dir = self._metrics_dir
-        
-        save_path_root = make_fullpath(save_dir, make=True, enforce="directory")
+        if self._metrics_dir is None:
+            _LOGGER.error("No save directory specified and no previous optimization directory found.")
+            raise ValueError()
+        save_path_root = self._metrics_dir
         
         save_path = make_fullpath(save_path_root / ParetoOptimizationKeys.PARETO_PLOTS_DIR, make=True, enforce="directory")
         
@@ -715,6 +717,58 @@ class DragonParetoOptimizer:
         
         html_path = sub_dir_path / f"Pareto_3D_Interactive.html"
         fig_html.write_html(str(html_path))
+
+    def _plot_optimization_history(self, history_df: pd.DataFrame, save_dir: Path):
+        """
+        Generates convergence plots (Mean/Min/Max) for each objective over generations.
+        
+        Args:
+            history_df: DataFrame with cols [Generation, Target, Mean, Min, Max]
+            save_dir: Base directory to save plots
+        """
+        # Create subdirectory for history plots
+        plot_dir = make_fullpath(save_dir / ParetoOptimizationKeys.HISTORY_PLOTS_DIR, make=True, enforce="directory")
+        
+        unique_targets = history_df["Target"].unique()
+        
+        for target in unique_targets:
+            subset = history_df[history_df["Target"] == target]
+            
+            # Determine direction (just for annotation/context if needed, but plotting stats is neutral)
+            direction = self.target_objectives.get(target, "unknown")
+            
+            plt.figure(figsize=self.config.plot_size, dpi=ParetoOptimizationKeys.DPI)
+            
+            # Plot Mean
+            plt.plot(subset["Generation"], subset["Mean"], label="Population Mean", color="#4c72b0", linewidth=2)
+            
+            # Plot Min/Max Range
+            plt.fill_between(
+                subset["Generation"], 
+                subset["Min"], 
+                subset["Max"], 
+                color="#4c72b0", 
+                alpha=0.15, 
+                label="Min-Max Range"
+            )
+            
+            # Plot extremes as dashed lines
+            plt.plot(subset["Generation"], subset["Min"], linestyle="--", color="#55a868", alpha=0.6, linewidth=1, label="Min")
+            plt.plot(subset["Generation"], subset["Max"], linestyle="--", color="#c44e52", alpha=0.6, linewidth=1, label="Max")
+
+            plt.title(f"Convergence History: {target} ({direction.upper()})", fontsize=self.config.plot_font_size + 2, pad=ParetoOptimizationKeys.FONT_PAD)
+            plt.xlabel("Generation", labelpad=ParetoOptimizationKeys.FONT_PAD, fontsize=self.config.plot_font_size)
+            plt.ylabel("Target Value", labelpad=ParetoOptimizationKeys.FONT_PAD, fontsize=self.config.plot_font_size)
+            plt.legend(loc='best', fontsize=self.config.plot_font_size)
+            plt.grid(True, linestyle="--", alpha=0.5)
+            plt.xticks(fontsize=self.config.plot_font_size - 4)
+            plt.yticks(fontsize=self.config.plot_font_size - 4)
+            
+            plt.tight_layout()
+            
+            fname = f"Convergence_{sanitize_filename(target)}.svg"
+            plt.savefig(plot_dir / fname, bbox_inches='tight')
+            plt.close()
 
 class _ParetoFitnessEvaluator:
     """

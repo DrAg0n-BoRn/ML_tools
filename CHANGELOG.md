@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.8.0] 2025-12-15
+
+### Changed
+
+- ML_configuration:
+    - `DragonTrainingConfig`, added support for arbitrary keyword arguments to enhance flexibility and future-proofing.
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer`, Initialized from a `DragonParetoConfig` instance for consistent configuration management. Simplifying method signatures.
+    - `DragonParetoOptimizer.run()`, now plots the genetic algorithm history for each target.
+
+### Added
+
+- ML_configuration:
+    - `DragonParetoConfig`, Configuration class for Pareto optimization tasks.
+
 ## [19.7.0] 2025-12-15
 
 ### Changed

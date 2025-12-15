@@ -1,4 +1,5 @@
-from typing import Union, Optional, List, Any, Dict, Literal
+from typing import Union, Optional, List, Any, Dict, Literal, Tuple
+from pathlib import Path
 from collections.abc import Mapping
 import numpy as np
 
@@ -51,7 +52,8 @@ __all__ = [
     "DragonAutoIntParams",
     
     # --- Training Config ---
-    "DragonTrainingConfig"
+    "DragonTrainingConfig",
+    "DragonParetoConfig"
 ]
 
 
@@ -445,6 +447,9 @@ class _BaseModelParams(Mapping):
             if isinstance(v, FeatureSchema):
                 # Force the repr() string, otherwise json.dump treats it as a list
                 clean_dict[k] = repr(v)
+            elif isinstance(v, Path):
+                # JSON cannot serialize Path objects, convert to string
+                clean_dict[k] = str(v)
             else:
                 clean_dict[k] = v
         return clean_dict
@@ -646,6 +651,8 @@ class DragonTrainingConfig(_BaseModelParams):
     Configuration object for the training process.
     
     Can be unpacked as a dictionary for logging or accessed as an object.
+    
+    Accepts arbitrary keyword arguments which are set as instance attributes.
     """
     def __init__(self,
                  validation_size: float,
@@ -656,7 +663,7 @@ class DragonTrainingConfig(_BaseModelParams):
                  early_stop_patience: Optional[int] = None,
                  scheduler_patience: Optional[int] = None,
                  scheduler_lr_factor: Optional[float] = None,
-                 scheduler_threshold: Optional[float] = None) -> None:
+                 **kwargs: Any) -> None:
         self.validation_size = validation_size
         self.test_size = test_size
         self.initial_learning_rate = initial_learning_rate
@@ -665,7 +672,75 @@ class DragonTrainingConfig(_BaseModelParams):
         self.early_stop_patience = early_stop_patience
         self.scheduler_patience = scheduler_patience
         self.scheduler_lr_factor = scheduler_lr_factor
-        self.scheduler_threshold = scheduler_threshold
+        
+        # Process kwargs with validation
+        for key, value in kwargs.items():
+            # Python guarantees 'key' is a string for **kwargs
+            
+            # Allow None in value
+            if value is None:
+                setattr(self, key, value)
+                continue
+            
+            if isinstance(value, dict):
+                _LOGGER.error("Nested dictionaries are not supported, unpack them first.")
+                raise TypeError()
+            
+            # Check if value is a number or a string or a JSON supported type, except dict
+            if not isinstance(value, (str, int, float, bool, list, tuple)):
+                _LOGGER.error(f"Invalid type for configuration '{key}': {type(value).__name__}")
+                raise TypeError()
+            
+            setattr(self, key, value)
+
+
+class DragonParetoConfig(_BaseModelParams):
+    """
+    Configuration object for the Pareto Optimization process.
+    """
+    def __init__(self,
+                 save_directory: Union[str, Path],
+                 target_objectives: Dict[str, Literal["min", "max"]],
+                 continuous_bounds_map: Union[Dict[str, Tuple[float, float]], Dict[str, List[float]]],
+                 columns_to_round: Optional[List[str]] = None,
+                 population_size: int = 400,
+                 generations: int = 1000,
+                 solutions_filename: str = "ParetoSolutions",
+                 float_precision: int = 4,
+                 log_interval: int = 10,
+                 plot_size: Tuple[int, int] = (10, 7),
+                 plot_font_size: int = 16,
+                 discretize_start_at_zero: bool = True):
+        """  
+        Configure the Pareto Optimizer.
+
+        Args:
+            save_directory (str | Path): Directory to save artifacts.
+            target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
+                Example: {"price": "max", "error": "min"}
+            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}.
+            columns_to_round (List[str] | None): List of continuous column names that should be rounded to the nearest integer.
+            population_size (int): Size of the genetic population.
+            generations (int): Number of generations to run.
+            solutions_filename (str): Filename for saving Pareto solutions.
+            float_precision (int): Number of decimal places to round standard float columns.
+            log_interval (int): Interval for logging progress.
+            plot_size (Tuple[int, int]): Size of the 2D plots.
+            plot_font_size (int): Font size for plot text.
+            discretize_start_at_zero (bool): Categorical encoding start index. True=0, False=1.
+        """
+        self.save_directory = save_directory
+        self.target_objectives = target_objectives
+        self.continuous_bounds_map = continuous_bounds_map
+        self.columns_to_round = columns_to_round
+        self.population_size = population_size
+        self.generations = generations
+        self.solutions_filename = solutions_filename
+        self.float_precision = float_precision
+        self.log_interval = log_interval
+        self.plot_size = plot_size
+        self.plot_font_size = plot_font_size
+        self.discretize_start_at_zero = discretize_start_at_zero
 
 
 # ----------------------------
