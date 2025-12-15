@@ -44,6 +44,7 @@ __all__ = [
 
 DPI_value = _EvaluationConfig.DPI
 REGRESSION_PLOT_SIZE = _EvaluationConfig.REGRESSION_PLOT_SIZE
+CLASSIFICATION_PLOT_SIZE = _EvaluationConfig.CLASSIFICATION_PLOT_SIZE
 
 
 def multi_target_regression_metrics(
@@ -88,8 +89,13 @@ def multi_target_regression_metrics(
         format_config = config
 
     # --- Set Matplotlib font size ---
-    original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': format_config.font_size})
+    # original_rc_params = plt.rcParams.copy()
+    # plt.rcParams.update({'font.size': format_config.font_size})
+    
+    # ticks font sizes 
+    xtick_size = format_config.xtick_size
+    ytick_size = format_config.ytick_size
+    base_font_size = format_config.font_size
 
     _LOGGER.debug("--- Multi-Target Regression Evaluation ---")
 
@@ -105,11 +111,11 @@ def multi_target_regression_metrics(
         r2 = r2_score(true_i, pred_i)
         medae = median_absolute_error(true_i, pred_i)
         metrics_summary.append({
-            'target': name,
-            'rmse': rmse,
-            'mae': mae,
-            'r2_score': r2,
-            'median_abs_error': medae
+            'Target': name,
+            'RMSE': rmse,
+            'MAE': mae,
+            'MedAE': medae,
+            'R2-score': r2,
         })
 
         # --- Save Residual Plot ---
@@ -121,9 +127,14 @@ def multi_target_regression_metrics(
                        s=50,
                        color=format_config.scatter_color) # Use config color
         ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--') # Use config color
-        ax_res.set_xlabel("Predicted Values")
-        ax_res.set_ylabel("Residuals")
-        ax_res.set_title(f"Residual Plot for '{name}'")
+        ax_res.set_xlabel("Predicted Values", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_res.set_ylabel("Residuals", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_res.set_title(f"Residual Plot for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        
+        # Apply Ticks
+        ax_res.tick_params(axis='x', labelsize=xtick_size)
+        ax_res.tick_params(axis='y', labelsize=ytick_size)
+        
         ax_res.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
         res_path = save_dir_path / f"residual_plot_{sanitized_name}.svg"
@@ -141,9 +152,14 @@ def multi_target_regression_metrics(
                     linestyle='--', 
                     lw=2,
                     color=format_config.ideal_line_color) # Use config color
-        ax_tvp.set_xlabel('True Values')
-        ax_tvp.set_ylabel('Predicted Values')
-        ax_tvp.set_title(f"True vs. Predicted for '{name}'")
+        ax_tvp.set_xlabel('True Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_tvp.set_ylabel('Predicted Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_tvp.set_title(f"True vs. Predicted for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        
+        # Apply Ticks
+        ax_tvp.tick_params(axis='x', labelsize=xtick_size)
+        ax_tvp.tick_params(axis='y', labelsize=ytick_size)
+        
         ax_tvp.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
         tvp_path = save_dir_path / f"true_vs_predicted_plot_{sanitized_name}.svg"
@@ -157,7 +173,7 @@ def multi_target_regression_metrics(
     _LOGGER.info(f"Full regression report saved to '{report_path.name}'")
     
     # --- Restore RC params ---
-    plt.rcParams.update(original_rc_params)
+    # plt.rcParams.update(original_rc_params)
 
 
 def multi_label_classification_metrics(
@@ -205,10 +221,14 @@ def multi_label_classification_metrics(
     # y_pred is now passed in directly, no threshold needed.
     
     # --- Save current RC params and update font size ---
-    original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': format_config.font_size})
+    # original_rc_params = plt.rcParams.copy()
+    # plt.rcParams.update({'font.size': format_config.font_size})
 
-    # _LOGGER.info("--- Multi-Label Classification Evaluation ---")
+    # ticks and legend font sizes
+    xtick_size = format_config.xtick_size
+    ytick_size = format_config.ytick_size
+    legend_size = format_config.legend_size
+    base_font_size = format_config.font_size
 
     # --- Calculate and Save Overall Metrics (using y_pred) ---
     h_loss = hamming_loss(y_true, y_pred)
@@ -224,7 +244,7 @@ def multi_label_classification_metrics(
         f"--------------------------------------------------\n"
     )
     # print(overall_report)
-    overall_report_path = save_dir_path / "classification_report_overall.txt"
+    overall_report_path = save_dir_path / "classification_report.txt"
     overall_report_path.write_text(overall_report)
 
     # --- Per-Label Metrics and Plots ---
@@ -241,14 +261,15 @@ def multi_label_classification_metrics(
         report_path.write_text(report_text) # type: ignore
 
         # --- Save Confusion Matrix (uses y_pred) ---
-        fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        fig_cm, ax_cm = plt.subplots(figsize=_EvaluationConfig.CM_SIZE, dpi=_EvaluationConfig.DPI)
         disp_ = ConfusionMatrixDisplay.from_predictions(true_i, 
                                                 pred_i, 
                                                 cmap=format_config.cmap, # Use config cmap
                                                 ax=ax_cm, 
                                                 normalize='true',
                                                 labels=[0, 1],
-                                                display_labels=["Negative", "Positive"])
+                                                display_labels=["Negative", "Positive"],
+                                                colorbar=False)
         
         disp_.im_.set_clim(vmin=0.0, vmax=1.0)
         
@@ -257,11 +278,26 @@ def multi_label_classification_metrics(
         
         # Manually update font size of cell texts
         for text in ax_cm.texts:
-            text.set_fontsize(format_config.font_size) # Use config font_size
-
-        fig_cm.tight_layout()
+            text.set_fontsize(base_font_size + 2) # Use config font_size
+            
+        # Apply ticks 
+        ax_cm.tick_params(axis='x', labelsize=xtick_size)
+        ax_cm.tick_params(axis='y', labelsize=ytick_size)
         
-        ax_cm.set_title(f"Confusion Matrix for '{name}'")
+        # Set titles and labels with padding
+        ax_cm.set_title(f"Confusion Matrix for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        
+        # --- ADJUST COLORBAR FONT & SIZE---
+        # Manually add the colorbar with the 'shrink' parameter
+        cbar = fig_cm.colorbar(disp_.im_, ax=ax_cm, shrink=0.8)
+
+        # Update the tick size on the new cbar object
+        cbar.ax.tick_params(labelsize=ytick_size)  # type: ignore
+        
+        plt.tight_layout()
+        
         cm_path = save_dir_path / f"confusion_matrix_{sanitized_name}.svg"
         plt.savefig(cm_path)
         plt.close(fig_cm)
@@ -302,12 +338,23 @@ def multi_label_classification_metrics(
             _LOGGER.warning(f"Could not calculate or save optimal threshold for '{name}': {e}")
         
         auc = roc_auc_score(true_i, prob_i)
-        fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        fig_roc, ax_roc = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
         ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
-        ax_roc.set_title(f'ROC Curve for "{name}"')
-        ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
-        ax_roc.legend(loc='lower right'); ax_roc.grid(True, linestyle='--', alpha=0.6)
+        
+        ax_roc.set_title(f'ROC Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        
+        # Apply ticks and legend font size
+        ax_roc.tick_params(axis='x', labelsize=xtick_size)
+        ax_roc.tick_params(axis='y', labelsize=ytick_size)
+        ax_roc.legend(loc='lower right', fontsize=legend_size)
+        
+        ax_roc.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
+        
         roc_path = save_dir_path / f"roc_curve_{sanitized_name}.svg"
         plt.savefig(roc_path)
         plt.close(fig_roc)
@@ -315,17 +362,27 @@ def multi_label_classification_metrics(
         # --- Save Precision-Recall Curve (uses y_prob) ---
         precision, recall, _ = precision_recall_curve(true_i, prob_i)
         ap_score = average_precision_score(true_i, prob_i)
-        fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+        fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
         ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=format_config.ROC_PR_line) # Use config color
-        ax_pr.set_title(f'Precision-Recall Curve for "{name}"')
-        ax_pr.set_xlabel('Recall'); ax_pr.set_ylabel('Precision')
-        ax_pr.legend(loc='lower left'); ax_pr.grid(True, linestyle='--', alpha=0.6)
+        ax_pr.set_title(f'Precision-Recall Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        
+        # Apply ticks and legend font size
+        ax_pr.tick_params(axis='x', labelsize=xtick_size)
+        ax_pr.tick_params(axis='y', labelsize=ytick_size)
+        ax_pr.legend(loc='lower left', fontsize=legend_size)
+        
+        ax_pr.grid(True, linestyle='--', alpha=0.6)
+        
+        fig_pr.tight_layout()
+        
         pr_path = save_dir_path / f"pr_curve_{sanitized_name}.svg"
         plt.savefig(pr_path)
         plt.close(fig_pr)
         
     # restore RC params
-    plt.rcParams.update(original_rc_params)
+    # plt.rcParams.update(original_rc_params)
 
     _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")
 

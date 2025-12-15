@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.7.0] 2025-12-15
+
+### Changed
+
+- ML_configuration: Added font size configuration to metrics format classes for better plot customization:
+    - `RegressionMetricsFormat`
+    - `MultiTargetRegressionMetricsFormat`
+    - `BinaryClassificationMetricsFormat`
+    - `MultiClassClassificationMetricsFormat`
+    - `BinaryImageClassificationMetricsFormat`
+    - `MultiClassImageClassificationMetricsFormat`
+    - `MultiLabelBinaryClassificationMetricsFormat`
+- ML_evaluation:
+    - `classification_metrics()`, added support for font size configuration.
+    - `regression_metrics()`, added support for font size configuration.
+- ML_evaluation_multi:
+    - `multi_target_classification_metrics()`, added support for font size configuration.
+    - `multi_target_regression_metrics()`, added support for font size configuration.
+
 ## [19.6.0] 2025-12-14
 
 ### Added

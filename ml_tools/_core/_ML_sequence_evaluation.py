@@ -186,7 +186,7 @@ def sequence_to_sequence_metrics(
     _LOGGER.info(f"📝 Seq-to-Seq per-step report saved as '{report_path.name}'")
 
     # --- Create and save plot ---
-    fig, ax1 = plt.subplots(figsize=format_config.plot_figsize, dpi=DPI_value)
+    fig, ax1 = plt.subplots(figsize=SEQUENCE_PLOT_SIZE, dpi=DPI_value)
 
     # Plot RMSE
     color_rmse = format_config.rmse_color

@@ -48,6 +48,7 @@ __all__ = [
 
 DPI_value = _EvaluationConfig.DPI
 REGRESSION_PLOT_SIZE = _EvaluationConfig.REGRESSION_PLOT_SIZE
+CLASSIFICATION_PLOT_SIZE = _EvaluationConfig.CLASSIFICATION_PLOT_SIZE
 
 
 def plot_losses(history: dict, save_dir: Union[str, Path]):
@@ -67,7 +68,7 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
         _LOGGER.warning("Loss history is empty or incomplete. Cannot plot.")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=DPI_value)
+    fig, ax = plt.subplots(figsize=_EvaluationConfig.LOSS_PLOT_SIZE, dpi=DPI_value)
     
     # --- Plot Losses (Left Y-axis) ---
     line_handles = [] # To store line objects for the legend
@@ -84,10 +85,11 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
         line2, = ax.plot(epochs, val_loss, 'o-', label='Validation Loss', color='tab:orange')
         line_handles.append(line2)
     
-    ax.set_title('Training and Validation Loss')
-    ax.set_xlabel('Epochs')
-    ax.set_ylabel('Loss', color='tab:blue')
-    ax.tick_params(axis='y', labelcolor='tab:blue')
+    ax.set_title('Training and Validation Loss', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE + 2, pad=_EvaluationConfig.LABEL_PADDING)
+    ax.set_xlabel('Epochs', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax.set_ylabel('Loss', color='tab:blue', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax.tick_params(axis='y', labelcolor='tab:blue', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
+    ax.tick_params(axis='x', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
     ax.grid(True, linestyle='--')
     
     # --- Plot Learning Rate (Right Y-axis) ---
@@ -97,13 +99,17 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
         line3, = ax2.plot(epochs, lr_history, 'g--', label='Learning Rate')
         line_handles.append(line3)
         
-        ax2.set_ylabel('Learning Rate', color='g')
-        ax2.tick_params(axis='y', labelcolor='g')
+        ax2.set_ylabel('Learning Rate', color='g', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax2.tick_params(axis='y', labelcolor='g', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
         # Use scientific notation if the LR is very small
         ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        # increase the size of the scientific notation
+        ax2.yaxis.get_offset_text().set_fontsize(_EvaluationConfig.LOSS_PLOT_TICK_SIZE - 2)
+        # remove grid from second y-axis
+        ax2.grid(False)
     
     # Combine legends from both axes
-    ax.legend(handles=line_handles, loc='best')
+    ax.legend(handles=line_handles, loc='best', fontsize=_EvaluationConfig.LOSS_PLOT_LEGEND_SIZE)
     
     # ax.grid(True)
     plt.tight_layout()    
@@ -142,10 +148,17 @@ def classification_metrics(save_dir: Union[str, Path],
     else:
         format_config = config
     
-    original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': format_config.font_size})
+    # original_rc_params = plt.rcParams.copy()
+    # plt.rcParams.update({'font.size': format_config.font_size})
     
-    # print("--- Classification Report ---")
+    # --- Set Font Sizes ---
+    xtick_size = format_config.xtick_size
+    ytick_size = format_config.ytick_size
+    legend_size = format_config.legend_size
+    
+    # config font size for heatmap
+    cm_font_size = format_config.cm_font_size
+    cm_tick_size = cm_font_size - 4
     
     # --- Parse class_map ---
     map_labels = None
@@ -176,61 +189,122 @@ def classification_metrics(save_dir: Union[str, Path],
     try:
         # Create DataFrame from report
         report_df = pd.DataFrame(report_dict)
-        
-        # 1. Drop the 'accuracy' column (single float)
-        if 'accuracy' in report_df.columns:
-            report_df = report_df.drop(columns=['accuracy'])
-        
-        # 2. Select all metric rows *except* the last one ('support')
-        # 3. Transpose the DataFrame
-        plot_df = report_df.iloc[:-1, :].T
-        
-        fig_height = max(5.0, len(plot_df.index) * 0.5 + 2.0)
-        plt.figure(figsize=(7, fig_height), dpi=DPI_value)
 
-        sns.set_theme(font_scale=1.2) # Scale seaborn font
+        # 1. Robust Cleanup: Drop by name, not position
+        # Remove 'accuracy' column if it exists (handles the scalar value issue)
+        report_df = report_df.drop(columns=['accuracy'], errors='ignore')
+
+        # Remove 'support' row explicitly (safer than iloc[:-1])
+        if 'support' in report_df.index:
+            report_df = report_df.drop(index='support')
+
+        # 2. Transpose: Rows = Classes, Cols = Metrics
+        plot_df = report_df.T
+
+        # 3. Dynamic Height Calculation
+        # (Base height of 4 + 0.5 inches per class row)
+        fig_height = max(5.0, len(plot_df.index) * 0.5 + 4.0)
+        fig_width = 8.0 # Set a fixed width
+
+        # --- Use calculated dimensions, not the config constant ---
+        fig_heat, ax_heat = plt.subplots(figsize=(fig_width, fig_height), dpi=_EvaluationConfig.DPI)
+
+        # sns.set_theme(font_scale=1.4)
         sns.heatmap(plot_df, 
                     annot=True, 
                     cmap=format_config.cmap, 
                     fmt='.2f',
                     vmin=0.0,
-                    vmax=1.0)
-        sns.set_theme(font_scale=1.0) # Reset seaborn scale
-        plt.title("Classification Report Heatmap")
+                    vmax=1.0,
+                    cbar_kws={'shrink': 0.9}) # Shrink colorbar slightly to fit better
+
+        # sns.set_theme(font_scale=1.0)
+
+        ax_heat.set_title("Classification Report Heatmap", pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
+        
+        # manually increase the font size of the elements
+        for text in ax_heat.texts:
+            text.set_fontsize(cm_tick_size)
+            
+        # manually increase the size of the colorbar ticks
+        cbar = ax_heat.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=cm_tick_size - 4) # type: ignore
+
+        # Update Ticks
+        ax_heat.tick_params(axis='x', labelsize=cm_tick_size, pad=_EvaluationConfig.LABEL_PADDING)
+        ax_heat.tick_params(axis='y', labelsize=cm_tick_size, pad=_EvaluationConfig.LABEL_PADDING, rotation=0) # Ensure Y labels are horizontal
+
         plt.tight_layout()
+        
         heatmap_path = save_dir_path / "classification_report_heatmap.svg"
         plt.savefig(heatmap_path)
         _LOGGER.info(f"📊 Report heatmap saved as '{heatmap_path.name}'")
-        plt.close()
+        plt.close(fig_heat)
+        
     except Exception as e:
         _LOGGER.error(f"Could not generate classification report heatmap: {e}")
-        
+    
     # --- labels for Confusion Matrix ---
     plot_labels = map_labels
     plot_display_labels = map_display_labels
     
-    # Save Confusion Matrix
-    fig_cm, ax_cm = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+    # 1. DYNAMIC SIZE CALCULATION
+    # Calculate figure size based on number of classes. 
+    n_classes = len(plot_labels) if plot_labels is not None else len(np.unique(y_true))
+    # Ensure a minimum size so very small matrices aren't tiny
+    fig_w = max(9, n_classes * 0.8 + 3)
+    fig_h = max(8, n_classes * 0.8 + 2)
+    
+    # Use the calculated size instead of CLASSIFICATION_PLOT_SIZE
+    fig_cm, ax_cm = plt.subplots(figsize=(fig_w, fig_h), dpi=DPI_value)
     disp_ = ConfusionMatrixDisplay.from_predictions(y_true, 
                                             y_pred, 
                                             cmap=format_config.cmap, 
                                             ax=ax_cm, 
                                             normalize='true',
                                             labels=plot_labels,
-                                            display_labels=plot_display_labels)
+                                            display_labels=plot_display_labels,
+                                            colorbar=False)
     
     disp_.im_.set_clim(vmin=0.0, vmax=1.0)
     
     # Turn off gridlines
     ax_cm.grid(False)
     
-    # Manually update font size of cell texts
+    # 2. CHECK FOR FONT CLASH
+    # If matrix is huge, force text smaller. If small, allow user config.
+    final_font_size = cm_font_size + 2
+    if n_classes > 2: 
+         final_font_size = cm_font_size - n_classes  # Decrease font size for larger matrices
+    
     for text in ax_cm.texts:
-        text.set_fontsize(format_config.font_size)
+        text.set_fontsize(final_font_size)
+    
+    # Update Ticks for Confusion Matrix
+    ax_cm.tick_params(axis='x', labelsize=cm_tick_size)
+    ax_cm.tick_params(axis='y', labelsize=cm_tick_size)
+    
+    #if more than 3 classes, rotate x ticks
+    if n_classes > 3:
+        plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
 
+    # Set titles and labels with padding
+    ax_cm.set_title("Confusion Matrix", pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size + 2)
+    ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
+    ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
+    
+    # --- ADJUST COLORBAR FONT & SIZE---
+    # Manually add the colorbar with the 'shrink' parameter
+    cbar = fig_cm.colorbar(disp_.im_, ax=ax_cm, shrink=0.8)
+
+    # Update the tick size on the new cbar object
+    cbar.ax.tick_params(labelsize=cm_tick_size) 
+
+    # (Optional) add a label to the bar itself (e.g. "Probability")
+    # cbar.set_label('Probability', fontsize=12)
+    
     fig_cm.tight_layout()
     
-    ax_cm.set_title("Confusion Matrix")
     cm_path = save_dir_path / "confusion_matrix.svg"
     plt.savefig(cm_path)
     _LOGGER.info(f"❇️ Confusion matrix saved as '{cm_path.name}'")
@@ -335,34 +409,50 @@ def classification_metrics(save_dir: Union[str, Path],
             # Calculate AUC. 
             auc = roc_auc_score(y_true_binary, y_score) 
             
-            fig_roc, ax_roc = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+            fig_roc, ax_roc = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
             ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line)
             ax_roc.plot([0, 1], [0, 1], 'k--')
-            ax_roc.set_title(f'Receiver Operating Characteristic{plot_title}')
-            ax_roc.set_xlabel('False Positive Rate')
-            ax_roc.set_ylabel('True Positive Rate')
-            ax_roc.legend(loc='lower right')
+            ax_roc.set_title(f'Receiver Operating Characteristic{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
+            ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
+            
+            # Apply Ticks and Legend sizing
+            ax_roc.tick_params(axis='x', labelsize=xtick_size)
+            ax_roc.tick_params(axis='y', labelsize=ytick_size)
+            ax_roc.legend(loc='lower right', fontsize=legend_size)
+            
             ax_roc.grid(True)
             roc_path = save_dir_path / f"roc_curve{save_suffix}.svg"
+            
+            plt.tight_layout()
+            
             plt.savefig(roc_path)
             plt.close(fig_roc)
 
             # --- Save Precision-Recall Curve ---
             precision, recall, _ = precision_recall_curve(y_true_binary, y_score)
             ap_score = average_precision_score(y_true_binary, y_score)
-            fig_pr, ax_pr = plt.subplots(figsize=(6, 6), dpi=DPI_value)
+            fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
             ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=format_config.ROC_PR_line)
-            ax_pr.set_title(f'Precision-Recall Curve{plot_title}')
-            ax_pr.set_xlabel('Recall')
-            ax_pr.set_ylabel('Precision')
-            ax_pr.legend(loc='lower left')
+            ax_pr.set_title(f'Precision-Recall Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
+            ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
+            
+            # Apply Ticks and Legend sizing
+            ax_pr.tick_params(axis='x', labelsize=xtick_size)
+            ax_pr.tick_params(axis='y', labelsize=ytick_size)
+            ax_pr.legend(loc='lower left', fontsize=legend_size)
+            
             ax_pr.grid(True)
             pr_path = save_dir_path / f"pr_curve{save_suffix}.svg"
+            
+            plt.tight_layout()
+            
             plt.savefig(pr_path)
             plt.close(fig_pr)
             
             # --- Save Calibration Plot ---
-            fig_cal, ax_cal = plt.subplots(figsize=(8, 8), dpi=DPI_value)
+            fig_cal, ax_cal = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
 
             # --- Step 1: Get binned data *without* plotting ---
             with plt.ioff(): # Suppress showing the temporary plot
@@ -386,7 +476,7 @@ def classification_metrics(save_dir: Union[str, Path],
                 y=line_y,
                 ax=ax_cal,
                 scatter=False, 
-                label=f"Calibration Curve ({format_config.calibration_bins} bins)",
+                label=f"Model calibration",
                 line_kws={
                     'color': format_config.ROC_PR_line, 
                     'linestyle': '--', 
@@ -394,15 +484,19 @@ def classification_metrics(save_dir: Union[str, Path],
                     }
             )
             
-            ax_cal.set_title(f'Reliability Curve{plot_title}')
-            ax_cal.set_xlabel('Mean Predicted Probability')
-            ax_cal.set_ylabel('Fraction of Positives')
+            ax_cal.set_title(f'Reliability Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
+            ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
             # --- Step 3: Set final limits *after* plotting ---
             ax_cal.set_ylim(0.0, 1.0) 
             ax_cal.set_xlim(0.0, 1.0)
             
-            ax_cal.legend(loc='lower right')
+            # Apply Ticks and Legend sizing
+            ax_cal.tick_params(axis='x', labelsize=xtick_size)
+            ax_cal.tick_params(axis='y', labelsize=ytick_size)
+            ax_cal.legend(loc='lower right', fontsize=legend_size)
+            
             ax_cal.grid(True)
             plt.tight_layout()
             
@@ -413,7 +507,7 @@ def classification_metrics(save_dir: Union[str, Path],
         _LOGGER.info(f"📈 Saved {len(class_indices_to_plot)} sets of ROC, Precision-Recall, and Calibration plots.")
             
     # restore RC params
-    plt.rcParams.update(original_rc_params)
+    # plt.rcParams.update(original_rc_params)
 
 
 def regression_metrics(
@@ -440,8 +534,13 @@ def regression_metrics(
         format_config = config
         
     # --- Set Matplotlib font size ---
-    original_rc_params = plt.rcParams.copy()
-    plt.rcParams.update({'font.size': format_config.font_size})
+    # original_rc_params = plt.rcParams.copy()
+    # plt.rcParams.update({'font.size': format_config.font_size})
+    
+    # --- Resolve Font Sizes ---
+    xtick_size = format_config.xtick_size
+    ytick_size = format_config.ytick_size
+    base_font_size = format_config.font_size
     
     # --- Calculate Metrics ---
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
@@ -472,9 +571,14 @@ def regression_metrics(
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
     ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--')
-    ax_res.set_xlabel("Predicted Values")
-    ax_res.set_ylabel("Residuals")
-    ax_res.set_title("Residual Plot")
+    ax_res.set_xlabel("Predicted Values", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_res.set_ylabel("Residuals", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_res.set_title("Residual Plot", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+    
+    # Apply Ticks  
+    ax_res.tick_params(axis='x', labelsize=xtick_size)
+    ax_res.tick_params(axis='y', labelsize=ytick_size)
+    
     ax_res.grid(True)
     plt.tight_layout()
     res_path = save_dir_path / "residual_plot.svg"
@@ -491,9 +595,14 @@ def regression_metrics(
                 linestyle='--', 
                 lw=2,
                 color=format_config.ideal_line_color)
-    ax_tvp.set_xlabel('True Values')
-    ax_tvp.set_ylabel('Predictions')
-    ax_tvp.set_title('True vs. Predicted Values')
+    ax_tvp.set_xlabel('True Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_tvp.set_ylabel('Predictions', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_tvp.set_title('True vs. Predicted Values', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+    
+    # Apply Ticks
+    ax_tvp.tick_params(axis='x', labelsize=xtick_size)
+    ax_tvp.tick_params(axis='y', labelsize=ytick_size)
+    
     ax_tvp.grid(True)
     plt.tight_layout()
     tvp_path = save_dir_path / "true_vs_predicted_plot.svg"
@@ -506,9 +615,14 @@ def regression_metrics(
     sns.histplot(residuals, kde=True, ax=ax_hist, 
                  bins=format_config.hist_bins, 
                  color=format_config.scatter_color)
-    ax_hist.set_xlabel("Residual Value")
-    ax_hist.set_ylabel("Frequency")
-    ax_hist.set_title("Distribution of Residuals")
+    ax_hist.set_xlabel("Residual Value", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_hist.set_ylabel("Frequency", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+    ax_hist.set_title("Distribution of Residuals", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+    
+    # Apply Ticks
+    ax_hist.tick_params(axis='x', labelsize=xtick_size)
+    ax_hist.tick_params(axis='y', labelsize=ytick_size)
+    
     ax_hist.grid(True)
     plt.tight_layout()
     hist_path = save_dir_path / "residuals_histogram.svg"
@@ -517,7 +631,7 @@ def regression_metrics(
     plt.close(fig_hist)
     
     # --- Restore RC params ---
-    plt.rcParams.update(original_rc_params)
+    # plt.rcParams.update(original_rc_params)
     
 
 def shap_summary_plot(model, 

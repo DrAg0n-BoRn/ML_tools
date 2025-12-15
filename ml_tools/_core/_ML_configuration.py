@@ -65,7 +65,11 @@ class _BaseClassificationFormat:
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
-                 font_size: int=16) -> None:
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 font_size: int=26,
+                 cm_font_size: int=26) -> None:
         """
         Initializes the formatting configuration for single-label classification metrics.
 
@@ -84,6 +88,14 @@ class _BaseClassificationFormat:
                 creating the calibration (reliability) plot.
             
             font_size (int): The base font size to apply to the plots.
+            
+            xtick_size (int): Font size for x-axis tick labels.
+            
+            ytick_size (int): Font size for y-axis tick labels.
+            
+            legend_size (int): Font size for plot legends.
+            
+            cm_font_size (int): Font size for the confusion matrix.
         
         <br>
         
@@ -97,13 +109,21 @@ class _BaseClassificationFormat:
         self.ROC_PR_line = ROC_PR_line
         self.calibration_bins = calibration_bins
         self.font_size = font_size
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
+        self.legend_size = legend_size
+        self.cm_font_size = cm_font_size
         
     def __repr__(self) -> str:
         parts = [
             f"cmap='{self.cmap}'",
             f"ROC_PR_line='{self.ROC_PR_line}'",
             f"calibration_bins={self.calibration_bins}",
-            f"font_size={self.font_size}"
+            f"font_size={self.font_size}",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}",
+            f"legend_size={self.legend_size}",
+            f"cm_font_size={self.cm_font_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -115,7 +135,10 @@ class _BaseMultiLabelFormat:
     def __init__(self,
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
-                 font_size: int = 16) -> None:
+                 font_size: int = 25,
+                 xtick_size: int=20,
+                 ytick_size: int=20,
+                 legend_size: int=23) -> None:
         """
         Initializes the formatting configuration for multi-label classification metrics.
 
@@ -132,6 +155,12 @@ class _BaseMultiLabelFormat:
             
             font_size (int): The base font size to apply to the plots.
             
+            xtick_size (int): Font size for x-axis tick labels.
+            
+            ytick_size (int): Font size for y-axis tick labels.
+            
+            legend_size (int): Font size for plot legends.
+            
         <br>
         
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
@@ -143,12 +172,18 @@ class _BaseMultiLabelFormat:
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
         self.font_size = font_size
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
+        self.legend_size = legend_size
         
     def __repr__(self) -> str:
         parts = [
             f"cmap='{self.cmap}'",
             f"ROC_PR_line='{self.ROC_PR_line}'",
-            f"font_size={self.font_size}"
+            f"font_size={self.font_size}",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}",
+            f"legend_size={self.legend_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -158,12 +193,14 @@ class _BaseRegressionFormat:
     [PRIVATE] Base configuration for regression metrics.
     """
     def __init__(self, 
-                 font_size: int=16,
+                 font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
                  residual_line_color: str='red',
-                 hist_bins: Union[int, str] = 'auto') -> None:
+                 hist_bins: Union[int, str] = 'auto',
+                 xtick_size: int=22,
+                 ytick_size: int=22) -> None:
         """
         Initializes the formatting configuration for regression metrics.
 
@@ -181,6 +218,8 @@ class _BaseRegressionFormat:
             hist_bins (int | str): The number of bins for the residuals histogram. 
                 Defaults to 'auto' to use seaborn's automatic bin selection.
                 - Options: 'auto', 'sqrt', 10, 20
+            xtick_size (int): Font size for x-axis tick labels.
+            ytick_size (int): Font size for y-axis tick labels.
         
         <br>
         
@@ -192,6 +231,8 @@ class _BaseRegressionFormat:
         self.ideal_line_color = ideal_line_color
         self.residual_line_color = residual_line_color
         self.hist_bins = hist_bins
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
         
     def __repr__(self) -> str:
         parts = [
@@ -200,7 +241,9 @@ class _BaseRegressionFormat:
             f"scatter_alpha={self.scatter_alpha}",
             f"ideal_line_color='{self.ideal_line_color}'",
             f"residual_line_color='{self.residual_line_color}'",
-            f"hist_bins='{self.hist_bins}'"
+            f"hist_bins='{self.hist_bins}'",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -248,7 +291,7 @@ class _BaseSequenceValueFormat:
     [PRIVATE] Base configuration for sequence to value metrics.
     """
     def __init__(self, 
-                 font_size: int=16,
+                 font_size: int=25,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
@@ -300,8 +343,7 @@ class _BaseSequenceSequenceFormat:
     [PRIVATE] Base configuration for sequence-to-sequence metrics.
     """
     def __init__(self,
-                 font_size: int = 16,
-                 plot_figsize: tuple[int, int] = (10, 6),
+                 font_size: int = 25,
                  grid_style: str = '--',
                  rmse_color: str = 'tab:blue',
                  rmse_marker: str = 'o-',
@@ -312,7 +354,6 @@ class _BaseSequenceSequenceFormat:
 
         Args:
             font_size (int): The base font size to apply to the plots.
-            plot_figsize (Tuple[int, int]): Figure size for the plot.
             grid_style (str): Matplotlib linestyle for the plot grid.
                 - Options: '--' (dashed), ':' (dotted), '-.' (dash-dot), '-' (solid)
             rmse_color (str): Matplotlib color for the RMSE line.
@@ -337,7 +378,6 @@ class _BaseSequenceSequenceFormat:
         ### [Matplotlib Markers](https://matplotlib.org/stable/api/markers_api.html)
         """
         self.font_size = font_size
-        self.plot_figsize = plot_figsize
         self.grid_style = grid_style
         self.rmse_color = rmse_color
         self.rmse_marker = rmse_marker
@@ -347,7 +387,6 @@ class _BaseSequenceSequenceFormat:
     def __repr__(self) -> str:
         parts = [
             f"font_size={self.font_size}",
-            f"plot_figsize={self.plot_figsize}",
             f"grid_style='{self.grid_style}'",
             f"rmse_color='{self.rmse_color}'",
             f"mae_color='{self.mae_color}'"
@@ -639,18 +678,22 @@ class RegressionMetricsFormat(_BaseRegressionFormat):
     Configuration for single-target regression.
     """
     def __init__(self, 
-                 font_size: int=16,
+                 font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
                  residual_line_color: str='red',
-                 hist_bins: Union[int, str] = 'auto') -> None:
+                 hist_bins: Union[int, str] = 'auto',
+                 xtick_size: int=22,
+                 ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 
                          scatter_color=scatter_color, 
                          scatter_alpha=scatter_alpha, 
                          ideal_line_color=ideal_line_color, 
                          residual_line_color=residual_line_color, 
-                         hist_bins=hist_bins)
+                         hist_bins=hist_bins,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size)
 
 
 # Multitarget regression
@@ -659,18 +702,22 @@ class MultiTargetRegressionMetricsFormat(_BaseRegressionFormat):
     Configuration for multi-target regression.
     """
     def __init__(self, 
-                 font_size: int=16,
+                 font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
                  residual_line_color: str='red',
-                 hist_bins: Union[int, str] = 'auto') -> None:
+                 hist_bins: Union[int, str] = 'auto',
+                 xtick_size: int=22,
+                 ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 
                          scatter_color=scatter_color, 
                          scatter_alpha=scatter_alpha, 
                          ideal_line_color=ideal_line_color, 
                          residual_line_color=residual_line_color, 
-                         hist_bins=hist_bins)
+                         hist_bins=hist_bins,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size)
 
 
 # Classification
@@ -682,11 +729,20 @@ class BinaryClassificationMetricsFormat(_BaseClassificationFormat):
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
-                 font_size: int=16) -> None:
+                 font_size: int=26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26
+                 ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
                          calibration_bins=calibration_bins, 
-                         font_size=font_size)
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size,
+                         cm_font_size=cm_font_size)
 
 
 class MultiClassClassificationMetricsFormat(_BaseClassificationFormat):
@@ -697,12 +753,20 @@ class MultiClassClassificationMetricsFormat(_BaseClassificationFormat):
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
-                 font_size: int=16) -> None:
+                 font_size: int=26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26
+                 ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
                          calibration_bins=calibration_bins, 
-                         font_size=font_size)
-
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size,
+                         cm_font_size=cm_font_size)
 
 class BinaryImageClassificationMetricsFormat(_BaseClassificationFormat):
     """
@@ -712,12 +776,20 @@ class BinaryImageClassificationMetricsFormat(_BaseClassificationFormat):
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
-                 font_size: int=16) -> None:
+                 font_size: int=26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26
+                 ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
                          calibration_bins=calibration_bins, 
-                         font_size=font_size)
-
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size,
+                         cm_font_size=cm_font_size)
 
 class MultiClassImageClassificationMetricsFormat(_BaseClassificationFormat):
     """
@@ -727,12 +799,20 @@ class MultiClassImageClassificationMetricsFormat(_BaseClassificationFormat):
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: int=15, 
-                 font_size: int=16) -> None:
+                 font_size: int=26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26
+                 ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
                          calibration_bins=calibration_bins, 
-                         font_size=font_size)
-
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size,
+                         cm_font_size=cm_font_size)
 
 # Multi-Label classification
 class MultiLabelBinaryClassificationMetricsFormat(_BaseMultiLabelFormat):
@@ -742,11 +822,17 @@ class MultiLabelBinaryClassificationMetricsFormat(_BaseMultiLabelFormat):
     def __init__(self,
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
-                 font_size: int = 16) -> None:
+                 font_size: int = 25,
+                 xtick_size: int=20,
+                 ytick_size: int=20,
+                 legend_size: int=23
+                 ) -> None:
         super().__init__(cmap=cmap,
                          ROC_PR_line=ROC_PR_line, 
-                         font_size=font_size)
-
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size)
 
 # Segmentation
 class BinarySegmentationMetricsFormat(_BaseSegmentationFormat):
@@ -781,7 +867,7 @@ class SequenceValueMetricsFormat(_BaseSequenceValueFormat):
     Configuration for sequence-to-value prediction.
     """
     def __init__(self, 
-                 font_size: int=16,
+                 font_size: int=25,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
@@ -800,15 +886,13 @@ class SequenceSequenceMetricsFormat(_BaseSequenceSequenceFormat):
     Configuration for sequence-to-sequence prediction.
     """
     def __init__(self,
-                 font_size: int = 16,
-                 plot_figsize: tuple[int, int] = (10, 6),
+                 font_size: int = 25,
                  grid_style: str = '--',
                  rmse_color: str = 'tab:blue',
                  rmse_marker: str = 'o-',
                  mae_color: str = 'tab:orange',
                  mae_marker: str = 's--'):
         super().__init__(font_size=font_size, 
-                         plot_figsize=plot_figsize, 
                          grid_style=grid_style, 
                          rmse_color=rmse_color, 
                          rmse_marker=rmse_marker, 

@@ -165,7 +165,7 @@ def segmentation_metrics(
         cm = confusion_matrix(y_true_flat, y_pred_flat, labels=labels)
         
         # Plot
-        fig_cm, ax_cm = plt.subplots(figsize=(max(8, len(labels) * 0.8), max(8, len(labels) * 0.8)), dpi=100)
+        fig_cm, ax_cm = plt.subplots(figsize=(max(8, len(labels) * 0.8), max(8, len(labels) * 0.8)), dpi=DPI_value)
         disp = ConfusionMatrixDisplay(
             confusion_matrix=cm,
             display_labels=display_names

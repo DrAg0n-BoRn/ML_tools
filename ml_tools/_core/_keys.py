@@ -223,10 +223,19 @@ class SchemaKeys:
 
 class _EvaluationConfig:
     """Set config values for evaluation modules."""
-    DPI = 250
-    REGRESSION_PLOT_SIZE = (9, 6)
-    SEQUENCE_PLOT_SIZE = (9, 6)
-
+    DPI = 400
+    LABEL_PADDING = 10
+    # large sizes for SVG layout to accommodate large fonts
+    REGRESSION_PLOT_SIZE = (12, 8)
+    SEQUENCE_PLOT_SIZE = (12, 8)
+    CLASSIFICATION_PLOT_SIZE = (10, 10)
+    # Loss plot
+    LOSS_PLOT_SIZE = (18, 9)
+    LOSS_PLOT_LABEL_SIZE = 24
+    LOSS_PLOT_TICK_SIZE = 22
+    LOSS_PLOT_LEGEND_SIZE = 24
+    # CM settings
+    CM_SIZE = (9, 8)    # used for multi label binary classification confusion matrix 
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
