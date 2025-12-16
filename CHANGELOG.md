@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.9.0] 2025-12-16
+
+### Changed
+
+- path_manager:
+    - All paths are stored as absolute paths for consistency.
+    - `DragonPathManager`, added `strict_to_root` parameter to enforce all paths to be within the package root directory.
+    - `DragonPathManager.status()`, revamped output format for better readability.
+
 ## [19.8.2] 2025-12-15
 
 ### Fixed

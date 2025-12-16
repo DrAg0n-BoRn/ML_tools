@@ -35,7 +35,8 @@ class DragonPathManager:
     def __init__(
         self,
         anchor_file: str,
-        base_directories: Optional[List[str]] = None
+        base_directories: Optional[List[str]] = None,
+        strict_to_root: bool = True
     ):
         """
         Sets up the core paths for a project by anchoring to a specific file.
@@ -53,14 +54,16 @@ class DragonPathManager:
                                                     where each string is the name
                                                     of a subdirectory to register
                                                     relative to the package root.
+            strict_to_root (bool): If True, checks that all registered paths are defined within the package ROOT.
         """
         resolved_anchor_path = Path(anchor_file).resolve()
         self._package_name = resolved_anchor_path.parent.name
         self._is_bundled, bundle_root = self._get_bundle_root()
         self._paths: Dict[str, Path] = {}
+        self._strict_to_root = strict_to_root
 
         if self._is_bundled:
-            # In a PyInstaller bundle, the package is inside the temp _MEIPASS dir
+            # In a PyInstaller/Nuitka bundle, the package is inside the temp _MEIPASS dir
             package_root = Path(bundle_root) / self._package_name # type: ignore
         else:
             # In dev mode, the package root is the directory containing the anchor file.
@@ -182,17 +185,44 @@ class DragonPathManager:
         """
         Checks the status of all registered paths on the filesystem and prints a formatted report.
         """
-        report = {}
-        for key, path in self.items():
+        # 1. Gather Data and determine max widths
+        rows = []
+        max_key_len = len("Key")  # Start with header width
+        
+        # Sort by key for readability
+        for key, path in sorted(self.items()):
             if path.is_dir():
-                report[key] = "📁 Directory"
+                stat_msg = "📁 Directory"
             elif path.is_file():
-                report[key] = "📄 File"
+                stat_msg = "📄 File"
+            elif not path.exists():
+                stat_msg = "❌ Not Found"
             else:
-                report[key] = "❌ Not Found"
+                stat_msg = "❓ Unknown"
+            
+            rows.append((key, stat_msg, str(path)))
+            max_key_len = max(max_key_len, len(key))
 
-        print("\n--- Path Status Report ---")
-        pprint(report)
+        # 2. Print Header
+        mode_icon = "📦" if self._is_bundled else "🛠️"
+        mode_text = "Bundled Mode" if self._is_bundled else "Development Mode"
+        
+        print(f"\n{'-'*80}")
+        print(f" 🐉 DragonPathManager Status Report")
+        print(f"    Context: {mode_icon} {mode_text}")
+        print(f"    Root:    {self.ROOT}")
+        print(f"{'-'*80}")
+
+        # 3. Print Table Header
+        # {variable:<width} aligns text to the left within the padding
+        print(f" {'Key':<{max_key_len}} | {'Status':<12} | Path")
+        print(f" {'-'*max_key_len} | {'-'*12} | {'-'*40}")
+
+        # 4. Print Rows
+        for key, stat, p_str in rows:
+            print(f" {key:<{max_key_len}} | {stat:<12} | {p_str}")
+        
+        print(f"{'-'*80}\n")
 
     def __repr__(self) -> str:
         """Provides a string representation of the stored paths."""
@@ -276,10 +306,22 @@ class DragonPathManager:
         
         if not isinstance(value, (str, Path)):
             _LOGGER.error(f"Cannot assign type '{type(value).__name__}' to a path. Must be str or Path.")
-            raise TypeError
+            raise TypeError()
+        
+        # Resolve the new path
+        new_path = Path(value).expanduser().absolute()
 
-        # If all checks pass, treat it as a public path and store it in the _paths dictionary.
-        self._paths[sanitized_name] = Path(value)
+        # --- STRICT CHECK ---
+        # Only check if strict mode is on
+        if self.__dict__.get("_strict_to_root", False) and sanitized_name != "ROOT":
+            root_path = self._paths.get("ROOT")
+            # Ensure ROOT exists and the new path is inside it
+            if root_path and not new_path.is_relative_to(root_path):
+                _LOGGER.error(f"Strict Mode Violation: '{name}' ({new_path}) is outside ROOT ({root_path})")
+                raise ValueError()
+
+        # Store absolute Path.
+        self._paths[sanitized_name] = new_path
 
 
 def make_fullpath(

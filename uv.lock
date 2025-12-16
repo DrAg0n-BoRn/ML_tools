@@ -416,7 +416,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "19.8.2"
+version = "19.9.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
