@@ -44,12 +44,10 @@ class DragonOptimizer:
     SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
 
     Example:
-        >>> # 1. Get the final schema from data exploration
-        >>> schema = data_exploration.finalize_feature_schema(...)
-        >>> # 2. Define bounds for continuous features
+        >>> # 1. Define bounds for continuous features
         >>> cont_bounds = {'feature_A': (0, 100), 'feature_B': (-10, 10)}
         >>>
-        >>> # 3. Initialize the optimizer
+        >>> # 2. Initialize the optimizer
         >>> optimizer = DragonOptimizer(
         ...     inference_handler=my_handler,
         ...     schema=schema,
@@ -58,7 +56,7 @@ class DragonOptimizer:
         ...     task="max",
         ...     algorithm="Genetic",
         ... )
-        >>> # 4. Run the optimization
+        >>> # 3. Run the optimization
         >>> best_result = optimizer.run(
         ...     num_generations=100,
         ...     save_dir="/path/to/results",

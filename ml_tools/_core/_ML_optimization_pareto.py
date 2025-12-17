@@ -7,7 +7,7 @@ import matplotlib.cm as cm
 from matplotlib.collections import LineCollection
 import seaborn as sns
 from pathlib import Path
-from typing import Literal, Union, Tuple, List, Optional, Dict
+from typing import Literal, Union, List, Optional, Dict
 from tqdm import tqdm
 import plotly.express as px
 import plotly.graph_objects as go
@@ -21,7 +21,7 @@ from ._SQL import DragonSQL
 from ._ML_inference import DragonInferenceHandler
 from ._ML_chaining_inference import DragonChainInference
 from ._ML_configuration import DragonParetoConfig
-from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe
+from ._optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe, load_continuous_bounds_template
 from ._math_utilities import discretize_categorical_values
 from ._utilities import save_dataframe_filename
 from ._IO_tools import save_json
@@ -107,6 +107,10 @@ class DragonParetoOptimizer:
                 _LOGGER.error(f"Target '{name}' not found in model targets: {available_targets}")
                 raise ValueError()
             
+            if direction not in ["min" , "max"]:
+                _LOGGER.error(f"Invalid optimization direction '{direction}' for target '{name}'. Use 'min' or 'max'.")
+                raise ValueError()
+            
             # For standard handlers, we need indices to slice the output tensor.
             # For chain handlers, we just rely on name matching, but we track index for consistency.
             idx = available_targets.index(name)
@@ -117,10 +121,20 @@ class DragonParetoOptimizer:
         _LOGGER.info(f"Pareto Optimization setup for: {self.ordered_target_names}")
 
         # --- 2. Bounds Setup ---
+        # check type
+        raw_bounds_map = config.continuous_bounds_map
+        if isinstance(raw_bounds_map, (str, Path)):
+            continuous_bounds = load_continuous_bounds_template(raw_bounds_map)
+        elif isinstance(raw_bounds_map, dict):
+            continuous_bounds = raw_bounds_map
+        else:
+            _LOGGER.error(f"Invalid type for 'continuous_bounds_map' in config. Expected dict or Path. Got {type(raw_bounds_map)}.")
+            raise ValueError()
+        
         # Uses the external tool which reads the schema to set correct bounds for both continuous and categorical
         bounds = create_optimization_bounds(
             schema=schema,
-            continuous_bounds_map=config.continuous_bounds_map,
+            continuous_bounds_map=continuous_bounds,
             start_at_zero=self.discretize_start_at_zero
         )
         self.lower_bounds = list(bounds[0])

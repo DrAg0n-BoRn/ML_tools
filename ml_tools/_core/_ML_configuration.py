@@ -6,7 +6,7 @@ import numpy as np
 from ._schema import FeatureSchema
 from ._script_info import _script_info
 from ._logger import get_logger
-from ._path_manager import sanitize_filename
+from ._path_manager import sanitize_filename, make_fullpath
 from ._keys import MLTaskKeys
 
 
@@ -701,11 +701,11 @@ class DragonParetoConfig(_BaseModelParams):
     def __init__(self,
                  save_directory: Union[str, Path],
                  target_objectives: Dict[str, Literal["min", "max"]],
-                 continuous_bounds_map: Union[Dict[str, Tuple[float, float]], Dict[str, List[float]]],
+                 continuous_bounds_map: Union[Dict[str, Tuple[float, float]], Dict[str, List[float]], str, Path],
                  columns_to_round: Optional[List[str]] = None,
-                 population_size: int = 400,
+                 population_size: int = 500,
                  generations: int = 1000,
-                 solutions_filename: str = "ParetoSolutions",
+                 solutions_filename: str = "NonDominatedSolutions",
                  float_precision: int = 4,
                  log_interval: int = 10,
                  plot_size: Tuple[int, int] = (10, 7),
@@ -718,7 +718,7 @@ class DragonParetoConfig(_BaseModelParams):
             save_directory (str | Path): Directory to save artifacts.
             target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
                 Example: {"price": "max", "error": "min"}
-            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}.
+            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}. Or a path/str to a directory containing the "optimization_bounds.json" file.
             columns_to_round (List[str] | None): List of continuous column names that should be rounded to the nearest integer.
             population_size (int): Size of the genetic population.
             generations (int): Number of generations to run.
@@ -729,7 +729,13 @@ class DragonParetoConfig(_BaseModelParams):
             plot_font_size (int): Font size for plot text.
             discretize_start_at_zero (bool): Categorical encoding start index. True=0, False=1.
         """
-        self.save_directory = save_directory
+        # Validate string or Path
+        valid_save_dir = make_fullpath(save_directory, make=True, enforce="directory")
+        
+        if isinstance(continuous_bounds_map, (str, Path)):
+            continuous_bounds_map = make_fullpath(continuous_bounds_map, make=False, enforce="directory")
+        
+        self.save_directory = valid_save_dir
         self.target_objectives = target_objectives
         self.continuous_bounds_map = continuous_bounds_map
         self.columns_to_round = columns_to_round
@@ -741,7 +747,6 @@ class DragonParetoConfig(_BaseModelParams):
         self.plot_size = plot_size
         self.plot_font_size = plot_font_size
         self.discretize_start_at_zero = discretize_start_at_zero
-
 
 # ----------------------------
 # Metrics Configurations

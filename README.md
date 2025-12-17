@@ -37,7 +37,7 @@ conda install -c conda-forge dragon-ml-toolbox
 
 ## Modular Installation
 
-This toolbox is designed as a collection of mutually exclusive environments due to conflicting core dependencies, except APP bundlers (PyInstaller/Nuitka).
+This toolbox is designed as a collection of mutually exclusive environments due to conflicting core dependencies.
 
 - Rule: Create a fresh virtual environment for each module to use.
 
@@ -229,18 +229,6 @@ schema
 ```
 
 ---
-
-### ⚒️ APP bundlers
-
-Dependencies required to compile applications, inference scripts, or GUIs into standalone executables (`.exe` or binary) for distribution. Choose your preferred backend:
-
-```Bash
-pip install "dragon-ml-toolbox[pyinstaller]"
-```
-
-```Bash
-pip install "dragon-ml-toolbox[nuitka]"
-```
 
 ## Usage
 

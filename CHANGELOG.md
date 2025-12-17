@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.10.0] 2025-12-17
+
+- Remove package bundlers options (PyInstaller/Nuitka). These can be installed separately if needed.
+- Add development dependencies to pyproject.toml for easier setup of development environments.
+- Update README.md to reflect the current state of the package.
+
+### Changed
+
+- ML_configuration:
+    - `DragonParetoConfig`, modified `continuous_bounds_map` parameter to accept a path to a directory containing the "optimization_bounds.json" file.
+- ML_optimization_pareto:
+    - `DragonParetoOptimizer`, modified to load continuous bounds from a file if a path is provided in the configuration.
+
+### Fixed
+
+- optimization_tools:
+    - `make_continuous_bounds_template()`, fixed missing import.
+    - `load_continuous_bounds_template()`, fixed missing import.
+
 ## [19.9.0] 2025-12-16
 
 ### Changed
