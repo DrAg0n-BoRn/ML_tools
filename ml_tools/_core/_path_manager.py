@@ -436,35 +436,28 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-def list_csv_paths(directory: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
+def list_csv_paths(directory: Union[str, Path], verbose: bool = True, raise_on_empty: bool = True) -> dict[str, Path]:
     """
     Lists all `.csv` files in the specified directory and returns a mapping: filenames (without extensions) to their absolute paths.
 
     Parameters:
         directory (str | Path): Path to the directory containing `.csv` files.
+        verbose (bool): If True, prints found files.
+        raise_on_empty (bool): If True, raises IOError if no files are found.
 
     Returns:
         (dict[str, Path]): Dictionary mapping {filename: filepath}.
     """
-    dir_path = make_fullpath(directory)
-
-    csv_paths = list(dir_path.glob("*.csv"))
-    if not csv_paths:
-        _LOGGER.error(f"No CSV files found in directory: {dir_path.name}")
-        raise IOError()
-    
-    # make a dictionary of paths and names
-    name_path_dict = {p.stem: p for p in csv_paths}
-    
-    if verbose:
-        _LOGGER.info("🗂️ CSV files found:")
-        for name in name_path_dict.keys():
-            print(f"\t{name}")
-
-    return name_path_dict
+    # wraps the more general function
+    return list_files_by_extension(directory=directory, extension="csv", verbose=verbose, raise_on_empty=raise_on_empty)
 
 
-def list_files_by_extension(directory: Union[str,Path], extension: str, verbose: bool=True) -> dict[str, Path]:
+def list_files_by_extension(
+    directory: Union[str, Path], 
+    extension: str, 
+    verbose: bool = True,
+    raise_on_empty: bool = True
+) -> dict[str, Path]:
     """
     Lists all files with the specified extension in the given directory and returns a mapping: 
     filenames (without extensions) to their absolute paths.
@@ -472,20 +465,29 @@ def list_files_by_extension(directory: Union[str,Path], extension: str, verbose:
     Parameters:
         directory (str | Path): Path to the directory to search in.
         extension (str): File extension to search for (e.g., 'json', 'txt').
+        verbose (bool): If True, logs the files found.
+        raise_on_empty (bool): If True, raises IOError if no matching files are found.
 
     Returns:
-        (dict[str, Path]): Dictionary mapping {filename: filepath}.
+        (dict[str, Path]): Dictionary mapping {filename: filepath}. Returns empty dict if none found and raise_on_empty is False.
     """
-    dir_path = make_fullpath(directory)
+    dir_path = make_fullpath(directory, enforce="directory")
     
     # Normalize the extension (remove leading dot if present)
     normalized_ext = extension.lstrip(".").lower()
     pattern = f"*.{normalized_ext}"
     
     matched_paths = list(dir_path.glob(pattern))
+    
     if not matched_paths:
-        _LOGGER.error(f"No '.{normalized_ext}' files found in directory: {dir_path}.")
-        raise IOError()
+        msg = f"No '.{normalized_ext}' files found in directory: {dir_path}."
+        if raise_on_empty:
+            _LOGGER.error(msg)
+            raise IOError()
+        else:
+            if verbose:
+                _LOGGER.warning(msg)
+            return {}
 
     name_path_dict = {p.stem: p for p in matched_paths}
     
@@ -497,13 +499,18 @@ def list_files_by_extension(directory: Union[str,Path], extension: str, verbose:
     return name_path_dict
 
 
-def list_subdirectories(root_dir: Union[str,Path], verbose: bool=True) -> dict[str, Path]:
+def list_subdirectories(
+    root_dir: Union[str, Path], 
+    verbose: bool = True, 
+    raise_on_empty: bool = True
+) -> dict[str, Path]:
     """
     Scans a directory and returns a dictionary of its immediate subdirectories.
 
     Args:
         root_dir (str | Path): The path to the directory to scan.
         verbose (bool): If True, prints the number of directories found. 
+        raise_on_empty (bool): If True, raises IOError if no subdirectories are found.
 
     Returns:
         dict[str, Path]: A dictionary mapping subdirectory names (str) to their full Path objects.
@@ -513,8 +520,14 @@ def list_subdirectories(root_dir: Union[str,Path], verbose: bool=True) -> dict[s
     directories = [p.resolve() for p in root_path.iterdir() if p.is_dir()]
     
     if len(directories) < 1:
-        _LOGGER.error(f"No subdirectories found inside '{root_path}'")
-        raise IOError()
+        msg = f"No subdirectories found inside '{root_path}'"
+        if raise_on_empty:
+            _LOGGER.error(msg)
+            raise IOError()
+        else:
+            if verbose:
+                _LOGGER.warning(msg)
+            return {}
     
     if verbose:
         count = len(directories)

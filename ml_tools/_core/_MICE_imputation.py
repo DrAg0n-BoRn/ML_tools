@@ -256,7 +256,7 @@ def run_mice_pipeline(df_path_or_dir: Union[str,Path], target_columns: list[str]
     if input_path.is_file():
         all_file_paths = [input_path]
     else:
-        all_file_paths = list(list_csv_paths(input_path).values())
+        all_file_paths = list(list_csv_paths(input_path, raise_on_empty=True).values())
     
     for df_path in all_file_paths:
         df: pd.DataFrame
@@ -461,7 +461,7 @@ class DragonMICE:
         if input_path.is_file():
             all_file_paths = [input_path]
         else:
-            all_file_paths = list(list_csv_paths(input_path).values())
+            all_file_paths = list(list_csv_paths(input_path, raise_on_empty=True).values())
         
         for df_path in all_file_paths:
             

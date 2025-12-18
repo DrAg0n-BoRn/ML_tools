@@ -166,8 +166,12 @@ def load_dataframe_greedy(directory: Union[str, Path],
     dir_path = make_fullpath(directory, enforce="directory")
     
     # list all csv files and grab one (should be the only one)
-    csv_dict = list_csv_paths(directory=dir_path, verbose=False)
+    csv_dict = list_csv_paths(directory=dir_path, verbose=False, raise_on_empty=True)
     
+    # explicitly check that there is only one csv file
+    if len(csv_dict) > 1:
+        _LOGGER.warning(f"Multiple CSV files found in '{dir_path}'. Only one will be loaded.")
+        
     for df_path in csv_dict.values():
         df , _df_name = load_dataframe(df_path=df_path,
                                     use_columns=use_columns,
@@ -260,7 +264,7 @@ def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True)
     - Output is streamed via a generator to support lazy loading of multiple datasets.
     """
     datasets_path = make_fullpath(datasets_dir)
-    files_dict = list_csv_paths(datasets_path, verbose=verbose)
+    files_dict = list_csv_paths(datasets_path, verbose=verbose, raise_on_empty=True)
     for df_name, df_path in files_dict.items():
         df: pd.DataFrame
         df, _ = load_dataframe(df_path, kind="pandas", verbose=verbose) # type: ignore

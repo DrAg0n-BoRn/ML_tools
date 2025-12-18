@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.11.0] 2025-12-18
+
+### Changed
+
+- path_manager:
+    - `list_files_by_extension()`, added `raise_on_empty` parameter to control error raising when no files are found.
+    - `list_csv_paths()`, added `raise_on_empty` parameter to control error raising when no CSV files are found.
+    - `list_subdirectories()`, added `raise_on_empty` parameter to control error raising when no subdirectories are found.
+- ML_utilities:
+    - `ArtifactFinder`, added `strict` parameter to enforce strict loading of all artifacts. If False, missing artifacts return None silently.
+
 ## [19.10.0] 2025-12-17
 
 - Remove package bundlers options (PyInstaller/Nuitka). These can be installed separately if needed.

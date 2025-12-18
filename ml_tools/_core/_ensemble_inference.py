@@ -42,7 +42,7 @@ class DragonEnsembleInferenceHandler:
         self.verbose = verbose
         self._feature_names: Optional[List[str]] = None
         
-        model_files = list_files_by_extension(directory=models_dir, extension="joblib")
+        model_files = list_files_by_extension(directory=models_dir, extension="joblib", raise_on_empty=True)
         
         for fname, fpath in model_files.items():
             try:

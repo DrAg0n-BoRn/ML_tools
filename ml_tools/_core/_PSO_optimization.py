@@ -169,7 +169,7 @@ def multiple_objective_functions_from_dir(directory: Union[str,Path], add_noise:
     """
     objective_functions = list()
     objective_function_names = list()
-    for file_name, file_path in list_files_by_extension(directory=directory, extension='joblib').items():
+    for file_name, file_path in list_files_by_extension(directory=directory, extension='joblib', raise_on_empty=True).items():
         current_objective = ObjectiveFunction(trained_model_path=file_path,
                                               add_noise=add_noise,
                                               task=task,
