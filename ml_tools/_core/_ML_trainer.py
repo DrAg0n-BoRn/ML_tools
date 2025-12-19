@@ -7,7 +7,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 from ._path_manager import make_fullpath
-from ._ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckpoint, DragonEarlyStopping, DragonLRScheduler
+from ._ML_callbacks import _Callback, History, TqdmProgressBar, DragonModelCheckpoint, _DragonEarlyStopping, _DragonLRScheduler
 from ._ML_evaluation import classification_metrics, regression_metrics, plot_losses, shap_summary_plot, plot_attention_importance
 from ._ML_evaluation_multi import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ._ML_vision_evaluation import segmentation_metrics, object_detection_metrics
@@ -66,8 +66,8 @@ class _BaseDragonTrainer(ABC):
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  dataloader_workers: int = 2,
                  checkpoint_callback: Optional[DragonModelCheckpoint] = None,
-                 early_stopping_callback: Optional[DragonEarlyStopping] = None,
-                 lr_scheduler_callback: Optional[DragonLRScheduler] = None,
+                 early_stopping_callback: Optional[_DragonEarlyStopping] = None,
+                 lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
                  extra_callbacks: Optional[List[_Callback]] = None):
 
         self.model = model
@@ -271,18 +271,18 @@ class _BaseDragonTrainer(ABC):
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
         
-    def _load_model_state_for_finalizing(self, model_checkpoint: Union[Path, Literal['latest', 'current']]):
+    def _load_model_state_for_finalizing(self, model_checkpoint: Union[Path, Literal['best', 'current']]):
         """
         Private helper to load the correct model state_dict based on user's choice.
         This is called by finalize_model_training() in subclasses.
         """
         if isinstance(model_checkpoint, Path):
             self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
             path_to_latest = self._checkpoint_callback.best_checkpoint_path
             self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
             raise ValueError()
         elif model_checkpoint == MagicWords.CURRENT:
             pass
@@ -336,8 +336,8 @@ class DragonTrainer(_BaseDragonTrainer):
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
-                 early_stopping_callback: Optional[DragonEarlyStopping],
-                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 early_stopping_callback: Optional[_DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[List[_Callback]] = None,
                  criterion: Union[nn.Module,Literal["auto"]] = "auto", 
                  dataloader_workers: int = 2):
@@ -634,7 +634,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 
     def evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[
@@ -665,7 +665,7 @@ class DragonTrainer(_BaseDragonTrainer):
         Args:
             model_checkpoint ('auto' | Path | None): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
-                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
             save_dir (str | Path): Directory to save all reports and plots.
             classification_threshold (float | None): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
@@ -676,10 +676,10 @@ class DragonTrainer(_BaseDragonTrainer):
         # Validate model checkpoint
         if isinstance(model_checkpoint, Path):
             checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
             checkpoint_validated = model_checkpoint
         else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.LATEST}', or the string '{MagicWords.CURRENT}'.")
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.BEST}', or the string '{MagicWords.CURRENT}'.")
             raise ValueError()
         
         # Validate classification threshold
@@ -778,7 +778,7 @@ class DragonTrainer(_BaseDragonTrainer):
         
     def _evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  classification_threshold: float,
                  data: Optional[Union[DataLoader, Dataset]],
                  format_configuration: Optional[Union[
@@ -804,11 +804,11 @@ class DragonTrainer(_BaseDragonTrainer):
         # load model checkpoint
         if isinstance(model_checkpoint, Path):
             self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
             path_to_latest = self._checkpoint_callback.best_checkpoint_path
             self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
             raise ValueError()
         
         # Dataloader
@@ -1352,7 +1352,7 @@ class DragonTrainer(_BaseDragonTrainer):
             _LOGGER.error("No attention weights were collected from the model.")
         
     def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['latest', 'current']],
+                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 save_dir: Union[str, Path], 
                                 finalize_config: Union[FinalizeRegression,
                                                        FinalizeMultiTargetRegression,
@@ -1369,10 +1369,10 @@ class DragonTrainer(_BaseDragonTrainer):
         This method saves the model's `state_dict`, the final epoch number, and optional configuration for the task at hand.
 
         Args:
-            model_checkpoint (Path | "latest" | "current"):
+            model_checkpoint (Path | "best" | "current"):
                 - Path: Loads the model state from a specific checkpoint file.
-                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is at the end of the `fit()` call.
+                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is.
             save_dir (str | Path): The directory to save the finalized model.
             finalize_config (object): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
@@ -1442,8 +1442,8 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                  collate_fn: Callable, optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
-                 early_stopping_callback: Optional[DragonEarlyStopping],
-                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 early_stopping_callback: Optional[_DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[List[_Callback]] = None,
                  dataloader_workers: int = 2):
         """
@@ -1601,7 +1601,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
     
     def evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model using object detection mAP metrics.
@@ -1610,17 +1610,17 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             save_dir (str | Path): Directory to save all reports and plots.
             model_checkpoint ('auto' | Path | None): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
-                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
             test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
         """
         # Validate model checkpoint
         if isinstance(model_checkpoint, Path):
             checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
             checkpoint_validated = model_checkpoint
         else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.LATEST}', or the string '{MagicWords.CURRENT}'.")
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.BEST}', or the string '{MagicWords.CURRENT}'.")
             raise ValueError()
         
         # Validate directory
@@ -1656,7 +1656,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
     
     def _evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  data: Optional[Union[DataLoader, Dataset]]):
         """
         Changed to a private helper method
@@ -1667,7 +1667,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             data (DataLoader | Dataset | None): The data to evaluate on. If None, defaults to the trainer's internal test_dataset.
             model_checkpoint ('auto' | Path | None): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
-                - If 'latest', the latest checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
+                - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
         """
         dataset_for_artifacts = None
@@ -1676,11 +1676,11 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         # load model checkpoint
         if isinstance(model_checkpoint, Path):
             self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
             path_to_latest = self._checkpoint_callback.best_checkpoint_path
             self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
             raise ValueError()
 
         # Dataloader
@@ -1767,7 +1767,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
     
     def finalize_model_training(self, 
                                 save_dir: Union[str, Path], 
-                                model_checkpoint: Union[Path, Literal['latest', 'current']],
+                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: FinalizeObjectDetection
                                 ):
         """
@@ -1777,10 +1777,10 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
 
         Args:
             save_dir (Union[str, Path]): The directory to save the finalized model.
-            model_checkpoint (Union[Path, Literal["latest", "current"]]):
+            model_checkpoint (Union[Path, Literal["best", "current"]]):
                 - Path: Loads the model state from a specific checkpoint file.
-                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is at the end of the `fit()` call.
+                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is.
             finalize_config (FinalizeObjectDetection): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if not isinstance(finalize_config, FinalizeObjectDetection):
@@ -1818,8 +1818,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
-                 early_stopping_callback: Optional[DragonEarlyStopping],
-                 lr_scheduler_callback: Optional[DragonLRScheduler],
+                 early_stopping_callback: Optional[_DragonEarlyStopping],
+                 lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[List[_Callback]] = None,
                  criterion: Union[nn.Module,Literal["auto"]] = "auto", 
                  dataloader_workers: int = 2):
@@ -2036,7 +2036,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 
     def evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[SequenceValueMetricsFormat, 
                                                           SequenceSequenceMetricsFormat]]=None,
@@ -2048,7 +2048,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         Args:
             model_checkpoint ('auto' | Path | None): 
                 - Path to a valid checkpoint for the model.
-                - If 'latest', the latest checkpoint will be loaded.
+                - If 'best', the best checkpoint will be loaded.
                 - If 'current', use the current state of the trained model.
             save_dir (str | Path): Directory to save all reports and plots.
             test_data (DataLoader | Dataset | None): Optional Test data.
@@ -2058,10 +2058,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         # Validate model checkpoint
         if isinstance(model_checkpoint, Path):
             checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.LATEST, MagicWords.CURRENT]:
+        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
             checkpoint_validated = model_checkpoint
         else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or '{MagicWords.LATEST}', or '{MagicWords.CURRENT}'.")
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or '{MagicWords.BEST}', or '{MagicWords.CURRENT}'.")
             raise ValueError()
         
         # Validate val configuration
@@ -2120,7 +2120,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         
     def _evaluate(self, 
                  save_dir: Union[str, Path], 
-                 model_checkpoint: Union[Path, Literal["latest", "current"]],
+                 model_checkpoint: Union[Path, Literal["best", "current"]],
                  data: Optional[Union[DataLoader, Dataset]],
                  format_configuration: object):
         """
@@ -2131,11 +2131,11 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         # load model checkpoint
         if isinstance(model_checkpoint, Path):
             self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback:
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
             path_to_latest = self._checkpoint_callback.best_checkpoint_path
             self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.LATEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.LATEST}' but no checkpoint callback was found.")
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
             raise ValueError()
         
         # Dataloader
@@ -2273,7 +2273,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     
     def finalize_model_training(self, 
                                 save_dir: Union[str, Path], 
-                                model_checkpoint: Union[Path, Literal['latest', 'current']],
+                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: Union[FinalizeSequenceSequencePrediction, FinalizeSequenceValuePrediction]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
@@ -2282,10 +2282,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
         Args:
             save_dir (Union[str, Path]): The directory to save the finalized model.
-            model_checkpoint (Union[Path, Literal["latest", "current"]]):
+            model_checkpoint (Union[Path, Literal["best", "current"]]):
                 - Path: Loads the model state from a specific checkpoint file.
-                - "latest": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is at the end of the `fit()` call.
+                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
+                - "current": Uses the model's state as it is.
             finalize_config (FinalizeSequencePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if self.kind == MLTaskKeys.SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeSequenceSequencePrediction):

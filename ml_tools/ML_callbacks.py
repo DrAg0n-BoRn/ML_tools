@@ -1,12 +1,16 @@
 from ._core._ML_callbacks import (
-    DragonEarlyStopping,
+    DragonPatienceEarlyStopping,
+    DragonPrecheltEarlyStopping,
     DragonModelCheckpoint,
-    DragonLRScheduler,
+    DragonScheduler,
+    DragonReduceLROnPlateau,
     info
 )
 
 __all__ = [
-    "DragonEarlyStopping",  
+    "DragonPatienceEarlyStopping",
+    "DragonPrecheltEarlyStopping",
     "DragonModelCheckpoint",
-    "DragonLRScheduler"
+    "DragonScheduler",
+    "DragonReduceLROnPlateau",
 ]

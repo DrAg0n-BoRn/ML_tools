@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.12.0] 2025-12-19
+
+### Changed
+
+- ML_callbacks:
+    - `DragonModelCheckpoint`, revamped to monitor the training loss, validation loss, or both. Supports saving the best three checkpoints based on the monitored metric.
+    - `DragonEarlyStopping`, split into two distinct classes for more specialized early stopping strategies.
+        - `DragonPatienceEarlyStopping`, stops training after a specified number of epochs without improvement.
+        - `DragonPrecheltEarlyStopping`, implements the Prechelt early stopping method based on training and validation loss trends.
+    - `DragonLRScheduler`, split into two distinct classes for more specialized learning rate scheduling.
+        - `DragonReduceLROnPlateau`, reduces the learning rate when a metric has stopped improving. Wrapper for PyTorch's `ReduceLROnPlateau`.
+        - `DragonScheduler`, general-purpose learning rate scheduler that can wrap any PyTorch scheduler (except `ReduceLROnPlateau`) to fit the Dragon ML training loop.
+
+### Added
+
+- keys:
+    - `TaskKeys`, consistent task key names for ML tasks in the Dragon ML pipeline.
+- path_manager:
+    - `clean_directory()`, removes all files and subdirectories within a specified directory.
+    - `safe_move()`, safely moves a file or directory to a new location with options for renaming and overwriting.
+
 ## [19.11.0] 2025-12-18
 
 ### Changed
