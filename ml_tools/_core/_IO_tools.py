@@ -434,8 +434,8 @@ def train_logger(train_config: Union[dict, Any],
     Logs training data to JSON, adding a timestamp to the filename.
     
     Args:
-        train_config (dict | Any): Training configuration parameters.
-        model_parameters (dict | Any): Model parameters.
+        train_config (dict | Any): Training configuration parameters. If object, must have a `.to_log()` method returning a dict.
+        model_parameters (dict | Any): Model parameters. If object, must have a `.to_log()` method returning a dict.
         train_history (dict | None): Training history log.
         save_directory (str | Path): Directory to save the log file.
     """
@@ -443,6 +443,9 @@ def train_logger(train_config: Union[dict, Any],
     if not isinstance(train_config, dict):
         if hasattr(train_config, "to_log") and callable(getattr(train_config, "to_log")):
             train_config_dict: dict = train_config.to_log()
+            if not isinstance(train_config_dict, dict):
+                _LOGGER.error("'train_config.to_log()' did not return a dictionary.")
+                raise ValueError()
         else:
             _LOGGER.error("'train_config' must be a dict or an object with a 'to_log()' method.")
             raise ValueError()
@@ -458,6 +461,9 @@ def train_logger(train_config: Union[dict, Any],
     if not isinstance(model_parameters, dict):
         if hasattr(model_parameters, "to_log") and callable(getattr(model_parameters, "to_log")):
             model_parameters_dict: dict = model_parameters.to_log()
+            if not isinstance(model_parameters_dict, dict):
+                _LOGGER.error("'model_parameters.to_log()' did not return a dictionary.")
+                raise ValueError()
         else:
             _LOGGER.error("'model_parameters' must be a dict or an object with a 'to_log()' method.")
             raise ValueError()

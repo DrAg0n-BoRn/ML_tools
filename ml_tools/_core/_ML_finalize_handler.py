@@ -51,7 +51,7 @@ class FinalizedFileHandler:
         self._initial_sequence: Optional[np.ndarray] = None
         self._target_name: Optional[str] = None
         self._target_names: Optional[list[str]] = None
-        self._model_state_dict: Optional[Any] = None
+        self._model_state_dict: Optional[dict[str, Any]] = None
         
         # Set warning outputs
         self._verbose: bool=True
@@ -90,7 +90,7 @@ class FinalizedFileHandler:
             
         else:
             # It is a dict, but missing the keys, assume it is the raw state dict
-            _LOGGER.info(f"File '{pth_path.name}' does not have the required keys for a finalized-file. Treating it as raw PyTorch state dictionary.")
+            _LOGGER.warning(f"File '{pth_path.name}' does not have the required keys for a Dragon-ML finalized-file. Keys found:\n    {list(pth_file_content.keys())}")
             self._model_state_dict = pth_file_content
     
             
@@ -113,9 +113,10 @@ class FinalizedFileHandler:
         return self._task
     
     @property
-    def model_state_dict(self):
+    def model_state_dict(self) -> dict[str, Any]:
         """Returns the model state dictionary."""
-        return self._model_state_dict
+        # No need to check for None, as it is guaranteed to be set in __init__
+        return self._model_state_dict # type: ignore
     
     @property
     def epoch(self) -> Optional[int]:

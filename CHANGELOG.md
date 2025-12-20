@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.12.1] 2025-12-20
+
+### Changed
+
+- IO_tools:
+    - `train_logger()`, enhanced validation for `train_config` and `model_parameters` to ensure proper dictionary conversion.
+- ML_configuration:
+    - `DragonTrainingConfig`, added detailed docstrings for better clarity on parameters and usage. Removed callback-specific parameters to promote compatibility with different callback implementations.
+- ML_finalize_handler:
+    - `FinalizedFileHandler`, improved warning messages when loading non-standard finalized files. Now displays the actual keys found in the file for easier debugging.
+
 ## [19.12.0] 2025-12-19
 
 ### Changed

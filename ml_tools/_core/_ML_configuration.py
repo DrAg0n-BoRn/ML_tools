@@ -660,18 +660,27 @@ class DragonTrainingConfig(_BaseModelParams):
                  initial_learning_rate: float,
                  batch_size: int,
                  random_state: int = 101,
-                 early_stop_patience: Optional[int] = None,
-                 scheduler_patience: Optional[int] = None,
-                 scheduler_lr_factor: Optional[float] = None,
+                #  early_stop_patience: Optional[int] = None,
+                #  scheduler_patience: Optional[int] = None,
+                #  scheduler_lr_factor: Optional[float] = None,
                  **kwargs: Any) -> None:
+        """  
+        Args:
+            validation_size (float): Proportion of data for validation set.
+            test_size (float): Proportion of data for test set.
+            initial_learning_rate (float): Starting learning rate.
+            batch_size (int): Number of samples per training batch.
+            random_state (int): Seed for reproducibility.
+            **kwargs: Additional training parameters as key-value pairs.
+        """
         self.validation_size = validation_size
         self.test_size = test_size
         self.initial_learning_rate = initial_learning_rate
         self.batch_size = batch_size
         self.random_state = random_state
-        self.early_stop_patience = early_stop_patience
-        self.scheduler_patience = scheduler_patience
-        self.scheduler_lr_factor = scheduler_lr_factor
+        # self.early_stop_patience = early_stop_patience
+        # self.scheduler_patience = scheduler_patience
+        # self.scheduler_lr_factor = scheduler_lr_factor
         
         # Process kwargs with validation
         for key, value in kwargs.items():
