@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.14.0] 2025-12-22
+
+### Changed
+
+- data_exploration:
+    - `plot_continuous_vs_target()`, revamped to accept a DataFrame of continuous features and a DataFrame of targets. Generates scatter plots with regression lines for each feature-target pair. Improved data alignment and NaN handling.
+    - `plot_categorical_vs_target()`, revamped to accept a DataFrame of categorical features and a DataFrame of targets. Generates box plots for each categorical feature against each numeric target. Improved data alignment and NaN handling.
+    - `summarize_dataframe()`, added 'Completeness %' column to provide a quick overview of data completeness for each column. Customized percentiles in numeric summary statistics for more detailed insights.
+    - `plot_correlation_matrix()`, enhanced heatmap visualization with anchored color scale from -1 to 1 for better interpretability of correlations.
+
 ## [19.13.0] 2025-12-22
 
 ### Changed

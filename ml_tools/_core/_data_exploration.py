@@ -26,13 +26,13 @@ __all__ = [
     "drop_macro",
     "clean_column_names",
     "plot_value_distributions", 
-    "plot_continuous_vs_target",
-    "plot_categorical_vs_target",
     "split_features_targets", 
     "encode_categorical_features",
     "clip_outliers_single", 
     "clip_outliers_multi",
     "drop_outlier_samples",
+    "plot_continuous_vs_target",
+    "plot_categorical_vs_target",
     "plot_correlation_heatmap", 
     "finalize_feature_schema",
     "match_and_filter_columns_by_regex",
@@ -59,16 +59,18 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
     """
     summary = pd.DataFrame({
         'Data Type': df.dtypes,
-        'Non-Null Count': df.notnull().sum(),
+        'Completeness %': (df.notnull().mean() * 100).round(2),
         'Unique Values': df.nunique(),
-        'Missing %': (df.isnull().mean() * 100).round(round_digits)
+        # 'Missing %': (df.isnull().mean() * 100).round(2)
     })
 
     # For numeric columns, add summary statistics
     numeric_cols = df.select_dtypes(include='number').columns
     if not numeric_cols.empty:
-        summary_numeric = df[numeric_cols].describe().T[
-            ['mean', 'std', 'min', '25%', '50%', '75%', 'max']
+        stats = df[numeric_cols].describe(percentiles=[.10, .25, .50, .70, .80, .90])
+        
+        summary_numeric = stats.T[
+            ['mean', 'std', 'min', '10%', '25%', '50%', '70%', '80%', '90%', 'max']
         ].round(round_digits)
         summary = summary.join(summary_numeric, how='left')
 
@@ -596,68 +598,55 @@ def plot_value_distributions(
 
 
 def plot_continuous_vs_target(
-    df: pd.DataFrame,
-    targets: List[str],
+    df_continuous: pd.DataFrame,
+    df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
-    features: Optional[List[str]] = None
+    verbose: int = 1
 ):
     """
-    Plots each continuous feature against each target to visualize linear relationships.
+    Plots each continuous feature from df_continuous against each target in df_targets.
 
-    This function is a common EDA step for regression tasks. It creates a
-    scatter plot for each feature-target pair, overlays a simple linear
-    regression line, and saves each plot as an individual .svg file.
+    This function creates a scatter plot for each feature-target pair, overlays a 
+    simple linear regression line, and saves each plot as an individual .svg file.
 
     Plots are saved in a structured way, with a subdirectory created for
     each target variable.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        targets (List[str]): A list of target column names to plot (y-axis).
-        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
-        features (List[str] | None): A list of feature column names to plot (x-axis). If None, all non-target columns in the
-            DataFrame will be used.
+        df_continuous (pd.DataFrame): DataFrame containing continuous feature columns (x-axis).
+        df_targets (pd.DataFrame): DataFrame containing target columns (y-axis).
+        save_dir (str | Path): The base directory where plots will be saved.
+        verbose (int): Verbosity level for logging warnings.
 
     Notes:
-        - Only numeric features and numeric targets are processed. Non-numeric
-          columns in the lists will be skipped with a warning.
-        - Rows with NaN in either the feature or the target are dropped
-          pairwise for each plot.
+        - Only numeric features and numeric targets are processed.
+        - Rows with NaN in either the feature or the target are dropped pairwise.
+        - Assumes df_continuous and df_targets share the same index.
     """
     # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
 
-    # 2. Validate helper
-    def _validate_numeric_cols(col_list: List[str], col_type: str) -> List[str]:
+    # 2. Validation helper
+    def _get_valid_numeric_cols(df: pd.DataFrame, df_name: str) -> List[str]:
         valid_cols = []
-        for col in col_list:
-            if col not in df.columns:
-                _LOGGER.warning(f"{col_type} column '{col}' not found. Skipping.")
-            elif not is_numeric_dtype(df[col]):
-                _LOGGER.warning(f"{col_type} column '{col}' is not numeric. Skipping.")
+        for col in df.columns:
+            if not is_numeric_dtype(df[col]):
+                if verbose > 0:
+                    _LOGGER.warning(f"Column '{col}' in {df_name} is not numeric. Skipping.")
             else:
                 valid_cols.append(col)
         return valid_cols
 
-    # 3. Validate target columns FIRST
-    valid_targets = _validate_numeric_cols(targets, "Target")
+    # 3. Validate target columns
+    valid_targets = _get_valid_numeric_cols(df_targets, "df_targets")
     if not valid_targets:
-        _LOGGER.error("No valid numeric target columns provided to plot.")
+        _LOGGER.error("No valid numeric target columns provided in df_targets.")
         return
     
-    # 4. Determine and validate feature columns
-    if features is None:
-        _LOGGER.info("No 'features' list provided. Using all non-target columns as features.")
-        target_set = set(valid_targets)
-        # Get all columns that are not in the valid_targets set
-        features_to_validate = [col for col in df.columns if col not in target_set]
-    else:
-        features_to_validate = features
-        
-    valid_features = _validate_numeric_cols(features_to_validate, "Feature")
-
+    # 4. Validate feature columns
+    valid_features = _get_valid_numeric_cols(df_continuous, "df_continuous")
     if not valid_features:
-        _LOGGER.error("No valid numeric feature columns found to plot.")
+        _LOGGER.error("No valid numeric feature columns provided in df_continuous.")
         return
 
     # 5. Main plotting loop
@@ -669,15 +658,20 @@ def plot_continuous_vs_target(
         target_save_dir = base_save_path / safe_target_dir_name
         target_save_dir.mkdir(parents=True, exist_ok=True)
         
-        _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+        if verbose > 0:
+            _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
 
         for feature_name in valid_features:
             
-            # Drop NaNs pairwise for this specific plot
-            temp_df = df[[feature_name, target_name]].dropna()
+            # Align data and drop NaNs pairwise - use concat to ensure we respect the index alignment between the two DFs
+            temp_df = pd.concat([
+                df_continuous[feature_name], 
+                df_targets[target_name]
+            ], axis=1).dropna()
 
             if temp_df.empty:
-                _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
+                if verbose > 1:
+                    _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
                 continue
 
             x = temp_df[feature_name]
@@ -685,11 +679,12 @@ def plot_continuous_vs_target(
 
             # 6. Perform linear fit
             try:
-                # Modern replacement for np.polyfit + np.poly1d. Compatible with NumPy 1.14+ and NumPy 2.0+
+                # Modern replacement for np.polyfit + np.poly1d
                 p = np.polynomial.Polynomial.fit(x, y, deg=1)
                 plot_regression_line = True
             except (np.linalg.LinAlgError, ValueError):
-                _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
+                if verbose > 0:
+                    _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
                 plot_regression_line = False
 
             # 7. Create the plot
@@ -723,77 +718,68 @@ def plot_continuous_vs_target(
             
             # Close the figure to free up memory
             plt.close()
-
-    _LOGGER.info(f"Successfully saved {total_plots_saved} feature-vs-target plots to '{base_save_path}'.")
+    
+    if verbose > 0:
+        _LOGGER.info(f"Successfully saved {total_plots_saved} feature-vs-target plots to '{base_save_path}'.")
 
 
 def plot_categorical_vs_target(
-    df: pd.DataFrame,
-    targets: List[str],
+    df_categorical: pd.DataFrame,
+    df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
-    features: Optional[List[str]] = None,
     max_categories: int = 50,
-    fill_na_with: str = "MISSING DATA"
+    fill_na_with: str = "MISSING DATA",
+    drop_empty_targets: bool = True,
+    verbose: int = 1
 ):
     """
-    Plots each categorical feature against each numeric target using box plots.
+    Plots each feature in df_categorical against each numeric target in df_targets using box plots.
 
-    This function is a core EDA step for regression tasks to understand the
-    relationship between a categorical independent variable and a continuous
-    dependent variable.
-    
-    Plots are saved as individual .svg files in a structured way, with a subdirectory created for each target.
+    Automatically aligns the two DataFrames by index. If a numeric
+    column is passed within df_categorical, it will be cast to object type to treat it as a category.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        targets (List[str]): A list of numeric target column names (y-axis).
-        save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
-        features (List[str] | None): A list of categorical feature column names (x-axis). If None, all non-numeric (object) columns will be used.
-        max_categories (int): The maximum number of unique categories a feature can have to be plotted. Features exceeding this limit will be skipped.
-        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category. Defaults to "Missing".
+        df_categorical (pd.DataFrame): DataFrame containing categorical feature columns (x-axis).
+        df_targets (pd.DataFrame): DataFrame containing numeric target columns (y-axis).
+        save_dir (str | Path): Base directory for saving plots.
+        max_categories (int): The maximum number of unique categories a feature can have to be plotted.
+        fill_na_with (str): String to replace NaN values in categorical columns.
+        drop_empty_targets (bool): If True, drops rows where the target value is NaN before plotting.
+        verbose (int): Verbosity level for logging warnings.
 
     Notes:
-        - Only numeric targets are processed.
-        - Features are automatically identified as categorical if they are 'object' dtype.
+        - Assumes df_categorical and df_targets share the same index.
     """
-    # 1. Validate the base save directory and inputs
+    # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
 
     # 2. Validate target columns (must be numeric)
     valid_targets = []
-    for col in targets:
-        if col not in df.columns:
-            _LOGGER.warning(f"Target column '{col}' not found. Skipping.")
-        elif not is_numeric_dtype(df[col]):
-            _LOGGER.warning(f"Target column '{col}' is not numeric. Skipping.")
+    for col in df_targets.columns:
+        if not is_numeric_dtype(df_targets[col]):
+            if verbose > 0:
+                _LOGGER.warning(f"Target column '{col}' in df_targets is not numeric. Skipping.")
         else:
             valid_targets.append(col)
     
     if not valid_targets:
-        _LOGGER.error("No valid numeric target columns provided to plot.")
+        _LOGGER.error("No valid numeric target columns provided in df_targets.")
         return
 
-    # 3. Determine and validate feature columns
-    features_to_plot = []
-    if features is None:
-        _LOGGER.info("No 'features' list provided. Auto-detecting categorical features.")
-        for col in df.columns:
-            if col in valid_targets:
-                continue
-            # Auto-include object dtypes
-            if is_object_dtype(df[col]):
-                features_to_plot.append(col)
+    # 3. Validate feature columns (Flexible: Allow numeric but warn)
+    valid_features = []
+    for col in df_categorical.columns:
+        # If numeric, warn but accept it (will be cast to object later)
+        if is_numeric_dtype(df_categorical[col]):
+            if verbose > 0:
+                _LOGGER.warning(f"Feature '{col}' in df_categorical is numeric. It will be cast to 'object' and treated as categorical.")
+            valid_features.append(col)
+        else:
+            # Assume it is already object/category
+            valid_features.append(col)
 
-    else:
-        # Validate user-provided list
-        for col in features:
-            if col not in df.columns:
-                _LOGGER.warning(f"Feature column '{col}' not found in DataFrame. Skipping.")
-            else:
-                features_to_plot.append(col)
-
-    if not features_to_plot:
-        _LOGGER.error("No valid categorical feature columns found to plot.")
+    if not valid_features:
+        _LOGGER.error("No valid feature columns provided in df_categorical.")
         return
 
     # 4. Main plotting loop
@@ -805,29 +791,47 @@ def plot_categorical_vs_target(
         target_save_dir = base_save_path / safe_target_dir_name
         target_save_dir.mkdir(parents=True, exist_ok=True)
         
-        _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
-        for feature_name in features_to_plot:
+        if verbose > 0:
+            _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+        
+        for feature_name in valid_features:
             
-            # Make a temporary copy for plotting to handle NaNs and dtypes
-            temp_df = df[[feature_name, target_name]].copy()
+            # Align data using concat to respect indices
+            feature_series = df_categorical[feature_name]
+            target_series = df_targets[target_name]
+
+            # Create a temporary DataFrame for this pair
+            temp_df = pd.concat([feature_series, target_series], axis=1)
+
+            # Optional: Drop rows where the target is NaN
+            if drop_empty_targets:
+                temp_df = temp_df.dropna(subset=[target_name])
+                if temp_df.empty:
+                    if verbose > 1:
+                        _LOGGER.warning(f"No valid data left for '{feature_name}' vs '{target_name}' after dropping empty targets. Skipping.")
+                    continue
+
+            # Force feature to object if it isn't already (handling the numeric flexibility)
+            if not is_object_dtype(temp_df[feature_name]):
+                temp_df[feature_name] = temp_df[feature_name].astype(object)
+
+            # Handle NaNs in the feature column (treat as a category)
+            if temp_df[feature_name].isnull().any():
+                temp_df[feature_name] = temp_df[feature_name].fillna(fill_na_with)
+            
+            # Convert to string to ensure consistent plotting and cardinality check
+            temp_df[feature_name] = temp_df[feature_name].astype(str)
 
             # Check cardinality
             n_unique = temp_df[feature_name].nunique()
             if n_unique > max_categories:
-                _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique values > {max_categories} max_categories.")
+                if verbose > 1:
+                    _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique categories > {max_categories} max_categories.")
                 continue
-            
-            # Handle NaNs by replacing them with the specified string
-            if temp_df[feature_name].isnull().any():
-                # Convert to object type first to allow string replacement
-                temp_df[feature_name] = temp_df[feature_name].astype(object).fillna(fill_na_with)
-            
-            # Convert feature to string to ensure correct plotting order
-            temp_df[feature_name] = temp_df[feature_name].astype(str)
 
             # 5. Create the plot
-            # Increase figure width for categories
-            plt.figure(figsize=(max(10, n_unique * 1.2), 10))
+            # Dynamic figure width based on number of categories
+            plt.figure(figsize=(max(10, n_unique * 0.8), 10))
             
             sns.boxplot(x=feature_name, y=target_name, data=temp_df)
 
@@ -850,8 +854,9 @@ def plot_categorical_vs_target(
                 _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
             
             plt.close()
-
-    _LOGGER.info(f"Successfully saved {total_plots_saved} categorical-vs-target plots to '{base_save_path}'.")
+    
+    if verbose > 0:
+        _LOGGER.info(f"Successfully saved {total_plots_saved} categorical-vs-target plots to '{base_save_path}'.")
 
 
 def encode_categorical_features(
@@ -1078,7 +1083,10 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         annot=annot_bool,
         cmap='coolwarm',
         fmt=".2f",
-        cbar_kws={"shrink": 0.8}
+        cbar_kws={"shrink": 0.8},
+        vmin=-1,  # Anchors minimum color to -1
+        vmax=1,   # Anchors maximum color to 1
+        center=0  # Ensures 0 corresponds to the neutral color (white)
     )
     
     # add suffix to title
