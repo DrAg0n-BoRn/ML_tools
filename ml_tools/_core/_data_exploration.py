@@ -17,7 +17,6 @@ from ._schema import FeatureSchema
 _LOGGER = get_logger("Data Exploration")
 
 
-# Keep track of all available tools, show using `info()`
 __all__ = [
     "summarize_dataframe",
     "drop_constant_columns",
@@ -754,6 +753,8 @@ def plot_categorical_vs_target(
     This function is a core EDA step for regression tasks to understand the
     relationship between a categorical independent variable and a continuous
     dependent variable.
+    
+    Plots are saved as individual .svg files in a structured way, with a subdirectory created for each target.
 
     Args:
         df (pd.DataFrame): The input DataFrame.
@@ -1167,7 +1168,7 @@ def clip_outliers_single(
 
 def clip_outliers_multi(
     df: pd.DataFrame,
-    clip_dict: Dict[str, Tuple[Union[int, float], Union[int, float]]],
+    clip_dict: Union[Dict[str, Tuple[int, int]], Dict[str, Tuple[float, float]]],
     verbose: bool=False
 ) -> pd.DataFrame:
     """

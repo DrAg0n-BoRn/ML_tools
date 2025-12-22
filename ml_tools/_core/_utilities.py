@@ -396,7 +396,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
     if not isinstance(full_path, Path) or not full_path.suffix.endswith(".csv"):
         _LOGGER.error('A path object pointing to a .csv file must be provided.')
         raise ValueError()
-        
+
     save_dataframe_filename(df=df, 
                             save_dir=full_path.parent,
                             filename=full_path.name)

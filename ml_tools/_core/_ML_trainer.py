@@ -663,7 +663,7 @@ class DragonTrainer(_BaseDragonTrainer):
         Evaluates the model, routing to the correct evaluation function based on task `kind`.
 
         Args:
-            model_checkpoint ('auto' | Path | None): 
+            model_checkpoint (Path | "best" | "current"): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
@@ -1608,7 +1608,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
 
         Args:
             save_dir (str | Path): Directory to save all reports and plots.
-            model_checkpoint ('auto' | Path | None): 
+            model_checkpoint (Path | "best" | "current"): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
@@ -2046,7 +2046,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         Evaluates the model, routing to the correct evaluation function.
 
         Args:
-            model_checkpoint ('auto' | Path | None): 
+            model_checkpoint (Path | "best" | "current"): 
                 - Path to a valid checkpoint for the model.
                 - If 'best', the best checkpoint will be loaded.
                 - If 'current', use the current state of the trained model.
