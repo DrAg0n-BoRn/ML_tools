@@ -28,19 +28,19 @@ __all__ = [
     "plot_value_distributions", 
     "plot_continuous_vs_target",
     "plot_categorical_vs_target",
-    "encode_categorical_features",
     "split_features_targets", 
-    "split_continuous_binary", 
+    "encode_categorical_features",
     "clip_outliers_single", 
     "clip_outliers_multi",
     "drop_outlier_samples",
     "plot_correlation_heatmap", 
+    "finalize_feature_schema",
     "match_and_filter_columns_by_regex",
     "standardize_percentages",
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
-    "finalize_feature_schema",
+    "split_continuous_binary", 
     "apply_feature_schema"
 ]
 
@@ -108,22 +108,17 @@ def drop_constant_columns(df: pd.DataFrame, verbose: bool = True) -> pd.DataFram
     for col_name in df_clean.columns:
         column = df_clean[col_name]
         
-        # We can apply this logic to all columns or only focus on numeric ones.
-        # if not is_numeric_dtype(column):
-        #     cols_to_keep.append(col_name)
-        #     continue
-        
         # Keep a column if it has more than one unique value (nunique ignores NaNs by default)
         if column.nunique(dropna=True) > 1:
             cols_to_keep.append(col_name)
 
     dropped_columns = original_columns - set(cols_to_keep)
     if verbose:
-        _LOGGER.info(f"🧹 Dropped {len(dropped_columns)} constant columns.")
         if dropped_columns:
-            for dropped_column in dropped_columns:
-                print(f"    {dropped_column}")
-                
+            _LOGGER.info(f"🧹 Dropped {len(dropped_columns)} constant columns: {list(dropped_columns)}")
+        else:
+            _LOGGER.info("No constant columns found.")
+            
     # Return a new DataFrame with only the columns to keep
     df_clean = df_clean[cols_to_keep]
     
@@ -338,8 +333,7 @@ def drop_columns_with_missing_data(df: pd.DataFrame, threshold: float = 0.7, sho
     cols_to_drop = missing_fraction[missing_fraction > threshold].index # type: ignore
 
     if len(cols_to_drop) > 0:
-        _LOGGER.info(f"🧹 Dropping columns with more than {threshold*100:.0f}% missing data:")
-        print(list(cols_to_drop))
+        _LOGGER.info(f"🧹 Dropping columns with more than {threshold*100:.0f}% missing data: {list(cols_to_drop)}")
         
         result_df = df.drop(columns=cols_to_drop)
         if show_nulls_after:
@@ -369,9 +363,8 @@ def drop_macro(df: pd.DataFrame,
 
     Args:
         df (pd.DataFrame): The input pandas DataFrame to be cleaned.
-        log_directory (Union[str, Path]): Path to the directory where the
-            'Missing_Data_start.csv' and 'Missing_Data_final.csv' logs
-            will be saved.
+        log_directory (Union[str, Path]): Path to the directory where the missing data reports
+            and plots will be saved inside a "Missing Report" subdirectory.
         targets (list[str]): A list of column names to be treated as target
             variables. This list guides the row-dropping logic.
         skip_targets (bool, optional): If True, the columns listed in `targets`
@@ -387,15 +380,18 @@ def drop_macro(df: pd.DataFrame,
     # make a deep copy to work with
     df_clean = df.copy()
     
+    base_dir_path = make_fullpath(log_directory, make=True, enforce="directory")
+    full_path = base_dir_path / "Missing Report"
+    
     # Log initial state + Plot
     missing_data_start = show_null_columns(
         df=df_clean, 
-        plot_to_dir=log_directory, 
+        plot_to_dir=full_path, 
         plot_filename="Original",
         use_all_columns=True
     )
     save_dataframe_filename(df=missing_data_start.reset_index(drop=False),
-                   save_dir=log_directory,
+                   save_dir=full_path,
                    filename="Missing_Data_Original")
     
     # Clean cycles for rows and columns
@@ -424,12 +420,12 @@ def drop_macro(df: pd.DataFrame,
     # log final state + plot
     missing_data_final = show_null_columns(
         df=df_clean,
-        plot_to_dir=log_directory,
+        plot_to_dir=full_path,
         plot_filename="Processed",
         use_all_columns=True
     )
     save_dataframe_filename(df=missing_data_final.reset_index(drop=False),
-                   save_dir=log_directory,
+                   save_dir=full_path,
                    filename="Missing_Data_Processed")
     
     # return cleaned dataframe
@@ -476,9 +472,8 @@ def plot_value_distributions(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
     categorical_columns: Optional[List[str]] = None,
-    categorical_cardinality_threshold: int = 10,
-    max_categories: int = 50,
-    fill_na_with: str = "Missing"
+    max_categories: int = 100,
+    fill_na_with: str = "MISSING DATA"
 ):
     """
     Plots and saves the value distributions for all columns in a DataFrame,
@@ -491,15 +486,9 @@ def plot_value_distributions(
     Args:
         df (pd.DataFrame): The input DataFrame to analyze.
         save_dir (str | Path): Directory path to save the plots.
-        categorical_columns (List[str] | None): If provided, this list
-            of column names will be treated as categorical, and all other columns will be treated as continuous. This
-            overrides the `continuous_cardinality_threshold` logic.
-        categorical_cardinality_threshold (int): A numeric column will be treated
-            as 'categorical' if its number of unique values is less than or equal to this threshold. (Ignored if `categorical_columns` is set).
-        max_categories (int): The maximum number of unique categories a
-            categorical feature can have to be plotted. Features exceeding this limit will be skipped.
-        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its
-            own category. Defaults to "Missing".
+        categorical_columns (List[str] | None): If provided, these will be treated as categorical, and all other columns will be treated as continuous.
+        max_categories (int): The maximum number of unique categories a categorical feature can have to be plotted. Features exceeding this limit will be skipped.
+        fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category.
 
     Notes:
         - `seaborn.histplot` with KDE is used for continuous features.
@@ -534,7 +523,7 @@ def plot_value_distributions(
                     is_continuous = True
             else:
                 # Use auto-detection
-                if is_numeric and n_unique > categorical_cardinality_threshold:
+                if is_numeric:
                     is_continuous = True
             
             # --- Case 1: Continuous Numeric (Histogram) ---
@@ -549,7 +538,7 @@ def plot_value_distributions(
                 save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
                 numeric_plots_saved += 1
 
-            # --- Case 2: Categorical or Low-Cardinality Numeric (Count Plot) ---
+            # --- Case 2: Categorical (Count Plot) ---
             else:
                 # Check max categories
                 if n_unique > max_categories:
@@ -558,7 +547,7 @@ def plot_value_distributions(
 
                 # Adaptive figure size
                 fig_width = max(10, n_unique * 0.5)
-                plt.figure(figsize=(fig_width, 7))
+                plt.figure(figsize=(fig_width, 8))
                 
                 # Make a temporary copy for plotting to handle NaNs
                 temp_series = df[col_name].copy()
@@ -573,7 +562,7 @@ def plot_value_distributions(
                 
                 # Get category order by frequency
                 order = temp_series.value_counts().index
-                sns.countplot(x=temp_series, order=order, palette="viridis")
+                sns.countplot(x=temp_series, order=order, palette="Oranges", hue=temp_series, legend=False)
                 
                 plt.title(f"Distribution of '{col_name}' (Categorical)")
                 plt.xlabel(col_name)
@@ -743,12 +732,11 @@ def plot_categorical_vs_target(
     targets: List[str],
     save_dir: Union[str, Path],
     features: Optional[List[str]] = None,
-    plot_type: Literal["box", "violin"] = "box",
-    max_categories: int = 20,
-    fill_na_with: str = "Missing"
+    max_categories: int = 50,
+    fill_na_with: str = "MISSING DATA"
 ):
     """
-    Plots each categorical feature against each numeric target using box or violin plots.
+    Plots each categorical feature against each numeric target using box plots.
 
     This function is a core EDA step for regression tasks to understand the
     relationship between a categorical independent variable and a continuous
@@ -761,7 +749,6 @@ def plot_categorical_vs_target(
         targets (List[str]): A list of numeric target column names (y-axis).
         save_dir (str | Path): The base directory where plots will be saved. A subdirectory will be created here for each target.
         features (List[str] | None): A list of categorical feature column names (x-axis). If None, all non-numeric (object) columns will be used.
-        plot_type (Literal["box", "violin"]): The type of plot to generate.
         max_categories (int): The maximum number of unique categories a feature can have to be plotted. Features exceeding this limit will be skipped.
         fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category. Defaults to "Missing".
 
@@ -771,10 +758,6 @@ def plot_categorical_vs_target(
     """
     # 1. Validate the base save directory and inputs
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
-    
-    if plot_type not in ["box", "violin"]:
-        _LOGGER.error(f"Invalid plot type '{plot_type}'")
-        raise ValueError()
 
     # 2. Validate target columns (must be numeric)
     valid_targets = []
@@ -797,14 +780,10 @@ def plot_categorical_vs_target(
         for col in df.columns:
             if col in valid_targets:
                 continue
-            
             # Auto-include object dtypes
             if is_object_dtype(df[col]):
                 features_to_plot.append(col)
-            # Auto-include low-cardinality numeric features - REMOVED
-            # elif is_numeric_dtype(df[col]) and df[col].nunique() <= max_categories:
-            #     _LOGGER.info(f"Treating low-cardinality numeric column '{col}' as categorical.")
-            #     features_to_plot.append(col)
+
     else:
         # Validate user-provided list
         for col in features:
@@ -822,12 +801,11 @@ def plot_categorical_vs_target(
     
     for target_name in valid_targets:
         # Create a sanitized subdirectory for this target
-        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Categorical_{plot_type}")
+        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Categorical")
         target_save_dir = base_save_path / safe_target_dir_name
         target_save_dir.mkdir(parents=True, exist_ok=True)
         
-        _LOGGER.info(f"Generating '{plot_type}' plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
-
+        _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
         for feature_name in features_to_plot:
             
             # Make a temporary copy for plotting to handle NaNs and dtypes
@@ -849,12 +827,9 @@ def plot_categorical_vs_target(
 
             # 5. Create the plot
             # Increase figure width for categories
-            plt.figure(figsize=(max(10, n_unique * 1.2), 7))
+            plt.figure(figsize=(max(10, n_unique * 1.2), 10))
             
-            if plot_type == "box":
-                sns.boxplot(x=feature_name, y=target_name, data=temp_df)
-            elif plot_type == "violin":
-                sns.violinplot(x=feature_name, y=target_name, data=temp_df)
+            sns.boxplot(x=feature_name, y=target_name, data=temp_df)
 
             plt.title(f'{target_name} vs {feature_name}')
             plt.xlabel(feature_name)
@@ -982,7 +957,7 @@ def encode_categorical_features(
 
     # Handle the dataset splitting logic
     if split_resulting_dataset:
-        df_categorical = df_encoded[valid_columns].to_frame() # type: ignore
+        df_categorical = df_encoded[valid_columns]
         df_non_categorical = df.drop(columns=valid_columns)
         return mappings, df_non_categorical, df_categorical
     else:

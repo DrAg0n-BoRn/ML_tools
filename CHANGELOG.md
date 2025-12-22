@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [19.13.0] 2025-12-22
+
+### Changed
+
+- data_exploration:
+    - `plot_value_distributions()`, increased default max categories from 50 to 100, changed fill_na_with default to "MISSING DATA", updated color palette for count plots to "Oranges", and refined docstrings for clarity. Removed automatic detection of categorical columns based on cardinality threshold; now relies solely on user input for categorical columns for consistency.
+    - `plot_categorical_vs_target()`, removed `plot_type` parameter to streamline functionality. Now exclusively generates box plots for categorical vs. numeric target visualizations. Updated docstrings and logging messages to reflect this change.
+    - `drop_macro()`, missing data report and plots are now saved in a dedicated "Missing Report" subdirectory within the specified log directory for better organization. 
+
 ## [19.12.2] 2025-12-22
 
 ### Fixed
