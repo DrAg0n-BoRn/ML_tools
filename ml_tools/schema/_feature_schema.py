@@ -44,7 +44,7 @@ class FeatureSchema(NamedTuple):
         Handles conversion of Tuple->List and IntKeys->StrKeys automatically.
         """
         # validate path
-        dir_path = make_fullpath(directory, enforce="directory")
+        dir_path = make_fullpath(directory, make=True, enforce="directory")
         file_path = dir_path / SchemaKeys.SCHEMA_FILENAME
         
         try:

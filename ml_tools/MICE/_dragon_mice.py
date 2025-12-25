@@ -197,7 +197,7 @@ class DragonMICE:
                  _LOGGER.error(f"Index mismatch in dataset {subname}")
                  raise ValueError()
         
-        _LOGGER.info("Schema-based MICE imputation complete.")
+        _LOGGER.info("⬅️ Schema-based MICE imputation complete.")
         
         return kernel, imputed_datasets, imputed_dataset_names
         
@@ -237,9 +237,6 @@ class DragonMICE:
                 # We pass an empty DF as 'targets' to save_imputed_datasets to prevent duplication.
                 df_input = df
                 df_targets_to_save = pd.DataFrame(index=df.index) 
-                
-                # Monitor all columns that had NaNs
-                imputed_column_names = [col for col in df.columns if df[col].isna().any()]
             else:
                 # Explicitly cast tuple to list for Pandas indexing
                 feature_cols = list(self._schema.feature_names)
@@ -253,8 +250,9 @@ class DragonMICE:
                 df_input = df[feature_cols]
                 # Drop features to get targets (more robust than explicit selection if targets vary)
                 df_targets_to_save = df.drop(columns=feature_cols)
-                
-                imputed_column_names = _get_na_column_names(df=df_input) # type: ignore
+            
+            # Monitor all columns that had NaNs
+            imputed_column_names = [col for col in df_input.columns if df_input[col].isna().any()]
 
             # Run core logic
             kernel, imputed_datasets, imputed_dataset_names = self._run_mice(df=df_input, df_name=df_name) # type: ignore
@@ -316,35 +314,41 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
     
     # iterate over each imputed dataset
     for dataset_id, imputed_dataset_name in zip(range(dataset_count), imputed_dataset_names):
-        #Check directory for current dataset
         dataset_file_dir = f"Convergence_Metrics_{imputed_dataset_name}"
         local_save_dir = make_fullpath(input_path=root_path / dataset_file_dir, make=True)
         
-        for feature_name in column_names:
-            means_per_iteration = []
-            for iteration in range(iterations_cap):
-                current_imputed = kernel.complete_data(dataset=dataset_id, iteration=iteration)
-                means_per_iteration.append(np.mean(current_imputed[feature_name])) # type: ignore
-                
+        # 1. Pre-calculate means for all features across all iterations
+        # Structure: {feature_name: [mean_iter_0, mean_iter_1, ...]}
+        history = {col: [] for col in column_names}
+        
+        for iteration in range(iterations_cap):
+            # Resolve dataset ONLY ONCE per iteration
+            current_imputed = kernel.complete_data(dataset=dataset_id, iteration=iteration)
+            
+            for col in column_names:
+                # Fast lookup
+                val = np.mean(current_imputed[col])
+                history[col].append(val)
+
+        # 2. Plotting loop
+        for feature_name, means_per_iteration in history.items():
             plt.figure(figsize=(10, 8))
             plt.plot(means_per_iteration, marker='o')
             plt.xlabel("Iteration", **label_font)
             plt.ylabel("Mean of Imputed Values", **label_font)
             plt.title(f"Mean Convergence for '{feature_name}'", **label_font)
             
-            # Adjust plot display for the X axis
             _ticks = np.arange(iterations_cap)
             _labels = np.arange(1, iterations_cap + 1)
-            plt.xticks(ticks=_ticks, labels=_labels) # type: ignore
+            plt.xticks(ticks=_ticks, labels=_labels)
             plt.grid(True)
             
-            feature_save_name = sanitize_filename(feature_name)
-            feature_save_name = feature_save_name + ".svg"
+            feature_save_name = sanitize_filename(feature_name) + ".svg"
             save_path = local_save_dir / feature_save_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-        _LOGGER.info(f"{dataset_file_dir} process completed.")
+    _LOGGER.info(f"📉 Convergence diagnostics complete.")
 
 
 # Imputed distributions
@@ -431,5 +435,5 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    _LOGGER.info(f"{local_dir_name} completed.")
+    _LOGGER.info(f"📊 Imputed distributions complete.")
     

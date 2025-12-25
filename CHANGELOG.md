@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.0.1] 2025-12-25
+
+### Changed
+
+- schema:
+    - `FeatureSchema.to_json()`, If the target directory does not exist, it will be created automatically.
+
+### Fixed
+
+- MICE:
+    - `DragonMICE.run_pipeline()`, fixed a bug when monitoring imputed columns. Now correctly identifies columns with NaN values in the input DataFrame.
+    - `get_convergence_diagnostics()`, enhanced logic to reduce computational bottlenecks.
+
 ## [20.0.0] 2025-12-25
 
 ### Changed
