@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.1.1] 2025-12-25
+
+### Changed
+
+- ML_configuration:
+    - `DragonTrainingConfig`, added new train parameters:
+        - `device`
+        - `finalized_filename`
+        - `task`, validates against `MLTaskKeys` for robustness.
+
 ## [20.1.0] 2025-12-25
 
 ### Added

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from .._core import get_logger
 from ..path_manager import make_fullpath
+from ..keys._keys import MLTaskKeys
 
 from ._base_model_config import _BaseModelParams
 
@@ -30,6 +31,9 @@ class DragonTrainingConfig(_BaseModelParams):
                  test_size: float,
                  initial_learning_rate: float,
                  batch_size: int,
+                 task: str,
+                 device: str,
+                 finalized_filename: str,
                  random_state: int = 101,
                  **kwargs: Any) -> None:
         """  
@@ -38,6 +42,9 @@ class DragonTrainingConfig(_BaseModelParams):
             test_size (float): Proportion of data for test set.
             initial_learning_rate (float): Starting learning rate.
             batch_size (int): Number of samples per training batch.
+            task (str): Type of ML task (use TaskKeys).
+            device (str): Device to run training on.
+            finalized_filename (str): Filename for the Dragon ML Finalized-file.
             random_state (int): Seed for reproducibility.
             **kwargs: Additional training parameters as key-value pairs.
         """
@@ -45,7 +52,15 @@ class DragonTrainingConfig(_BaseModelParams):
         self.test_size = test_size
         self.initial_learning_rate = initial_learning_rate
         self.batch_size = batch_size
-        self.random_state = random_state
+        self.device = device
+        self.finalized_filename = finalized_filename
+        self.random_state = random_state        
+        
+        # validate task
+        if task not in MLTaskKeys.ALL_TASKS:
+            _LOGGER.error(f"Invalid task '{task}'. Must be one of: {MLTaskKeys.ALL_TASKS}")
+            raise ValueError()
+        self.task = task
         
         # Process kwargs with validation
         for key, value in kwargs.items():
