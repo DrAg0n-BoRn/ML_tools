@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.1.0] 2025-12-25
+
+### Added
+
+- ML_chain:
+    - `derive_next_step_schema()`, derives the next step FeatureSchema for chained models based on the current schema and model inference handler.
+
+### Changed
+
+- ML_chain:
+    - `DragonChainOrchestrator.update_with_inference()`, now appends prediction columns with a standardized prefix for consistency across chained models.
+    - `augment_dataset_with_predictions()`, now appends prediction columns with a standardized prefix for consistency across chained models.
+
 ## [20.0.1] 2025-12-25
 
 ### Changed

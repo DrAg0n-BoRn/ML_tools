@@ -77,18 +77,16 @@ class DragonChainOrchestrator:
     def update_with_inference(
         self, 
         handler: DragonInferenceHandler, 
-        prefix: str = "pred_", 
         batch_size: int = 4096
     ) -> None:
         """
         Runs inference using the provided handler on the full internal dataset and appends the results as new features.
         
         This updates the internal state of the Orchestrator. Subsequent calls to `get_training_data` 
-        will include these new prediction columns as features.
+        will include these new prediction columns as features with a standardized prefix.
 
         Args:
             handler (DragonInferenceHandler): The trained model handler.
-            prefix (str): Prefix for the new prediction columns (e.g., "m1_", "step2_").
             batch_size (int): Batch size for inference.
         """
         _LOGGER.info(f"Orchestrator: Updating internal state with predictions from handler (Targets: {handler.target_ids})...")
@@ -99,7 +97,6 @@ class DragonChainOrchestrator:
             handler=handler,
             dataset=self.current_dataset,
             ground_truth_targets=self.all_targets,
-            prediction_col_prefix=prefix,
             batch_size=batch_size
         )
         

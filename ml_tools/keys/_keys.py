@@ -278,6 +278,11 @@ class SchemaKeys:
     OPTIONAL_LABELS = "optional_labels"
 
 
+class ChainKeys:
+    """Used by the ML chaining module."""
+    CHAIN_PREDICTION_PREFIX = "pred_"
+
+
 class _EvaluationConfig:
     """Set config values for evaluation modules."""
     DPI = 400

@@ -5,7 +5,7 @@ from typing import Optional, Literal
 
 from ..ML_inference import DragonInferenceHandler
 
-from ..keys._keys import MLTaskKeys, PyTorchInferenceKeys
+from ..keys._keys import MLTaskKeys, PyTorchInferenceKeys, ChainKeys
 from .._core import get_logger
 
 
@@ -23,11 +23,10 @@ def augment_dataset_with_predictions(
     handler: DragonInferenceHandler,
     dataset: pd.DataFrame,
     ground_truth_targets: list[str],
-    prediction_col_prefix: str = "pred_",
     batch_size: int = 4096
 ) -> pd.DataFrame:
     """
-    Uses a DragonInferenceHandler to generate predictions for a dataset and appends them as new feature columns.
+    Uses a DragonInferenceHandler to generate predictions for a dataset and appends them as new feature columns with a standardized prefix.
     
     This function splits the features from the ground truth targets, runs inference in batches to ensure
     memory efficiency, and returns a unified DataFrame containing:
@@ -38,8 +37,6 @@ def augment_dataset_with_predictions(
         dataset (pd.DataFrame): The input pandas DataFrame containing features and ground truth targets.
         ground_truth_targets (List[str]): A list of column names in `dataset` representing the actual targets.
             These are removed from the input features during inference and appended to the end of the result.
-        prediction_col_prefix (str, optional): A string to prepend when creating the
-            new prediction columns.
         batch_size (int, optional): The number of samples to process in a single inference step. 
             Prevents OOM errors on large datasets. Defaults to 4096.
 
@@ -107,7 +104,7 @@ def augment_dataset_with_predictions(
     full_prediction_array = np.vstack(all_predictions)
     
     # Generate new column names
-    new_col_names = [f"{prediction_col_prefix}{tid}" for tid in handler.target_ids]
+    new_col_names = [f"{ChainKeys.CHAIN_PREDICTION_PREFIX}{tid}" for tid in handler.target_ids]
     
     # Verify dimensions match
     if full_prediction_array.shape[1] != len(new_col_names):
