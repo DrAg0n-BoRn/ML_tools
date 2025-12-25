@@ -1,0 +1,124 @@
+from typing import Union, Optional, Any, Literal
+from pathlib import Path
+
+from .._core import get_logger
+from ..path_manager import make_fullpath
+
+from ._base_model_config import _BaseModelParams
+
+
+_LOGGER = get_logger("ML Configuration")
+
+
+__all__ = [    
+    # --- Training Config ---
+    "DragonTrainingConfig",
+    "DragonParetoConfig"
+]
+
+
+class DragonTrainingConfig(_BaseModelParams):
+    """
+    Configuration object for the training process.
+    
+    Can be unpacked as a dictionary for logging or accessed as an object.
+    
+    Accepts arbitrary keyword arguments which are set as instance attributes.
+    """
+    def __init__(self,
+                 validation_size: float,
+                 test_size: float,
+                 initial_learning_rate: float,
+                 batch_size: int,
+                 random_state: int = 101,
+                 **kwargs: Any) -> None:
+        """  
+        Args:
+            validation_size (float): Proportion of data for validation set.
+            test_size (float): Proportion of data for test set.
+            initial_learning_rate (float): Starting learning rate.
+            batch_size (int): Number of samples per training batch.
+            random_state (int): Seed for reproducibility.
+            **kwargs: Additional training parameters as key-value pairs.
+        """
+        self.validation_size = validation_size
+        self.test_size = test_size
+        self.initial_learning_rate = initial_learning_rate
+        self.batch_size = batch_size
+        self.random_state = random_state
+        
+        # Process kwargs with validation
+        for key, value in kwargs.items():
+            # Python guarantees 'key' is a string for **kwargs
+            
+            # Allow None in value
+            if value is None:
+                setattr(self, key, value)
+                continue
+            
+            if isinstance(value, dict):
+                _LOGGER.error("Nested dictionaries are not supported, unpack them first.")
+                raise TypeError()
+            
+            # Check if value is a number or a string or a JSON supported type, except dict
+            if not isinstance(value, (str, int, float, bool, list, tuple)):
+                _LOGGER.error(f"Invalid type for configuration '{key}': {type(value).__name__}")
+                raise TypeError()
+            
+            setattr(self, key, value)
+
+
+class DragonParetoConfig(_BaseModelParams):
+    """
+    Configuration object for the Pareto Optimization process.
+    """
+    def __init__(self,
+                 save_directory: Union[str, Path],
+                 target_objectives: dict[str, Literal["min", "max"]],
+                 continuous_bounds_map: Union[dict[str, tuple[float, float]], dict[str, list[float]], str, Path],
+                 columns_to_round: Optional[list[str]] = None,
+                 population_size: int = 500,
+                 generations: int = 1000,
+                 solutions_filename: str = "NonDominatedSolutions",
+                 float_precision: int = 4,
+                 log_interval: int = 10,
+                 plot_size: tuple[int, int] = (10, 7),
+                 plot_font_size: int = 16,
+                 discretize_start_at_zero: bool = True):
+        """  
+        Configure the Pareto Optimizer.
+
+        Args:
+            save_directory (str | Path): Directory to save artifacts.
+            target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
+                Example: {"price": "max", "error": "min"}
+            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}. Or a path/str to a directory containing the "optimization_bounds.json" file.
+            columns_to_round (List[str] | None): List of continuous column names that should be rounded to the nearest integer.
+            population_size (int): Size of the genetic population.
+            generations (int): Number of generations to run.
+            solutions_filename (str): Filename for saving Pareto solutions.
+            float_precision (int): Number of decimal places to round standard float columns.
+            log_interval (int): Interval for logging progress.
+            plot_size (Tuple[int, int]): Size of the 2D plots.
+            plot_font_size (int): Font size for plot text.
+            discretize_start_at_zero (bool): Categorical encoding start index. True=0, False=1.
+        """
+        # Validate string or Path
+        valid_save_dir = make_fullpath(save_directory, make=True, enforce="directory")
+        
+        if isinstance(continuous_bounds_map, (str, Path)):
+            continuous_bounds_map = make_fullpath(continuous_bounds_map, make=False, enforce="directory")
+        
+        self.save_directory = valid_save_dir
+        self.target_objectives = target_objectives
+        self.continuous_bounds_map = continuous_bounds_map
+        self.columns_to_round = columns_to_round
+        self.population_size = population_size
+        self.generations = generations
+        self.solutions_filename = solutions_filename
+        self.float_precision = float_precision
+        self.log_interval = log_interval
+        self.plot_size = plot_size
+        self.plot_font_size = plot_font_size
+        self.discretize_start_at_zero = discretize_start_at_zero
+

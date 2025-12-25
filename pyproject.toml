@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "19.14.0"
+version = "20.0.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -19,9 +19,11 @@ Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
 Changelog = "https://github.com/DrAg0n-BoRn/ML_tools/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-# Machine Learning main toolbox. Additionally Requires PyTorch and torchvision with CUDA / MPS support
+# Machine Learning main toolbox. Additionally Requires PyTorch and torchvision with CUDA support
 ML = [
     # Core
+    "torch",
+    "torchvision",
     "numpy<2.0",          # Pinned for PyTorch extension compatibility
     "pandas",
     "polars>=1.0",
@@ -47,12 +49,6 @@ ML = [
     "notebook",
     "jupyterlab",
     "ipywidgets",
-]
-
-# pytorch_tabular
-py-tab = [
-    "omegaconf",
-    "pytorch_tabular",
 ]
 
 # ensemble tools
@@ -171,5 +167,6 @@ dev = [
     "shap>=0.49.1",
     "torch>=2.9.1",
     "torchmetrics>=1.5.2",
+    "torchvision>=0.24.1",
     "tqdm>=4.67.1",
 ]

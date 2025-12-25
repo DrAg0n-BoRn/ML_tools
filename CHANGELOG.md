@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.0.0] 2025-12-25
+
+### Changed
+
+- Internal refactoring and optimizations for all modules.
+- data_exploration:
+    - `encode_categorical_features()`, revamped to return both the encoded DataFrame and the mapping dictionary. Improved handling of NaN values and added detailed logging. Reduced parameters for robustness.
+- Module "VIF_factor" renamed to "VIF".
+- Module "MICE_imputation" renamed to "MICE". 
+    - `DragonMICE`, class updated to hide internal attributes and methods. Added detailed docstrings for public methods. Added validation steps for robustness.
+    - `run_mice_imputation()` function deprecated.
+- ML_utilities:
+    - `ArtifactFinder`, renamed to `DragonArtifactFinder`.
+- Modules "ML_evaluation", "ML_sequence_evaluation", "ML_vision_evaluation", and "ML_evaluation_multi" merged into "ML_evaluation".
+- Modules "ML_optimization" and "ML_optimization_pareto" merged into "ML_optimization".
+- Modules "ML_models" and "ML_models_advanced" merged into "ML_models".
+    - `save` methods have been unified and renamed to `save_architecture()`.
+    - `load` class methods have been unified and renamed to `load_architecture()`.
+- Module "ML_sequence_inference" renamed to "ML_inference_sequence".
+- Module "ML_vision_inference" renamed to "ML_inference_vision".
+- Modules "ML_datasetmaster", "ML_sequence_datasetmaster", and "ML_vision_datasetmaster" merged into "ML_datasetmaster".
+- Module "ML_chaining_inference" moved into "ML_inference".
+- Module "ML_chaining_utilities" renamed to "ML_chain".
+- Module "ML_sequence_models" renamed to "ML_models_sequence".
+- Module "ML_vision_models" renamed to "ML_models_vision".
+- ML_configuration:
+    - Renamed configuration classes for evaluation metrics.
+- schema:
+    - `FeatureSchema`, new class method `from_model_architecture()` to load a FeatureSchema directly from a model architecture file.
+
+### Added
+
+- data_exploration:
+    - `split_continuous_categorical_targets()`, splits a DataFrame into 3 dataframes: continuous features, categorical features, and targets.
+
+### Removed
+
+- ML_models_pytab: Removed wrappers for pytorch_tabular models.
+- ML_configuration_pytab: Removed configuration classes for pytorch_tabular wrapper models.
+
 ## [19.14.0] 2025-12-22
 
 ### Changed

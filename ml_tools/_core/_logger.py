@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union, Any
 
 # Step 1: Conditionally import colorlog
 try:
@@ -27,7 +27,7 @@ class _UnifiedFormatter(logging.Formatter):
     A unified log formatter that adds emojis, uses level-specific formats,
     and applies colors if colorlog is available.
     """
-    def __init__(self, datefmt: Optional[str] = None, log_colors: Optional[Dict[str, str]] = None):
+    def __init__(self, datefmt: Optional[str] = None, log_colors: Optional[dict[str, str]] = None):
         """Initializes the formatter, creating sub-formatters for each level."""
         # Initialize the base logging.Formatter correctly
         super().__init__(datefmt=datefmt)
@@ -60,7 +60,7 @@ class _ContextAdapter(logging.LoggerAdapter):
     """
     Wraps the logger to automatically prepend the context name to the message.
     """
-    def process(self, msg: Any, kwargs: Dict[str, Any]) -> tuple[Any, Dict[str, Any]]:
+    def process(self, msg: Any, kwargs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         # Retrieve the context name from the extra dict passed during init
         context = self.extra.get('context_name', 'Unknown') # type: ignore
         return f"[{context}] {msg}", kwargs
@@ -75,7 +75,7 @@ def _setup_main_logger(name: str = "ml_tools", level: int = logging.INFO) -> log
 
     # Prevents adding handlers multiple times if imported multiple times
     if not logger.handlers:
-        formatter_kwargs: Dict[str, Any] = {
+        formatter_kwargs: dict[str, Any] = {
             'datefmt': '%Y-%m-%d %H:%M'
         }
 
@@ -121,26 +121,16 @@ def get_logger(name: Optional[str] = None) -> Union[logging.Logger, logging.Logg
     return _ROOT_LOGGER
 
 
-# Maintain backward compatibility for scripts importing _LOGGER directly
-_LOGGER = _ROOT_LOGGER
-
-
-def _log_and_exit(message: str, exit_code: int = 1):
-    """Logs a critical message inside an exception block and terminates the program."""
-    _LOGGER.exception(message)
-    sys.exit(exit_code)
-
-
 if __name__ == "__main__":
-    _LOGGER.info("Data loading process started.")
-    _LOGGER.warning("A non-critical configuration value is missing.")
+    _ROOT_LOGGER.info("Data loading process started.")
+    _ROOT_LOGGER.warning("A non-critical configuration value is missing.")
     
     try:
         x = 1 / 0
     except ZeroDivisionError:
-        _LOGGER.exception("Critical error during calculation.")
+        _ROOT_LOGGER.exception("Critical error during calculation.")
     
-    _LOGGER.critical("Total failure.")
+    _ROOT_LOGGER.critical("Total failure.")
     
     test_logger = get_logger("SUPER CONTEXT")
     

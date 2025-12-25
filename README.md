@@ -45,7 +45,7 @@ This toolbox is designed as a collection of mutually exclusive environments due 
 
 Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation using PyTorch.
 
-➡️ Prerequisite: PyTorch required. Follow the official instructions: [PyTorch website](https://pytorch.org/get-started/locally/)
+➡️ On Windows, the default installation includes the CPU version of PyTorch. Follow the official instructions to install the CUDA version: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 ```Bash
 pip install "dragon-ml-toolbox[ML]"
@@ -54,7 +54,6 @@ pip install "dragon-ml-toolbox[ML]"
 #### Modules:
 
 ```Bash
-constants
 data_exploration
 ETL_cleaning
 ETL_engineering
@@ -62,46 +61,31 @@ IO_tools
 keys
 math_utilities
 ML_callbacks
-ML_chaining_inference
-ML_chaining_utilities
+ML_chain
 ML_configuration
 ML_datasetmaster
-ML_evaluation_captum
-ML_evaluation_multi
 ML_evaluation
+ML_evaluation_captum
+ML_finalize_handler
 ML_inference
+ML_inference_sequence
+ML_inference_vision
 ML_models
-ML_models_advanced
-ML_optimization_pareto
+ML_models_sequence
+ML_models_vision
 ML_optimization
 ML_scaler
-ML_sequence_datasetmaster
-ML_sequence_evaluation
-ML_sequence_inference
-ML_sequence_models
 ML_trainer
 ML_utilities
-ML_vision_datasetmaster
-ML_vision_evaluation
-ML_vision_inference
-ML_vision_models
 ML_vision_transformers
 optimization_tools
 path_manager
+plot_fonts
 schema
 serde
 SQL
 utilities
-```
-
-Wrappers for some `pytorch_tabular` models are available:
-
-```Bash
-pip install "dragon-ml-toolbox[ML,py-tab]"
-
-# Extra Modules:
-ML_models_pytab
-ML_configuration_pytab
+constants
 ```
 
 ---
@@ -117,22 +101,23 @@ pip install "dragon-ml-toolbox[ensemble]"
 #### Modules:
 
 ```Bash
-constants
-IO_tools
 data_exploration
 ensemble_evaluation
 ensemble_inference
 ensemble_learning
 ETL_cleaning
 ETL_engineering
+IO_tools
 math_utilities
 optimization_tools
 path_manager
+plot_fonts
 PSO_optimization
 schema
 serde
 SQL
 utilities
+constants
 ```
 
 ---
@@ -148,14 +133,14 @@ pip install "dragon-ml-toolbox[mice]"
 #### Modules:
 
 ```Bash
-constants
 IO_tools
 math_utilities
-MICE_imputation
-serde
-VIF_factor
+MICE
 path_manager
+plot_fonts
+serde
 utilities
+VIF
 ```
 
 ---
@@ -189,13 +174,13 @@ pip install "dragon-ml-toolbox[gui-boost]"
 #### Modules:
 
 ```Bash
-constants
-IO_tools
-GUI_tools
 ensemble_inference
+GUI_tools
+IO_tools
 path_manager
 schema
 serde
+constants
 ```
 
 ---
@@ -211,21 +196,20 @@ pip install "dragon-ml-toolbox[gui-torch]"
 #### Modules:
 
 ```Bash
-constants
-IO_tools
 GUI_tools
+IO_tools
 keys
 ML_models
-ML_models_advanced
-ML_sequence_models
-ML_vision_models # Requires: torchvision and Pillow
+ML_models_sequence
+ML_models_vision # Requires: torchvision and Pillow
 ML_inference
-ML_sequence_inference
-ML_vision_inference # Requires: torchvision and Pillow
+ML_inference_sequence
+ML_inference_vision # Requires: torchvision and Pillow
 ML_vision_transformers # Requires: torchvision and Pillow
 ML_scaler
 path_manager
 schema
+constants
 ```
 
 ---

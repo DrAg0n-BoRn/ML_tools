@@ -1,0 +1,14 @@
+from ._ML_evaluation_captum import (
+    captum_feature_importance, 
+    captum_image_heatmap,
+    captum_segmentation_heatmap
+)
+
+from ._imprimir import info
+
+
+__all__ = [
+    "captum_feature_importance", 
+    "captum_image_heatmap",
+    "captum_segmentation_heatmap"
+]
