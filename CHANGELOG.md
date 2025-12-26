@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.2.0] 2025-12-26
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDataset`, converts single regression target columns to 2D tensors to comply with best practices in PyTorch.
+
+### Fixed
+
+- ML_scaler:
+    - `DragonScaler.scale()`, now correctly handles 1D input tensors by reshaping them to 2D for scaling operations and reshaping back to 1D afterward. (Defensive implementation)
+    - `DragonScaler.inverse_scale()`, now correctly handles 1D input tensors by reshaping them to 2D for inverse scaling operations and reshaping back to 1D afterward. (Defensive implementation)
+
 ## [20.1.1] 2025-12-25
 
 ### Changed

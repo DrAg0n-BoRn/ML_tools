@@ -172,6 +172,12 @@ class _BaseDatasetMaker(ABC):
         y_train_arr = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
         y_val_arr = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
         y_test_arr = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
+        
+        # --- Ensure targets are 2D (N, 1) if they are currently 1D (N,) ---
+        if y_train_arr.ndim == 1: y_train_arr = y_train_arr.reshape(-1, 1)
+        if y_val_arr.ndim == 1:   y_val_arr = y_val_arr.reshape(-1, 1)
+        if y_test_arr.ndim == 1:  y_test_arr = y_test_arr.reshape(-1, 1)
+        # ------------------------------------------------------------------
 
         if self.target_scaler is None:
             _LOGGER.info("Fitting a new DragonScaler on training targets.")

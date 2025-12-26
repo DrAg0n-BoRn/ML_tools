@@ -127,9 +127,14 @@ class DragonScaler:
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
             # If not fitted, return as is
             return data
-
+        
         data_clone = data.clone()
         
+        # Robust check: If data is 1D, assume it's a single feature/target column and reshape it to (N, 1) for the operation, then reshape back.
+        input_is_1d = (data_clone.ndim == 1)
+        if input_is_1d:
+            data_clone = data_clone.view(-1, 1)
+
         # Ensure mean and std are on the same device as the data
         mean = self.mean_.to(data.device)
         std = self.std_.to(data.device)
@@ -143,6 +148,9 @@ class DragonScaler:
         # Place the scaled features back into the cloned tensor
         data_clone[:, self.continuous_feature_indices] = scaled_features
         
+        if input_is_1d:
+            return data_clone.view(-1)
+        
         return data_clone
 
     def inverse_transform(self, data: torch.Tensor) -> torch.Tensor:
@@ -151,8 +159,12 @@ class DragonScaler:
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
             return data
-            
+        
         data_clone = data.clone()
+        
+        input_is_1d = (data_clone.ndim == 1)
+        if input_is_1d:
+            data_clone = data_clone.view(-1, 1)
         
         mean = self.mean_.to(data.device)
         std = self.std_.to(data.device)
@@ -163,6 +175,9 @@ class DragonScaler:
         original_scale_features = (features_to_inverse * (std + 1e-8)) + mean
         
         data_clone[:, self.continuous_feature_indices] = original_scale_features
+        
+        if input_is_1d:
+            return data_clone.view(-1)
         
         return data_clone
 
