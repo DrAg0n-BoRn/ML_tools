@@ -29,6 +29,7 @@ def custom_logger(
     log_name: str,
     add_timestamp: bool=True,
     dict_as: Literal['auto', 'json', 'csv'] = 'auto',
+    verbose: int = 3
 ) -> None:
     """
     Logs various data types to corresponding output formats:
@@ -63,6 +64,7 @@ def custom_logger(
     """
     try:
         if not isinstance(data, BaseException) and not data:
+            # Display a warning instead of error to allow program continuation
             _LOGGER.warning("Empty data received. No log file will be saved.")
             return
         
@@ -103,8 +105,9 @@ def custom_logger(
         else:
             _LOGGER.error("Unsupported data type. Must be list, dict, str, or BaseException.")
             raise ValueError()
-
-        _LOGGER.info(f"Log saved as: '{base_path.name}'")
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Log saved as: '{base_path.name}'")
 
     except Exception:
         _LOGGER.exception(f"Log not saved.")
@@ -169,7 +172,8 @@ def _log_dict_to_json(data: dict[Any, Any], path: Path) -> None:
 def train_logger(train_config: Union[dict, Any],
                  model_parameters: Union[dict, Any],
                  train_history: Union[dict, None],
-                 save_directory: Union[str, Path]):
+                 save_directory: Union[str, Path],
+                 verbose: int = 3) -> None:
     """
     Logs training data to JSON, adding a timestamp to the filename.
     
@@ -230,6 +234,10 @@ def train_logger(train_config: Union[dict, Any],
         save_directory=save_directory,
         log_name="Training_Log",
         add_timestamp=True,
-        dict_as='json'
+        dict_as='json',
+        verbose=1
     )
+    
+    if verbose >= 2:
+        _LOGGER.info(f"Training log saved to '{save_directory}/Training_Log.json'")
 

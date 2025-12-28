@@ -38,7 +38,7 @@ from ._schema_ops import (
     apply_feature_schema,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -68,3 +68,6 @@ __all__ = [
     "reconstruct_binary",
     "reconstruct_multibinary",
 ]
+
+def info():
+    _imprimir_disponibles(__all__)

@@ -4,7 +4,7 @@ from ._serde import (
     deserialize_object,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -12,3 +12,7 @@ __all__ = [
     "serialize_object",
     "deserialize_object",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

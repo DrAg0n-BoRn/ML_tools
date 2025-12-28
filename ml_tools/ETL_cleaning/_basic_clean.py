@@ -261,7 +261,7 @@ def _generate_null_report(df: pl.DataFrame, save_dir: Path, filename: str):
         (pl.col("null_count") / total_rows * 100).round(2).alias("missing_percent")
     ).sort("missing_percent", descending=True)
     
-    save_dataframe_filename(df=report, save_dir=save_dir, filename=filename)
+    save_dataframe_filename(df=report, save_dir=save_dir, filename=filename, verbose=2)
 
 
 def drop_macro_polars(df: pl.DataFrame, 

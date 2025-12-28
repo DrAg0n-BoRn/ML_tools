@@ -56,7 +56,7 @@ class FeatureSchema(NamedTuple):
                 json.dump(data, f, indent=4)
                 
             if verbose:
-                _LOGGER.info(f"FeatureSchema saved to '{dir_path.name}/{SchemaKeys.SCHEMA_FILENAME}'")
+                _LOGGER.info(f"{self} saved to '{dir_path.name}/{SchemaKeys.SCHEMA_FILENAME}'")
                 
         except (IOError, TypeError) as e:
             _LOGGER.error(f"Failed to save FeatureSchema to JSON: {e}")
@@ -86,7 +86,7 @@ class FeatureSchema(NamedTuple):
             schema = cls(**schema_kwargs)
 
             if verbose:
-                _LOGGER.info(f"FeatureSchema loaded from '{dir_path.name}'")
+                _LOGGER.info(f"{schema} loaded from '{dir_path.name}/{SchemaKeys.SCHEMA_FILENAME}'")
 
             return schema
 
@@ -142,7 +142,7 @@ class FeatureSchema(NamedTuple):
             schema = cls(**schema_kwargs)
 
             if verbose:
-                _LOGGER.info(f"FeatureSchema extracted from architecture '{target_path.name}'")
+                _LOGGER.info(f"{schema} extracted from architecture '{target_path.parent.name}/{target_path.name}'")
 
             return schema
 

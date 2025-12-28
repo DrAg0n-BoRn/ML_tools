@@ -8,7 +8,7 @@ from ._ensemble_evaluation import (
     plot_learning_curves
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -20,3 +20,7 @@ __all__ = [
     "get_shap_values",
     "plot_learning_curves"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

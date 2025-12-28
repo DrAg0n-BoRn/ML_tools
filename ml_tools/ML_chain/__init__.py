@@ -12,7 +12,7 @@ from ._update_schema import (
     derive_next_step_schema
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -22,3 +22,7 @@ __all__ = [
     "augment_dataset_with_predictions_multi",
     "prepare_chaining_dataset",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

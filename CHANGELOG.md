@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.3.0] 2025-12-28
+
+- Non-breaking internal refactoring and logging improvements.
+
+### Changed
+
+- ML_trainer:
+    - `.finalize_model_training()`, now automatically outputs a report on the contents of the finalized .pth file.
+- ML_optimization:
+    - `DragonOptimizer`, now initialized from a `DragonOptimizerConfig` instance for consistent configuration management. Simplifying method signatures.
+
+### Added
+
+- ML_configuration:
+    - `DragonOptimizerConfig`, Configuration class for single-objective optimization tasks.
+
 ## [20.2.0] 2025-12-26
 
 ### Changed

@@ -268,8 +268,7 @@ def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True)
         yield df, df_name
 
 
-
-def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str) -> None:
+def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str, verbose: int=3) -> None:
     """
     Saves a pandas or polars DataFrame to a CSV file.
 
@@ -280,9 +279,16 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
             The directory where the CSV file will be saved.
         filename (str): 
             The CSV filename. The '.csv' extension will be added if missing.
+        verbose (int): 
+            Verbosity level for logging.
+                - 0: Error level
+                - 1: Warning level
+                - 2: Info level
+                - 3: Detailed process info
     """
     # This check works for both pandas and polars
     if df.shape[0] == 0:
+        # Warning instead of error to allow graceful skipping
         _LOGGER.warning(f"Attempting to save an empty DataFrame: '{filename}'. Process Skipped.")
         return
     
@@ -317,10 +323,11 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
         _LOGGER.error(f"Unsupported DataFrame type: {type(df)}. Must be pandas or polars.")
         raise TypeError()
     
-    _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df_to_save.shape}")
+    if verbose >= 2:
+        _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df_to_save.shape}")
 
 
-def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
+def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path, verbose: int=3) -> None:
     """
     Saves a DataFrame to a specified full path.
 
@@ -330,6 +337,11 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
     Args:
         df (Union[pd.DataFrame, pl.DataFrame]): The pandas or polars DataFrame to save.
         full_path (Path): The complete file path, including the filename and `.csv` extension, where the DataFrame will be saved.
+        verbose (int): Verbosity level for logging.
+            - 0: Error level
+            - 1: Warning level
+            - 2: Info level
+            - 3: Detailed process info
     """
     if not isinstance(full_path, Path) or not full_path.suffix.endswith(".csv"):
         _LOGGER.error('A path object pointing to a .csv file must be provided.')
@@ -337,13 +349,15 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path):
 
     save_dataframe_filename(df=df, 
                             save_dir=full_path.parent,
-                            filename=full_path.name)
+                            filename=full_path.name,
+                            verbose=verbose)
 
 
 def save_dataframe_with_schema(
     df: pd.DataFrame, 
     full_path: Path,
-    schema: "FeatureSchema"
+    schema: "FeatureSchema",
+    verbose: int=3
 ) -> None:
     """
     Saves a pandas DataFrame to a CSV, strictly enforcing that the
@@ -367,28 +381,28 @@ def save_dataframe_with_schema(
             The complete file path where the DataFrame will be saved.
         schema (FeatureSchema): 
             The schema object to validate against.
-
-    Raises:
-        ValueError: 
-            - If the DataFrame is missing columns required by the schema
-              within its first N columns.
-            - If the DataFrame's first N columns contain unexpected
-              columns that are not in the schema.
+        verbose (int): 
+            Verbosity level for logging.
+                - 0: Error level
+                - 1: Warning level
+                - 2: Info level
+                - 3: Detailed process info
     """
     if not isinstance(full_path, Path) or not full_path.suffix.endswith(".csv"):
         _LOGGER.error('A path object pointing to a .csv file must be provided.')
         raise ValueError()
     
     # Call the helper to validate and reorder
-    df_to_save = _validate_and_reorder_schema(df=df, schema=schema)
+    df_to_save = _validate_and_reorder_schema(df=df, schema=schema, verbose=verbose)
     
     # Call the original save function
-    save_dataframe(df=df_to_save, full_path=full_path)
+    save_dataframe(df=df_to_save, full_path=full_path, verbose=verbose)
 
 
 def _validate_and_reorder_schema(
     df: pd.DataFrame, 
-    schema: "FeatureSchema"
+    schema: "FeatureSchema",
+    verbose:int=3
 ) -> pd.DataFrame:
     """
     Internal helper to validate and reorder a DataFrame against a schema.
@@ -436,9 +450,11 @@ def _validate_and_reorder_schema(
 
     # If we pass validation, the sets are equal. Now check order.
     if df_feature_cols == expected_features:
-        _LOGGER.info("DataFrame feature columns already match schema order.")
+        if verbose >= 2:
+            _LOGGER.info("DataFrame feature columns already match schema order.")
     else:
-        _LOGGER.warning("DataFrame feature columns do not match schema order. Reordering...")
+        if verbose >= 1:
+            _LOGGER.warning("DataFrame feature columns do not match schema order. Reordering...")
         
         # Rebuild the DataFrame with the correct feature order + target columns
         new_order = expected_features + df_target_cols
@@ -446,9 +462,11 @@ def _validate_and_reorder_schema(
 
     # Log the presumed target columns for user verification
     if not df_target_cols:
-        _LOGGER.warning(f"No target columns were found after index {n_features-1}.")
+        if verbose >= 1:
+            _LOGGER.warning(f"No target columns were found after index {n_features-1}.")
     else:
-        _LOGGER.info(f"Target Columns: {df_target_cols}")
+        if verbose >= 2:
+            _LOGGER.info(f"Target Columns: {df_target_cols}")
     
     return df_to_process # type: ignore
 

@@ -284,7 +284,7 @@ class DragonMICE:
 def _save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
         merged_df = merge_dataframes(imputed_df, df_targets, direction="horizontal", verbose=False)
-        save_dataframe_filename(df=merged_df, save_dir=save_dir, filename=subname)
+        save_dataframe_filename(df=merged_df, save_dir=save_dir, filename=subname, verbose=2)
 
 
 #Convergence diagnostic

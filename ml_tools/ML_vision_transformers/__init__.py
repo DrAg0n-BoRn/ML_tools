@@ -5,9 +5,11 @@ from ._core_transforms import (
     RandomHistogramEqualization,
 )
 
-from ._offline_augmentation import create_offline_augmentations
+from ._offline_augmentation import (
+    create_offline_augmentations
+)
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -19,3 +21,7 @@ __all__ = [
     # Offline Augmentation
     "create_offline_augmentations",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

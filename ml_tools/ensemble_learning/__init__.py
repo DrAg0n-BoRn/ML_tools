@@ -4,7 +4,7 @@ from ._ensemble_learning import (
     run_ensemble_pipeline,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -12,3 +12,7 @@ __all__ = [
     "ClassificationTreeModels",
     "run_ensemble_pipeline",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

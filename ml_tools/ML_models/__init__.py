@@ -4,16 +4,27 @@ from ._mlp_attention import (
     DragonMultiHeadAttentionNet
 )
 
-from ._advanced_models import (
-    DragonGateModel,
-    DragonNodeModel,
-    DragonAutoInt,
+from ._dragon_gate import (
+    DragonGateModel
+)
+
+from ._dragon_node import (
+    DragonNodeModel
+)
+
+from ._dragon_autoint import (
+    DragonAutoInt
+)
+
+from ._dragon_tabnet import (
     DragonTabNet
 )
 
-from ._dragon_tabular import DragonTabularTransformer
+from ._dragon_tabular import (
+    DragonTabularTransformer
+)
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -29,4 +40,8 @@ __all__ = [
     "DragonAutoInt",
     "DragonTabNet",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)
 

@@ -7,7 +7,7 @@ from ._excel_handler import (
     horizontal_merge_transform_excel
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -18,3 +18,7 @@ __all__ = [
     "vertical_merge_transform_excel",
     "horizontal_merge_transform_excel"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

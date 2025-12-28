@@ -33,7 +33,7 @@ class DragonScaler:
         self.continuous_feature_indices = continuous_feature_indices
 
     @classmethod
-    def fit(cls, dataset: Dataset, continuous_feature_indices: list[int], batch_size: int = 64) -> 'DragonScaler':
+    def fit(cls, dataset: Dataset, continuous_feature_indices: list[int], batch_size: int = 64, verbose: int = 3) -> 'DragonScaler':
         """
         Fits the scaler using a PyTorch Dataset (Method A) using Batched Welford's Algorithm.
         """
@@ -85,23 +85,25 @@ class DragonScaler:
                 n_total = new_n_total
 
         if n_total == 0:
-             _LOGGER.error("Dataset is empty. Scaler cannot be fitted.")
-             return cls(continuous_feature_indices=continuous_feature_indices)
+            _LOGGER.error("Dataset is empty. Scaler cannot be fitted.")
+            return cls(continuous_feature_indices=continuous_feature_indices)
 
         # Finalize Standard Deviation
         # Unbiased estimator (divide by n-1)
         if n_total < 2:
-            _LOGGER.warning(f"Only one sample found. Standard deviation set to 1.")
+            if verbose >= 1:
+                _LOGGER.warning(f"Only one sample found. Standard deviation set to 1.")
             std = torch.ones_like(mean_global) # type: ignore
         else:
             variance = m2_global / (n_total - 1)
             std = torch.sqrt(torch.clamp(variance, min=1e-8))
-
-        _LOGGER.info(f"Scaler fitted on {n_total} samples for {num_continuous_features} features (Welford's).")
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Scaler fitted on {n_total} samples for {num_continuous_features} features (Welford's).")
         return cls(mean=mean_global, std=std, continuous_feature_indices=continuous_feature_indices)
 
     @classmethod
-    def fit_tensor(cls, data: torch.Tensor) -> 'DragonScaler':
+    def fit_tensor(cls, data: torch.Tensor, verbose: int = 3) -> 'DragonScaler':
         """
         Fits the scaler directly on a Tensor (Method B).
         Useful for targets or small datasets already in memory.
@@ -117,6 +119,9 @@ class DragonScaler:
         
         # Handle constant values (std=0) to prevent division by zero
         std = torch.where(std == 0, torch.tensor(1.0, device=data.device), std)
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Scaler fitted on tensor with {data.shape[0]} samples for {num_features} features.")
         
         return cls(mean=mean, std=std, continuous_feature_indices=indices)
 

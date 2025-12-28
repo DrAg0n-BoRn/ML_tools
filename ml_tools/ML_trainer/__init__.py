@@ -10,7 +10,7 @@ from ._dragon_detection_trainer import (
     DragonDetectionTrainer
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -18,3 +18,7 @@ __all__ = [
     "DragonSequenceTrainer",
     "DragonDetectionTrainer",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

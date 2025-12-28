@@ -14,7 +14,8 @@ _LOGGER = get_logger("ML Configuration")
 __all__ = [    
     # --- Training Config ---
     "DragonTrainingConfig",
-    "DragonParetoConfig"
+    "DragonParetoConfig",
+    "DragonOptimizerConfig",
 ]
 
 
@@ -136,4 +137,67 @@ class DragonParetoConfig(_BaseModelParams):
         self.plot_size = plot_size
         self.plot_font_size = plot_font_size
         self.discretize_start_at_zero = discretize_start_at_zero
+
+
+class DragonOptimizerConfig(_BaseModelParams):
+    """
+    Configuration object for the Single-Objective DragonOptimizer.
+    """
+    def __init__(self,
+                 target_name: str,
+                 task: Literal["min", "max"],
+                 continuous_bounds_map: Union[dict[str, tuple[float, float]], str, Path],
+                 save_directory: Union[str, Path],
+                 save_format: Literal['csv', 'sqlite', 'both'] = 'csv',
+                 algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
+                 population_size: int = 500,
+                 generations: int = 1000,
+                 repetitions: int = 1,
+                 discretize_start_at_zero: bool = True,
+                 **searcher_kwargs: Any):
+        """
+        Args:
+            target_name (str): The name of the target variable to optimize.
+            task (str): The optimization goal, either "min" or "max".
+            continuous_bounds_map (Dict | str | Path): Dictionary {feature_name: (min, max)} or path to "optimization_bounds.json".
+            save_directory (str | Path): Directory to save results.
+            save_format (str): Format for saving results ('csv', 'sqlite', 'both').
+            algorithm (str): Search algorithm ("SNES", "CEM", "Genetic").
+            population_size (int): Population size for CEM and GeneticAlgorithm.
+            generations (int): Number of generations per repetition.
+            repetitions (int): Number of independent optimization runs.
+            discretize_start_at_zero (bool): True if discrete encoding starts at 0.
+            **searcher_kwargs: Additional arguments for the specific search algorithm 
+                               (e.g., stdev_init for SNES).
+        """
+        # Validate paths
+        self.save_directory = make_fullpath(save_directory, make=True, enforce="directory")
+        
+        if isinstance(continuous_bounds_map, (str, Path)):
+            self.continuous_bounds_map = make_fullpath(continuous_bounds_map, make=False, enforce="directory")
+        else:
+            self.continuous_bounds_map = continuous_bounds_map
+
+        # Core params
+        self.target_name = target_name
+        self.task = task
+        self.save_format = save_format
+        self.algorithm = algorithm
+        self.population_size = population_size
+        self.generations = generations
+        self.repetitions = repetitions
+        self.discretize_start_at_zero = discretize_start_at_zero
+        
+        # Store algorithm specific kwargs
+        self.searcher_kwargs = searcher_kwargs
+
+        # Basic Validation
+        if self.task not in ["min", "max"]:
+             _LOGGER.error(f"Invalid task '{self.task}'. Must be 'min' or 'max'.")
+             raise ValueError()
+             
+        valid_algos = ["SNES", "CEM", "Genetic"]
+        if self.algorithm not in valid_algos:
+            _LOGGER.error(f"Invalid algorithm '{self.algorithm}'. Must be one of {valid_algos}.")
+            raise ValueError()
 

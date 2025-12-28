@@ -10,7 +10,7 @@ from ._optimization_bounds import (
     parse_lower_upper_bounds,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -21,3 +21,7 @@ __all__ = [
     "plot_optimal_feature_distributions",
     "plot_optimal_feature_distributions_from_dataframe",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

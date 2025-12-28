@@ -506,5 +506,5 @@ def _save_result(
 
 def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str):
     log_dataframe = logger.to_dataframe()
-    save_dataframe_filename(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name)
+    save_dataframe_filename(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name, verbose=2)
 

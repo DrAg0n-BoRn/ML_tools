@@ -35,7 +35,8 @@ class DragonDataset(_BaseDatasetMaker):
                  validation_size: float = 0.2,
                  test_size: float = 0.1,
                  class_map: Optional[dict[str,int]]=None,
-                 random_state: int = 42):
+                 random_state: int = 42,
+                 verbose: int = 2):
         """
         Args:
             pandas_df (pandas.DataFrame): 
@@ -59,6 +60,11 @@ class DragonDataset(_BaseDatasetMaker):
                 - "none": Do not scale data (e.g., for TabularTransformer).
                 - DragonScaler instance: Use a pre-fitted scaler to transform data.
             target_scaler: Strategy for target scaling. ONLY applies for "regression" tasks.
+            verbose (int): Verbosity level for logging.
+                - 0: Errors only
+                - 1: Warnings
+                - 2: Info
+                - 3: Detailed process info
         """
         super().__init__()
         
@@ -130,10 +136,11 @@ class DragonDataset(_BaseDatasetMaker):
 
         if _apply_f_scaling:
             X_train_final, X_val_final, X_test_final = self._prepare_feature_scaler(
-                X_train, y_train, X_val, X_test, label_dtype, schema
+                X_train, y_train, X_val, X_test, label_dtype, schema, verbose=verbose
             )
         else:
-            _LOGGER.info("Features have not been scaled as specified.")
+            if verbose >= 2:
+                _LOGGER.info("Features have not been scaled as specified.")
             X_train_final, X_val_final, X_test_final = X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
 
         # --- 5. Scale Targets (Regression Only) ---
@@ -152,7 +159,7 @@ class DragonDataset(_BaseDatasetMaker):
                 raise ValueError()
 
             if _apply_t_scaling:
-                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test)
+                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test, verbose=verbose)
             else:
                 y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
                 y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
@@ -174,6 +181,8 @@ class DragonDataset(_BaseDatasetMaker):
         # --- 8. Set class map if classification ---
         if self.kind != MLTaskKeys.REGRESSION:
             if class_map is None:
+                if verbose >= 1:
+                    _LOGGER.warning("No class map provided for classification task at initialization. Use `.set_class_map()`.")
                 self.class_map = dict()
             else:
                 self.set_class_map(class_map)
@@ -239,7 +248,8 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                  target_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  validation_size: float = 0.2,
                  test_size: float = 0.1,
-                 random_state: int = 42):
+                 random_state: int = 42,
+                 verbose: int = 2):
         """
         Args:
             pandas_df (pandas.DataFrame): 
@@ -264,6 +274,11 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 - "none": Do not scale data (e.g., for TabularTransformer).
                 - DragonScaler instance: Use a pre-fitted scaler to transform data.
             target_scaler: Strategy for target scaling (Regression only).
+            verbose (int): Verbosity level for logging.
+                - 0: Errors only
+                - 1: Warnings
+                - 2: Info
+                - 3: Detailed process info
         """
         super().__init__()
         
@@ -296,7 +311,8 @@ class DragonDatasetMulti(_BaseDatasetMaker):
 
         schema_plus_targets = feature_cols_set.union(target_cols_set)
         if (all_cols_set - schema_plus_targets):
-            _LOGGER.warning(f"Columns in DataFrame but not in schema or targets: {list(all_cols_set - schema_plus_targets)}")
+            if verbose >= 1:
+                _LOGGER.warning(f"Columns in DataFrame but not in schema or targets: {list(all_cols_set - schema_plus_targets)}")
             
         if (schema_plus_targets - all_cols_set):
             _LOGGER.error(f"Columns in schema/targets but not in DataFrame: {list(schema_plus_targets - all_cols_set)}")
@@ -335,10 +351,11 @@ class DragonDatasetMulti(_BaseDatasetMaker):
 
         if _apply_f_scaling:
             X_train_final, X_val_final, X_test_final = self._prepare_feature_scaler(
-                X_train, y_train, X_val, X_test, label_dtype, schema
+                X_train, y_train, X_val, X_test, label_dtype, schema, verbose=verbose
             )
         else:
-            _LOGGER.info("Features have not been scaled as specified.")
+            if verbose >= 2:
+                _LOGGER.info("Features have not been scaled as specified.")
             X_train_final, X_val_final, X_test_final = X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
 
         # --- 5. Scale Targets ---
@@ -357,7 +374,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 raise ValueError()
 
             if _apply_t_scaling:
-                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test)
+                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test, verbose=verbose)
             else:
                 y_train_final, y_val_final, y_test_final = y_train.to_numpy(), y_val.to_numpy(), y_test.to_numpy()
         else:

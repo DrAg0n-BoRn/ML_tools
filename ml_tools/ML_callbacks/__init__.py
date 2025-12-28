@@ -12,7 +12,7 @@ from ._scheduler import (
     DragonPlateauScheduler,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -22,3 +22,7 @@ __all__ = [
     "DragonScheduler",
     "DragonPlateauScheduler",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

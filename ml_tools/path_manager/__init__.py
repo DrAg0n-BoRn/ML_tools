@@ -1,4 +1,6 @@
-from ._dragonmanager import DragonPathManager
+from ._dragonmanager import (
+    DragonPathManager
+)
 
 from ._path_tools import (
     make_fullpath,
@@ -10,7 +12,7 @@ from ._path_tools import (
     safe_move,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -23,3 +25,7 @@ __all__ = [
     "clean_directory",
     "safe_move",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

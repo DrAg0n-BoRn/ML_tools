@@ -16,7 +16,7 @@ from ._train_tools import (
     save_pretrained_transforms,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -30,3 +30,7 @@ __all__ = [
     "save_pretrained_transforms",
     "select_features_by_shap"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

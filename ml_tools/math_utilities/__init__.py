@@ -6,7 +6,7 @@ from ._math_utilities import (
 )
 
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -15,3 +15,7 @@ __all__ = [
     "threshold_binary_values_batch",
     "discretize_categorical_values",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

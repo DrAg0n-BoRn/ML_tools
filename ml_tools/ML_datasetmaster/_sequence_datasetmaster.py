@@ -39,7 +39,8 @@ class DragonDatasetSequence:
                  data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], 
                  sequence_length: int,
                  validation_size: float = 0.2,
-                 test_size: float = 0.1):
+                 test_size: float = 0.1,
+                 verbose: int = 2):
         """
         Initializes the dataset manager and automatically processes the data.
         
@@ -59,6 +60,11 @@ class DragonDatasetSequence:
             sequence_length (int): The number of time steps in each input window (X).
             validation_size (float): The fraction of data to hold out for validation.
             test_size (float): The fraction of data to hold out for testing.
+            verbose (int): Verbosity level for logging.
+                - 0: Errors only
+                - 1: Warnings
+                - 2: Info
+                - 3: Detailed process info
         """
         self._train_dataset = None
         self._test_dataset = None
@@ -98,23 +104,24 @@ class DragonDatasetSequence:
         self._are_windows_generated = False
         
         # Automation
-        self._split_data(validation_size=validation_size, test_size=test_size)
-        self._normalize_data()
-        self._generate_windows()
+        self._split_data(validation_size=validation_size, test_size=test_size, verbose=verbose)
+        self._normalize_data(verbose=verbose)
+        self._generate_windows(verbose=verbose)
     
-    def _split_data(self, validation_size: float = 0.2, test_size: float = 0.1) -> None:
+    def _split_data(self, validation_size: float = 0.2, test_size: float = 0.1, verbose: int = 3) -> None:
         """
         Splits the sequence chronologically into training, validation, and testing portions.
         
         To prevent windowing errors, the validation and test sets include an overlap of `sequence_length` from the preceding data.
         """
         if self._is_split:
-            _LOGGER.warning("Data has already been split.")
+            if verbose >= 1:
+                _LOGGER.warning("Data has already been split.")
             return
             
         if (validation_size + test_size) >= 1.0:
             _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
-            raise ValueError("validation_size and test_size sum must be < 1.0")
+            raise ValueError()
 
         total_size = len(self.sequence)
         
@@ -139,9 +146,10 @@ class DragonDatasetSequence:
         self.test_time_axis = self.time_axis[test_split_idx:]
 
         self._is_split = True
-        _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)}), validation ({len(self.val_sequence)}), and testing ({len(self.test_sequence)}) points.")
+        if verbose >= 2:
+            _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)}), validation ({len(self.val_sequence)}), and testing ({len(self.test_sequence)}) points.")
     
-    def _normalize_data(self) -> None:
+    def _normalize_data(self, verbose: int = 3) -> None:
         """
         Normalizes the sequence data using DragonScaler. Must be called AFTER splitting to prevent data leakage from the test set.
         """
@@ -150,7 +158,8 @@ class DragonDatasetSequence:
             raise RuntimeError()
 
         if self.scaler:
-            _LOGGER.warning("Data has already been normalized.")
+            if verbose >= 1:
+                _LOGGER.warning("Data has already been normalized.")
             return
 
         # 1. DragonScaler requires a Dataset to fit. Create a temporary one.
@@ -163,8 +172,9 @@ class DragonDatasetSequence:
 
         # 2. Fit the DragonScaler on the temporary training dataset.
         # The sequence is a single feature, so its index is [0].
-        _LOGGER.info("Fitting DragonScaler on the training data...")
-        self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices=[0])
+        if verbose >= 3:
+            _LOGGER.info("Fitting DragonScaler on the training data...")
+        self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices=[0], verbose=verbose)
 
         # 3. Transform sequences using the fitted scaler.
         # The transform method requires a tensor, so we convert, transform, and convert back.
@@ -177,9 +187,10 @@ class DragonDatasetSequence:
         self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
 
         self._is_normalized = True
-        _LOGGER.info("Sequence data normalized using DragonScaler.")
+        if verbose >= 2:
+            _LOGGER.info("Sequence data normalized using DragonScaler.")
 
-    def _generate_windows(self) -> None:
+    def _generate_windows(self, verbose: int = 3) -> None:
         """
         Generates overlapping windows for features and labels.
         """
@@ -192,12 +203,13 @@ class DragonDatasetSequence:
             raise RuntimeError()
         
         if self._are_windows_generated:
-            _LOGGER.warning("Windows have already been generated.")
+            if verbose >= 1:
+                _LOGGER.warning("Windows have already been generated.")
             return
 
-        self._train_dataset = self._create_windowed_dataset(self.train_sequence) # type: ignore
-        self._val_dataset = self._create_windowed_dataset(self.val_sequence) # type: ignore
-        self._test_dataset = self._create_windowed_dataset(self.test_sequence) # type: ignore
+        self._train_dataset = self._create_windowed_dataset(self.train_sequence, verbose=verbose) # type: ignore
+        self._val_dataset = self._create_windowed_dataset(self.val_sequence, verbose=verbose) # type: ignore
+        self._test_dataset = self._create_windowed_dataset(self.test_sequence, verbose=verbose) # type: ignore
         
         # attach feature scaler and target scaler to datasets
         if self.scaler is not None:
@@ -207,13 +219,15 @@ class DragonDatasetSequence:
                     ds._target_scaler = self.scaler # type: ignore
         
         self._are_windows_generated = True
-        _LOGGER.info("Feature and label windows generated for train, validation, and test sets.")
+        if verbose >= 2:
+            _LOGGER.info("Feature and label windows generated for train, validation, and test sets.")
 
-    def _create_windowed_dataset(self, data: numpy.ndarray) -> Dataset:
+    def _create_windowed_dataset(self, data: numpy.ndarray, verbose: int = 3) -> Dataset:
         """Efficiently creates windowed features and labels using numpy."""
         if len(data) <= self.sequence_length:
             # Validation/Test sets of size 0 might be passed
-            _LOGGER.warning(f"Data length ({len(data)}) is not greater than sequence_length ({self.sequence_length}). Cannot create windows. Returning empty dataset.")
+            if verbose >= 1:
+                _LOGGER.warning(f"Data length ({len(data)}) is not greater than sequence_length ({self.sequence_length}). Cannot create windows. Returning empty dataset.")
             return _PytorchDataset(numpy.array([]), numpy.array([]), labels_dtype=torch.float32)
         
         # Define a generic name for the univariate feature
@@ -253,7 +267,7 @@ class DragonDatasetSequence:
                                    feature_names=f_names,
                                    target_names=t_names)
 
-    def plot_splits(self, save_dir: Union[str, Path]):
+    def plot_splits(self, save_dir: Union[str, Path], verbose: int = 3) -> None:
         """Plots the training, validation and testing data."""
         if not self._is_split:
             _LOGGER.error("Cannot plot before splitting data.")
@@ -289,7 +303,8 @@ class DragonDatasetSequence:
         
         plt.tight_layout()
         plt.savefig(full_path)
-        _LOGGER.info(f"📈 Sequence data splits saved as '{full_path.name}'.")
+        if verbose >= 2:
+            _LOGGER.info(f"📈 Sequence data splits saved as '{full_path.name}'.")
         plt.close()
 
     def get_datasets(self) -> tuple[Dataset, Dataset, Dataset]:

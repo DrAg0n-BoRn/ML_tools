@@ -99,23 +99,11 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         """Initializes the DataLoaders."""
         # Ensure stability on MPS devices by setting num_workers to 0
-        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
-        
-        self.train_loader = DataLoader(
-            dataset=self.train_dataset, 
-            batch_size=batch_size, 
-            shuffle=shuffle, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type),
-            drop_last=True  # Drops the last batch if incomplete, selecting a good batch size is key.
-        )
-        
-        self.validation_loader = DataLoader(
-            dataset=self.validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type)
+        self._make_dataloaders(
+            train_dataset=self.train_dataset,
+            validation_dataset=self.validation_dataset,
+            batch_size=batch_size,
+            shuffle=shuffle
         )
 
     def _train_step(self):
@@ -279,23 +267,15 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             val_format_configuration: Optional configuration for validation metrics.
             test_format_configuration: Optional configuration for test metrics.
         """
-        # Validate model checkpoint
-        if isinstance(model_checkpoint, Path):
-            checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
-            checkpoint_validated = model_checkpoint
-        else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or '{MagicWords.BEST}', or '{MagicWords.CURRENT}'.")
-            raise ValueError()
+        # Validate inputs using base helpers
+        checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
+        save_path = self._validate_save_dir(save_dir)
         
         # Validate val configuration
         if val_format_configuration is not None:
             if not isinstance(val_format_configuration, (FormatSequenceValueMetrics, FormatSequenceSequenceMetrics)):
                 _LOGGER.error(f"Invalid 'val_format_configuration': '{type(val_format_configuration)}'.")
                 raise ValueError()
-        
-        # Validate directory
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
         
         # Validate test data and dispatch
         if test_data is not None:
@@ -308,9 +288,9 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
             self._evaluate(save_dir=validation_metrics_path,
-                           model_checkpoint=checkpoint_validated,
+                           model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_format_configuration)
             
@@ -329,16 +309,16 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                     test_configuration_validated = test_format_configuration
             
             # Dispatch test set
-            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current",
                            data=test_data_validated,
                            format_configuration=test_configuration_validated)
         else:
             # Dispatch validation set
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
             self._evaluate(save_dir=save_path,
-                           model_checkpoint=checkpoint_validated,
+                           model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_format_configuration)
         
@@ -350,42 +330,13 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         """
         Private evaluation helper.
         """
-        eval_loader = None
-        
         # load model checkpoint
-        if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
-            path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
-            raise ValueError()
+        self._load_model_state_wrapper(model_checkpoint)
         
-        # Dataloader
-        if isinstance(data, DataLoader):
-            eval_loader = data
-        elif isinstance(data, Dataset):
-            # Create a new loader from the provided dataset
-            eval_loader = DataLoader(data, 
-                                     batch_size=self._batch_size, 
-                                     shuffle=False, 
-                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-                                     pin_memory=(self.device.type == "cuda"))
-        else: # data is None, use the trainer's default validation dataset
-            if self.validation_dataset is None:
-                _LOGGER.error("Cannot evaluate. No data provided and no validation_dataset available in the trainer.")
-                raise ValueError()
-            eval_loader = DataLoader(self.validation_dataset, 
-                                     batch_size=self._batch_size, 
-                                     shuffle=False, 
-                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-                                     pin_memory=(self.device.type == "cuda"))
+        # Prepare Data using Base Helper
+        eval_loader, _ = self._prepare_eval_data(data, self.validation_dataset)
 
-        if eval_loader is None:
-            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
-            raise ValueError()
-
+        # Gather Predictions
         all_preds, _, all_true = [], [], []
         for y_pred_b, y_prob_b, y_true_b in self._predict_for_eval(eval_loader):
             if y_pred_b is not None: all_preds.append(y_pred_b)
@@ -514,13 +465,9 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         elif self.kind == MLTaskKeys.SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeSequenceValuePrediction):
             _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: {type(finalize_config).__name__}.")
             raise TypeError()
-
-        # handle save path
-        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = dir_path / finalize_config.filename
         
         # handle checkpoint
-        self._load_model_state_for_finalizing(model_checkpoint)
+        self._load_model_state_wrapper(model_checkpoint)
         
         # Create finalized data
         finalized_data = {
@@ -534,7 +481,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         if finalize_config.initial_sequence is not None:
             finalized_data[PyTorchCheckpointKeys.INITIAL_SEQUENCE] = finalize_config.initial_sequence
         
-        torch.save(finalized_data, full_path)
-        
-        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
+        # Save using base helper
+        self._save_finalized_artifact(
+            finalized_data=finalized_data,
+            save_dir=save_dir,
+            filename=finalize_config.filename
+        )
 

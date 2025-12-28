@@ -28,7 +28,7 @@ from ._vision import (
     object_detection_metrics
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -51,3 +51,7 @@ __all__ = [
     "segmentation_metrics",
     "object_detection_metrics",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

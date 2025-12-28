@@ -6,7 +6,7 @@ from ._GUI_tools import (
     catch_exceptions,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -16,3 +16,7 @@ __all__ = [
     "DragonGUIHandler",
     "catch_exceptions", 
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

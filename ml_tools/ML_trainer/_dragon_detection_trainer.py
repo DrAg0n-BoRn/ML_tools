@@ -80,26 +80,12 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
 
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         """Initializes the DataLoaders with the object detection collate_fn."""
-        # Ensure stability on MPS devices by setting num_workers to 0
-        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
-        
-        self.train_loader = DataLoader(
-            dataset=self.train_dataset, 
-            batch_size=batch_size, 
-            shuffle=shuffle, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type), 
-            collate_fn=self.collate_fn, # Use the provided collate function
-            drop_last=True 
-        )
-        
-        self.validation_loader = DataLoader(
-            dataset=self.validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=loader_workers, 
-            pin_memory=("cuda" in self.device.type),
-            collate_fn=self.collate_fn # Use the provided collate function
+        self._make_dataloaders(
+            train_dataset=self.train_dataset,
+            validation_dataset=self.validation_dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            collate_fn=self.collate_fn
         )
 
     def _train_step(self):
@@ -207,17 +193,9 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                 - If 'current', use the current state of the trained model up the latest trained epoch.
             test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
         """
-        # Validate model checkpoint
-        if isinstance(model_checkpoint, Path):
-            checkpoint_validated = make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
-            checkpoint_validated = model_checkpoint
-        else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.BEST}', or the string '{MagicWords.CURRENT}'.")
-            raise ValueError()
-        
-        # Validate directory
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
+        # Validate inputs using base helpers
+        checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
+        save_path = self._validate_save_dir(save_dir)
         
         # Validate test data and dispatch
         if test_data is not None:
@@ -230,21 +208,21 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
             self._evaluate(save_dir=validation_metrics_path,
-                           model_checkpoint=checkpoint_validated,
+                           model_checkpoint=checkpoint_validated, # type: ignore
                            data=None) # 'None' triggers use of self.test_dataset
             
             # Dispatch test set
-            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current", # Use 'current' state after loading checkpoint once
                            data=test_data_validated)
         else:
             # Dispatch validation set
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
             self._evaluate(save_dir=save_path,
-                           model_checkpoint=checkpoint_validated,
+                           model_checkpoint=checkpoint_validated, # type: ignore
                            data=None) # 'None' triggers use of self.test_dataset
     
     def _evaluate(self, 
@@ -263,54 +241,17 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
         """
-        dataset_for_artifacts = None
-        eval_loader = None
-        
         # load model checkpoint
-        if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
-        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
-            path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
-        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
-            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
-            raise ValueError()
-
-        # Dataloader
-        if isinstance(data, DataLoader):
-            eval_loader = data
-            if hasattr(data, 'dataset'):
-                dataset_for_artifacts = data.dataset # type: ignore
-        elif isinstance(data, Dataset):
-            # Create a new loader from the provided dataset
-            eval_loader = DataLoader(data, 
-                                     batch_size=self._batch_size, 
-                                     shuffle=False, 
-                                     num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-                                     pin_memory=(self.device.type == "cuda"),
-                                     collate_fn=self.collate_fn)
-            dataset_for_artifacts = data
-        else: # data is None, use the trainer's default test dataset
-            if self.validation_dataset is None:
-                _LOGGER.error("Cannot evaluate. No data provided and no test_dataset available in the trainer.")
-                raise ValueError()
-            # Create a fresh DataLoader from the test_dataset
-            eval_loader = DataLoader(
-                self.validation_dataset, 
-                batch_size=self._batch_size, 
-                shuffle=False, 
-                num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-                pin_memory=(self.device.type == "cuda"),
-                collate_fn=self.collate_fn
-            )
-            dataset_for_artifacts = self.validation_dataset
-
-        if eval_loader is None:
-            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
-            raise ValueError()
-
-        # print("\n--- Model Evaluation ---")
-
+        self._load_model_state_wrapper(model_checkpoint)
+        
+        # Prepare Data using Base Helper
+        eval_loader, dataset_for_artifacts = self._prepare_eval_data(
+            data, 
+            self.validation_dataset,
+            collate_fn=self.collate_fn # Important for Detection
+        )
+        
+        # Gather all predictions and targets
         all_predictions = []
         all_targets = []
         
@@ -380,12 +321,8 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeObjectDetection', but got {type(finalize_config).__name__}.")
             raise TypeError()
         
-        # handle save path
-        dir_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = dir_path / finalize_config.filename
-        
         # handle checkpoint
-        self._load_model_state_for_finalizing(model_checkpoint)
+        self._load_model_state_wrapper(model_checkpoint)
         
         # Create finalized data
         finalized_data = {
@@ -397,6 +334,9 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         if finalize_config.class_map is not None:
             finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
         
-        torch.save(finalized_data, full_path)
-        
-        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
+        # Save using base helper
+        self._save_finalized_artifact(
+            finalized_data=finalized_data,
+            save_dir=save_dir,
+            filename=finalize_config.filename
+        )

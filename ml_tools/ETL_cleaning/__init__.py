@@ -13,7 +13,7 @@ from ._clean_tools import (
     save_unique_values
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -24,3 +24,7 @@ __all__ = [
     "basic_clean_drop",
     "drop_macro_polars",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

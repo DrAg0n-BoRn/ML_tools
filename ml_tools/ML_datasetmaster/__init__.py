@@ -13,7 +13,7 @@ from ._vision_datasetmaster import (
     DragonDatasetObjectDetection
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -26,3 +26,7 @@ __all__ = [
     "DragonDatasetSegmentation",
     "DragonDatasetObjectDetection",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

@@ -6,7 +6,7 @@ from typing import Union, Optional
 from abc import ABC
 from pathlib import Path
 
-from ..IO_tools import save_list_strings, custom_logger
+from ..IO_tools import save_list_strings, save_json
 from ..ML_scaler import DragonScaler
 from ..schema import FeatureSchema
 
@@ -126,13 +126,15 @@ class _BaseDatasetMaker(ABC):
                         X_val: pandas.DataFrame,
                         X_test: pandas.DataFrame, 
                         label_dtype: torch.dtype, 
-                        schema: FeatureSchema) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+                        schema: FeatureSchema,
+                        verbose:int = 3) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
         """Internal helper to fit and apply a DragonScaler for FEATURES using a FeatureSchema."""
         continuous_feature_indices: Optional[list[int]] = None
 
         # Get continuous feature indices *from the schema*
         if schema.continuous_feature_names:
-            _LOGGER.info("Getting continuous feature indices from schema.")
+            if verbose >= 2:
+                _LOGGER.info("Getting continuous feature indices from schema.")
             try:
                 # Convert columns to a standard list for .index()
                 train_cols_list = X_train.columns.to_list()
@@ -142,7 +144,8 @@ class _BaseDatasetMaker(ABC):
                 _LOGGER.error(f"Feature name from schema not found in training data columns:\n{e}")
                 raise ValueError()
         else:
-            _LOGGER.info("No continuous features listed in schema. Feature scaler will not be fitted.")
+            if verbose >= 2:
+                _LOGGER.info("No continuous features listed in schema. Feature scaler will not be fitted.")
 
         X_train_values = X_train.to_numpy()
         X_val_values = X_val.to_numpy()
@@ -150,23 +153,29 @@ class _BaseDatasetMaker(ABC):
 
         # continuous_feature_indices is derived
         if self.feature_scaler is None and continuous_feature_indices:
-            _LOGGER.info("Fitting a new DragonScaler on training features.")
+            if verbose >= 3:
+                _LOGGER.info("Fitting a new DragonScaler on training features.")
             temp_train_ds = _PytorchDataset(X_train_values, y_train, label_dtype) 
-            self.feature_scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices)
+            self.feature_scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices, verbose=verbose)
 
         if self.feature_scaler and self.feature_scaler.mean_ is not None:
-            _LOGGER.info("Applying scaler transformation to train, validation, and test feature sets.")
+            if verbose >= 3:
+                _LOGGER.info("Applying scaler transformation to train, validation, and test feature sets.")
             X_train_tensor = self.feature_scaler.transform(torch.tensor(X_train_values, dtype=torch.float32))
             X_val_tensor = self.feature_scaler.transform(torch.tensor(X_val_values, dtype=torch.float32))
             X_test_tensor = self.feature_scaler.transform(torch.tensor(X_test_values, dtype=torch.float32))
             return X_train_tensor.numpy(), X_val_tensor.numpy(), X_test_tensor.numpy()
+        
+        if verbose >= 2:
+            _LOGGER.info("Feature scaling transformation complete.")
 
         return X_train_values, X_val_values, X_test_values
     
     def _prepare_target_scaler(self,
                                y_train: Union[pandas.Series, pandas.DataFrame],
                                y_val: Union[pandas.Series, pandas.DataFrame],
-                               y_test: Union[pandas.Series, pandas.DataFrame]) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+                               y_test: Union[pandas.Series, pandas.DataFrame],
+                               verbose: int = 3) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
         """Internal helper to fit and apply a DragonScaler for TARGETS."""
         
         y_train_arr = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
@@ -180,17 +189,19 @@ class _BaseDatasetMaker(ABC):
         # ------------------------------------------------------------------
 
         if self.target_scaler is None:
-            _LOGGER.info("Fitting a new DragonScaler on training targets.")
+            if verbose >= 2:
+                _LOGGER.info("Fitting a new DragonScaler on training targets.")
             # Convert to float tensor for calculation
             y_train_tensor = torch.tensor(y_train_arr, dtype=torch.float32)
-            self.target_scaler = DragonScaler.fit_tensor(y_train_tensor)
+            self.target_scaler = DragonScaler.fit_tensor(y_train_tensor, verbose=verbose)
             
         if self.target_scaler and self.target_scaler.mean_ is not None:
-             _LOGGER.info("Applying scaler transformation to train, validation, and test targets.")
-             y_train_tensor = self.target_scaler.transform(torch.tensor(y_train_arr, dtype=torch.float32))
-             y_val_tensor = self.target_scaler.transform(torch.tensor(y_val_arr, dtype=torch.float32))
-             y_test_tensor = self.target_scaler.transform(torch.tensor(y_test_arr, dtype=torch.float32))
-             return y_train_tensor.numpy(), y_val_tensor.numpy(), y_test_tensor.numpy()
+            if verbose >= 3:
+                 _LOGGER.info("Applying scaler transformation to train, validation, and test targets.")
+            y_train_tensor = self.target_scaler.transform(torch.tensor(y_train_arr, dtype=torch.float32))
+            y_val_tensor = self.target_scaler.transform(torch.tensor(y_val_arr, dtype=torch.float32))
+            y_test_tensor = self.target_scaler.transform(torch.tensor(y_test_arr, dtype=torch.float32))
+            return y_train_tensor.numpy(), y_val_tensor.numpy(), y_test_tensor.numpy()
 
         return y_train_arr, y_val_arr, y_test_arr
     
@@ -318,11 +329,11 @@ class _BaseDatasetMaker(ABC):
         
         log_name = f"Class_to_Index_{self.id}" if self.id else "Class_to_Index"
         
-        custom_logger(data=self.class_map,
-                      save_directory=directory,
-                      log_name=log_name,
-                      add_timestamp=False,
-                      dict_as="json")
+        save_json(data=self.class_map,
+                  directory=directory,
+                  filename=log_name,
+                  verbose=False)
+        
         if verbose:
             _LOGGER.info(f"Class map for '{self.id}' saved as '{log_name}.json'.")
 

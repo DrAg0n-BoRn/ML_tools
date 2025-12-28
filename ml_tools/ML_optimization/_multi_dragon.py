@@ -378,8 +378,8 @@ class DragonParetoOptimizer:
         sanitized_filename = sanitize_filename(filename)
         csv_filename = sanitized_filename if sanitized_filename.lower().endswith(".csv") else f"{sanitized_filename}.csv"
         
-        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename)
-        _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'")
+        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename, verbose=1)
+        _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'. Shape: {df_to_save.shape}")
         
         # Save optimization bounds as JSON for reference (debug mode)
         if self._debug:

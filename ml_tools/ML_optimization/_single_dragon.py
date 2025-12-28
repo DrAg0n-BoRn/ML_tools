@@ -1,9 +1,10 @@
 from typing import Literal, Union, Optional
 from pathlib import Path
 
-from ..optimization_tools import create_optimization_bounds
+from ..optimization_tools import create_optimization_bounds, load_continuous_bounds_template
 from ..ML_inference import DragonInferenceHandler
 from ..schema import FeatureSchema
+from ..ML_configuration import DragonOptimizerConfig
 
 from .._core import get_logger
 from ..keys._keys import MLTaskKeys
@@ -29,35 +30,28 @@ class DragonOptimizer:
     SNES and CEM algorithms do not accept bounds, the given bounds will be used as an initial starting point.
 
     Example:
-        >>> # 1. Define bounds for continuous features
-        >>> cont_bounds = {'feature_A': (0, 100), 'feature_B': (-10, 10)}
+        >>> # 1. Define configuration
+        >>> config = DragonOptimizerConfig(
+        ...     target_name="my_target",
+        ...     task="max",
+        ...     continuous_bounds_map="path/to/bounds",
+        ...     save_directory="/path/to/results",
+        ...     algorithm="Genetic"
+        ... )
         >>>
         >>> # 2. Initialize the optimizer
         >>> optimizer = DragonOptimizer(
         ...     inference_handler=my_handler,
         ...     schema=schema,
-        ...     target_name="my_target",
-        ...     continuous_bounds_map=cont_bounds,
-        ...     task="max",
-        ...     algorithm="Genetic",
+        ...     config=config
         ... )
         >>> # 3. Run the optimization
-        >>> best_result = optimizer.run(
-        ...     num_generations=100,
-        ...     save_dir="/path/to/results",
-        ...     save_format="csv"
-        ... )
+        >>> best_result = optimizer.run()
     """
     def __init__(self,
                  inference_handler: DragonInferenceHandler,
                  schema: FeatureSchema,
-                 target_name: str,
-                 continuous_bounds_map: dict[str, tuple[float, float]],
-                 task: Literal["min", "max"],
-                 algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
-                 population_size: int = 200,
-                 discretize_start_at_zero: bool = True,
-                 **searcher_kwargs):
+                 config: DragonOptimizerConfig):
         """
         Initializes the optimizer by creating the EvoTorch problem and searcher.
 
@@ -65,45 +59,43 @@ class DragonOptimizer:
             inference_handler (DragonInferenceHandler): 
                 An initialized inference handler containing the model.
             schema (FeatureSchema): 
-                The definitive schema object from data_exploration.
-            target_name (str): 
-                target name to optimize.
-            continuous_bounds_map (Dict[str, Tuple[float, float]]):
-                A dictionary mapping the *name* of each **continuous** feature
-                to its (min_bound, max_bound) tuple.
-            task (str): The optimization goal, either "min" or "max".
-            
-            algorithm (str): The search algorithm to use ("SNES", "CEM", "Genetic").
-            population_size (int): Population size for CEM and GeneticAlgorithm.
-            discretize_start_at_zero (bool): 
-                True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
-                False if it starts at 1 (e.g., [1, 2, 3]).
-            **searcher_kwargs: Additional keyword arguments for the selected 
-                               search algorithm's constructor.
+                The definitive schema object.
+            config (DragonOptimizerConfig):
+                Configuration object containing optimization parameters.
         """
         # --- Store schema ---
         self.schema = schema
         # --- Store inference handler ---
         self.inference_handler = inference_handler
         
+        # --- Store config ---
+        self.config = config
+        
         # Ensure only Regression tasks are used
         allowed_tasks = [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]
         if self.inference_handler.task not in allowed_tasks:
             _LOGGER.error(f"DragonOptimizer only supports {allowed_tasks}. Got '{self.inference_handler.task}'.")
-            raise ValueError(f"Invalid Task: {self.inference_handler.task}")
+            raise ValueError()
         
         # --- store target name ---
-        self.target_name = target_name
+        self.target_name = config.target_name
         
         # --- flag to control single vs multi-target ---
         self.is_multi_target = False
         
         # --- 1. Create bounds from schema ---
-        # This is the robust way to get bounds
+        # Handle bounds loading if it's a path
+        raw_bounds_map = config.continuous_bounds_map
+        if isinstance(raw_bounds_map, (str, Path)):
+            continuous_bounds = load_continuous_bounds_template(raw_bounds_map)
+        else:
+            continuous_bounds = raw_bounds_map
+
+        # Robust way to get bounds
         bounds = create_optimization_bounds(
             schema=schema,
-            continuous_bounds_map=continuous_bounds_map,
-            start_at_zero=discretize_start_at_zero
+            continuous_bounds_map=continuous_bounds,
+            start_at_zero=config.discretize_start_at_zero
         )
         
         # Resolve target index if multi-target
@@ -114,26 +106,26 @@ class DragonOptimizer:
             _LOGGER.error("The provided inference handler does not have 'target_ids' defined.")
             raise ValueError()
 
-        if target_name not in self.inference_handler.target_ids:
-            _LOGGER.error(f"Target name '{target_name}' not found in the inference handler's 'target_ids': {self.inference_handler.target_ids}")
+        if self.target_name not in self.inference_handler.target_ids:
+            _LOGGER.error(f"Target name '{self.target_name}' not found in the inference handler's 'target_ids': {self.inference_handler.target_ids}")
             raise ValueError()
 
         if len(self.inference_handler.target_ids) == 1:
             # Single target regression
             target_index = None
-            _LOGGER.info(f"Optimization locked to single-target model '{target_name}'.")
+            _LOGGER.info(f"Optimization locked to single-target model '{self.target_name}'.")
         else:
             # Multi-target regression (optimizing one specific column)
-            target_index = self.inference_handler.target_ids.index(target_name)
+            target_index = self.inference_handler.target_ids.index(self.target_name)
             self.is_multi_target = True
-            _LOGGER.info(f"Optimization locked to target '{target_name}' (Index {target_index}) in a multi-target model.")
+            _LOGGER.info(f"Optimization locked to target '{self.target_name}' (Index {target_index}) in a multi-target model.")
         
         # --- 2. Make a fitness function ---
         self.evaluator = FitnessEvaluator(
             inference_handler=inference_handler,
             # Get categorical info from the schema
             categorical_index_map=schema.categorical_index_map,
-            discretize_start_at_zero=discretize_start_at_zero,
+            discretize_start_at_zero=config.discretize_start_at_zero,
             target_index=target_index
         )
         
@@ -141,20 +133,13 @@ class DragonOptimizer:
         self.problem, self.searcher_factory = create_pytorch_problem(
             evaluator=self.evaluator,
             bounds=bounds,
-            task=task,
-            algorithm=algorithm,
-            population_size=population_size,
-            **searcher_kwargs
+            task=config.task, # type: ignore
+            algorithm=config.algorithm, # type: ignore
+            population_size=config.population_size,
+            **config.searcher_kwargs
         )
-        
-        # --- 4. Store other info needed by run() ---
-        self.discretize_start_at_zero = discretize_start_at_zero
 
     def run(self,
-            num_generations: int,
-            save_dir: Union[str, Path],
-            save_format: Literal['csv', 'sqlite', 'both'],
-            repetitions: int = 1,
             verbose: bool = True) -> Optional[dict]:
         """
         Runs the evolutionary optimization process using the pre-configured settings.
@@ -163,15 +148,10 @@ class DragonOptimizer:
         provided during initialization.
 
         Args:
-            num_generations (int): The total number of generations for each repetition.
-            save_dir (str | Path): The directory where result files will be saved.
-            save_format (Literal['csv', 'sqlite', 'both']): The format for saving results.
-            repetitions (int): The number of independent times to run the optimization.
             verbose (bool): If True, enables detailed logging.
 
         Returns:
-            Optional[dict]: A dictionary with the best result if repetitions is 1, 
-                            otherwise None.
+            Optional[dict]: A dictionary with the best result if repetitions is 1, otherwise None.
         """
         # Pass inference handler and target names for multi-target only
         if self.is_multi_target:
@@ -185,18 +165,18 @@ class DragonOptimizer:
         return run_optimization(
             problem=self.problem,
             searcher_factory=self.searcher_factory,
-            num_generations=num_generations,
+            num_generations=self.config.generations,
             target_name=self.target_name,
-            save_dir=save_dir,
-            save_format=save_format,
+            save_dir=self.config.save_directory,
+            save_format=self.config.save_format, # type: ignore
             # Get the definitive feature names (as a list) from the schema
             feature_names=list(self.schema.feature_names),
             # Get categorical info from the schema
             categorical_map=self.schema.categorical_index_map,
             categorical_mappings=self.schema.categorical_mappings,
-            repetitions=repetitions,
+            repetitions=self.config.repetitions,
             verbose=verbose,
-            discretize_start_at_zero=self.discretize_start_at_zero,
+            discretize_start_at_zero=self.config.discretize_start_at_zero,
             all_target_names=target_names_to_pass,
             inference_handler=inference_handler_to_pass
         )

@@ -4,7 +4,7 @@ from ._PSO import (
     run_pso
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -12,3 +12,7 @@ __all__ = [
     "multiple_objective_functions_from_dir",
     "run_pso"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

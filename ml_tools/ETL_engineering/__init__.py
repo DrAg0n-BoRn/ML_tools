@@ -21,7 +21,7 @@ from ._transforms import (
     MolecularFormulaTransformer
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -43,3 +43,7 @@ __all__ = [
     "DateFeatureExtractor",
     "MolecularFormulaTransformer"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

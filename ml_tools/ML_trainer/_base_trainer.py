@@ -1,6 +1,6 @@
 from typing import Literal, Union, Optional, Any
 from pathlib import Path
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torch
 from torch import nn
 from abc import ABC, abstractmethod
@@ -10,6 +10,7 @@ from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import plot_losses
+from ..ML_utilities import inspect_pth_file
 
 from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchCheckpointKeys, MagicWords
@@ -89,11 +90,128 @@ class _BaseDragonTrainer(ABC):
         """Gives each callback a reference to this trainer instance."""
         for callback in self.callbacks:
             callback.set_trainer(self)
+    
+    def _make_dataloaders(self, 
+                          train_dataset: Any, 
+                          validation_dataset: Any, 
+                          batch_size: int, 
+                          shuffle: bool,
+                          collate_fn: Optional[Any] = None):
+        """
+        Shared logic to initialize standard DataLoaders. 
+        Subclasses can call this inside their _create_dataloaders implementation.
+        """
+        # Ensure stability on MPS devices by setting num_workers to 0
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        pin_memory = ("cuda" in self.device.type)
+        
+        self.train_loader = DataLoader(
+            dataset=train_dataset, 
+            batch_size=batch_size, 
+            shuffle=shuffle, 
+            num_workers=loader_workers, 
+            pin_memory=pin_memory,
+            drop_last=True,
+            collate_fn=collate_fn
+        )
+        
+        self.validation_loader = DataLoader(
+            dataset=validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=loader_workers, 
+            pin_memory=pin_memory,
+            collate_fn=collate_fn
+        )
 
-    def _load_checkpoint(self, path: Union[str, Path]):
+    def _validate_checkpoint_arg(self, model_checkpoint: Union[Path, str]) -> Union[Path, str]:
+        """Validates the model_checkpoint argument."""
+        if isinstance(model_checkpoint, Path):
+            return make_fullpath(model_checkpoint, enforce="file")
+        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
+            return model_checkpoint
+        else:
+            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.BEST}', or the string '{MagicWords.CURRENT}'.")
+            raise ValueError()
+
+    def _validate_save_dir(self, save_dir: Union[str, Path]) -> Path:
+        """Validates and creates the save directory."""
+        return make_fullpath(save_dir, make=True, enforce="directory")
+
+    def _prepare_eval_data(self, 
+                           data: Optional[Union[DataLoader, Dataset]], 
+                           default_dataset: Optional[Dataset], 
+                           collate_fn: Optional[Any] = None) -> tuple[DataLoader, Any]:
+        """
+        Prepares the DataLoader and dataset artifact source for evaluation.
+        
+        Returns:
+            (eval_loader, dataset_for_artifacts)
+        """
+        eval_loader = None
+        dataset_for_artifacts = None
+        
+        # Loader workers config
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        pin_memory = (self.device.type == "cuda")
+
+        if isinstance(data, DataLoader):
+            eval_loader = data
+            if hasattr(data, 'dataset'):
+                dataset_for_artifacts = data.dataset
+        elif isinstance(data, Dataset):
+            eval_loader = DataLoader(data, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=loader_workers,
+                                     pin_memory=pin_memory,
+                                     collate_fn=collate_fn)
+            dataset_for_artifacts = data
+        else: # data is None
+            if default_dataset is None:
+                _LOGGER.error("Cannot evaluate. No data provided and no validation dataset available in the trainer.")
+                raise ValueError()
+            
+            eval_loader = DataLoader(default_dataset, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=loader_workers,
+                                     pin_memory=pin_memory,
+                                     collate_fn=collate_fn)
+            dataset_for_artifacts = default_dataset
+
+        if eval_loader is None:
+            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
+            raise ValueError()
+            
+        return eval_loader, dataset_for_artifacts
+
+    def _save_finalized_artifact(self, 
+                                 finalized_data: dict, 
+                                 save_dir: Union[str, Path], 
+                                 filename: str):
+        """
+        Handles the common logic for saving the finalized model dictionary to disk.
+        """
+        # handle save path
+        dir_path = self._validate_save_dir(save_dir)
+        full_path = dir_path / filename
+        
+        # checkpoint loading happens before dict creation. 
+        
+        torch.save(finalized_data, full_path)
+        
+        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
+        
+        if full_path.is_file():
+            inspect_pth_file(pth_path=full_path, save_dir=dir_path, verbose=2)
+    
+    def _load_checkpoint(self, path: Union[str, Path], verbose: int = 3):
         """Loads a training checkpoint to resume training."""
         p = make_fullpath(path, enforce="file")
-        _LOGGER.info(f"Loading checkpoint from '{p.name}'...")
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Loading checkpoint from '{p.name}'...")
         
         try:
             checkpoint = torch.load(p, map_location=self.device)
@@ -110,9 +228,11 @@ class _BaseDragonTrainer(ABC):
             # --- Load History ---
             if PyTorchCheckpointKeys.HISTORY in checkpoint:
                 self.history = checkpoint[PyTorchCheckpointKeys.HISTORY]
-                _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
+                if verbose >= 3:
+                    _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
             else:
-                _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
+                if verbose >= 1:
+                    _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
                 self.history = {} # Ensure it's at least an empty dict
             
             # --- Scheduler State Loading Logic ---
@@ -124,7 +244,8 @@ class _BaseDragonTrainer(ABC):
                 try:
                     self.scheduler.load_state_dict(checkpoint[PyTorchCheckpointKeys.SCHEDULER_STATE]) # type: ignore
                     scheduler_name = self.scheduler.__class__.__name__
-                    _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
+                    if verbose >= 3:
+                        _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
                 except Exception as e:
                     # Loading failed, likely a mismatch
                     scheduler_name = self.scheduler.__class__.__name__
@@ -134,7 +255,8 @@ class _BaseDragonTrainer(ABC):
             elif scheduler_object_exists and not scheduler_state_exists:
                 # Case 2: Scheduler provided, but no state in checkpoint.
                 scheduler_name = self.scheduler.__class__.__name__
-                _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
+                if verbose >= 1:
+                    _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
             
             elif not scheduler_object_exists and scheduler_state_exists:
                 # Case 3: State in checkpoint, but no scheduler provided.
@@ -145,9 +267,11 @@ class _BaseDragonTrainer(ABC):
             for cb in self.callbacks:
                 if isinstance(cb, DragonModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
                     cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
-                    _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
+                    if verbose >= 3:
+                        _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
             
-            _LOGGER.info(f"Checkpoint loaded. Resuming training from epoch {self.start_epoch}.")
+            if verbose >= 2:
+                _LOGGER.info(f"Model restored to epoch {self.epoch}.")
             
         except Exception as e:
             _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
@@ -243,16 +367,15 @@ class _BaseDragonTrainer(ABC):
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
         
-    def _load_model_state_for_finalizing(self, model_checkpoint: Union[Path, Literal['best', 'current']]):
+    def _load_model_state_wrapper(self, model_checkpoint: Union[Path, Literal['best', 'current']], verbose: int = 2):
         """
         Private helper to load the correct model state_dict based on user's choice.
-        This is called by finalize_model_training() in subclasses.
         """
         if isinstance(model_checkpoint, Path):
-            self._load_checkpoint(path=model_checkpoint)
+            self._load_checkpoint(path=model_checkpoint, verbose=verbose)
         elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
             path_to_latest = self._checkpoint_callback.best_checkpoint_path
-            self._load_checkpoint(path_to_latest)
+            self._load_checkpoint(path_to_latest, verbose=verbose)
         elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
             _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
             raise ValueError()

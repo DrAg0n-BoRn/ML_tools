@@ -221,7 +221,8 @@ def drop_macro(df: pd.DataFrame,
     )
     save_dataframe_filename(df=missing_data_start.reset_index(drop=False),
                    save_dir=full_path,
-                   filename="Missing_Data_Original")
+                   filename="Missing_Data_Original",
+                   verbose=2)
     
     # Clean cycles for rows and columns
     master = True
@@ -255,7 +256,8 @@ def drop_macro(df: pd.DataFrame,
     )
     save_dataframe_filename(df=missing_data_final.reset_index(drop=False),
                    save_dir=full_path,
-                   filename="Missing_Data_Processed")
+                   filename="Missing_Data_Processed",
+                   verbose=2)
     
     # return cleaned dataframe
     return df_clean

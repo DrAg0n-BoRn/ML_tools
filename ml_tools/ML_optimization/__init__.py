@@ -1,6 +1,10 @@
-from ._multi_dragon import DragonParetoOptimizer
+from ._multi_dragon import (
+    DragonParetoOptimizer
+)
 
-from ._single_dragon import DragonOptimizer
+from ._single_dragon import (
+    DragonOptimizer
+)
 
 from ._single_manual import (
     FitnessEvaluator,
@@ -8,7 +12,7 @@ from ._single_manual import (
     run_optimization,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -19,3 +23,7 @@ __all__ = [
     "create_pytorch_problem",
     "run_optimization",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

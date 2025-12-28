@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from ..utilities import load_dataframe
-from ..IO_tools import save_list_strings, custom_logger
+from ..IO_tools import save_list_strings, save_json
 
 from ..path_manager import make_fullpath, list_subdirectories
 from .._core import get_logger
@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 
-def get_model_parameters(model: nn.Module, save_dir: Optional[Union[str,Path]]=None) -> dict[str, int]:
+def get_model_parameters(model: nn.Module, save_dir: Optional[Union[str,Path]]=None, verbose: int = 3) -> dict[str, int]:
     """
     Calculates the total and trainable parameters of a PyTorch model.
 
@@ -46,18 +46,22 @@ def get_model_parameters(model: nn.Module, save_dir: Optional[Union[str,Path]]=N
     
     if save_dir is not None:
         output_dir = make_fullpath(save_dir, make=True, enforce="directory")
-        custom_logger(data=report,
-                      save_directory=output_dir,
-                      log_name=UtilityKeys.MODEL_PARAMS_FILE,
-                      add_timestamp=False,
-                      dict_as="json")
+        
+        save_json(data=report,
+                  directory=output_dir,
+                  filename=UtilityKeys.MODEL_PARAMS_FILE,
+                  verbose=False)
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Model parameters report saved to '{output_dir.name}/{UtilityKeys.MODEL_PARAMS_FILE}.json'")
 
     return report
 
 
 def inspect_model_architecture(
     model: nn.Module,
-    save_dir: Union[str, Path]
+    save_dir: Union[str, Path],
+    verbose: int = 3
 ) -> None:
     """
     Saves a human-readable text summary of a model's instantiated
@@ -84,7 +88,8 @@ def inspect_model_architecture(
             f"{'='*80}\n\n"
         )
     except Exception as e:
-        _LOGGER.warning(f"Could not get model parameters: {e}")
+        if verbose >= 1:
+            _LOGGER.warning(f"Could not get model parameters: {e}")
         header = f"Model: {model.__class__.__name__}\n{'='*80}\n\n"
 
     # --- 3. Get architecture string ---
@@ -95,7 +100,8 @@ def inspect_model_architecture(
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(header)
             f.write(arch_string)
-        _LOGGER.info(f"Model architecture summary saved to '{filepath.name}'")
+        if verbose >= 2:
+            _LOGGER.info(f"Model architecture summary saved to '{filepath.name}'")
     except Exception as e:
         _LOGGER.error(f"Failed to write model architecture file: {e}")
         raise
@@ -104,6 +110,7 @@ def inspect_model_architecture(
 def inspect_pth_file(
     pth_path: Union[str, Path],
     save_dir: Union[str, Path],
+    verbose: int = 3
 ) -> None:
     """
     Inspects a .pth file (e.g., checkpoint) and saves a human-readable
@@ -166,12 +173,12 @@ def inspect_pth_file(
         if PyTorchCheckpointKeys.MODEL_STATE in loaded_data and isinstance(loaded_data[PyTorchCheckpointKeys.MODEL_STATE], dict):
             report["notes"].append(f"Found standard checkpoint key: '{PyTorchCheckpointKeys.MODEL_STATE}'. Analyzing as model state_dict.")
             state_dict = loaded_data[PyTorchCheckpointKeys.MODEL_STATE]
-            report["model_state_analysis"] = _generate_weight_report(state_dict)
+            report["model_state_analysis"] = _generate_weight_report(state_dict, verbose=verbose)
         
         elif all(isinstance(v, torch.Tensor) for v in loaded_data.values()):
             report["notes"].append("File dictionary contains only tensors. Analyzing entire dictionary as model state_dict.")
             state_dict = loaded_data
-            report["model_state_analysis"] = _generate_weight_report(state_dict)
+            report["model_state_analysis"] = _generate_weight_report(state_dict, verbose=verbose)
         
         else:
             report["notes"].append("Could not identify a single model state_dict. See top_level_summary for all contents. No detailed weight analysis will be performed.")
@@ -181,22 +188,24 @@ def inspect_pth_file(
         # _LOGGER.warning("Loading a full, pickled nn.Module is not recommended. Inspecting its state_dict().")
         report["notes"].append("File is a full, pickled nn.Module. This is not recommended. Extracting state_dict() for analysis.")
         state_dict = loaded_data.state_dict()
-        report["model_state_analysis"] = _generate_weight_report(state_dict)
+        report["model_state_analysis"] = _generate_weight_report(state_dict, verbose=verbose)
 
     else:
         # --- Case 3: Unrecognized format (e.g., single tensor, list) ---
         _LOGGER.error(f"Could not parse .pth file. Loaded data is of type {type(loaded_data)}, not a dict or nn.Module.")
         raise ValueError()
 
-    # --- 5. Save Report ---
-    custom_logger(data=report,
-                  save_directory=output_dir,
-                  log_name=UtilityKeys.PTH_FILE + pth_name,
-                  add_timestamp=False,
-                  dict_as="json")
+    # --- 5. Save Report ---    
+    save_json(data=report,
+              directory=output_dir,
+              filename=UtilityKeys.PTH_FILE + pth_name,
+              verbose=False)
+    
+    if verbose >= 2:
+        _LOGGER.info(f".pth file inspection report saved to '{output_dir.name}/{UtilityKeys.PTH_FILE + pth_name}.json'")
 
 
-def _generate_weight_report(state_dict: dict) -> dict:
+def _generate_weight_report(state_dict: dict, verbose: int = 3) -> dict:
     """
     Internal helper to analyze a state_dict and return a structured report.
     
@@ -209,12 +218,14 @@ def _generate_weight_report(state_dict: dict) -> dict:
     weight_report = {}
     total_params = 0
     if not isinstance(state_dict, dict):
-        _LOGGER.warning(f"Attempted to generate weight report on non-dict type: {type(state_dict)}")
+        if verbose >= 1:
+            _LOGGER.warning(f"Attempted to generate weight report on non-dict type: {type(state_dict)}")
         return {"error": "Input was not a dictionary."}
 
     for key, tensor in state_dict.items():
         if not isinstance(tensor, torch.Tensor):
-             _LOGGER.warning(f"Skipping key '{key}' in state_dict: value is not a tensor (type: {type(tensor)}).")
+             if verbose >= 1:
+                 _LOGGER.warning(f"Skipping key '{key}' in state_dict: value is not a tensor (type: {type(tensor)}).")
              weight_report[key] = {
                  "type": str(type(tensor)),
                  "value_preview": str(tensor)[:50] # Show a preview
@@ -239,7 +250,7 @@ def select_features_by_shap(
     root_directory: Union[str, Path],
     shap_threshold: float,
     log_feature_names_directory: Optional[Union[str, Path]],
-    verbose: bool = True) -> list[str]:
+    verbose: int = 3) -> list[str]:
     """
     Scans subdirectories to find SHAP summary CSVs, then extracts feature
     names whose mean absolute SHAP value meets a specified threshold.
@@ -261,7 +272,7 @@ def select_features_by_shap(
             A single, sorted list of unique feature names that meet the
             threshold criteria across all found files.
     """
-    if verbose:
+    if verbose >= 2:
         _LOGGER.info(f"Starting feature selection with SHAP threshold >= {shap_threshold}")
     root_path = make_fullpath(root_directory, enforce="directory")
 
@@ -276,13 +287,14 @@ def select_features_by_shap(
         if expected_path.is_file():
             valid_csv_paths.append(expected_path)
         else:
-            _LOGGER.warning(f"No '{shap_filename}' found in subdirectory '{dir_name}'.")
+            if verbose >= 1:
+                _LOGGER.warning(f"No '{shap_filename}' found in subdirectory '{dir_name}'.")
     
     if not valid_csv_paths:
         _LOGGER.error(f"Process halted: No '{shap_filename}' files were found in any subdirectory.")
         return []
 
-    if verbose:
+    if verbose >= 3:
         _LOGGER.info(f"Found {len(valid_csv_paths)} SHAP summary files to process.")
 
     # --- Step 3: Data Processing and Feature Extraction ---
@@ -294,7 +306,8 @@ def select_features_by_shap(
             # Validate required columns
             required_cols = {SHAPKeys.FEATURE_COLUMN, SHAPKeys.SHAP_VALUE_COLUMN}
             if not required_cols.issubset(df.columns):
-                _LOGGER.warning(f"Skipping '{csv_path}': missing required columns.")
+                if verbose >= 1:
+                    _LOGGER.warning(f"Skipping '{csv_path}': missing required columns.")
                 continue
 
             # Filter by threshold and extract features
@@ -303,7 +316,8 @@ def select_features_by_shap(
             master_feature_set.update(features)
 
         except (ValueError, pd.errors.EmptyDataError):
-            _LOGGER.warning(f"Skipping '{csv_path}' because it is empty or malformed.")
+            if verbose >= 1:
+                _LOGGER.warning(f"Skipping '{csv_path}' because it is empty or malformed.")
             continue
         except Exception as e:
             _LOGGER.error(f"An unexpected error occurred while processing '{csv_path}': {e}")
@@ -311,7 +325,7 @@ def select_features_by_shap(
 
     # --- Step 4: Finalize and Return ---
     final_features = sorted(list(master_feature_set))
-    if verbose:
+    if verbose >= 2:
         _LOGGER.info(f"Selected {len(final_features)} unique features across all files.")
         
     if log_feature_names_directory is not None:
@@ -319,7 +333,7 @@ def select_features_by_shap(
         save_list_strings(list_strings=final_features,
                           directory=save_names_path,
                           filename=DatasetKeys.FEATURE_NAMES,
-                          verbose=verbose)
+                          verbose=False)
     
     return final_features
 

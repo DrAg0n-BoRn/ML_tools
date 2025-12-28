@@ -14,7 +14,7 @@ from ._IO_save_load import (
     load_list_strings,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -26,3 +26,7 @@ __all__ = [
     "load_list_strings",
     "compare_lists"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

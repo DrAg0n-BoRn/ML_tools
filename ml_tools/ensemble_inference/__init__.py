@@ -3,10 +3,14 @@ from ._ensemble_inference import (
     model_report
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
     "DragonEnsembleInferenceHandler",
     "model_report"
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)

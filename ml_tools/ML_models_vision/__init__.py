@@ -13,7 +13,7 @@ from ._object_detection import (
     DragonFastRCNN,
 )
 
-from ._imprimir import info
+from .._core import _imprimir_disponibles
 
 
 __all__ = [
@@ -27,3 +27,7 @@ __all__ = [
     # Object Detection
     "DragonFastRCNN",
 ]
+
+
+def info():
+    _imprimir_disponibles(__all__)
