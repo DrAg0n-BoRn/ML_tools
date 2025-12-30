@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.5.0] 2025-12-30
+
+### Changed
+
+- ML_optimization:
+    - `DragonParetoOptimizer.run()`, added `plots_and_log` parameter to control whether to generate plots and logs during optimization. Useful for multi-run scenarios to avoid redundant outputs.
+- data_exploration:
+    - `apply_feature_schema()`, added `verbose` parameter to control logging verbosity during schema application.
+
+### Added
+- data_exploration:
+    - `reconstruct_from_schema()`, Reconstructs a DataFrame based on a given FeatureSchema, ensuring correct column order and encoding.
+- schema:
+    - `FeatureSchema.save_description()`, Saves the schema description to a text file.
+
 ## [20.4.0] 2025-12-30
 
 - Enhance classification plots default aesthetics.

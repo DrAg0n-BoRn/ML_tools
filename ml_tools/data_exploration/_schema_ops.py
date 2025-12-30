@@ -9,6 +9,13 @@ from .._core import get_logger
 _LOGGER = get_logger("Data Exploration: Schema Ops")
 
 
+__all__ = [
+    "finalize_feature_schema",
+    "apply_feature_schema",
+    "reconstruct_from_schema",
+]
+
+
 def finalize_feature_schema(
     df_features: pd.DataFrame,
     categorical_mappings: Optional[dict[str, dict[str, int]]]
@@ -86,7 +93,7 @@ def apply_feature_schema(
     schema: FeatureSchema,
     targets: Optional[list[str]] = None,
     unknown_value: int = 99999,
-    verbose: bool = True
+    verbose: int = 3
 ) -> pd.DataFrame:
     """
     Aligns the input DataFrame with the provided FeatureSchema.
@@ -100,7 +107,7 @@ def apply_feature_schema(
         targets (list[str] | None): Optional list of target column names.
         unknown_value (int): Integer value to assign to unknown categorical levels.
                              Defaults to 99999 to avoid collision with existing categories.
-        verbose (bool): If True, logs info about dropped extra columns.
+        verbose (int): Verbosity level for logging. Higher values produce more detailed logs.
 
     Returns:
         pd.DataFrame: A new DataFrame with the exact column order and encoding defined by the schema.
@@ -147,7 +154,8 @@ def apply_feature_schema(
             # Handle Unknown Categories
             if df_processed[col_name].isnull().any():
                 n_missing = df_processed[col_name].isnull().sum()
-                _LOGGER.warning(f"Feature '{col_name}': Found {n_missing} unknown categories. Mapping to {unknown_value}.")
+                if verbose >= 1:
+                    _LOGGER.warning(f"Feature '{col_name}': Found {n_missing} unknown categories. Mapping to {unknown_value}.")
                 
                 # Fill unknowns with the specified integer
                 df_processed[col_name] = df_processed[col_name].fillna(unknown_value)
@@ -159,18 +167,109 @@ def apply_feature_schema(
     
     extra_cols = set(df_processed.columns) - set(final_column_order)
     if extra_cols:
-        _LOGGER.info(f"Dropping {len(extra_cols)} extra columns not present in schema.")
-        if verbose:
-            for extra_column in extra_cols:
-                print(f"  - Dropping column: '{extra_column}'")
+        if verbose >= 1:
+            _LOGGER.warning(f"Dropping {len(extra_cols)} extra columns not present in schema: {extra_cols}")
 
     df_final = df_processed[final_column_order]
     
-    _LOGGER.info(f"Schema applied successfully. Final shape: {df_final.shape}")
+    if verbose >= 2:
+        _LOGGER.info(f"Schema applied successfully. Final shape: {df_final.shape}")
     
     # df_final should be a dataframe
     if isinstance(df_final, pd.Series):
         df_final = df_final.to_frame()
 
     return df_final
+
+
+def reconstruct_from_schema(
+    df: pd.DataFrame,
+    schema: FeatureSchema,
+    targets: Optional[list[str]] = None,
+    verbose: int = 3
+) -> pd.DataFrame:
+    """
+    Reverses the schema application to make data human-readable.
+
+    This function decodes categorical features back to their string representations
+    using the schema's mappings. It strictly enforces the schema structure,
+    ignoring extra columns (unless they are specified as targets).
+
+    Args:
+        df (pd.DataFrame): The input DataFrame containing encoded features.
+        schema (FeatureSchema): The schema defining feature names and reverse mappings.
+        targets (list[str] | None): Optional list of target column names to preserve. These are not decoded and kept in the order specified here.
+        verbose (int): Verbosity level for logging info about the process.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the exact column order (features + targets),
+                      with categorical features decoded to strings.
+
+    Raises:
+        ValueError: If any required feature or target column is missing.
+    """
+    # 1. Setup
+    df_decoded = df.copy()
+    targets = targets if targets is not None else []
+
+    # 2. Validation: Strict Column Presence
+    # Check Features
+    missing_features = [col for col in schema.feature_names if col not in df_decoded.columns]
+    if missing_features:
+        _LOGGER.error(f"Schema Reconstruction Mismatch: Missing required features: {missing_features}")
+        raise ValueError()
+    
+    # Check Targets
+    if targets:
+        missing_targets = [col for col in targets if col not in df_decoded.columns]
+        if missing_targets:
+            _LOGGER.error(f"Schema Reconstruction Mismatch: Missing required targets: {missing_targets}")
+            raise ValueError()
+
+    # 3. Reorder and Filter (Drop extra columns early)
+    # The valid columns are Features + Targets
+    valid_columns = list(schema.feature_names) + targets
+    
+    extra_cols = set(df_decoded.columns) - set(valid_columns)
+    if extra_cols:
+        if verbose >= 1:
+            _LOGGER.warning(f"Dropping extra columns not present in schema or targets: {extra_cols}")
+
+    # Enforce order: Features first, then Targets
+    df_decoded = df_decoded[valid_columns]
+
+    # 4. Reverse Categorical Encoding
+    if schema.categorical_feature_names and schema.categorical_mappings:
+        for col_name in schema.categorical_feature_names:
+            if col_name not in schema.categorical_mappings:
+                continue
+
+            forward_mapping = schema.categorical_mappings[col_name]
+            # Create reverse map: {int: str}
+            reverse_mapping = {v: k for k, v in forward_mapping.items()}
+            
+            # --- SAFE TYPE CASTING ---
+            # Ensure values are Integers before mapping (handle 5.0 vs 5).
+            try:
+                if pd.api.types.is_numeric_dtype(df_decoded[col_name]):
+                    df_decoded[col_name] = df_decoded[col_name].astype("Int64")
+            except (TypeError, ValueError):
+                # casted to NaN later during mapping
+                pass
+            # -------------------------
+
+            # Check for unknown codes before mapping
+            if verbose >= 1:
+                unique_codes = df_decoded[col_name].dropna().unique()
+                unknown_codes = [code for code in unique_codes if code not in reverse_mapping]
+                if unknown_codes:
+                    _LOGGER.warning(f"Feature '{col_name}': Found unknown encoded values {unknown_codes}. These will be mapped to NaN.")
+
+            # Apply reverse mapping
+            df_decoded[col_name] = df_decoded[col_name].map(reverse_mapping)
+            
+    if verbose >= 2:
+        _LOGGER.info(f"Schema reconstruction successful. Final shape: {df_decoded.shape}")
+    
+    return df_decoded
 

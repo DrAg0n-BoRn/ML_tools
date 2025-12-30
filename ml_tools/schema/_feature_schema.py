@@ -202,13 +202,39 @@ class FeatureSchema(NamedTuple):
                           filename=DatasetKeys.CATEGORICAL_NAMES,
                           verbose=verbose)
         
-    def save_artifacts(self, directory: Union[str,Path]):
+    def save_description(self, directory: Union[str, Path], verbose: bool = False) -> None:
+        """
+        Saves the schema's description to a .txt file.
+        
+        Args:
+            directory: The directory where the file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+        """
+        dir_path = make_fullpath(directory, make=True, enforce="directory")
+        filename = "FeatureSchema-description.txt"
+        file_path = dir_path / filename
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(str(self))
+            
+            if verbose:
+                _LOGGER.info(f"Schema description saved to '{dir_path.name}/{filename}'")
+        except IOError as e:
+            _LOGGER.error(f"Failed to save schema description: {e}")
+            raise e
+        
+    def save_artifacts(self, directory: Union[str,Path], verbose: bool=True):
         """
         Saves feature names, categorical feature names, continuous feature names to separate text files.
         """
-        self.save_all_features(directory=directory, verbose=True)
-        self.save_continuous_features(directory=directory, verbose=True)
-        self.save_categorical_features(directory=directory, verbose=True)
+        self.save_all_features(directory=directory, verbose=False)
+        self.save_continuous_features(directory=directory, verbose=False)
+        self.save_categorical_features(directory=directory, verbose=False)
+        self.save_description(directory=directory, verbose=False)
+        
+        if verbose:
+            _LOGGER.info(f"All FeatureSchema artifacts saved to directory: '{directory}'")
         
     def __repr__(self) -> str:
         """Returns a concise representation of the schema's contents."""

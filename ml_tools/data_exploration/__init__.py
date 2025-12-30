@@ -36,6 +36,7 @@ from ._features import (
 from ._schema_ops import (
     finalize_feature_schema,
     apply_feature_schema,
+    reconstruct_from_schema
 )
 
 from .._core import _imprimir_disponibles
@@ -62,6 +63,7 @@ __all__ = [
     "encode_categorical_features",
     "finalize_feature_schema",
     "apply_feature_schema",
+    "reconstruct_from_schema",
     "match_and_filter_columns_by_regex",
     "standardize_percentages",
     "reconstruct_one_hot",

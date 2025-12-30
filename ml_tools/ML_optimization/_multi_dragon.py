@@ -170,9 +170,13 @@ class DragonParetoOptimizer:
             re_evaluate=False # model is deterministic
         )
 
-    def run(self) -> pd.DataFrame:
+    def run(self,
+            plots_and_log: bool=True) -> pd.DataFrame:
         """
         Execute the optimization with progress tracking and periodic logging.
+        
+        Args:
+            plots_and_log (bool): If True, generates plots and logs during optimization. Disable for multi-run scenarios.
 
         Returns:
             pd.DataFrame: A DataFrame containing the non-dominated solutions (Pareto Front).
@@ -189,9 +193,10 @@ class DragonParetoOptimizer:
         _LOGGER.info(f"🧬 Starting NSGA-II (GeneticAlgorithm) for {generations} generations...")
         
         # Initialize log file
-        with open(log_file, "w") as f:
-            f.write(f"Pareto Optimization Log - {generations} Generations\n")
-            f.write("=" * 60 + "\n")
+        if plots_and_log:
+            with open(log_file, "w") as f:
+                f.write(f"Pareto Optimization Log - {generations} Generations\n")
+                f.write("=" * 60 + "\n")
             
         # History tracking for visualization
         history_records = []
@@ -201,43 +206,44 @@ class DragonParetoOptimizer:
             for gen in range(1, generations + 1):
                 self.algorithm.step()
                 
-                # Capture stats for history (every generation for smooth plots)
-                current_evals = self.algorithm.population.evals.clone() # type: ignore
-                
-                gen_stats = {}
-                for i, target_name in enumerate(self.ordered_target_names):
-                    vals = current_evals[:, i]
-                    v_mean = float(vals.mean())
-                    v_min = float(vals.min())
-                    v_max = float(vals.max())
+                if plots_and_log:
+                    # Capture stats for history (every generation for smooth plots)
+                    current_evals = self.algorithm.population.evals.clone() # type: ignore
                     
-                    # Store for plotting
-                    history_records.append({
-                        "Generation": gen,
-                        "Target": target_name,
-                        "Mean": v_mean,
-                        "Min": v_min,
-                        "Max": v_max
-                    })
+                    gen_stats = {}
+                    for i, target_name in enumerate(self.ordered_target_names):
+                        vals = current_evals[:, i]
+                        v_mean = float(vals.mean())
+                        v_min = float(vals.min())
+                        v_max = float(vals.max())
+                        
+                        # Store for plotting
+                        history_records.append({
+                            "Generation": gen,
+                            "Target": target_name,
+                            "Mean": v_mean,
+                            "Min": v_min,
+                            "Max": v_max
+                        })
+                        
+                        gen_stats[target_name] = (v_mean, v_min, v_max)
                     
-                    gen_stats[target_name] = (v_mean, v_min, v_max)
-                
-                # Periodic Logging of Population Stats to FILE
-                if gen % log_interval == 0 or gen == generations:
-                    stats_msg = [f"Gen {gen}:"]
-                    for t_name, (v_mean, v_min, v_max) in gen_stats.items():
-                        stats_msg.append(f"{t_name}: {v_mean:.3f} (Range: {v_min:.3f}-{v_max:.3f})")
-                    
-                    log_line = " | ".join(stats_msg)
-                    
-                    # Write to file
-                    with open(log_file, "a") as f:
-                        f.write(log_line + "\n")
+                    # Periodic Logging of Population Stats to FILE
+                    if gen % log_interval == 0 or gen == generations:
+                        stats_msg = [f"Gen {gen}:"]
+                        for t_name, (v_mean, v_min, v_max) in gen_stats.items():
+                            stats_msg.append(f"{t_name}: {v_mean:.3f} (Range: {v_min:.3f}-{v_max:.3f})")
+                        
+                        log_line = " | ".join(stats_msg)
+                        
+                        # Write to file
+                        with open(log_file, "a") as f:
+                            f.write(log_line + "\n")
                 
                 pbar.update(1)
         
         # --- Post-Optimization Visualization ---
-        if history_records:
+        if plots_and_log and history_records:
             _LOGGER.debug("Generating optimization history plots...")
             history_df = pd.DataFrame(history_records)
             self._plot_optimization_history(history_df, save_path)
@@ -308,7 +314,8 @@ class DragonParetoOptimizer:
         _LOGGER.info(f"Optimization complete. Found {len(pareto_df)} non-dominated solutions.")
 
         # --- Plotting ---
-        self._generate_plots(pareto_df, save_path)
+        if plots_and_log:
+            self._generate_plots(pareto_df, save_path)
 
         return pareto_df
     
