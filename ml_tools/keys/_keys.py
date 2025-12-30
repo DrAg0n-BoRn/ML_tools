@@ -297,7 +297,7 @@ class _EvaluationConfig:
     # large sizes for SVG layout to accommodate large fonts
     REGRESSION_PLOT_SIZE = (12, 8)
     SEQUENCE_PLOT_SIZE = (12, 8)
-    CLASSIFICATION_PLOT_SIZE = (10, 10)
+    CLASSIFICATION_PLOT_SIZE = (9, 9)
     # Loss plot
     LOSS_PLOT_SIZE = (18, 9)
     LOSS_PLOT_LABEL_SIZE = 24

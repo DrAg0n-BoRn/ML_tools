@@ -329,7 +329,11 @@ def classification_metrics(save_dir: Union[str, Path],
             fig_roc, ax_roc = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
             ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line)
             ax_roc.plot([0, 1], [0, 1], 'k--')
-            ax_roc.set_title(f'Receiver Operating Characteristic{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            # use "ROC" if extra title, else use "Receiver Operating Characteristic" title
+            if plot_title.strip():
+                ax_roc.set_title(f'ROC{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            else:
+                ax_roc.set_title(f'Receiver Operating Characteristic', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
@@ -351,7 +355,11 @@ def classification_metrics(save_dir: Union[str, Path],
             ap_score = average_precision_score(y_true_binary, y_score)
             fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
             ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=format_config.ROC_PR_line)
-            ax_pr.set_title(f'Precision-Recall Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            # Use "PR Curve" if extra title, else use "Precision-Recall Curve" title
+            if plot_title.strip():
+                ax_pr.set_title(f'PR Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            else:
+                ax_pr.set_title(f'Precision-Recall Curve', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             

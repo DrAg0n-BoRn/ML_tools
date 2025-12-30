@@ -170,7 +170,7 @@ def _log_dict_to_json(data: dict[Any, Any], path: Path) -> None:
 
 
 def train_logger(train_config: Union[dict, Any],
-                 model_parameters: Union[dict, Any],
+                 model_parameters: Union[dict, Any, None],
                  train_history: Union[dict, None],
                  save_directory: Union[str, Path],
                  verbose: int = 3) -> None:
@@ -179,7 +179,7 @@ def train_logger(train_config: Union[dict, Any],
     
     Args:
         train_config (dict | Any): Training configuration parameters. If object, must have a `.to_log()` method returning a dict.
-        model_parameters (dict | Any): Model parameters. If object, must have a `.to_log()` method returning a dict.
+        model_parameters (dict | Any | None): Model parameters. If object, must have a `.to_log()` method returning a dict.
         train_history (dict | None): Training history log.
         save_directory (str | Path): Directory to save the log file.
     """
@@ -201,23 +201,27 @@ def train_logger(train_config: Union[dict, Any],
         
         train_config_dict = train_config
         
-    # model_parameters should be a dict or a custom object with the ".to_log()" method
-    if not isinstance(model_parameters, dict):
-        if hasattr(model_parameters, "to_log") and callable(getattr(model_parameters, "to_log")):
-            model_parameters_dict: dict = model_parameters.to_log()
-            if not isinstance(model_parameters_dict, dict):
-                _LOGGER.error("'model_parameters.to_log()' did not return a dictionary.")
+    # model_parameters should be a dict or a custom object with the ".to_log()" method or None
+    model_parameters_dict = {}
+
+    if model_parameters is not None:
+        if not isinstance(model_parameters, dict):
+            if hasattr(model_parameters, "to_log") and callable(getattr(model_parameters, "to_log")):
+                params_result: dict = model_parameters.to_log()
+                if not isinstance(params_result, dict):
+                    _LOGGER.error("'model_parameters.to_log()' did not return a dictionary.")
+                    raise ValueError()
+                model_parameters_dict = params_result
+            else:
+                _LOGGER.error("'model_parameters' must be a dict, None, or an object with a 'to_log()' method.")
                 raise ValueError()
         else:
-            _LOGGER.error("'model_parameters' must be a dict or an object with a 'to_log()' method.")
-            raise ValueError()
-    else:
-        # check for empty dict
-        if not model_parameters:
-            _LOGGER.error("'model_parameters' dictionary is empty.")
-            raise ValueError()
-        
-        model_parameters_dict = model_parameters
+            # check for empty dict
+            if not model_parameters:
+                _LOGGER.error("'model_parameters' dictionary is empty.")
+                raise ValueError()
+            
+            model_parameters_dict = model_parameters
     
     # make base dictionary
     data: dict = train_config_dict | model_parameters_dict

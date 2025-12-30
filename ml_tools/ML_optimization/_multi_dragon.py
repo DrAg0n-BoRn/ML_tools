@@ -313,14 +313,15 @@ class DragonParetoOptimizer:
         return pareto_df
     
     def save_solutions(self, 
+                       csv_if_exists: Literal['fail', 'replace', 'append'] = 'replace',
                        save_to_sql: bool = False,
                        sql_table_name: Optional[str] = None,
                        sql_if_exists: Literal['fail', 'replace', 'append'] = 'replace') -> None:
         """
-        Saves the current Pareto front to a CSV file, with optional integer rounding 
-        for specific continuous columns. Optionally saves to a SQL database.
+        Saves the current Pareto front to a CSV file. Optionally saves to a SQL database.
 
         Args:
+            csv_if_exists (str): Behavior if CSV file exists ('fail', 'replace', 'append').
             save_to_sql (bool): If True, also writes the results to a SQLite database in the save_dir.
             sql_table_name (str, optional): Specific table name for SQL. If None, uses the solutions filename.
             sql_if_exists (str): Behavior if SQL table exists ('fail', 'replace', 'append').
@@ -377,9 +378,24 @@ class DragonParetoOptimizer:
         # sanitize filename and add extension if missing
         sanitized_filename = sanitize_filename(filename)
         csv_filename = sanitized_filename if sanitized_filename.lower().endswith(".csv") else f"{sanitized_filename}.csv"
+        full_csv_path = save_path / csv_filename
         
-        save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename, verbose=1)
-        _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'. Shape: {df_to_save.shape}")
+        # Logic to handle Append/Fail/Replace for CSV
+        if csv_if_exists == 'append' and full_csv_path.exists():
+            try:
+                # Append mode: write without header, index=False to match standard data exports
+                df_to_save.to_csv(full_csv_path, mode='a', header=False, index=False)
+                _LOGGER.info(f"💾 Pareto solutions APPENDED to CSV: '{save_path.name}/{csv_filename}'. Added {len(df_to_save)} rows.")
+            except Exception as e:
+                _LOGGER.error(f"Failed to append CSV: {e}")
+                raise e
+        elif csv_if_exists == 'fail' and full_csv_path.exists():
+            _LOGGER.error(f"File '{full_csv_path}' already exists and csv_if_exists='fail'.")
+            raise FileExistsError()
+        else:
+            # Default 'replace' or new file creation using the existing utility
+            save_dataframe_filename(df=df_to_save, save_dir=save_path, filename=csv_filename, verbose=1)
+            _LOGGER.info(f"💾 Pareto solutions saved to CSV: '{save_path.name}/{csv_filename}'. Shape: {df_to_save.shape}")
         
         # Save optimization bounds as JSON for reference (debug mode)
         if self._debug:
@@ -404,13 +420,13 @@ class DragonParetoOptimizer:
                 save_json(
                     data=bounds_data, 
                     directory=save_path, 
-                    filename="all_optimization_bounds.json", 
+                    filename="all_debug_optimization_bounds.json", 
                     verbose=False
                 )
-                _LOGGER.info(f"💾 Optimization bounds saved to: '{save_path.name}/all_optimization_bounds.json'")
+                _LOGGER.info(f"💾 Optimization bounds saved to: '{save_path.name}/all_debug_optimization_bounds.json'")
                 
             except Exception as e:
-                _LOGGER.warning(f"Failed to save optimization bounds to JSON: {e}")
+                _LOGGER.warning(f"Failed to save debug optimization bounds to JSON: {e}")
         
         # --- 2. Save SQL (Optional) ---
         if save_to_sql:
@@ -636,7 +652,7 @@ class DragonParetoOptimizer:
                        z_target: Union[int, str],
                        hue_target: Optional[Union[int, str]] = None):
         """
-        Public API to generate 3D visualizations for specific targets.
+        Generate 3D visualizations for specific targets.
         
         Args:
             x_target (int|str): Index or name of the target for the X axis.

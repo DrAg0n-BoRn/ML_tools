@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.4.0] 2025-12-30
+
+- Enhance classification plots default aesthetics.
+
+### Changed
+
+- ML_optimization:
+    - `DragonParetoOptimizer.save_solutions()`, added `csv_if_exists` parameter to control behavior when the CSV file already exists.
+- IO_tools:
+    - `train_logger()`, allow None value for `model_parameters` to skip logging model parameters.
+
 ## [20.3.0] 2025-12-28
 
 - Non-breaking internal refactoring and logging improvements.
