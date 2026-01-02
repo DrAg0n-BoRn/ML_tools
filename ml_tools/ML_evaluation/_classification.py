@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.calibration import CalibrationDisplay
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     classification_report, 
     ConfusionMatrixDisplay, 
@@ -378,42 +378,42 @@ def classification_metrics(save_dir: Union[str, Path],
             
             # --- Save Calibration Plot ---
             fig_cal, ax_cal = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
+            
+            user_chosen_bins = format_config.calibration_bins
+            
+            # --- Automate Bin Selection ---
+            if not isinstance(user_chosen_bins, int) or user_chosen_bins <= 0:
+                # Determine bins based on number of samples
+                n_samples = y_true.shape[0]
+                if n_samples < 200:
+                    dynamic_bins = 5
+                elif n_samples < 1000:
+                    dynamic_bins = 10
+                else:
+                    dynamic_bins = 15
+            else:
+                dynamic_bins = user_chosen_bins
+            
+            # --- Step 1: Get binned data directly ---
+            # calculates reliability diagram data without needing a temporary plot
+            prob_true, prob_pred = calibration_curve(y_true_binary, y_score, n_bins=dynamic_bins)
 
-            # --- Step 1: Get binned data *without* plotting ---
-            with plt.ioff(): # Suppress showing the temporary plot
-                fig_temp, ax_temp = plt.subplots()
-                cal_display_temp = CalibrationDisplay.from_predictions(
-                    y_true_binary, # Use binarized labels
-                    y_score, 
-                    n_bins=format_config.calibration_bins, 
-                    ax=ax_temp,
-                    name="temp" # Add a name to suppress potential warnings
-                )
-                # Get the x, y coordinates of the binned data
-                line_x, line_y = cal_display_temp.line_.get_data() # type: ignore
-                plt.close(fig_temp) # Close the temporary plot
-
-            # --- Step 2: Build the plot from scratch ---
+            # --- Step 2: Plot ---
             ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
             
-            sns.regplot(
-                x=line_x, 
-                y=line_y,
-                ax=ax_cal,
-                scatter=False, 
-                label=f"Model calibration",
-                line_kws={
-                    'color': format_config.ROC_PR_line, 
-                    'linestyle': '--', 
-                    'linewidth': 2,
-                    }
-            )
+            # Plot the actual calibration curve (connect points with a line)
+            ax_cal.plot(prob_pred, 
+                        prob_true, 
+                        marker='o',  # Add markers to see bin locations
+                        linewidth=2, 
+                        label="Model calibration", 
+                        color=format_config.ROC_PR_line)
             
             ax_cal.set_title(f'Reliability Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
-            # --- Step 3: Set final limits *after* plotting ---
+            # --- Step 3: Set final limits ---
             ax_cal.set_ylim(0.0, 1.0) 
             ax_cal.set_xlim(0.0, 1.0)
             
@@ -428,7 +428,7 @@ def classification_metrics(save_dir: Union[str, Path],
             cal_path = save_dir_path / f"calibration_plot{save_suffix}.svg"
             plt.savefig(cal_path)
             plt.close(fig_cal)
-            
+        
         _LOGGER.info(f"📈 Saved {len(class_indices_to_plot)} sets of ROC, Precision-Recall, and Calibration plots.")
 
 
@@ -632,6 +632,52 @@ def multi_label_classification_metrics(
         pr_path = save_dir_path / f"pr_curve_{sanitized_name}.svg"
         plt.savefig(pr_path)
         plt.close(fig_pr)
+        
+        # --- Save Calibration Plot (New Feature) ---
+        fig_cal, ax_cal = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
+        
+        user_chosen_bins = format_config.calibration_bins
+        
+        # --- Automate Bin Selection ---
+        if not isinstance(user_chosen_bins, int) or user_chosen_bins <= 0:
+            # Determine bins based on number of samples
+            n_samples = y_true.shape[0]
+            if n_samples < 200:
+                dynamic_bins = 5
+            elif n_samples < 1000:
+                dynamic_bins = 10
+            else:
+                dynamic_bins = 15
+        else:
+            dynamic_bins = user_chosen_bins
+        
+        # Calculate calibration curve for this specific label
+        prob_true, prob_pred = calibration_curve(true_i, prob_i, n_bins=dynamic_bins)
+        
+        ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
+        ax_cal.plot(prob_pred, 
+                    prob_true, 
+                    marker='o',
+                    linewidth=2, 
+                    label=f"Calibration for '{name}'", 
+                    color=format_config.ROC_PR_line)
+        
+        ax_cal.set_title(f'Reliability Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        
+        ax_cal.set_ylim(0.0, 1.0)
+        ax_cal.set_xlim(0.0, 1.0)
+        
+        ax_cal.tick_params(axis='x', labelsize=xtick_size)
+        ax_cal.tick_params(axis='y', labelsize=ytick_size)
+        ax_cal.legend(loc='lower right', fontsize=legend_size)
+        ax_cal.grid(True)
+        
+        plt.tight_layout()
+        cal_path = save_dir_path / f"calibration_plot_{sanitized_name}.svg"
+        plt.savefig(cal_path)
+        plt.close(fig_cal)
 
     _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")
 

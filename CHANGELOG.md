@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.6.0] 2026-01-02
+
+### Added
+
+- ETL_cleaning:
+    - `save_category_counts()`, Saves the counts and percentages of unique values in complete dataframes or specific columns to a text file.
+
+### Changed
+
+- ML_configuration:
+    - Modified `calibration_bins` parameter to accept both integer values and 'auto' string in the following metrics format classes:
+        - `BinaryClassificationMetricsFormat`
+        - `MultiClassClassificationMetricsFormat`
+        - `BinaryImageClassificationMetricsFormat`
+        - `MultiClassImageClassificationMetricsFormat`
+        - `MultiLabelBinaryClassificationMetricsFormat`
+- ML_evaluation:
+    - Updated calibration plot functions to handle the new `calibration_bins` parameter accepting both integer and 'auto' string.
+- ETL_cleaning:
+    - `DragonColumnCleaner`, added parameter `exact_matches` to allow dictionary-based exact value replacements before applying regex rules for improved performance.
+    - `DragonColumnCleaner.preview()`, added `show_distribution` parameter to optionally generate a category count report for the column after cleaning.
+    - `DragonDataFrameCleaner`, modified internal cleaning logic to apply exact matches before regex rules for better performance.
+
 ## [20.5.0] 2025-12-30
 
 ### Changed

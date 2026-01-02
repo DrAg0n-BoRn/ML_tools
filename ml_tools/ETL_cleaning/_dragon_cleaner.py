@@ -1,13 +1,13 @@
 import polars as pl
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 from ..utilities import save_dataframe_filename, load_dataframe
 
 from .._core import get_logger
 from ..path_manager import make_fullpath
 
-from ._clean_tools import save_unique_values
+from ._clean_tools import save_unique_values, save_category_counts
 
 
 _LOGGER = get_logger("DragonCleaner")
@@ -33,12 +33,18 @@ class DragonColumnCleaner:
     """
     def __init__(self, 
                  column_name: str, 
-                 rules: Union[dict[str, Union[str, None]], dict[str, str]], 
+                 exact_matches: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None,
+                 rules: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None, 
                  case_insensitive: bool = False):
         """
         Args:
             column_name (str):
                 The name of the column to be cleaned.
+            exact_matches (Dict[str, str | None]):
+                A dictionary of EXACT string matches to replacement strings.
+                - Uses a hash map, which is significantly faster than regex.
+                - Used for simple 1-to-1 mappings (e.g., {'Aluminum': 'Al'}).
+                - Runs BEFORE the regex rules.
             rules (Dict[str, str | None]):
                 A dictionary of regex patterns to replacement strings. 
                 - Replacement can be None to indicate that matching values should be converted to null.
@@ -61,25 +67,47 @@ class DragonColumnCleaner:
         if not isinstance(column_name, str) or not column_name:
             _LOGGER.error("The 'column_name' must be a non-empty string.")
             raise TypeError()
-        if not isinstance(rules, dict):
-            _LOGGER.error("The 'rules' argument must be a dictionary.")
-            raise TypeError()
-        # validate rules
-        for pattern, replacement in rules.items():
-            if not isinstance(pattern, str):
-                _LOGGER.error("All keys in 'rules' must be strings representing regex patterns.")
+        
+        # Validate Regex Rules
+        if rules is not None:
+            if not isinstance(rules, dict):
+                _LOGGER.error("The 'rules' argument must be a dictionary.")
                 raise TypeError()
-            if replacement is not None and not isinstance(replacement, str):
-                _LOGGER.error("All values in 'rules' must be strings or None (for nullification).")
+            for pattern, replacement in rules.items():
+                if not isinstance(pattern, str):
+                    _LOGGER.error("All keys in 'rules' must be strings representing regex patterns.")
+                    raise TypeError()
+                if replacement is not None and not isinstance(replacement, str):
+                    _LOGGER.error("All values in 'rules' must be strings or None (for nullification).")
+                    raise TypeError()
+        
+        # Validate Exact Matches
+        if exact_matches is not None:
+            if not isinstance(exact_matches, dict):
+                _LOGGER.error("The 'exact_matches' argument must be a dictionary.")
                 raise TypeError()
+            for key, val in exact_matches.items():
+                if not isinstance(key, str):
+                    _LOGGER.error("All keys in 'exact_matches' must be strings.")
+                    raise TypeError()
+                if val is not None and not isinstance(val, str):
+                    _LOGGER.error("All values in 'exact_matches' must be strings or None.")
+                    raise TypeError()
+                
+        # Raise if both are None or empty
+        if not rules and not exact_matches:
+            _LOGGER.error("At least one of 'rules' or 'exact_matches' must be provided.")
+            raise ValueError()
 
         self.column_name = column_name
-        self.rules = rules
+        self.rules = rules if rules else {}
+        self.exact_matches = exact_matches if exact_matches else {}
         self.case_insensitive = case_insensitive
 
     def preview(self, 
                 csv_path: Union[str, Path], 
                 report_dir: Union[str, Path], 
+                show_distribution: bool = True,
                 add_value_separator: bool=False,
                 rule_batch_size: int = 150):
         """
@@ -90,6 +118,8 @@ class DragonColumnCleaner:
                 The path to the CSV file containing the data to clean.
             report_dir (str | Path):
                 The directory where the preview report will be saved.
+            show_distribution (bool):
+                If True, generates a category count report for the column after cleaning.    
             add_value_separator (bool):
                 If True, adds a separator line between each unique value in the report.
             rule_batch_size (int):
@@ -101,13 +131,21 @@ class DragonColumnCleaner:
         preview_cleaner = DragonDataFrameCleaner(cleaners=[self])
         df_preview = preview_cleaner.clean(df, rule_batch_size=rule_batch_size)
         
-        # Apply cleaning rules to a copy of the column for preview
+        # Apply cleaning rules and save reports
         save_unique_values(csv_path_or_df=df_preview, 
                            output_dir=report_dir, 
                            use_columns=[self.column_name], 
                            verbose=False,
                            keep_column_order=False,
                            add_value_separator=add_value_separator)
+        
+        # Optionally save category counts
+        if show_distribution:
+            save_category_counts(csv_path_or_df=df_preview,
+                                 output_dir=report_dir,
+                                 use_columns=[self.column_name],
+                                 verbose=False,
+                                 keep_column_order=False)
 
 
 class DragonDataFrameCleaner:
@@ -181,16 +219,23 @@ class DragonDataFrameCleaner:
         for cleaner in self.cleaners:
             col_name = cleaner.column_name
             
-            # Get all rules as a list of items
+            # Start expression for this batch
+            col_expr = pl.col(col_name).cast(pl.String)
+            
+            # --- PHASE 1: EXACT MATCHES ---
+            # Apply dictionary-based replacement first (faster than regex)
+            if cleaner.exact_matches:
+                # 'replace' handles dictionary mapping safely. If value is mapped to None, it becomes null.
+                col_expr = col_expr.replace(cleaner.exact_matches)
+
+            # --- PHASE 2: REGEX PATTERNS ---
             all_rules = list(cleaner.rules.items())
             
             # Process in batches of 'rule_batch_size'
             for i in range(0, len(all_rules), rule_batch_size):
                 rule_batch = all_rules[i : i + rule_batch_size]
                 
-                # Start expression for this batch
-                col_expr = pl.col(col_name).cast(pl.String)
-                
+                # continue chaining operations on the same col_expr
                 for pattern, replacement in rule_batch:
                     final_pattern = f"(?i){pattern}" if cleaner.case_insensitive else pattern
                     
@@ -202,6 +247,15 @@ class DragonDataFrameCleaner:
                         col_expr = col_expr.str.replace_all(final_pattern, replacement)
                 
                 # Apply this batch of rules to the LazyFrame
+                # apply partially here to keep the logical plan size under control
+                final_lf = final_lf.with_columns(col_expr.alias(col_name))
+                
+                # Reset col_expr for the next batch, but pointing to the 'new' column
+                # This ensures the next batch works on the result of the previous batch
+                col_expr = pl.col(col_name)
+                
+            # If we had exact matches but NO regex rules, we still need to apply the expression once
+            if cleaner.exact_matches and not all_rules:
                 final_lf = final_lf.with_columns(col_expr.alias(col_name))
 
         # 3. Collect Results
@@ -242,4 +296,3 @@ class DragonDataFrameCleaner:
         save_dataframe_filename(df=df_clean, save_dir=output_filepath.parent, filename=output_filepath.name)
         
         return None
-

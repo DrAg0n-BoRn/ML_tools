@@ -10,7 +10,8 @@ from ._dragon_cleaner import (
 )
 
 from ._clean_tools import (
-    save_unique_values
+    save_unique_values,
+    save_category_counts,
 )
 
 from .._core import _imprimir_disponibles
@@ -20,6 +21,7 @@ __all__ = [
     "DragonColumnCleaner",
     "DragonDataFrameCleaner",
     "save_unique_values",
+    "save_category_counts",
     "basic_clean",
     "basic_clean_drop",
     "drop_macro_polars",

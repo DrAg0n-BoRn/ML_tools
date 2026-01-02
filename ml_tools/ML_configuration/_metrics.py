@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Literal
 
 
 __all__ = [
@@ -26,7 +26,7 @@ class _BaseClassificationFormat:
     def __init__(self, 
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
-                 calibration_bins: int=15, 
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  xtick_size: int=22,
                  ytick_size: int=22,
                  legend_size: int=26,
@@ -46,8 +46,8 @@ class _BaseClassificationFormat:
                 - Common color names: 'darkorange', 'cornflowerblue', 'crimson', 'forestgreen'
                 - Hex codes: '#FF6347', '#4682B4'
             
-            calibration_bins (int): The number of bins to use when
-                creating the calibration (reliability) plot.
+            calibration_bins (int | 'auto'): The number of bins to use when creating the calibration (reliability) plot. If 'auto', the number will be dynamically determined based on the number of samples.
+                - Typical int values: 10, 15, 20
             
             font_size (int): The base font size to apply to the plots.
             
@@ -97,6 +97,7 @@ class _BaseMultiLabelFormat:
     def __init__(self,
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int = 25,
                  xtick_size: int=20,
                  ytick_size: int=20,
@@ -114,6 +115,9 @@ class _BaseMultiLabelFormat:
                 on the ROC and Precision-Recall curves (one for each label). 
                 - Common color names: 'darkorange', 'cornflowerblue', 'crimson', 'forestgreen'
                 - Hex codes: '#FF6347', '#4682B4'
+            
+            calibration_bins (int | 'auto'): The number of bins to use when creating the calibration (reliability) plots for each label. If 'auto', the number will be dynamically determined based on the number of samples.
+                - Typical int values: 10, 15, 20
             
             font_size (int): The base font size to apply to the plots.
             
@@ -133,6 +137,7 @@ class _BaseMultiLabelFormat:
         """
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
+        self.calibration_bins = calibration_bins
         self.font_size = font_size
         self.xtick_size = xtick_size
         self.ytick_size = ytick_size
@@ -142,6 +147,7 @@ class _BaseMultiLabelFormat:
         parts = [
             f"cmap='{self.cmap}'",
             f"ROC_PR_line='{self.ROC_PR_line}'",
+            f"calibration_bins={self.calibration_bins}",
             f"font_size={self.font_size}",
             f"xtick_size={self.xtick_size}",
             f"ytick_size={self.ytick_size}",
@@ -416,7 +422,7 @@ class FormatBinaryClassificationMetrics(_BaseClassificationFormat):
     def __init__(self, 
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
-                 calibration_bins: int=15, 
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int=26,
                  xtick_size: int=22,
                  ytick_size: int=22,
@@ -440,7 +446,7 @@ class FormatMultiClassClassificationMetrics(_BaseClassificationFormat):
     def __init__(self, 
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
-                 calibration_bins: int=15, 
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int=26,
                  xtick_size: int=22,
                  ytick_size: int=22,
@@ -464,7 +470,7 @@ class FormatBinaryImageClassificationMetrics(_BaseClassificationFormat):
     def __init__(self, 
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
-                 calibration_bins: int=15, 
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int=26,
                  xtick_size: int=22,
                  ytick_size: int=22,
@@ -488,7 +494,7 @@ class FormatMultiClassImageClassificationMetrics(_BaseClassificationFormat):
     def __init__(self, 
                  cmap: str="BuGn",
                  ROC_PR_line: str='darkorange',
-                 calibration_bins: int=15, 
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int=26,
                  xtick_size: int=22,
                  ytick_size: int=22,
@@ -513,6 +519,7 @@ class FormatMultiLabelBinaryClassificationMetrics(_BaseMultiLabelFormat):
     def __init__(self,
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
+                 calibration_bins: Union[int, Literal['auto']]='auto', 
                  font_size: int = 25,
                  xtick_size: int=20,
                  ytick_size: int=20,
@@ -520,6 +527,7 @@ class FormatMultiLabelBinaryClassificationMetrics(_BaseMultiLabelFormat):
                  ) -> None:
         super().__init__(cmap=cmap,
                          ROC_PR_line=ROC_PR_line, 
+                         calibration_bins=calibration_bins,
                          font_size=font_size,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,

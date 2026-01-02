@@ -13,6 +13,7 @@ _LOGGER = get_logger("ETL Clean Tools")
 
 __all__ = [
     "save_unique_values",
+    "save_category_counts",
 ]
 
 
@@ -126,3 +127,111 @@ def save_unique_values(csv_path_or_df: Union[str, Path, pl.DataFrame],
             counter += 1
 
     _LOGGER.info(f"{counter} files of unique values created.")
+
+
+################ Category Counts per column #################
+def save_category_counts(csv_path_or_df: Union[str, Path, pl.DataFrame], 
+                         output_dir: Union[str, Path], 
+                         use_columns: Optional[list[str]] = None,
+                         verbose: bool = False,
+                         keep_column_order: bool = True) -> None:
+    """
+    Calculates the frequency and percentage of each unique value in the specified columns
+    and saves the distribution report to a text file.
+
+    Useful for checking class balance or identifying rare categories.
+
+    Args:
+        csv_path_or_df (str | Path | pl.DataFrame):
+            The file path to the input CSV file or a Polars DataFrame.
+        output_dir (str | Path):
+            The directory where the report files will be saved.
+        use_columns (List[str] | None):
+            Columns to analyze. If None, all columns are processed.
+        verbose (bool):
+            If True, prints progress info.
+        keep_column_order (bool):
+            If True, prepends a numeric prefix to filenames to maintain order.
+    """
+    # 1. Handle Input
+    if isinstance(csv_path_or_df, pl.DataFrame):
+        df = csv_path_or_df
+        if use_columns:
+            valid_cols = [c for c in use_columns if c in df.columns]
+            if not valid_cols:
+                _LOGGER.error("None of the specified columns in 'use_columns' exist in the provided DataFrame.")
+                raise ValueError()
+            df = df.select(valid_cols)
+    else:
+        csv_path = make_fullpath(input_path=csv_path_or_df, enforce="file")
+        df = load_dataframe(df_path=csv_path, use_columns=use_columns, kind="polars", all_strings=True)[0]
+
+    output_path = make_fullpath(input_path=output_dir, make=True, enforce='directory')
+    total_rows = df.height
+
+    if total_rows == 0:
+        _LOGGER.warning("Input DataFrame is empty. No counts to save.")
+        return
+
+    counter = 0
+
+    # 2. Process Each Column
+    for i, col_name in enumerate(df.columns):
+        try:
+            # Group by, count, and calculate percentage
+            # We treat nulls as a category here to see missing data frequency
+            stats = (
+                df.select(pl.col(col_name))
+                .group_by(col_name, maintain_order=False)
+                .len(name="count")
+                .with_columns(
+                    (pl.col("count") / total_rows * 100).alias("pct")
+                )
+                .sort("count", descending=True)
+            )
+
+            # Collect to python list of dicts for writing
+            rows = stats.iter_rows(named=True)
+            unique_count = stats.height
+            
+            # Check thresholds for warning
+            is_high_cardinality = (unique_count > 300) or ((unique_count / total_rows) > 0.5)
+        
+        except Exception:
+            _LOGGER.error(f"Could not calculate counts for column '{col_name}'.")
+            continue
+
+        # 3. Write to File
+        sanitized_name = sanitize_filename(col_name)
+        if not sanitized_name.strip('_'):
+            sanitized_name = f'column_{i}'
+        
+        prefix = f"{i + 1}_" if keep_column_order else ''
+        file_path = output_path / f"{prefix}{sanitized_name}_counts.txt"
+
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(f"# Distribution for column: '{col_name}'\n")
+                f.write(f"# Total Rows: {total_rows} | Unique Values: {unique_count}\n")
+                
+                if is_high_cardinality:
+                    f.write(f"# WARNING: High cardinality detected (Unique/Total ratio: {unique_count/total_rows:.2%}).\n")
+                
+                f.write("-" * 65 + "\n")
+                f.write(f"{'Count':<10} | {'Percentage':<12} | {'Value'}\n")
+                f.write("-" * 65 + "\n")
+                
+                for row in rows:
+                    val = str(row[col_name])
+                    count = row["count"]
+                    pct = row["pct"]
+                    f.write(f"{count:<10} | {pct:>10.2f}%  | {val}\n")
+                    
+        except IOError:
+             _LOGGER.exception(f"Error writing to file {file_path}.")
+        else:
+             if verbose:
+                 print(f"    Saved distribution for '{col_name}'.")
+             counter += 1
+
+    _LOGGER.info(f"{counter} distribution files created.")

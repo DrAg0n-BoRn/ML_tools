@@ -4,6 +4,7 @@ class MagicWords:
     CURRENT = "current"
     RENAME = "rename"
     UNKNOWN = "unknown"
+    AUTO = "auto"
 
 
 class PyTorchLogKeys:
