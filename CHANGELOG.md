@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.7.0] 2026-01-04
+
+### Added
+
+- utilities:
+    - `translate_dataframe_columns()`, Translates DataFrame column names based on a provided translation mapping.
+    - `create_translation_template()`, Creates a template JSON file for column name translations.
+    - `audit_column_translation()`, Audits the translation mapping against the DataFrame to identify missing or extra columns.
+
 ## [20.6.0] 2026-01-02
 
 ### Added

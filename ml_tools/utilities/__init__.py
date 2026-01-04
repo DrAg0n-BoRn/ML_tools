@@ -15,6 +15,13 @@ from ._utility_tools import (
     train_dataset_yielder
 )
 
+from ._translate import (
+    translate_dataframe_columns,
+    create_translation_template,
+    audit_column_translation
+)
+
+
 from .._core import _imprimir_disponibles
 
 
@@ -27,6 +34,9 @@ __all__ = [
     "save_dataframe",
     "save_dataframe_with_schema",
     "merge_dataframes",
+    "translate_dataframe_columns",
+    "create_translation_template",
+    "audit_column_translation",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder"
