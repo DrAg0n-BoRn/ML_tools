@@ -92,15 +92,16 @@ def translate_dataframe_columns(
     # 3. Apply Translation
     try:
         if isinstance(df, pd.DataFrame):
-            return df.rename(columns=translation_map)
+            resulting_df = df.rename(columns=translation_map)
         elif isinstance(df, pl.DataFrame):
-            return df.rename(translation_map)
+            resulting_df = df.rename(translation_map, strict=False)
     except Exception as e:
         _LOGGER.error(f"Failed to rename columns: {e}")
         raise e
-    
-    if verbose >= 2:
-        _LOGGER.info(f"Successfully translated {len(common_cols)} columns.")
+    else:
+        if verbose >= 2:
+            _LOGGER.info(f"Successfully translated {len(common_cols)} columns.")
+        return resulting_df
 
 
 def create_translation_template(
@@ -204,10 +205,10 @@ def audit_column_translation(
     coverage_pct = (len(matched) / len(cols) * 100) if len(cols) > 0 else 0.0
 
     # 4. Report
-    report_string = f"--- 🔍 Translation Audit Report: {source_name} ---\n \
-        Direction: {direction}\n \
-        Total Columns: {len(cols)}\n \
-        Map Coverage:  {len(matched)} / {len(cols)} ({coverage_pct:.1f}%)\n"
+    report_string = f"\n--- 🔍 Translation Audit Report: {source_name} ---\n \
+    Direction: {direction}\n \
+    Total Columns: {len(cols)}\n \
+    Map Coverage: {coverage_pct:.1f}%\n"
     
     if matched:
         report_string += f"\n✅ Will Translate: {len(matched)} columns"
