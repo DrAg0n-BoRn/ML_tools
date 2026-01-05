@@ -481,6 +481,10 @@ def multi_label_classification_metrics(
     ytick_size = format_config.ytick_size
     legend_size = format_config.legend_size
     base_font_size = format_config.font_size
+    
+    # config font size for heatmap
+    cm_font_size = format_config.cm_font_size
+    cm_tick_size = cm_font_size - 4
 
     # --- Calculate and Save Overall Metrics (using y_pred) ---
     h_loss = hamming_loss(y_true, y_pred)
@@ -488,7 +492,7 @@ def multi_label_classification_metrics(
     j_score_macro = jaccard_score(y_true, y_pred, average='macro')
 
     overall_report = (
-        f"Overall Multi-Label Metrics:\n" # No threshold to report here
+        f"Overall Multi-Label Metrics:\n"
         f"--------------------------------------------------\n"
         f"Hamming Loss: {h_loss:.4f}\n"
         f"Jaccard Score (micro): {j_score_micro:.4f}\n"
@@ -498,14 +502,82 @@ def multi_label_classification_metrics(
     # print(overall_report)
     overall_report_path = save_dir_path / "classification_report.txt"
     overall_report_path.write_text(overall_report)
+    
+    # --- Save Classification Report Heatmap (Multi-label) ---
+    try:
+         # Generate full report as dict
+        full_report_dict = classification_report(y_true, y_pred, target_names=target_names, output_dict=True)
+        report_df = pd.DataFrame(full_report_dict)
+        
+        # Cleanup
+        # Remove 'accuracy' column if it exists 
+        report_df = report_df.drop(columns=['accuracy'], errors='ignore')
+        
+        # Remove 'support' row explicitly
+        if 'support' in report_df.index:
+            report_df = report_df.drop(index='support')
+            
+        # Transpose: Rows = Classes/Averages, Cols = Metrics
+        plot_df = report_df.T
+        
+        # Dynamic Height
+        fig_height = max(5.0, len(plot_df.index) * 0.5 + 4.0)
+        fig_width = 8.0 
+
+        fig_heat, ax_heat = plt.subplots(figsize=(fig_width, fig_height), dpi=_EvaluationConfig.DPI)
+
+        # Plot
+        sns.heatmap(plot_df, 
+                    annot=True, 
+                    cmap=format_config.cmap, 
+                    fmt='.2f',
+                    vmin=0.0,
+                    vmax=1.0,
+                    cbar_kws={'shrink': 0.9})
+        
+        ax_heat.set_title("Classification Report Heatmap", pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
+        
+        # manually increase the font size of the elements
+        for text in ax_heat.texts:
+            text.set_fontsize(cm_tick_size)
+
+        cbar = ax_heat.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=cm_tick_size - 4) # type: ignore
+
+        ax_heat.tick_params(axis='x', labelsize=cm_tick_size, pad=_EvaluationConfig.LABEL_PADDING)
+        ax_heat.tick_params(axis='y', labelsize=cm_tick_size, pad=_EvaluationConfig.LABEL_PADDING, rotation=0)
+
+        plt.tight_layout()
+        heatmap_path = save_dir_path / "classification_report_heatmap.svg"
+        plt.savefig(heatmap_path)
+        _LOGGER.info(f"📊 Report heatmap saved as '{heatmap_path.name}'")
+        plt.close(fig_heat)
+
+    except Exception as e:
+        _LOGGER.error(f"Could not generate multi-label classification report heatmap: {e}")
 
     # --- Per-Label Metrics and Plots ---
     for i, name in enumerate(target_names):
-        print(f"  -> Evaluating label: '{name}'")
+        # strip whitespace from name
+        name = name.strip()
+        
+        # print(f"  -> Evaluating label: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i] # Use passed-in y_pred
         prob_i = y_prob[:, i] # Use passed-in y_prob
         sanitized_name = sanitize_filename(name)
+        
+        # if name is too long, just take the first letter of each word. Each word might be separated by space or underscore
+        if len(name) >= _EvaluationConfig.NAME_LIMIT:
+            parts = [w for w in name.replace("_", " ").split() if w]
+            abbr = "".join(p[0].upper() for p in parts)
+            # keep only alpha numeric chars
+            abbr = "".join(ch for ch in abbr if ch.isalnum())
+            if not abbr:
+                # fallback to a sanitized, truncated version of the original name
+                abbr = sanitize_filename(name)[: _EvaluationConfig.NAME_LIMIT]
+            _LOGGER.warning(f"Using abbreviated name '{abbr}' for '{name}' plots.")
+            name = abbr
 
         # --- Save Classification Report for the label (uses y_pred) ---
         report_text = classification_report(true_i, pred_i)
@@ -537,7 +609,7 @@ def multi_label_classification_metrics(
         ax_cm.tick_params(axis='y', labelsize=ytick_size)
         
         # Set titles and labels with padding
-        ax_cm.set_title(f"Confusion Matrix for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cm.set_title(f"Confusion Matrix - {name}", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -594,7 +666,7 @@ def multi_label_classification_metrics(
         ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
         
-        ax_roc.set_title(f'ROC Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_roc.set_title(f'ROC Curve - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -616,7 +688,7 @@ def multi_label_classification_metrics(
         ap_score = average_precision_score(true_i, prob_i)
         fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
         ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=format_config.ROC_PR_line) # Use config color
-        ax_pr.set_title(f'Precision-Recall Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_pr.set_title(f'PR Curve - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -659,10 +731,10 @@ def multi_label_classification_metrics(
                     prob_true, 
                     marker='o',
                     linewidth=2, 
-                    label=f"Calibration for '{name}'", 
+                    label=f"Model Calibration", 
                     color=format_config.ROC_PR_line)
         
-        ax_cal.set_title(f'Reliability Curve for "{name}"', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cal.set_title(f'Calibration - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         

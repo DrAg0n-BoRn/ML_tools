@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.8.0] 2026-01-05
+
+### Changed
+
+- ML_evaluation:
+    - Enhanced plot aesthetics for classification evaluation plots.
+    - `multi_label_classification_metrics()`, added classification report heatmap visualization for an overall summary of multi-label classification performance.
+
+### Added
+
+- New module: "resampling"
+    - `DragonResampler`, Class for resampling single-label binary or multi-class classification datasets.
+        - `balance_classes()`, Downsamples majority class to match minority class size based on a specified ratio.
+        - `describe_balance()`, Prints a statistical summary of the target distribution.
+    - `DragonMultiResampler`, Class for resampling multi-label binary classification datasets.
+        - `downsample_all_negatives()`, Downsamples rows where all target labels are negative based on a specified ratio.
+        - `balance_powerset()`, Balances the dataset based on unique label combinations (Powerset).
+        - `describe_balance()`, Prints a statistical summary of the multi-label target distribution.
+- data_exploration:
+    - `check_class_balance()`, Analyzes and visualizes class balance for single-label binary, multi-class, and multi-label binary classification targets.
+    - `encode_classification_target()`, Encodes a classification target column and saves the class mapping to a JSON file.
+
 ## [20.7.1] 2026-01-04
 
 ### Fixed

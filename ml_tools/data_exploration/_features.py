@@ -3,7 +3,10 @@ from pandas.api.types import is_numeric_dtype, is_object_dtype
 import numpy as np
 from typing import Any, Optional, Union
 import re
+import json
+from pathlib import Path
 
+from ..path_manager import make_fullpath
 from .._core import get_logger
 
 
@@ -15,6 +18,7 @@ __all__ = [
     "split_continuous_binary",
     "split_continuous_categorical_targets",
     "encode_categorical_features",
+    "encode_classification_target",
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
@@ -261,6 +265,78 @@ def encode_categorical_features(
             print(f"  - Encoded '{col_name}': {cardinality} categories.")
 
     return df_encoded, mappings
+
+
+def encode_classification_target(
+    df: pd.DataFrame,
+    target_col: str,
+    save_dir: Union[str, Path],
+    verbose: int = 2
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """
+    Encodes a target classification column into integers (0, 1, 2...) and saves the mapping to a JSON file.
+
+    This ensures that the target variable is in the correct numeric format for training
+    and provides a persistent artifact (the JSON file) to map predictions back to labels later.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        target_col (str): Name of the target column to encode.
+        save_dir (str | Path): Directory where the class map JSON will be saved.
+        verbose (int): Verbosity level for logging.
+
+    Returns:
+        Tuple (Dataframe, Dict):
+            - A new DataFrame with the target column encoded as integers.
+            - The dictionary mapping original labels (str) to integers (int).
+    """
+    if target_col not in df.columns:
+        _LOGGER.error(f"Target column '{target_col}' not found in DataFrame.")
+        raise ValueError()
+    
+    # Validation: Check for missing values in target
+    if df[target_col].isnull().any():
+        n_missing = df[target_col].isnull().sum()
+        _LOGGER.error(f"Target column '{target_col}' contains {n_missing} missing values. Please handle them before encoding.")
+        raise ValueError()
+    
+    # Ensure directory exists
+    save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    file_path = save_path / "class_map.json"
+
+    # Get unique values and sort them to ensure deterministic encoding (0, 1, 2...)
+    # Convert to string to ensure the keys in JSON are strings
+    unique_labels = sorted(df[target_col].astype(str).unique())
+    
+    # Create mapping: { Label -> Integer }
+    class_map = {label: idx for idx, label in enumerate(unique_labels)}
+    
+    # Apply mapping
+    # cast column to string to match the keys in class_map
+    df_encoded = df.copy()
+    df_encoded[target_col] = df_encoded[target_col].astype(str).map(class_map)
+    
+    # Save to JSON
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(class_map, f, indent=4)
+            
+        if verbose >= 2:
+            _LOGGER.info(f"Class mapping saved to: '{file_path}'")
+        
+        if verbose >= 3:
+            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes.")
+            # Print a preview
+            if len(class_map) <= 10:
+                print(f"  Mapping: {class_map}")
+            else:
+                print(f"  Mapping (first 5): {dict(list(class_map.items())[:5])} ...")
+    
+    except Exception as e:
+        _LOGGER.error(f"Failed to save class map JSON. Error: {e}")
+        raise IOError()
+
+    return df_encoded, class_map
 
 
 def reconstruct_one_hot(

@@ -16,6 +16,7 @@ __all__ = [
     "summarize_dataframe",
     "show_null_columns",
     "match_and_filter_columns_by_regex",
+    "check_class_balance",
 ]
 
 
@@ -212,3 +213,151 @@ def match_and_filter_columns_by_regex(
 
     return filtered_df, matched_columns
 
+
+def check_class_balance(
+    df: pd.DataFrame,
+    target: Union[str, list[str]],
+    plot_to_dir: Optional[Union[str, Path]] = None,
+    plot_filename: str = "Class_Balance"
+) -> pd.DataFrame:
+    """
+    Analyzes the class balance for classification targets.
+
+    Handles two cases:
+    1. Single Column (Binary/Multi-class): Calculates frequency of each unique value.
+    2. List of Columns (Multi-label Binary): Calculates the frequency of positive values (1) per column.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        target (str | list[str]): The target column name (for single/multi-class classification) 
+                                  or list of column names (for multi-label-binary classification).
+        plot_to_dir (str | Path | None): Directory to save the balance plot.
+        plot_filename (str): Filename for the plot (without extension).
+
+    Returns:
+        pd.DataFrame: Summary table of counts and percentages.
+    """
+    # Early fail for empty DataFrame and handle list of targets with only one item
+    if df.empty:
+        _LOGGER.error("Input DataFrame is empty.")
+        raise ValueError()
+    
+    if isinstance(target, list):
+        if len(target) == 0:
+            _LOGGER.error("Target list is empty.")
+            raise ValueError()
+        elif len(target) == 1:
+            target = target[0]  # Simplify to single column case
+
+    # Case 1: Single Target (Binary or Multi-class)
+    if isinstance(target, str):
+        if target not in df.columns:
+            _LOGGER.error(f"Target column '{target}' not found in DataFrame.")
+            raise ValueError()
+        
+        # Calculate stats
+        counts = df[target].value_counts(dropna=False).sort_index()
+        percents = df[target].value_counts(normalize=True, dropna=False).sort_index() * 100
+        
+        summary = pd.DataFrame({
+            'Count': counts,
+            'Percentage': percents.round(2)
+        })
+        summary.index.name = "Class"
+        
+        # Plotting
+        if plot_to_dir:
+            try:
+                save_path = make_fullpath(plot_to_dir, make=True, enforce="directory")
+                
+                plt.figure(figsize=(10, 6))
+                # Convert index to str to handle numeric classes cleanly on x-axis
+                x_labels = summary.index.astype(str)
+                bars = plt.bar(x_labels, summary['Count'], color='lightgreen', edgecolor='black', alpha=0.7)
+                
+                plt.title(f"Class Balance: {target}")
+                plt.xlabel(target)
+                plt.ylabel("Count")
+                plt.grid(axis='y', linestyle='--', alpha=0.5)
+                
+                # Add percentage labels on top of bars
+                for bar, pct in zip(bars, summary['Percentage']):
+                    height = bar.get_height()
+                    plt.text(bar.get_x() + bar.get_width()/2, height, 
+                             f'{pct:.1f}%', ha='center', va='bottom', fontsize=10)
+                
+                plt.tight_layout()
+                full_filename = sanitize_filename(plot_filename) + ".svg"
+                plt.savefig(save_path / full_filename, format='svg', bbox_inches="tight")
+                plt.close()
+                _LOGGER.info(f"Saved class balance plot: '{full_filename}'")
+            except Exception as e:
+                _LOGGER.error(f"Failed to plot class balance. Error: {e}")
+                plt.close()
+
+        return summary
+
+    # Case 2: Multi-label (List of binary columns)
+    elif isinstance(target, list):
+        missing_cols = [t for t in target if t not in df.columns]
+        if missing_cols:
+            _LOGGER.error(f"Target columns not found: {missing_cols}")
+            raise ValueError()
+        
+        stats = []
+        for col in target:
+            # Assume 0/1 or False/True. Sum gives the count of positives.
+            # We enforce numeric to be safe
+            try:
+                numeric_series = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                pos_count = numeric_series.sum()
+                total_count = len(df)
+                pct = (pos_count / total_count) * 100
+            except Exception:
+                _LOGGER.warning(f"Column '{col}' could not be processed as numeric. Assuming 0 positives.")
+                pos_count = 0
+                pct = 0.0
+
+            stats.append({
+                'Label': col,
+                'Positive_Count': int(pos_count),
+                'Positive_Percentage': round(pct, 2)
+            })
+            
+        summary = pd.DataFrame(stats).set_index("Label").sort_values("Positive_Percentage", ascending=True)
+        
+        # Plotting
+        if plot_to_dir:
+            try:
+                save_path = make_fullpath(plot_to_dir, make=True, enforce="directory")
+                
+                # Dynamic height for many labels
+                height = max(6, len(target) * 0.4)
+                plt.figure(figsize=(10, height))
+                
+                bars = plt.barh(summary.index, summary['Positive_Percentage'], color='lightgreen', edgecolor='black', alpha=0.7)
+                
+                plt.title(f"Multi-label Binary Class Balance")
+                plt.xlabel("Positive Class Percentage (%)")
+                plt.xlim(0, 100)
+                plt.grid(axis='x', linestyle='--', alpha=0.5)
+                
+                # Add count labels at the end of bars
+                for bar, count in zip(bars, summary['Positive_Count']):
+                    width = bar.get_width()
+                    plt.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', ha='left', va='center', fontsize=9)
+                
+                plt.tight_layout()
+                full_filename = sanitize_filename(plot_filename) + ".svg"
+                plt.savefig(save_path / full_filename, format='svg', bbox_inches="tight")
+                plt.close()
+                _LOGGER.info(f"Saved multi-label balance plot: '{full_filename}'")
+            except Exception as e:
+                _LOGGER.error(f"Failed to plot class balance. Error: {e}")
+                plt.close()
+
+        return summary.sort_values("Positive_Percentage", ascending=False)
+    
+    else:
+        _LOGGER.error("Target must be a string or a list of strings.")
+        raise TypeError()

@@ -2,6 +2,7 @@ from ._analysis import (
     summarize_dataframe,
     show_null_columns,
     match_and_filter_columns_by_regex,
+    check_class_balance,
 )
 
 from ._cleaning import (
@@ -28,6 +29,7 @@ from ._features import (
     split_continuous_binary,
     split_continuous_categorical_targets,
     encode_categorical_features,
+    encode_classification_target,
     reconstruct_one_hot,
     reconstruct_binary,
     reconstruct_multibinary,
@@ -44,7 +46,6 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "summarize_dataframe",
-    "show_null_columns",
     "drop_constant_columns",
     "drop_rows_with_missing_data",
     "drop_columns_with_missing_data",
@@ -61,10 +62,13 @@ __all__ = [
     "plot_categorical_vs_target",
     "plot_correlation_heatmap", 
     "encode_categorical_features",
+    "encode_classification_target",
     "finalize_feature_schema",
     "apply_feature_schema",
     "reconstruct_from_schema",
     "match_and_filter_columns_by_regex",
+    "show_null_columns",
+    "check_class_balance",
     "standardize_percentages",
     "reconstruct_one_hot",
     "reconstruct_binary",

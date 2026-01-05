@@ -98,10 +98,11 @@ class _BaseMultiLabelFormat:
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: Union[int, Literal['auto']]='auto', 
-                 font_size: int = 25,
-                 xtick_size: int=20,
-                 ytick_size: int=20,
-                 legend_size: int=23) -> None:
+                 font_size: int = 26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26) -> None:
         """
         Initializes the formatting configuration for multi-label classification metrics.
 
@@ -127,6 +128,8 @@ class _BaseMultiLabelFormat:
             
             legend_size (int): Font size for plot legends.
             
+            cm_font_size (int): Font size for the confusion matrix.
+            
         <br>
         
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
@@ -142,6 +145,7 @@ class _BaseMultiLabelFormat:
         self.xtick_size = xtick_size
         self.ytick_size = ytick_size
         self.legend_size = legend_size
+        self.cm_font_size = cm_font_size
         
     def __repr__(self) -> str:
         parts = [
@@ -151,7 +155,8 @@ class _BaseMultiLabelFormat:
             f"font_size={self.font_size}",
             f"xtick_size={self.xtick_size}",
             f"ytick_size={self.ytick_size}",
-            f"legend_size={self.legend_size}"
+            f"legend_size={self.legend_size}",
+            f"cm_font_size={self.cm_font_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -520,10 +525,11 @@ class FormatMultiLabelBinaryClassificationMetrics(_BaseMultiLabelFormat):
                  cmap: str = "BuGn",
                  ROC_PR_line: str='darkorange',
                  calibration_bins: Union[int, Literal['auto']]='auto', 
-                 font_size: int = 25,
-                 xtick_size: int=20,
-                 ytick_size: int=20,
-                 legend_size: int=23
+                 font_size: int = 26,
+                 xtick_size: int=22,
+                 ytick_size: int=22,
+                 legend_size: int=26,
+                 cm_font_size: int=26
                  ) -> None:
         super().__init__(cmap=cmap,
                          ROC_PR_line=ROC_PR_line, 
@@ -531,7 +537,8 @@ class FormatMultiLabelBinaryClassificationMetrics(_BaseMultiLabelFormat):
                          font_size=font_size,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
-                         legend_size=legend_size)
+                         legend_size=legend_size,
+                         cm_font_size=cm_font_size)
 
 
 # Segmentation

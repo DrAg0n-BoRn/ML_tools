@@ -81,6 +81,7 @@ ML_vision_transformers
 optimization_tools
 path_manager
 plot_fonts
+resampling
 schema
 serde
 SQL
@@ -113,6 +114,7 @@ optimization_tools
 path_manager
 plot_fonts
 PSO_optimization
+resampling
 schema
 serde
 SQL
