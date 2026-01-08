@@ -133,7 +133,7 @@ class _BaseDatasetMaker(ABC):
 
         # Get continuous feature indices *from the schema*
         if schema.continuous_feature_names:
-            if verbose >= 2:
+            if verbose >= 3:
                 _LOGGER.info("Getting continuous feature indices from schema.")
             try:
                 # Convert columns to a standard list for .index()
@@ -189,7 +189,7 @@ class _BaseDatasetMaker(ABC):
         # ------------------------------------------------------------------
 
         if self.target_scaler is None:
-            if verbose >= 2:
+            if verbose >= 3:
                 _LOGGER.info("Fitting a new DragonScaler on training targets.")
             # Convert to float tensor for calculation
             y_train_tensor = torch.tensor(y_train_arr, dtype=torch.float32)
@@ -202,6 +202,9 @@ class _BaseDatasetMaker(ABC):
             y_val_tensor = self.target_scaler.transform(torch.tensor(y_val_arr, dtype=torch.float32))
             y_test_tensor = self.target_scaler.transform(torch.tensor(y_test_arr, dtype=torch.float32))
             return y_train_tensor.numpy(), y_val_tensor.numpy(), y_test_tensor.numpy()
+        
+        if verbose >= 2:
+            _LOGGER.info("Target scaling transformation complete.")
 
         return y_train_arr, y_val_arr, y_test_arr
     
@@ -214,6 +217,9 @@ class _BaseDatasetMaker(ABC):
 
     @property
     def train_dataset(self) -> Dataset:
+        """  
+        Returns the training dataset.
+        """
         if self._train_ds is None: 
             _LOGGER.error("Train Dataset not yet created.")
             raise RuntimeError()
@@ -221,6 +227,9 @@ class _BaseDatasetMaker(ABC):
     
     @property
     def validation_dataset(self) -> Dataset:
+        """  
+        Returns the validation dataset.
+        """
         if self._val_ds is None: 
             _LOGGER.error("Validation Dataset not yet created.")
             raise RuntimeError()
@@ -228,6 +237,9 @@ class _BaseDatasetMaker(ABC):
 
     @property
     def test_dataset(self) -> Dataset:
+        """
+        Returns the test dataset.
+        """
         if self._test_ds is None: 
             _LOGGER.error("Test Dataset not yet created.")
             raise RuntimeError()
@@ -235,30 +247,50 @@ class _BaseDatasetMaker(ABC):
 
     @property
     def feature_names(self) -> list[str]:
+        """
+        Returns a list with the feature names.
+        """
         return self._feature_names
     
     @property
     def target_names(self) -> list[str]:
+        """
+        Returns a list with the target names.
+        """
         return self._target_names
     
     @property
     def number_of_features(self) -> int:
+        """  
+        Returns the number of features.
+        """
         return len(self._feature_names)
     
     @property
     def number_of_targets(self) -> int:
+        """  
+        Returns the number of targets.
+        """
         return len(self._target_names)
 
     @property
     def id(self) -> Optional[str]:
+        """  
+        Returns the dataset ID if set, otherwise None.
+        """
         return self._id
 
     @id.setter
     def id(self, dataset_id: str):
-        if not isinstance(dataset_id, str): raise ValueError("ID must be a string.")
+        if not isinstance(dataset_id, str): 
+            _LOGGER.error("Dataset ID must be a string.")
+            raise ValueError()
         self._id = dataset_id
 
     def dataframes_info(self) -> None:
+        """  
+        Prints the shapes of the dataframes after the split.
+        """
         print("--- DataFrame Shapes After Split ---")
         print(f"  X_train shape: {self._X_train_shape}, y_train shape: {self._y_train_shape}")
         print(f"  X_val shape:   {self._X_val_shape}, y_val shape:   {self._y_val_shape}")
@@ -266,12 +298,26 @@ class _BaseDatasetMaker(ABC):
         print("------------------------------------")
     
     def save_feature_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """  
+        Saves the feature names to a text file.
+        
+        Args:
+            directory (str | Path): Directory to save the feature names.
+            verbose (bool): Whether to print log messages.
+        """
         save_list_strings(list_strings=self._feature_names,
                           directory=directory,
                           filename=DatasetKeys.FEATURE_NAMES,
                           verbose=verbose)
         
     def save_target_names(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """  
+        Saves the target names to a text file.
+        
+        Args:
+            directory (str | Path): Directory to save the target names.
+            verbose (bool): Whether to print log messages.
+        """
         save_list_strings(list_strings=self._target_names,
                           directory=directory,
                           filename=DatasetKeys.TARGET_NAMES,
@@ -281,6 +327,10 @@ class _BaseDatasetMaker(ABC):
         """
         Saves both feature and target scalers (if they exist) to a single .pth file
         using a dictionary structure.
+        
+        Args:
+            directory (str | Path): Directory to save the scaler.
+            verbose (bool): Whether to print log messages.
         """
         if self.feature_scaler is None and self.target_scaler is None:
             _LOGGER.warning("No scalers (feature or target) were fitted. Nothing to save.")

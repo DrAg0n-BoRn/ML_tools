@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.9.0] 2026-01-08
+
+### Changed
+
+- ML_evaluation:
+    - Added helper function to abbreviate long class/target names in metrics.
+    - Enhance docstrings and logging.
+    - Classification metrics: Anchor calibration plots start and end points to (0,0) and (1,1) for better visualization.
+
 ## [20.8.0] 2026-01-05
 
 ### Changed

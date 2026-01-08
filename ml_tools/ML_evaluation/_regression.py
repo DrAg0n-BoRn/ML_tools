@@ -19,6 +19,8 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
+from ._helpers import check_and_abbreviate_name
+
 
 _LOGGER = get_logger("Regression Metrics")
 
@@ -180,6 +182,9 @@ def multi_target_regression_metrics(
     if y_true.shape[1] != len(target_names):
         _LOGGER.error("Number of target names must match the number of columns in y_true.")
         raise ValueError()
+    
+    # --- Pre-process target names for abbreviation ---
+    target_names = [check_and_abbreviate_name(name) for name in target_names]
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     metrics_summary = []

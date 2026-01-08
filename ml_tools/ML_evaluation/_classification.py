@@ -28,6 +28,8 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
+from ._helpers import check_and_abbreviate_name
+
 
 _LOGGER = get_logger("Classification Metrics")
 
@@ -85,7 +87,8 @@ def classification_metrics(save_dir: Union[str, Path],
         try:
             sorted_items = sorted(class_map.items(), key=lambda item: item[1])
             map_labels = [item[1] for item in sorted_items]
-            map_display_labels = [item[0] for item in sorted_items]
+            # Abbreviate display labels if needed
+            map_display_labels = [check_and_abbreviate_name(item[0]) for item in sorted_items]
         except Exception as e:
             _LOGGER.warning(f"Could not parse 'class_map': {e}")
             map_labels = None
@@ -397,6 +400,10 @@ def classification_metrics(save_dir: Union[str, Path],
             # --- Step 1: Get binned data directly ---
             # calculates reliability diagram data without needing a temporary plot
             prob_true, prob_pred = calibration_curve(y_true_binary, y_score, n_bins=dynamic_bins)
+            
+            # Anchor the plot to (0,0) and (1,1) to ensure the line spans the full diagonal
+            prob_true = np.concatenate(([0.0], prob_true, [1.0]))
+            prob_pred = np.concatenate(([0.0], prob_pred, [1.0]))
 
             # --- Step 2: Plot ---
             ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
@@ -467,6 +474,9 @@ def multi_label_classification_metrics(
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
+    # --- Pre-process target names for abbreviation ---
+    target_names = [check_and_abbreviate_name(name) for name in target_names]
+    
     # --- Parse Config or use defaults ---
     if config is None:
         # Create a default config if one wasn't provided
@@ -502,7 +512,7 @@ def multi_label_classification_metrics(
     # print(overall_report)
     overall_report_path = save_dir_path / "classification_report.txt"
     overall_report_path.write_text(overall_report)
-    
+
     # --- Save Classification Report Heatmap (Multi-label) ---
     try:
          # Generate full report as dict
@@ -566,18 +576,6 @@ def multi_label_classification_metrics(
         pred_i = y_pred[:, i] # Use passed-in y_pred
         prob_i = y_prob[:, i] # Use passed-in y_prob
         sanitized_name = sanitize_filename(name)
-        
-        # if name is too long, just take the first letter of each word. Each word might be separated by space or underscore
-        if len(name) >= _EvaluationConfig.NAME_LIMIT:
-            parts = [w for w in name.replace("_", " ").split() if w]
-            abbr = "".join(p[0].upper() for p in parts)
-            # keep only alpha numeric chars
-            abbr = "".join(ch for ch in abbr if ch.isalnum())
-            if not abbr:
-                # fallback to a sanitized, truncated version of the original name
-                abbr = sanitize_filename(name)[: _EvaluationConfig.NAME_LIMIT]
-            _LOGGER.warning(f"Using abbreviated name '{abbr}' for '{name}' plots.")
-            name = abbr
 
         # --- Save Classification Report for the label (uses y_pred) ---
         report_text = classification_report(true_i, pred_i)
@@ -726,6 +724,11 @@ def multi_label_classification_metrics(
         # Calculate calibration curve for this specific label
         prob_true, prob_pred = calibration_curve(true_i, prob_i, n_bins=dynamic_bins)
         
+        # Anchor the plot to (0,0) and (1,1)
+        prob_true = np.concatenate(([0.0], prob_true, [1.0]))
+        prob_pred = np.concatenate(([0.0], prob_pred, [1.0]))
+        
+        # Plot the calibration curve
         ax_cal.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
         ax_cal.plot(prob_pred, 
                     prob_true, 

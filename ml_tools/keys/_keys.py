@@ -306,7 +306,7 @@ class _EvaluationConfig:
     LOSS_PLOT_LEGEND_SIZE = 24
     # CM settings
     CM_SIZE = (9, 8)    # used for multi label binary classification confusion matrix 
-    NAME_LIMIT = 20  # max number of characters for feature/label names in plots
+    NAME_LIMIT = 15  # max number of characters for feature/label names in plots
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
