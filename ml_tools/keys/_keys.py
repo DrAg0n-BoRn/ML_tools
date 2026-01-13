@@ -296,8 +296,8 @@ class _EvaluationConfig:
     DPI = 400
     LABEL_PADDING = 10
     # large sizes for SVG layout to accommodate large fonts
-    REGRESSION_PLOT_SIZE = (12, 8)
-    SEQUENCE_PLOT_SIZE = (12, 8)
+    REGRESSION_PLOT_SIZE = (10, 7)
+    SEQUENCE_PLOT_SIZE = (10, 7)
     CLASSIFICATION_PLOT_SIZE = (9, 9)
     # Loss plot
     LOSS_PLOT_SIZE = (18, 9)

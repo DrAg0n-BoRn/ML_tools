@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [20.10.0] 2026-01-13
+
+### Changed
+
+- Changed regression plot size default for better readability.
+- ML_evaluation_captum:
+    - `captum_feature_importance()`, feature importance plot titles now use the original target names for clarity.
+
 ## [20.9.0] 2026-01-08
 
 ### Changed

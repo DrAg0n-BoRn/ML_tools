@@ -126,7 +126,8 @@ def captum_feature_importance(model: nn.Module,
             feature_names=feature_names,
             save_dir=save_dir_path,
             n_steps=n_steps,
-            file_suffix=f"_{clean_name}"
+            file_suffix=f"_{clean_name}",
+            target_name=name  # Pass original name for plotting
         )
 
 
@@ -137,7 +138,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                            feature_names: Optional[list[str]],
                            save_dir: Path,
                            n_steps: int,
-                           file_suffix: str):
+                           file_suffix: str,
+                           target_name: str = ""):
     """
     Private helper to run the attribution, aggregation, and saving for a single context.
     """
@@ -214,7 +216,11 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     plt.xlabel("Mean Absolute Attribution")
     
     title = "Feature Importance"
-    if file_suffix:
+    
+    # Use the original target name if provided, otherwise fallback to suffix logic
+    if target_name:
+        title += f" ({target_name})"
+    elif file_suffix:
         # Remove the leading underscore for the title
         clean_suffix = file_suffix.lstrip("_").replace("_", " ")
         title += f" ({clean_suffix})"
@@ -228,7 +234,9 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     plt.savefig(plot_path)
     plt.close()
     
-    _LOGGER.info(f"🔬 Captum explanation for target '{file_suffix.lstrip("_").replace("_", " ")}' saved to '{save_dir.name}'")
+    # Use target_name for logging if available, otherwise fallback to cleaning the suffix
+    log_name = target_name if target_name else file_suffix.lstrip("_").replace("_", " ")
+    _LOGGER.info(f"🔬 Captum explanation for target '{log_name}' saved to '{save_dir.name}'")
 
 
 def captum_image_heatmap(model: nn.Module,
