@@ -276,6 +276,16 @@ class _BaseDragonTrainer(ABC):
         except Exception as e:
             _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
             raise
+    
+    def load_checkpoint(self, path: Union[str, Path], verbose: int = 3):
+        """
+        Loads a specific checkpoint state into the model, optimizer, and scheduler.
+
+        Args:
+            path (str | Path): Path to the .pth checkpoint file.
+            verbose (int): Verbosity level for logging.
+        """
+        self._load_checkpoint(path=path, verbose=verbose)
 
     def fit(self, 
             save_dir: Union[str,Path],
@@ -366,7 +376,7 @@ class _BaseDragonTrainer(ABC):
         self.device = self._validate_device(device)
         self.model.to(self.device)
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
-        
+    
     def _load_model_state_wrapper(self, model_checkpoint: Union[Path, Literal['best', 'current']], verbose: int = 2):
         """
         Private helper to load the correct model state_dict based on user's choice.

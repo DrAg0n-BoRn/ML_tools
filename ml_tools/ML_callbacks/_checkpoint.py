@@ -79,7 +79,7 @@ class DragonModelCheckpoint(_Callback):
 
     def on_train_begin(self, logs=None):
         """Reset file tracking state when training starts.
-        NOTE: Do nOT reset self.best here if it differs from the default. This allows the Trainer to restore 'best' from a checkpoint before calling train()."""
+        NOTE: Do not reset self.best here if it differs from the default. This allows the Trainer to restore 'best' from a checkpoint before calling train()."""
         self.best_checkpoints = []
         self.recent_checkpoints = []
         

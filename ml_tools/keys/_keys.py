@@ -113,7 +113,7 @@ class PyTorchCheckpointKeys:
     EPOCH = "epoch"
     BEST_SCORE = "best_score"
     HISTORY = "history"
-    CHECKPOINT_NAME = "PyModelCheckpoint"
+    CHECKPOINT_NAME = "DragonCheckpoint"
     
     ### Finalized config
     # EPOCH
