@@ -99,8 +99,9 @@ class SHAPKeys:
 
 class CaptumKeys:
     """Keys for Captum functions"""
-    FEATURE_COLUMN = "feature"
-    IMPORTANCE_COLUMN = "importance"
+    FEATURE_COLUMN = "Feature"
+    IMPORTANCE_COLUMN = "Scaled Mean Attribution"
+    PERCENT_COLUMN = "Relative Importance(%)"
     SAVENAME = "captum_summary"
     PLOT_NAME = "captum_importance_plot"
 

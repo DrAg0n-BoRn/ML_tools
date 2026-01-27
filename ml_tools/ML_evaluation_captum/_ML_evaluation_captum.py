@@ -202,6 +202,13 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
         mean_abs_attr = mean_abs_attr[:min_len]
         feature_names = feature_names[:min_len]
     
+    # Calculate percentages (Before Min-Max scaling to preserve relative importance)
+    total_attr_sum = np.sum(mean_abs_attr)
+    if total_attr_sum > 0:
+        attr_percentages = (mean_abs_attr / total_attr_sum) * 100.0
+    else:
+        attr_percentages = np.zeros_like(mean_abs_attr)
+    
     # Min-Max Scaling
     target_min = 0.01
     target_max = 1.0
@@ -222,7 +229,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     # --- Save Data to CSV ---
     summary_df = pd.DataFrame({
         CaptumKeys.FEATURE_COLUMN: feature_names,
-        CaptumKeys.IMPORTANCE_COLUMN: mean_abs_attr
+        CaptumKeys.IMPORTANCE_COLUMN: mean_abs_attr,
+        CaptumKeys.PERCENT_COLUMN: attr_percentages
     }).sort_values(CaptumKeys.IMPORTANCE_COLUMN, ascending=False)
     
     csv_name = f"{CaptumKeys.SAVENAME}{file_suffix}.csv"
@@ -230,11 +238,13 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     summary_df.to_csv(csv_path, index=False)
 
     # --- Generate Plot ---
-    plot_df = summary_df.head(20).sort_values(CaptumKeys.IMPORTANCE_COLUMN, ascending=True)
+    plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     plt.figure(figsize=(10, 8), dpi=300)
-    plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.IMPORTANCE_COLUMN], color='mediumpurple')
-    plt.xlim(0, 1.05) # standardized scale
-    plt.xlabel("Mean Absolute Attribution")
+    plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.PERCENT_COLUMN], color='mediumpurple')
+    # plt.xlim(0, 1.05) # standardized scale # Removed to reflect actual percentages
+    plt.xlim(left=0) # start at 0
+    # plt.xlabel("Scaled Mean Absolute Attribution")
+    plt.xlabel("Relative Importance (%)")
     
     title = "Feature Importance"
     

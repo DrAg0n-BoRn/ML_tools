@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.13.0] 2026-01-27
+
+### Changed
+
+- ML_evaluation_captum:
+    - `captum_feature_importance()`, calculate and save feature importance percentages alongside scaled absolute values in the CSV output for better interpretability. The plot now displays relative importance percentages on the x-axis for clearer understanding of feature contributions.
+
 ## [20.12.0] 2026-01-27
 
 ### Changed
