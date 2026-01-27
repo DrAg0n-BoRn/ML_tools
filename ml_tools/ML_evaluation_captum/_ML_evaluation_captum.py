@@ -30,7 +30,8 @@ def captum_feature_importance(model: nn.Module,
                               save_dir: Union[str, Path],
                               target_names: Optional[list[str]] = None,
                               n_steps: int = 50,
-                              device: Union[str, torch.device] = 'cpu'):
+                              device: Union[str, torch.device] = 'cpu',
+                              verbose: int = 0):
     """
     Calculates feature importance using Captum's Integrated Gradients.
 
@@ -49,7 +50,7 @@ def captum_feature_importance(model: nn.Module,
             - If `None`, generic names (e.g., "Output_0") will be generated based on model output shape.
         n_steps (int): Number of steps for the integral approximation. Higher means more accurate but slower.
         device (str | torch.device): Torch device.
-        
+        verbose (int): Verbosity level.
     <br>
         
     ### NOTE: 
@@ -127,7 +128,8 @@ def captum_feature_importance(model: nn.Module,
             save_dir=save_dir_path,
             n_steps=n_steps,
             file_suffix=f"_{clean_name}",
-            target_name=name  # Pass original name for plotting
+            target_name=name,  # Pass original name for plotting
+            verbose=verbose
         )
 
 
@@ -139,7 +141,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                            save_dir: Path,
                            n_steps: int,
                            file_suffix: str,
-                           target_name: str = ""):
+                           target_name: str = "",
+                           verbose: int = 0):
     """
     Private helper to run the attribution, aggregation, and saving for a single context.
     """
@@ -153,8 +156,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                                            return_convergence_delta=True)
         # Check convergence quality
         mean_delta = torch.mean(torch.abs(delta)).item()
-        if mean_delta > 0.1:
-            _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). The attribution approximation may be inaccurate. Consider increasing 'n_steps'.")
+        if mean_delta > 0.1 and verbose > 0:
+            _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). Consider increasing 'n_steps'.")
         
     except Exception as e:
         _LOGGER.error(f"Captum attribution failed for target '{target_index}': {e}")
@@ -198,6 +201,23 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
         min_len = min(len(mean_abs_attr), len(feature_names))
         mean_abs_attr = mean_abs_attr[:min_len]
         feature_names = feature_names[:min_len]
+    
+    # Min-Max Scaling
+    target_min = 0.01
+    target_max = 1.0
+    
+    _min = np.min(mean_abs_attr)
+    _max = np.max(mean_abs_attr)
+    
+    if _max > _min:
+        # 1. Normalize to [0, 1]
+        mean_abs_attr = (mean_abs_attr - _min) / (_max - _min)
+        # 2. Scale to [target_min, target_max]
+        mean_abs_attr = mean_abs_attr * (target_max - target_min) + target_min
+    else:
+        # Fallback: if all values are identical (e.g. all 0.0), set to target_min
+        fill_val = target_min if _max == 0 else target_max
+        mean_abs_attr = np.full_like(mean_abs_attr, fill_val)
 
     # --- Save Data to CSV ---
     summary_df = pd.DataFrame({
@@ -211,8 +231,9 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
 
     # --- Generate Plot ---
     plot_df = summary_df.head(20).sort_values(CaptumKeys.IMPORTANCE_COLUMN, ascending=True)
-    plt.figure(figsize=(10, 8), dpi=200)
+    plt.figure(figsize=(10, 8), dpi=300)
     plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.IMPORTANCE_COLUMN], color='mediumpurple')
+    plt.xlim(0, 1.05) # standardized scale
     plt.xlabel("Mean Absolute Attribution")
     
     title = "Feature Importance"

@@ -33,8 +33,7 @@ from ..ML_configuration import (FormatRegressionMetrics,
                             FinalizeMultiTargetRegression,
                             FinalizeRegression)
 
-from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, ScalerKeys
+from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -824,7 +823,8 @@ class DragonTrainer(_BaseDragonTrainer):
                        n_samples: int = 100,
                        feature_names: Optional[list[str]] = None,
                        target_names: Optional[list[str]] = None,
-                       n_steps: int = 50):
+                       n_steps: int = 50,
+                       verbose: int = 0):
         """
         Explains model predictions using Captum's Integrated Gradients.
         
@@ -927,7 +927,8 @@ class DragonTrainer(_BaseDragonTrainer):
                 save_dir=save_dir,
                 target_names=target_names,
                 n_steps=n_steps,
-                device=self.device
+                device=self.device,
+                verbose=verbose
             )
 
     def _attention_helper(self, dataloader: DataLoader):
