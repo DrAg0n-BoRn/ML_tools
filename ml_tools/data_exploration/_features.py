@@ -657,3 +657,66 @@ def reconstruct_multibinary(
         _LOGGER.info(f"Reconstructed {converted_count} binary columns matching '{pattern}'.")
 
     return new_df, target_columns
+
+
+def filter_subset(
+    df: pd.DataFrame,
+    filters: Union[dict[str, Any], dict[str, list[Any]]],
+    drop_filter_cols: bool = True,
+    reset_index: bool = True,
+    verbose: int = 3
+) -> pd.DataFrame:
+    """
+    Filters the DataFrame based on a dictionary of column-value conditions.
+
+    Supports:
+    - Single value matching (e.g., {"Color": "Blue"})
+    - Multiple value matching (e.g., {"Color": ["Blue", "Red"]}) -> OR logic within column.
+    - Multiple column filtering (e.g., {"Color": "Blue", "Size": "Large"}) -> AND logic between columns.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        filters (dict[str, Any] | dict[str, list[Any]]): Dictionary where keys are column names and values are the target values (scalar or list).
+        drop_filter_cols (bool): If True, drops the columns used for filtering from the result.
+        reset_index (bool): If True, resets the index of the resulting DataFrame.
+        verbose (int): Verbosity level.
+
+    Returns:
+        pd.DataFrame: The filtered DataFrame.
+    """
+    df_filtered = df.copy()
+
+    # Validate columns exist
+    missing_cols = [col for col in filters.keys() if col not in df.columns]
+    if missing_cols:
+        _LOGGER.error(f"Filter columns not found: {missing_cols}")
+        raise ValueError()
+
+    if verbose >= 2:
+        _LOGGER.info(f"Original shape: {df.shape}")
+
+    for col, value in filters.items():
+        # Handle list of values (OR logic within column)
+        if isinstance(value, list):
+            df_filtered = df_filtered[df_filtered[col].isin(value)]
+        # Handle single value
+        else:
+            # Warn if the value is a floating point due to potential precision issues
+            if isinstance(value, float) and verbose >= 1:
+                _LOGGER.warning(f"Filtering on column '{col}' with float value '{value}'.")
+            df_filtered = df_filtered[df_filtered[col] == value]
+
+    if drop_filter_cols:
+        if verbose >= 3:
+            _LOGGER.info(f"Dropping filter columns: {list(filters.keys())}")
+        df_filtered.drop(columns=list(filters.keys()), inplace=True)
+
+    if reset_index:
+        if verbose >= 3:
+            _LOGGER.info("Resetting index of the filtered DataFrame.")
+        df_filtered.reset_index(drop=True, inplace=True)
+
+    if verbose >= 2:
+        _LOGGER.info(f"Filtered shape: {df_filtered.shape}")
+
+    return df_filtered

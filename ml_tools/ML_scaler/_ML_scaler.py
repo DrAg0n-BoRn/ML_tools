@@ -99,7 +99,7 @@ class DragonScaler:
             std = torch.sqrt(torch.clamp(variance, min=1e-8))
         
         if verbose >= 2:
-            _LOGGER.info(f"Scaler fitted on {n_total} samples for {num_continuous_features} features (Welford's).")
+            _LOGGER.info(f"Scaler fitted on {n_total} samples for {num_continuous_features} columns (Welford's).")
         return cls(mean=mean_global, std=std, continuous_feature_indices=continuous_feature_indices)
 
     @classmethod
@@ -121,7 +121,7 @@ class DragonScaler:
         std = torch.where(std == 0, torch.tensor(1.0, device=data.device), std)
         
         if verbose >= 2:
-            _LOGGER.info(f"Scaler fitted on tensor with {data.shape[0]} samples for {num_features} features.")
+            _LOGGER.info(f"Scaler fitted on tensor with {data.shape[0]} samples for {num_features} columns.")
         
         return cls(mean=mean, std=std, continuous_feature_indices=indices)
 

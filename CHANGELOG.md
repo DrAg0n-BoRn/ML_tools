@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.14.0] 2026-01-30
+
+### Added
+
+- data_exploration:
+    - `filter_subset()`, Filters a DataFrame based on a dictionary of column-value conditions, with options to drop filter columns and reset index.
+
 ## [20.13.0] 2026-01-27
 
 ### Changed

@@ -33,6 +33,7 @@ from ._features import (
     reconstruct_one_hot,
     reconstruct_binary,
     reconstruct_multibinary,
+    filter_subset,
 )
 
 from ._schema_ops import (
@@ -51,6 +52,7 @@ __all__ = [
     "drop_columns_with_missing_data",
     "drop_macro",
     "clean_column_names",
+    "filter_subset",
     "plot_value_distributions",
     "split_features_targets", 
     "split_continuous_binary", 

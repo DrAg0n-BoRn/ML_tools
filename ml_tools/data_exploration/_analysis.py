@@ -34,7 +34,7 @@ def summarize_dataframe(df: pd.DataFrame, round_digits: int = 2):
     """
     summary = pd.DataFrame({
         'Data Type': df.dtypes,
-        'Completeness %': (df.notnull().mean() * 100).round(2),
+        'Completeness %': (df.notnull().mean() * 100).round(2), # type: ignore
         'Unique Values': df.nunique(),
         # 'Missing %': (df.isnull().mean() * 100).round(2)
     })
