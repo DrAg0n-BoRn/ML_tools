@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.14.1] 2026-02-05
+
+### Changed
+
+- data_exploration:
+    - `encode_classification_target()`, added 'suffix' parameter to customize the saved class mapping filename.
+    - `plot_correlation_heatmap()`, add method name prefix to saved plot filenames for better organization.
+
 ## [20.14.0] 2026-01-30
 
 ### Added

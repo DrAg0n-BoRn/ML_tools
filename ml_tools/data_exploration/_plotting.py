@@ -475,6 +475,9 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         save_path = make_fullpath(save_dir, make=True)
         # sanitize the plot title to save the file
         sanitized_plot_title = sanitize_filename(plot_title)
+        # prepend method to filename
+        sanitized_plot_title = f"{method}_{sanitized_plot_title}"
+        
         plot_filename = sanitized_plot_title + ".svg"
         
         full_path = save_path / plot_filename

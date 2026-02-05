@@ -168,6 +168,13 @@ def split_continuous_categorical_targets(
         f"  - Categorical: {df_categorical.shape}\n"
         f"  - Targets: {df_targets.shape}"
     )
+    
+    if isinstance(df_continuous, pd.Series):
+        df_continuous = df_continuous.to_frame()
+    if isinstance(df_categorical, pd.Series):
+        df_categorical = df_categorical.to_frame()
+    if isinstance(df_targets, pd.Series):
+        df_targets = df_targets.to_frame()
 
     return df_continuous, df_categorical, df_targets
 
@@ -271,6 +278,7 @@ def encode_classification_target(
     df: pd.DataFrame,
     target_col: str,
     save_dir: Union[str, Path],
+    suffix: str = "",
     verbose: int = 2
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """
@@ -283,6 +291,7 @@ def encode_classification_target(
         df (pd.DataFrame): Input DataFrame.
         target_col (str): Name of the target column to encode.
         save_dir (str | Path): Directory where the class map JSON will be saved.
+        suffix (str): Suffix to append to the class map filename.
         verbose (int): Verbosity level for logging.
 
     Returns:
@@ -300,9 +309,17 @@ def encode_classification_target(
         _LOGGER.error(f"Target column '{target_col}' contains {n_missing} missing values. Please handle them before encoding.")
         raise ValueError()
     
+    # validate suffix and prepend underscore if needed
+    if suffix:
+        if not suffix.startswith("_"):
+            suffix = f"_{suffix}"
+        sanitized_suffix = suffix
+    else:
+        sanitized_suffix = ''
+        
     # Ensure directory exists
     save_path = make_fullpath(save_dir, make=True, enforce="directory")
-    file_path = save_path / "class_map.json"
+    file_path = save_path / f"class_map{sanitized_suffix}.json"
 
     # Get unique values and sort them to ensure deterministic encoding (0, 1, 2...)
     # Convert to string to ensure the keys in JSON are strings
@@ -322,10 +339,9 @@ def encode_classification_target(
             json.dump(class_map, f, indent=4)
             
         if verbose >= 2:
-            _LOGGER.info(f"Class mapping saved to: '{file_path}'")
-        
+            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes. Saved to {file_path}.")
+            
         if verbose >= 3:
-            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes.")
             # Print a preview
             if len(class_map) <= 10:
                 print(f"  Mapping: {class_map}")
