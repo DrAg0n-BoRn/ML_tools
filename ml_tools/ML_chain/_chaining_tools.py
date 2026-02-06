@@ -9,7 +9,7 @@ from ..keys._keys import MLTaskKeys, PyTorchInferenceKeys, ChainKeys
 from .._core import get_logger
 
 
-_LOGGER = get_logger("ML Chain")
+_LOGGER = get_logger("Chain Tools")
 
 
 __all__ = [
@@ -253,7 +253,7 @@ def prepare_chaining_dataset(
     all_targets: list[str],
     target_subset: list[str],
     dropna_how: Literal["any", "all"] = "all",
-    verbose: bool = True
+    verbose: int = 2
 ) -> pd.DataFrame:
     """
     Prepares a dataset for a specific step in a model chain by isolating specific targets 
@@ -266,8 +266,9 @@ def prepare_chaining_dataset(
 
     Args:
         dataset (pd.DataFrame): The ground truth DataFrame containing features and targets.
-        all_targets (list[str]): A list of all potential target columns present in the dataset.
+        all_targets (list[str]): A list of all target columns present in the dataset.
         target_subset (list[str]): The specific target columns to process for this iteration.
+        verbose (int): Verbosity level for logging.
         dropna_how ("any" | "all"): Determines the condition for dropping rows based on null values in target columns.
             - "any" drops rows if any target column is null.
             - "all" drops rows only if all target columns are null.
@@ -291,7 +292,7 @@ def prepare_chaining_dataset(
         _LOGGER.error(f"The provided 'target_subset' contains columns not listed in 'all_targets': {invalid_subset}")
         raise ValueError()
 
-    if verbose:
+    if verbose >= 2:
         _LOGGER.info(f"Preparing dataset for targets: {target_subset}")
 
     # --- 2. Preparation ---
@@ -311,8 +312,9 @@ def prepare_chaining_dataset(
     df.dropna(subset=target_subset, how=dropna_how, inplace=True)
     
     rows_dropped = initial_shape[0] - df.shape[0]
-    _LOGGER.debug(f"Dropped {len(targets_to_drop)} irrelevant target columns.")
-    if verbose:
+    if verbose >= 3:
+        _LOGGER.info(f"Dropped {len(targets_to_drop)} irrelevant target columns.")
+    if verbose >= 2:
         _LOGGER.info(f"Dropped {rows_dropped} rows due to missing target values. Final shape: {df.shape}")
 
     return df

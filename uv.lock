@@ -336,7 +336,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "20.14.1"
+version = "20.15.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -386,10 +386,15 @@ gui-torch = [
 ]
 mice = [
     { name = "colorlog" },
+    { name = "ipykernel" },
+    { name = "ipython" },
+    { name = "ipywidgets" },
     { name = "joblib" },
+    { name = "jupyterlab" },
     { name = "lightgbm" },
     { name = "matplotlib" },
     { name = "miceforest" },
+    { name = "notebook" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "plotnine" },
@@ -466,12 +471,15 @@ requires-dist = [
     { name = "imbalanced-learn", marker = "extra == 'ensemble'" },
     { name = "ipykernel", marker = "extra == 'ensemble'" },
     { name = "ipykernel", marker = "extra == 'excel'" },
+    { name = "ipykernel", marker = "extra == 'mice'" },
     { name = "ipykernel", marker = "extra == 'ml'" },
     { name = "ipython", marker = "extra == 'ensemble'" },
     { name = "ipython", marker = "extra == 'excel'" },
+    { name = "ipython", marker = "extra == 'mice'" },
     { name = "ipython", marker = "extra == 'ml'" },
     { name = "ipywidgets", marker = "extra == 'ensemble'" },
     { name = "ipywidgets", marker = "extra == 'excel'" },
+    { name = "ipywidgets", marker = "extra == 'mice'" },
     { name = "ipywidgets", marker = "extra == 'ml'" },
     { name = "joblib", marker = "extra == 'ensemble'" },
     { name = "joblib", marker = "extra == 'gui-boost'" },
@@ -479,6 +487,7 @@ requires-dist = [
     { name = "joblib", marker = "extra == 'ml'" },
     { name = "jupyterlab", marker = "extra == 'ensemble'" },
     { name = "jupyterlab", marker = "extra == 'excel'" },
+    { name = "jupyterlab", marker = "extra == 'mice'" },
     { name = "jupyterlab", marker = "extra == 'ml'" },
     { name = "lightgbm", marker = "extra == 'ensemble'" },
     { name = "lightgbm", marker = "extra == 'gui-boost'" },
@@ -489,6 +498,7 @@ requires-dist = [
     { name = "miceforest", marker = "extra == 'mice'", specifier = ">=6.0.0" },
     { name = "notebook", marker = "extra == 'ensemble'" },
     { name = "notebook", marker = "extra == 'excel'" },
+    { name = "notebook", marker = "extra == 'mice'" },
     { name = "notebook", marker = "extra == 'ml'" },
     { name = "numba", marker = "extra == 'ensemble'", specifier = ">=0.60" },
     { name = "numpy", marker = "extra == 'ensemble'" },

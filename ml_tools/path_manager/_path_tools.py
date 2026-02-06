@@ -276,7 +276,7 @@ def clean_directory(directory: Union[str, Path], verbose: bool = False) -> None:
 
 def safe_move(
     source: Union[str, Path], 
-    final_destination: Union[str, Path], 
+    destination_directory: Union[str, Path], 
     rename: Optional[str] = None, 
     overwrite: bool = False
 ) -> Path:
@@ -290,7 +290,7 @@ def safe_move(
 
     Args:
         source (str | Path): The file or directory to move.
-        final_destination (str | Path): The destination DIRECTORY where the item will be moved. It will be created if it does not exist.
+        destination_directory (str | Path): The destination DIRECTORY where the item will be moved. It will be created if it does not exist.
         rename (Optional[str]): If provided, the moved item will be renamed to this. Note: For files, the extension is strictly preserved.
         overwrite (bool): If True, overwrites the destination path if it exists.
     
@@ -301,7 +301,7 @@ def safe_move(
     src_path = make_fullpath(source, make=False)
 
     # Ensure destination directory exists
-    dest_dir_path = make_fullpath(final_destination, make=True, enforce="directory")
+    dest_dir_path = make_fullpath(destination_directory, make=True, enforce="directory")
 
     # 2. Determine Target Name
     if rename:

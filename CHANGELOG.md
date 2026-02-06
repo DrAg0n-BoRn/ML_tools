@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.15.0] 2026-02-06
+
+### Changed
+
+- path_manager:
+    - `safe_move()`, renamed parameter `final_destination` to `destination_directory` for clarity.
+- ML_chain:
+    - `prepare_chaining_dataset()`, changed `verbose` parameter for finer control over logging verbosity.
+
+- Install module `[MICE]`: Added dependencies for Jupyter notebook support.
+
+### Added
+
+- path_manager:
+    - `DragonPathManager.register_subdirs()`, Automatically registers subdirectories with the same name for a list of existing parent paths.
+
 ## [20.14.1] 2026-02-05
 
 ### Changed

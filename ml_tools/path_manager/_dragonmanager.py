@@ -70,7 +70,7 @@ class DragonPathManager:
         if base_directories:
             for dir_name in base_directories:
                 sanitized_dir_name = self._sanitize_key(dir_name)
-                self._check_underscore_key(sanitized_dir_name)
+                # self._check_underscore_key(sanitized_dir_name) # redundant check
                 setattr(self, sanitized_dir_name, package_root / sanitized_dir_name)
         
         # Signal that initialization is complete.
@@ -122,7 +122,54 @@ class DragonPathManager:
         
         # If no conflicts, add new paths
         for key, value in new_paths.items():
-            self.__setattr__(key, value)
+            setattr(self, key, value)
+            
+    def register_subdirs(self, parents: list[Path], subdirs: list[str]) -> None:
+        """
+        Automatically registers subdirectories with the same name for a list of existing parent paths.
+
+        For each parent path and subdirectory provided, it creates a new registered path
+        with the naming convention: '{parent_key}_{sanitized_subdir}'.
+
+        Args:
+            parents (list[Path]): A list of Path objects that are already registered
+                                  in this manager.
+            subdirs (list[str]): A list of subdirectory names to append to each parent.
+            
+        Note:
+            - Each parent path must already be registered in the manager and be a directory. 
+            - Subdirectory names are case-sensitive on disk, but mapped to lowercase attributes.
+            - ATOMIC OPERATION: If any validation fails, no paths will be registered (All-or-Nothing).
+        """
+        # --- 1. Validation Pass (Read-Only) ---
+        # Validate everything first to ensure "All-or-Nothing" behavior.
+        for parent_path in parents:
+            if parent_path.suffix:
+                _LOGGER.error(f"Path '{parent_path.name}' is recognized as a file (suffix '{parent_path.suffix}'), cannot append subdirectories.")
+                raise ValueError()
+
+            # Check if parent is actually registered
+            if parent_path not in self._paths.values():
+                _LOGGER.error(f"Cannot register subdirs: The path '{parent_path}' is not registered.")
+                raise ValueError()
+
+        # --- 2. Execution Pass (State Mutation) ---
+        for parent_path in parents:
+            # Reverse lookup to find the key for this parent path
+            parent_key = next(k for k, v in self._paths.items() if v == parent_path)
+
+            for subdir in subdirs:
+                # KEY GENERATION: Sanitize AND Lowercase (e.g., "Artifacts" -> "artifacts")
+                key_suffix = self._sanitize_key(subdir)
+                lower_key_suffix = key_suffix.lower()
+                
+                # PATH GENERATION: Preserve original case (e.g., ".../Artifacts")
+                new_path = parent_path / key_suffix
+                
+                # Construct the full key (e.g., "model_node" + "_" + "artifacts")
+                new_key = f"{parent_key}_{lower_key_suffix}"
+                
+                setattr(self, new_key, new_path)
         
     def _sanitize_key(self, key: str):
         return sanitize_filename(key)
@@ -198,8 +245,8 @@ class DragonPathManager:
             max_key_len = max(max_key_len, len(key))
 
         # 2. Print Header
-        mode_icon = "📦" if self._is_bundled else "🛠️"
-        mode_text = "Bundled Mode" if self._is_bundled else "Development Mode"
+        mode_icon = "📦"
+        mode_text = "Bundled Mode" if self._is_bundled else "Standard Mode"
         
         print(f"\n{'-'*80}")
         print(f" 🐉 DragonPathManager Status Report")
@@ -230,15 +277,12 @@ class DragonPathManager:
 
     def __setitem__(self, key: str, value: Union[str, Path]):
         """Allows dictionary-style setting, e.g., PM['my_key'] = path"""
-        sanitized_key = self._sanitize_key(key)
-        self._check_underscore_key(sanitized_key)
-        self.__setattr__(sanitized_key, value)
+        setattr(self, key, value)
 
     def __contains__(self, key: str) -> bool:
         """Allows checking for a key's existence, e.g., if 'my_key' in PM"""
         sanitized_key = self._sanitize_key(key)
         true_false = sanitized_key in self._paths
-        # print(f"key {sanitized_key} in current path dictionary keys: {true_false}")
         return true_false
 
     def __len__(self) -> int:
