@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.16.0] 2026-03-16
+
+### Changed
+
+- ML_evaluation:
+    - `check_and_abbreviate_name()`, improved abbreviation logic to handle various cases more robustly.
+    - Increased default figure width for classification heatmaps for better readability with many classes.
+
 ## [20.15.0] 2026-02-06
 
 ### Changed

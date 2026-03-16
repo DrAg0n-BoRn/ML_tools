@@ -1,6 +1,7 @@
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import sanitize_filename
 from .._core import get_logger
+import re
 
 
 _LOGGER = get_logger("Metrics Helper")
@@ -25,8 +26,8 @@ def check_and_abbreviate_name(name: str) -> str:
     if len(name) <= limit:
         return name
         
-    # Attempt abbreviation: First letter of each word (split by space or underscore)
-    parts = [w for w in name.replace("_", " ").split() if w]
+    # Attempt abbreviation: First letter of each word
+    parts = [w for w in re.split(r'[\s_\-/]+', name) if w]
     abbr = "".join(p[0].upper() for p in parts)
     
     # Keep only alphanumeric characters

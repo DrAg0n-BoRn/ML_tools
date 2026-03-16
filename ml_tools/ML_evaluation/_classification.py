@@ -124,7 +124,7 @@ def classification_metrics(save_dir: Union[str, Path],
         # 3. Dynamic Height Calculation
         # (Base height of 4 + 0.5 inches per class row)
         fig_height = max(5.0, len(plot_df.index) * 0.5 + 4.0)
-        fig_width = 8.0 # Set a fixed width
+        fig_width = _EvaluationConfig.HEATMAP_WIDTH # Use config constant for width, height is dynamic
 
         # --- Use calculated dimensions, not the config constant ---
         fig_heat, ax_heat = plt.subplots(figsize=(fig_width, fig_height), dpi=_EvaluationConfig.DPI)
@@ -532,7 +532,7 @@ def multi_label_classification_metrics(
         
         # Dynamic Height
         fig_height = max(5.0, len(plot_df.index) * 0.5 + 4.0)
-        fig_width = 8.0 
+        fig_width = _EvaluationConfig.HEATMAP_WIDTH # Use config constant for width, height is dynamic
 
         fig_heat, ax_heat = plt.subplots(figsize=(fig_width, fig_height), dpi=_EvaluationConfig.DPI)
 

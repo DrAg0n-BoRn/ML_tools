@@ -307,6 +307,7 @@ class _EvaluationConfig:
     LOSS_PLOT_LEGEND_SIZE = 24
     # CM settings
     CM_SIZE = (9, 8)    # used for multi label binary classification confusion matrix 
+    HEATMAP_WIDTH = 10.0 # default width for classification heatmaps, height is dynamic based on number of classes
     NAME_LIMIT = 15  # max number of characters for feature/label names in plots
 
 class _OneHotOtherPlaceholder:
