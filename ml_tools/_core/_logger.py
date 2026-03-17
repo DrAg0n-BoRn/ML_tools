@@ -17,9 +17,11 @@ LEVEL_EMOJIS = {
     logging.CRITICAL: "❌"
 }
 
+
 # Define base format strings.
-BASE_INFO_FORMAT = '\n🐉 %(asctime)s [%(emoji)s %(levelname)s] - %(message)s'
-BASE_WARN_FORMAT = '\n🐉 %(asctime)s [%(emoji)s %(levelname)s] [%(filename)s:%(lineno)d] - %(message)s'
+BASE_INFO_FORMAT = '\n🐲 %(asctime)s [%(emoji)s %(levelname)s] - %(message)s'
+BASE_WARN_FORMAT = '\n🐲 %(asctime)s [%(emoji)s %(levelname)s] - %(message)s'
+BASE_ERROR_FORMAT = '\n🐲 %(asctime)s [%(emoji)s %(levelname)s] [%(filename)s:%(lineno)d] - %(message)s'
 
 
 class _UnifiedFormatter(logging.Formatter):
@@ -37,13 +39,16 @@ class _UnifiedFormatter(logging.Formatter):
             # Add color codes to the base formats
             info_fmt = BASE_INFO_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
             warn_fmt = BASE_WARN_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
+            error_fmt = BASE_ERROR_FORMAT.replace('%(levelname)s', '%(log_color)s%(levelname)s%(reset)s')
             
             self.info_formatter = colorlog.ColoredFormatter(info_fmt, datefmt=datefmt, log_colors=log_colors)
             self.warn_formatter = colorlog.ColoredFormatter(warn_fmt, datefmt=datefmt, log_colors=log_colors)
+            self.error_formatter = colorlog.ColoredFormatter(error_fmt, datefmt=datefmt, log_colors=log_colors)
         else:
             # Fallback to standard logging
             self.info_formatter = logging.Formatter(BASE_INFO_FORMAT, datefmt=datefmt)
             self.warn_formatter = logging.Formatter(BASE_WARN_FORMAT, datefmt=datefmt)
+            self.error_formatter = logging.Formatter(BASE_ERROR_FORMAT, datefmt=datefmt)
 
     def format(self, record: logging.LogRecord) -> str:
         """Adds a custom emoji attribute to the record before formatting."""
@@ -51,7 +56,9 @@ class _UnifiedFormatter(logging.Formatter):
         record.emoji = LEVEL_EMOJIS.get(record.levelno, "")
 
         # Select the appropriate formatter and let it handle the rest.
-        if record.levelno >= logging.WARNING:
+        if record.levelno >= logging.ERROR:
+            return self.error_formatter.format(record)
+        elif record.levelno >= logging.WARNING:
             return self.warn_formatter.format(record)
         return self.info_formatter.format(record)
 
@@ -113,8 +120,6 @@ def get_logger(name: Optional[str] = None) -> Union[logging.Logger, logging.Logg
     Usage:
         from ._logger import get_logger
         _LOGGER = get_logger("InferenceHandler")
-        
-        #### Output: 🐉 ... [✅ INFO] - [InferenceHandler] Message
     """
     if name:
         return _ContextAdapter(_ROOT_LOGGER, {'context_name': name})

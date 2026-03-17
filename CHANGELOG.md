@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [20.17.0] 2026-03-17
+
+### Fixed
+
+- data_exploration:
+    - `plot_continuous_vs_target()`, `plot_categorical_vs_target()`, fixed plot filename saving logic.
+
+### Changed
+
+- Enhanced logging messages in the whole package.
+- ML_evaluation:
+    - `check_and_abbreviate_name()`, revamped logic for robust abbreviation of feature names.
+
 ## [20.16.0] 2026-03-16
 
 ### Changed

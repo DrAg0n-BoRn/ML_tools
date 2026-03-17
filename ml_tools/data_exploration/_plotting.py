@@ -204,8 +204,9 @@ def plot_continuous_vs_target(
     total_plots_saved = 0
     
     for target_name in valid_targets:
+        safe_target_name = sanitize_filename(target_name)
         # Create a sanitized subdirectory for this target
-        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Continuous")
+        safe_target_dir_name = f"{safe_target_name}_vs_Continuous"
         target_save_dir = base_save_path / safe_target_dir_name
         target_save_dir.mkdir(parents=True, exist_ok=True)
         
@@ -258,7 +259,7 @@ def plot_continuous_vs_target(
 
             # 8. Save the plot
             safe_feature_name = sanitize_filename(feature_name)
-            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
             plot_path = target_save_dir / plot_filename
             
             try:
@@ -337,8 +338,9 @@ def plot_categorical_vs_target(
     total_plots_saved = 0
     
     for target_name in valid_targets:
+        safe_target_name = sanitize_filename(target_name)
         # Create a sanitized subdirectory for this target
-        safe_target_dir_name = sanitize_filename(f"{target_name}_vs_Categorical")
+        safe_target_dir_name = f"{safe_target_name}_vs_Categorical"
         target_save_dir = base_save_path / safe_target_dir_name
         target_save_dir.mkdir(parents=True, exist_ok=True)
         
@@ -395,7 +397,7 @@ def plot_categorical_vs_target(
 
             # 6. Save the plot
             safe_feature_name = sanitize_filename(feature_name)
-            plot_filename = f"{safe_feature_name}_vs_{safe_target_dir_name}.svg"
+            plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
             plot_path = target_save_dir / plot_filename
             
             try:
