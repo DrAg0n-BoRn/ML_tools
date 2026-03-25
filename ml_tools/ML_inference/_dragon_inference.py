@@ -31,7 +31,8 @@ class DragonInferenceHandler(_BaseInferenceHandler):
                                "multitarget regression", 
                                "multilabel binary classification"]] = None,
                  device: str = 'cpu',
-                 scaler: Optional[Union[str, Path]] = None):
+                 scaler: Optional[Union[str, Path]] = None,
+                 distribution_mode: bool = False):
         """
         Initializes the handler for single-target tasks.
 
@@ -41,7 +42,8 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             task (str, optional): The type of task. If None, it will be detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path | None): A path to a saved DragonScaler state.
-            
+            distribution_mode (bool): If True, treats regression outputs as [mean + variance logits] and returns both the predicted mean and variance.
+        
         Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
         # Call the parent constructor to handle model loading, device, and scaler
@@ -63,6 +65,11 @@ class DragonInferenceHandler(_BaseInferenceHandler):
         
         if self.task not in valid_tasks:
             _LOGGER.error(f"'task' recognized as '{self.task}', but this inference handler only supports: {valid_tasks}.")
+            raise ValueError()
+        
+        self._distribution_mode = distribution_mode
+        if self._distribution_mode and self.task not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+            _LOGGER.error("distribution_mode=True is only valid for 'regression' and 'multitarget regression' tasks.")
             raise ValueError()
 
         self.target_ids: Optional[list[str]] = None
@@ -133,65 +140,111 @@ class DragonInferenceHandler(_BaseInferenceHandler):
 
         with torch.no_grad():
             output = self.model(input_tensor)
+            
+            # ==========================================
+            # DISTRIBUTION MODE LOGIC
+            # ==========================================
+            if self._distribution_mode:
+                mean, var_logits = torch.tensor_split(output, 2, dim=-1)
+                var = torch.nn.functional.softplus(var_logits)
 
-            # --- Target Scaling Logic (Inverse Transform) ---
-            # Only for regression tasks and if a target scaler exists
-            if self.target_scaler:
-                if self.task not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
-                    # raise error
-                    _LOGGER.error("Target scaler is only applicable for regression tasks. A target scaler was provided for a non-regression task.")
+                if self.target_scaler:
+                    original_mean_shape = mean.shape
+                    if mean.ndim == 1: mean = mean.reshape(-1, 1)
+                    if var.ndim == 1: var = var.reshape(-1, 1)
+
+                    # 1. Un-scale Mean
+                    mean = self.target_scaler.inverse_transform(mean)
+                    
+                    # 2. Un-scale Variance (Var * std^2)
+                    if self.target_scaler.std_ is not None:
+                        std_tensor = self.target_scaler.std_.to(self.device)
+                        scale_factor_sq = (std_tensor + 1e-8) ** 2
+                        var = var * scale_factor_sq
+                    else:
+                        _LOGGER.warning("Target scaler missing 'std_'. Variance un-scaling skipped.")
+
+                    if len(original_mean_shape) == 1:
+                        mean = mean.flatten()
+                        var = var.flatten()
+
+                # Formatting Distribution Output
+                if self.task == MLTaskKeys.REGRESSION:
+                    return {
+                        PyTorchInferenceKeys.PREDICTIONS: mean.flatten(),
+                        PyTorchInferenceKeys.VARIANCE: var.flatten()
+                    }
+                elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
+                    return {
+                        PyTorchInferenceKeys.PREDICTIONS: mean,
+                        PyTorchInferenceKeys.VARIANCE: var
+                    }
+
+            # ==========================================
+            # STANDARD MODE LOGIC
+            # ==========================================
+            else:
+                # --- Target Scaling Logic (Inverse Transform) ---
+                # Only for regression tasks and if a target scaler exists
+                if self.target_scaler:
+                    if self.task not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+                        # raise error
+                        _LOGGER.error("Target scaler is only applicable for regression tasks. A target scaler was provided for a non-regression task.")
+                        raise ValueError()
+                    
+                    # Ensure output is 2D (N, Targets) for the scaler
+                    original_shape = output.shape
+                    if output.ndim == 1:
+                        output = output.reshape(-1, 1)
+                    
+                    # Apply inverse transform (de-scale)
+                    output = self.target_scaler.inverse_transform(output)
+                    
+                    # Restore original shape if necessary (though usually we want 2D or 1D flat)
+                    if len(original_shape) == 1:
+                        output = output.flatten()
+
+                # --- Task Specific Formatting ---
+                if self.task == MLTaskKeys.MULTICLASS_CLASSIFICATION:
+                    probs = torch.softmax(output, dim=1)
+                    labels = torch.argmax(probs, dim=1)
+                    return {
+                        PyTorchInferenceKeys.LABELS: labels,
+                        PyTorchInferenceKeys.PROBABILITIES: probs
+                    }
+                    
+                elif self.task == MLTaskKeys.BINARY_CLASSIFICATION:
+                    if output.ndim == 2 and output.shape[1] == 1:
+                        output = output.squeeze(1)
+                        
+                    probs = torch.sigmoid(output) 
+                    labels = (probs >= self._classification_threshold).int()
+                    return {
+                        PyTorchInferenceKeys.LABELS: labels,
+                        PyTorchInferenceKeys.PROBABILITIES: probs
+                    }
+                    
+                elif self.task == MLTaskKeys.REGRESSION:
+                    # For single-target regression, ensure output is flattened
+                    return {PyTorchInferenceKeys.PREDICTIONS: output.flatten()}
+                
+                elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
+                    probs = torch.sigmoid(output)
+                    labels = (probs >= self._classification_threshold).int()
+                    return {
+                        PyTorchInferenceKeys.LABELS: labels,
+                        PyTorchInferenceKeys.PROBABILITIES: probs
+                    }
+                
+                elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
+                    return {PyTorchInferenceKeys.PREDICTIONS: output}
+                
+                else:
+                    _LOGGER.error(f"Unrecognized task '{self.task}'.")
                     raise ValueError()
                 
-                # Ensure output is 2D (N, Targets) for the scaler
-                original_shape = output.shape
-                if output.ndim == 1:
-                    output = output.reshape(-1, 1)
-                
-                # Apply inverse transform (de-scale)
-                output = self.target_scaler.inverse_transform(output)
-                
-                # Restore original shape if necessary (though usually we want 2D or 1D flat)
-                if len(original_shape) == 1:
-                    output = output.flatten()
-
-            # --- Task Specific Formatting ---
-            if self.task == MLTaskKeys.MULTICLASS_CLASSIFICATION:
-                probs = torch.softmax(output, dim=1)
-                labels = torch.argmax(probs, dim=1)
-                return {
-                    PyTorchInferenceKeys.LABELS: labels,
-                    PyTorchInferenceKeys.PROBABILITIES: probs
-                }
-                
-            elif self.task == MLTaskKeys.BINARY_CLASSIFICATION:
-                if output.ndim == 2 and output.shape[1] == 1:
-                    output = output.squeeze(1)
-                    
-                probs = torch.sigmoid(output) 
-                labels = (probs >= self._classification_threshold).int()
-                return {
-                    PyTorchInferenceKeys.LABELS: labels,
-                    PyTorchInferenceKeys.PROBABILITIES: probs
-                }
-                
-            elif self.task == MLTaskKeys.REGRESSION:
-                # For single-target regression, ensure output is flattened
-                return {PyTorchInferenceKeys.PREDICTIONS: output.flatten()}
-            
-            elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
-                probs = torch.sigmoid(output)
-                labels = (probs >= self._classification_threshold).int()
-                return {
-                    PyTorchInferenceKeys.LABELS: labels,
-                    PyTorchInferenceKeys.PROBABILITIES: probs
-                }
-            
-            elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
-                return {PyTorchInferenceKeys.PREDICTIONS: output}
-            
-            else:
-                _LOGGER.error(f"Unrecognized task '{self.task}'.")
-                raise ValueError()
+            # should not reach here
+            return {}
 
     def predict(self, features: Union[np.ndarray, torch.Tensor]) -> dict[str, torch.Tensor]:
         """
@@ -243,14 +296,16 @@ class DragonInferenceHandler(_BaseInferenceHandler):
 
     def predict_numpy(self, features: Union[np.ndarray, torch.Tensor]) -> dict[str, Any]:
         """
-        Convenience wrapper for predict that returns NumPy arrays or scalars
+        Convenience wrapper that returns a single NumPy array or scalar
         and adds string labels for classification tasks if a class_map is set.
         """
         tensor_results = self.predict(features)
 
         if self.task == MLTaskKeys.REGRESSION:
-            # .item() implicitly moves to CPU and returns a Python scalar
-            return {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
+            res = {PyTorchInferenceKeys.PREDICTIONS: tensor_results[PyTorchInferenceKeys.PREDICTIONS].item()}
+            if self._distribution_mode and PyTorchInferenceKeys.VARIANCE in tensor_results:
+                res[PyTorchInferenceKeys.VARIANCE] = tensor_results[PyTorchInferenceKeys.VARIANCE].item()
+            return res
         
         elif self.task in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             int_label = tensor_results[PyTorchInferenceKeys.LABELS].item()
@@ -284,16 +339,28 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             raise AttributeError()
         
         if self.task == MLTaskKeys.REGRESSION:
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS]
-            return {self.target_ids[0]: result}
+            res_dict = self.predict_numpy(features)
+            out = {self.target_ids[0]: res_dict[PyTorchInferenceKeys.PREDICTIONS]}
+            if self._distribution_mode and PyTorchInferenceKeys.VARIANCE in res_dict:
+                out[f"{self.target_ids[0]}_variance"] = res_dict[PyTorchInferenceKeys.VARIANCE]
+            return out
         
         elif self.task in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS]
             return {self.target_ids[0]: result}
         
         elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
-            result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
-            return {key: value for key, value in zip(self.target_ids, result)}
+            # result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
+            # return {key: value for key, value in zip(self.target_ids, result)}
+            res_dict = self.predict_numpy(features)
+            means = res_dict[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
+            out = {key: value for key, value in zip(self.target_ids, means)}
+            
+            if self._distribution_mode and PyTorchInferenceKeys.VARIANCE in res_dict:
+                vars_ = res_dict[PyTorchInferenceKeys.VARIANCE].flatten().tolist()
+                for key, value in zip(self.target_ids, vars_):
+                    out[f"{key}_variance"] = value
+            return out
         
         elif self.task == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
             result = self.predict_numpy(features)[PyTorchInferenceKeys.LABELS].flatten().tolist()

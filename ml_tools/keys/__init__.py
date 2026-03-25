@@ -1,8 +1,11 @@
 from ._keys import (
     PyTorchInferenceKeys as InferenceKeys,
-    _CheckpointCallbackKeys as CheckpointCallbackKeys,
-    _FinalizedFileKeys as FinalizedFileKeys,
-    _PublicTaskKeys as TaskKeys,
+)
+
+from ._public_keys import (
+    CheckpointKeys,
+    FinalizedFileKeys,
+    TaskKeys,
 )
 
 from .._core import _imprimir_disponibles
@@ -10,7 +13,7 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "InferenceKeys",
-    "CheckpointCallbackKeys",
+    "CheckpointKeys",
     "FinalizedFileKeys",
     "TaskKeys",
 ]

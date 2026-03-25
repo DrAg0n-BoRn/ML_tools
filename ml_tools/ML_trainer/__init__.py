@@ -10,6 +10,10 @@ from ._dragon_detection_trainer import (
     DragonDetectionTrainer
 )
 
+from ._dragon_distribution_trainer import (
+    DragonDistributionTrainer
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -17,6 +21,7 @@ __all__ = [
     "DragonTrainer",
     "DragonSequenceTrainer",
     "DragonDetectionTrainer",
+    "DragonDistributionTrainer"
 ]
 
 

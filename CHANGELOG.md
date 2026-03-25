@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [21.0.0] 2026-03-25
+
+### Added
+
+- ML_trainer:
+    - `DragonDistributionTrainer`, New trainer class for regression models that predict both mean and variance (uncertainty). Requires a compatible loss function like `nn.GaussianNLLLoss()`.
+- ML_evaluation:
+    - `distribution_metrics()`, Evaluates regression models that predict both mean and variance, calculating metrics like Gaussian NLL and generating diagnostic plots for uncertainty estimation.
+    - `multi_target_distribution_metrics()`, Evaluates multi-target regression models that predict both mean and variance for each target, calculating metrics and generating diagnostic plots for each target.
+
+### Changed
+
+- ML_inference:
+    - `DragonInferenceHandler`, added `distribution_mode` parameter to handle inference for models that predict both mean and variance. Adjusts output processing accordingly.
+
 ## [20.17.0] 2026-03-17
 
 ### Fixed

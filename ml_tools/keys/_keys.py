@@ -24,12 +24,6 @@ class PyTorchLogKeys:
     BATCH_SIZE = 'size'
 
 
-class _CheckpointCallbackKeys:
-    """Checkpoint callback keys."""
-    TRAIN_LOSS = PyTorchLogKeys.TRAIN_LOSS
-    VALIDATION_LOSS = PyTorchLogKeys.VAL_LOSS
-
-
 class ScalerKeys:
     """Keys for saving/loading scaler artifacts."""
     MEAN = "mean"
@@ -57,6 +51,9 @@ class PyTorchInferenceKeys:
     """Keys for the output dictionaries of InferenceHandler classes."""
     # For regression tasks
     PREDICTIONS = "predictions"
+    
+    # For distribution regression tasks
+    VARIANCE = "variance"
     
     # For classification tasks
     LABELS = "labels"
@@ -128,19 +125,6 @@ class PyTorchCheckpointKeys:
     TARGET_NAMES = "target_names"
 
 
-class _FinalizedFileKeys:
-    """Keys for finalized model files."""
-    MODEL_WEIGHTS = PyTorchCheckpointKeys.MODEL_STATE
-    EPOCH = PyTorchCheckpointKeys.EPOCH
-    TASK = PyTorchCheckpointKeys.TASK
-    CLASSIFICATION_THRESHOLD = PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD
-    CLASS_MAP = PyTorchCheckpointKeys.CLASS_MAP
-    SEQUENCE_LENGTH = PyTorchCheckpointKeys.SEQUENCE_LENGTH
-    INITIAL_SEQUENCE = PyTorchCheckpointKeys.INITIAL_SEQUENCE
-    TARGET_NAME = PyTorchCheckpointKeys.TARGET_NAME
-    TARGET_NAMES = PyTorchCheckpointKeys.TARGET_NAMES
-
-
 class UtilityKeys:
     """Keys used for utility modules"""
     MODEL_PARAMS_FILE = "model_parameters"
@@ -207,37 +191,6 @@ class MLTaskKeys:
                  BINARY_SEGMENTATION, MULTICLASS_SEGMENTATION, 
                  OBJECT_DETECTION, 
                  SEQUENCE_SEQUENCE, SEQUENCE_VALUE]
-
-
-class _PublicTaskKeys:
-    """
-    Task keys used in the Dragon ML pipeline:
-    
-    1. REGRESSION
-    2. MULTITARGET_REGRESSION
-    3. BINARY_CLASSIFICATION
-    4. MULTICLASS_CLASSIFICATION
-    5. MULTILABEL_BINARY_CLASSIFICATION
-    6. BINARY_IMAGE_CLASSIFICATION
-    7. MULTICLASS_IMAGE_CLASSIFICATION  
-    8. BINARY_SEGMENTATION
-    9. MULTICLASS_SEGMENTATION
-    10. OBJECT_DETECTION
-    11. SEQUENCE_SEQUENCE
-    12. SEQUENCE_VALUE
-    """
-    REGRESSION = MLTaskKeys.REGRESSION
-    MULTITARGET_REGRESSION = MLTaskKeys.MULTITARGET_REGRESSION
-    BINARY_CLASSIFICATION = MLTaskKeys.BINARY_CLASSIFICATION
-    MULTICLASS_CLASSIFICATION = MLTaskKeys.MULTICLASS_CLASSIFICATION
-    MULTILABEL_BINARY_CLASSIFICATION = MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION
-    BINARY_IMAGE_CLASSIFICATION = MLTaskKeys.BINARY_IMAGE_CLASSIFICATION
-    MULTICLASS_IMAGE_CLASSIFICATION = MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
-    BINARY_SEGMENTATION = MLTaskKeys.BINARY_SEGMENTATION
-    MULTICLASS_SEGMENTATION = MLTaskKeys.MULTICLASS_SEGMENTATION
-    OBJECT_DETECTION = MLTaskKeys.OBJECT_DETECTION
-    SEQUENCE_SEQUENCE = MLTaskKeys.SEQUENCE_SEQUENCE
-    SEQUENCE_VALUE = MLTaskKeys.SEQUENCE_VALUE
 
 
 class DragonTrainerKeys:

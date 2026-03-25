@@ -28,6 +28,11 @@ from ._vision import (
     object_detection_metrics
 )
 
+from ._distribution import (
+    distribution_metrics,
+    multi_target_distribution_metrics
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -50,6 +55,9 @@ __all__ = [
     # vision
     "segmentation_metrics",
     "object_detection_metrics",
+    # distribution
+    "distribution_metrics",
+    "multi_target_distribution_metrics"
 ]
 
 
