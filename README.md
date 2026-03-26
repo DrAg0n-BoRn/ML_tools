@@ -79,6 +79,7 @@ ML_trainer
 ML_utilities
 ML_vision_transformers
 optimization_tools
+outlier_detection
 path_manager
 plot_fonts
 resampling
@@ -111,6 +112,7 @@ ETL_engineering
 IO_tools
 math_utilities
 optimization_tools
+outlier_detection
 path_manager
 plot_fonts
 PSO_optimization

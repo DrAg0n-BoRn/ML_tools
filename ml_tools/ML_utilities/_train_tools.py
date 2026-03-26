@@ -35,7 +35,7 @@ def build_optimizer_params(model: nn.Module, weight_decay: float = 0.01) -> list
             (Default: 0.01)
 
     Returns:
-        List[Dict[str, Any]]: A list of parameter groups formatted for PyTorch optimizers.
+        List (List[Dict[str, Any]]): A list of parameter groups formatted for PyTorch optimizers.
             - Group 0: 'params' = Weights (decay applied)
             - Group 1: 'params' = Biases/Norms (decay = 0.0)
     """

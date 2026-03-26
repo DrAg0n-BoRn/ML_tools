@@ -117,8 +117,8 @@ class DragonMultiResampler(_DragonBaseResampler):
         
         # Determine the Cap
         if max_samples_per_combination is None:
-            # Handle potential None from quantile (satisfies linter)
-            q_val = combo_counts["len"].quantile(quantile_limit)
+            # Handle potential None from quantile
+            q_val = combo_counts.get_column("len").quantile(quantile_limit)
             
             if q_val is None:
                 if verbose >= 1:

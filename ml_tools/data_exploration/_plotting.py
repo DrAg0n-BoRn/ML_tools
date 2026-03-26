@@ -10,11 +10,12 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
 
-_LOGGER = get_logger("Data Exploration: Plotting")
+_LOGGER = get_logger("Data Exploration: Visualization")
 
 
 __all__ = [
     "plot_value_distributions",
+    "plot_numeric_overview_boxplot",
     "plot_continuous_vs_target",
     "plot_categorical_vs_target",
     "plot_correlation_heatmap",
@@ -146,6 +147,65 @@ def plot_value_distributions(
     
     _LOGGER.info(f"Saved {numeric_plots_saved} continuous distribution plots to '{numeric_dir.name}'.")
     _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution plots to '{categorical_dir.name}'.")
+
+
+def plot_numeric_overview_boxplot(
+    df: pd.DataFrame,
+    save_dir: Union[str, Path],
+    plot_title: str = "Distribution Overview",
+    log_scale: bool = False,
+    show_means: bool = True
+):
+    """
+    Creates a single boxplot showing the distribution and range of all numeric columns.
+    
+    Args:
+        df (pd.DataFrame): The input dataset.
+        save_dir (str | Path): Directory path to save the plot.
+        plot_title (str): The title of the plot.
+        log_scale (bool): If True, sets the numerical axis to a logarithmic scale.
+        show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
+    """
+    numeric_df = df.select_dtypes(include='number')
+    
+    if numeric_df.empty:
+        _LOGGER.warning("No numeric columns found. Overview boxplot not generated.")
+        return
+
+    # Setup save path
+    save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    
+    # Dynamic figure size based on the number of features
+    num_features = numeric_df.shape[1]
+    fig_height = max(6, num_features * 0.5)
+    
+    plt.figure(figsize=(12, fig_height))
+    
+    # Using orient='h' for better label readability with many features
+    ax = sns.boxplot(data=numeric_df, orient='h', palette="Set2", showmeans=show_means, meanprops={"marker":"D", "markerfacecolor":"white", "markeredgecolor":"black", "markersize":6})
+    
+    x_label = "Value (Log Scale)" if log_scale else "Value"
+    if log_scale:
+        ax.set_xscale("log")
+ 
+    plt.title(plot_title, fontsize=18)
+    plt.xlabel(x_label, fontsize=14)
+    plt.ylabel("", fontsize=0)
+    
+    plt.grid(True, linestyle='--', alpha=0.6, axis='x')
+    plt.tight_layout()
+    
+    safe_title = sanitize_filename(plot_title)
+    plot_filename = f"{safe_title}.svg"
+    full_path = save_path / plot_filename
+    
+    try:
+        plt.savefig(full_path, bbox_inches="tight", format='svg')
+        _LOGGER.info(f"Saved numeric overview boxplot: '{plot_filename}' to '{save_path.name}'.")
+    except Exception as e:
+        _LOGGER.error(f"Failed to save numeric overview boxplot. Error: {e}")
+    
+    plt.close()
 
 
 def plot_continuous_vs_target(
@@ -446,6 +506,10 @@ def plot_correlation_heatmap(df: pd.DataFrame,
 
     # Create a mask for the upper triangle
     mask = np.triu(np.ones_like(corr, dtype=bool))
+    
+    # Remove the top row and rightmost column to drop redundant empty axis labels
+    corr = corr.iloc[1:, :-1]
+    mask = mask[1:, :-1]
 
     # Plot setup
     size = max(10, numeric_df.shape[1])
@@ -474,7 +538,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     plt.tight_layout()
     
     if save_dir:
-        save_path = make_fullpath(save_dir, make=True)
+        save_path = make_fullpath(save_dir, make=True, enforce="directory")
         # sanitize the plot title to save the file
         sanitized_plot_title = sanitize_filename(plot_title)
         # prepend method to filename

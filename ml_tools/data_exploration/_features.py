@@ -22,6 +22,7 @@ __all__ = [
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
+    "filter_subset"
 ]
 
 

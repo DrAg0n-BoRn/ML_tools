@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [21.1.0] 2026-03-26
+
+### Added
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot()`, Generates a boxplot overview of all numeric features in the dataset, with options for log scaling.
+- New module: "outlier_detection"
+    - `clip_outliers_single()`, Clips outliers in a single column based on specified bounds.
+    - `clip_outliers_multi()`, Clips outliers in multiple columns based on a dictionary of bounds.
+    - `drop_outliers_rule()`, Drops rows that have outlier values in specified columns based on a dictionary of bounds.
+    - `drop_outliers_mask()`, Drops rows based on a boolean mask indicating outlier samples.
+    - `replace_outliers_mask()`, Replaces outlier values based on a boolean mask and a specified replacement strategy.
+
+### Changed
+
+- data_exploration:
+    - `clip_outliers_single()`, moved to the new "outlier_detection" module for better separation of concerns.
+    - `clip_outliers_multi()`, moved to the new "outlier_detection" module for better separation of concerns.
+    - `drop_outliers_rule()`, renamed to `drop_outliers_rule()` and moved to the new "outlier_detection" module for better separation of concerns.
+
 ## [21.0.0] 2026-03-25
 
 ### Added
