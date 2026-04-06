@@ -1,6 +1,5 @@
 from typing import Union, Literal
 
-
 __all__ = [
     # --- Metrics Formats ---
     "FormatRegressionMetrics",
@@ -14,6 +13,8 @@ __all__ = [
     "FormatMultiClassSegmentationMetrics",
     "FormatSequenceValueMetrics",
     "FormatSequenceSequenceMetrics",
+    "FormatAutoencoderMetrics",
+    "FormatTabularDiffusionMetrics",
 ]
 
 
@@ -264,7 +265,7 @@ class _BaseSequenceValueFormat:
     [PRIVATE] Base configuration for sequence to value metrics.
     """
     def __init__(self, 
-                 font_size: int=25,
+                 font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',
@@ -316,7 +317,7 @@ class _BaseSequenceSequenceFormat:
     [PRIVATE] Base configuration for sequence-to-sequence metrics.
     """
     def __init__(self,
-                 font_size: int = 25,
+                 font_size: int = 26,
                  grid_style: str = '--',
                  rmse_color: str = 'tab:blue',
                  rmse_marker: str = 'o-',
@@ -365,6 +366,123 @@ class _BaseSequenceSequenceFormat:
             f"mae_color='{self.mae_color}'"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
+
+
+class _BaseAutoencoderFormat:
+    """
+    [PRIVATE] Base configuration for autoencoder metrics.
+    """
+    def __init__(self,
+                 hist_color: str = 'teal',
+                 hist_bins: Union[int, str] = 50,
+                 confidence_bins: Union[int, str] = 20,
+                 cmap: str = "Blues",
+                 font_size: int = 26,
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
+                 cm_font_size: int = 26) -> None:
+        """
+        Initializes the formatting configuration for autoencoder metrics.
+        
+        Args:
+            hist_color (str): Matplotlib color for the histogram bars in the global reconstruction error distribution plot.
+                - Common color names: 'teal', 'steelblue', 'coral', '#4682B4'
+            hist_bins (int | str): The number of bins for the global reconstruction error histogram.
+                - Autoencoders tend to be extremely right-skewed, so using a higher number of bins can help reveal the distribution shape and tail behavior.
+                - Options: 'auto', 'sqrt', 10, 20, 50
+            confidence_bins (int | str): The number of bins for the categorical confidence distribution.
+                - This controls the granularity of the confidence distribution plot, which can help identify if the model is overconfident (many samples in high-confidence bins) or underconfident (many samples in low-confidence bins).
+                - Options: 'auto', 'sqrt', 10, 20, 50
+            cmap (str): The matplotlib colormap name for the per-feature reconstruction error heatmap.
+                - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
+                - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'    
+            font_size (int): The base font size to apply to the plots.
+            xtick_size (int): Font size for x-axis tick labels.
+            ytick_size (int): Font size for y-axis tick labels.
+            cm_font_size (int): Font size for the confusion matrix plot.
+        <br>
+        
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+        
+        <br>
+        
+        ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+        
+        """
+        self.hist_color = hist_color
+        self.hist_bins = hist_bins
+        self.confidence_bins = confidence_bins
+        self.font_size = font_size
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
+        self.cmap = cmap
+        self.cm_font_size = cm_font_size
+
+    def __repr__(self) -> str:
+        parts = [
+            f"hist_color='{self.hist_color}'",
+            f"hist_bins={self.hist_bins}",
+            f"confidence_bins={self.confidence_bins}",
+            f"font_size={self.font_size}",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}",
+            f"cmap='{self.cmap}'",
+            f"cm_font_size={self.cm_font_size}"
+        ]
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+
+
+class _BaseTabularDiffusionFormat:
+    """
+    [PRIVATE] Base configuration for tabular diffusion metrics.
+    """
+    def __init__(self,
+                 font_size: int = 26,
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
+                 legend_size: int = 26,
+                 real_color: str = 'tab:blue',
+                 gen_color: str = 'tab:orange',
+                 alpha: float = 0.6) -> None:
+        """
+        Initializes the formatting configuration for tabular diffusion metrics.
+        
+        Args:
+            font_size (int): The base font size to apply to the plots.
+            xtick_size (int): Font size for x-axis tick labels.
+            ytick_size (int): Font size for y-axis tick labels.
+            legend_size (int): Font size for plot legends.
+            real_color (str): Matplotlib color for the real data distributions.
+            gen_color (str): Matplotlib color for the generated data distributions.
+            alpha (float): Alpha transparency for the overlaid plots.
+        
+        <br>
+        
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+        """
+        self.font_size = font_size
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
+        self.legend_size = legend_size
+        self.real_color = real_color
+        self.gen_color = gen_color
+        self.alpha = alpha
+
+    def __repr__(self) -> str:
+        parts = [
+            f"font_size={self.font_size}",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}",
+            f"legend_size={self.legend_size}",
+            f"real_color='{self.real_color}'",
+            f"gen_color='{self.gen_color}'",
+            f"alpha={self.alpha}"
+        ]
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+
+
+
+
 
 
 # ----------------------------
@@ -606,3 +724,48 @@ class FormatSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
                          mae_color=mae_color, 
                          mae_marker=mae_marker)
 
+
+class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
+    """
+    Configuration for mixed tabular autoencoder evaluation.
+    """
+    def __init__(self,
+                 hist_color: str = 'teal',
+                 hist_bins: Union[int, str] = 50,
+                 confidence_bins: Union[int, str] = 20,
+                 cmap: str = "Blues",
+                 font_size: int = 25,
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
+                 cm_font_size: int = 26) -> None:
+        
+        super().__init__(hist_color=hist_color,
+                         hist_bins=hist_bins,
+                         confidence_bins=confidence_bins,
+                         font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         cmap=cmap,
+                         cm_font_size=cm_font_size)
+
+
+class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
+    """
+    Configuration for tabular diffusion evaluation.
+    """
+    def __init__(self,
+                 font_size: int = 26,
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
+                 legend_size: int = 26,
+                 real_color: str = 'tab:blue',
+                 gen_color: str = 'tab:orange',
+                 alpha: float = 0.6) -> None:
+        super().__init__(font_size=font_size,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
+                         legend_size=legend_size,
+                         real_color=real_color,
+                         gen_color=gen_color,
+                         alpha=alpha)
+        

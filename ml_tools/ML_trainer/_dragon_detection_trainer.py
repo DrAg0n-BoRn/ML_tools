@@ -69,8 +69,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks
-        )
+            extra_callbacks=extra_callbacks)
         
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset # <-- Renamed

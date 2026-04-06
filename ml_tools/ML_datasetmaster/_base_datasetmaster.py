@@ -333,7 +333,7 @@ class _BaseDatasetMaker(ABC):
             verbose (bool): Whether to print log messages.
         """
         if self.feature_scaler is None and self.target_scaler is None:
-            _LOGGER.warning("No scalers (feature or target) were fitted. Nothing to save.")
+            _LOGGER.warning("No scalers (feature or target) were fitted. Skipping scaler save.")
             return
 
         if not self.id: 

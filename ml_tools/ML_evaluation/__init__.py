@@ -33,6 +33,14 @@ from ._distribution import (
     multi_target_distribution_metrics
 )
 
+from ._autoencoder_metrics import (
+    autoencoder_metrics
+)
+
+from ._dit_metrics import (
+    dit_generation_metrics
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -57,7 +65,11 @@ __all__ = [
     "object_detection_metrics",
     # distribution
     "distribution_metrics",
-    "multi_target_distribution_metrics"
+    "multi_target_distribution_metrics",
+    # autoencoder
+    "autoencoder_metrics",
+    # dit
+    "dit_generation_metrics"
 ]
 
 

@@ -23,6 +23,8 @@ __all__ = [
     "FinalizeObjectDetection",
     "FinalizeSequenceSequencePrediction",
     "FinalizeSequenceValuePrediction",
+    "FinalizeAutoencoder",
+    "FinalizeTabularDiffusion"
 ]
 
 # -------- Finalize classes --------
@@ -317,6 +319,36 @@ class FinalizeSequenceValuePrediction(_FinalizeModelTraining):
         self.task = MLTaskKeys.SEQUENCE_VALUE
 
 
+class FinalizeAutoencoder(_FinalizeModelTraining):
+    """Parameters for finalizing an autoencoder model."""
+    def __init__(self, 
+                 filename: str) -> None:
+        """Initializes the finalization parameters.
+        
+        Args:
+            filename (str): The name of the file to be saved.
+        """
+        super().__init__(filename)
+        self.task = MLTaskKeys.AUTOENCODER
+
+
+class FinalizeTabularDiffusion(_FinalizeModelTraining):
+    """Parameters for finalizing a tabular diffusion model."""
+    def __init__(self, 
+                 filename: str) -> None:
+        """Initializes the finalization parameters.
+        
+        Args:
+            filename (str): The name of the file to be saved.
+        """
+        super().__init__(filename)
+        self.task = MLTaskKeys.DIFFUSION
+
+
+
+
+
+#### Helper functions for validation in finalize classes ####
 def _validate_string(string: str, attribute_name: str, extension: Optional[str]=None) -> str:
     """Helper for finalize classes"""
     if not isinstance(string, str):

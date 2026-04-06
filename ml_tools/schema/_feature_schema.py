@@ -61,6 +61,27 @@ class FeatureSchema(NamedTuple):
         except (IOError, TypeError) as e:
             _LOGGER.error(f"Failed to save FeatureSchema to JSON: {e}")
             raise e
+    
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Converts the FeatureSchema to a dictionary format.
+        
+        Note: This returns the raw dictionary representation. Tuples and integer keys are 
+        preserved and rely on downstream JSON serialization for casting if needed.
+        """
+        return self._asdict()
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'FeatureSchema':
+        """
+        Creates a FeatureSchema instance from a dictionary, converting Lists back to Tuples and StrKeys back to IntKeys as needed.
+        """
+        try:
+            schema_kwargs = prepare_schema_from_json(data)
+            return cls(**schema_kwargs)
+        except (ValueError, KeyError) as e:
+            _LOGGER.error(f"Failed to create FeatureSchema from dict: {e}")
+            raise e
         
     @classmethod
     def from_json(cls, directory: Union[str, Path], verbose: bool = True) -> 'FeatureSchema':

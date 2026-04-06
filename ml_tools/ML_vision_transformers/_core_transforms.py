@@ -10,7 +10,7 @@ from ..keys._keys import VisionTransformRecipeKeys
 from ..path_manager import make_fullpath
 
 
-_LOGGER = get_logger("Transformers")
+_LOGGER = get_logger("Vision Transforms")
 
 
 __all__ = [

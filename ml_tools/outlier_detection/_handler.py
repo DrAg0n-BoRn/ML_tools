@@ -116,6 +116,7 @@ def drop_outliers_rule(
     df: pd.DataFrame,
     bounds_dict: dict[str, tuple[Union[int, float], Union[int, float]]],
     drop_on_nulls: bool = False,
+    reset_index: bool = True,
     verbose: bool = True
 ) -> pd.DataFrame:
     """
@@ -131,6 +132,7 @@ def drop_outliers_rule(
                             are (min_val, max_val) tuples defining the valid range.
         drop_on_nulls (bool): If True, rows with NaN/None in a checked column
                            will also be dropped. If False, NaN/None are ignored.
+        reset_index (bool): If True, resets the index of the resulting DataFrame.
         verbose (bool): If True, prints the number of rows dropped for each column.
 
     Returns:
@@ -205,16 +207,22 @@ def drop_outliers_rule(
     if isinstance(new_df, pd.Series):
         new_df = new_df.to_frame()
 
+    if reset_index:
+        new_df = new_df.reset_index(drop=True)
+
     return new_df
 
 
-def drop_outliers_mask(df: pd.DataFrame, outlier_mask: pd.Series) -> pd.DataFrame:
+def drop_outliers_mask(df: pd.DataFrame, 
+                       outlier_mask: pd.Series,
+                       reset_index: bool = True) -> pd.DataFrame:
     """
     Removes rows identified as outliers.
 
     Args:
         df (pd.DataFrame): The original dataset.
         outlier_mask (pd.Series): A boolean mask where True indicates an outlier row. Must be aligned with df's index.
+        reset_index (bool): If True, resets the index of the resulting DataFrame.
 
     Returns:
         pd.DataFrame: A new DataFrame with the outliers removed.
@@ -224,6 +232,8 @@ def drop_outliers_mask(df: pd.DataFrame, outlier_mask: pd.Series) -> pd.DataFram
     dropped_count = initial_shape - df_clean.shape[0]
     
     _LOGGER.info(f"Dropped {dropped_count} outlier samples. Remaining rows: {df_clean.shape[0]}.")
+    if reset_index:
+        df_clean = df_clean.reset_index(drop=True)
     return df_clean
 
 

@@ -10,6 +10,8 @@ from ._metrics import (
     FormatMultiClassSegmentationMetrics,
     FormatSequenceValueMetrics,
     FormatSequenceSequenceMetrics,
+    FormatAutoencoderMetrics,
+    FormatTabularDiffusionMetrics
 )
 
 from ._finalize import (
@@ -25,6 +27,8 @@ from ._finalize import (
     FinalizeObjectDetection,
     FinalizeSequenceSequencePrediction,
     FinalizeSequenceValuePrediction,
+    FinalizeAutoencoder,
+    FinalizeTabularDiffusion
 )
 
 from ._models import (
@@ -36,6 +40,8 @@ from ._models import (
     DragonNodeParams,
     DragonTabNetParams,
     DragonAutoIntParams,
+    DragonAutoencoderParams,
+    DragonDiTParams
 )
 
 from ._training import (
@@ -60,7 +66,8 @@ __all__ = [
     "FormatMultiClassSegmentationMetrics",
     "FormatSequenceValueMetrics",
     "FormatSequenceSequenceMetrics",
-    
+    "FormatAutoencoderMetrics",
+    "FormatTabularDiffusionMetrics",
     # --- Finalize Configs ---
     "FinalizeBinaryClassification",
     "FinalizeBinarySegmentation",
@@ -74,7 +81,8 @@ __all__ = [
     "FinalizeObjectDetection",
     "FinalizeSequenceSequencePrediction",
     "FinalizeSequenceValuePrediction",
-    
+    "FinalizeAutoencoder",
+    "FinalizeTabularDiffusion",
     # --- Model Parameter Configs ---
     "DragonMLPParams",
     "DragonAttentionMLPParams",
@@ -84,6 +92,8 @@ __all__ = [
     "DragonNodeParams",
     "DragonTabNetParams",
     "DragonAutoIntParams",
+    "DragonAutoencoderParams",
+    "DragonDiTParams",
     
     # --- Training Config ---
     "DragonTrainingConfig",

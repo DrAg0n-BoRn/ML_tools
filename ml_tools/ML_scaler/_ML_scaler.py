@@ -131,6 +131,7 @@ class DragonScaler:
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
             # If not fitted, return as is
+            _LOGGER.warning("Scaler has not been fitted. Returning data without transformation.")
             return data
         
         data_clone = data.clone()
@@ -163,6 +164,7 @@ class DragonScaler:
         Applies the inverse of the standardization transformation.
         """
         if self.mean_ is None or self.std_ is None or self.continuous_feature_indices is None:
+            _LOGGER.warning("Scaler has not been fitted. Returning data without inverse transformation.")
             return data
         
         data_clone = data.clone()

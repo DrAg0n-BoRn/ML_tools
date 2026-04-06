@@ -340,17 +340,9 @@ class DragonGateModel(_ArchitectureBuilder):
                         _LOGGER.warning(f"GATE initialization skipped due to shape mismatch:\n    Model: {self.head.T0.shape}\n    Data: {mean_target.shape}")
 
     def get_architecture_config(self) -> dict[str, Any]:
-        """Returns the full configuration of the model."""
-        schema_dict = {
-            'feature_names': self.schema.feature_names,
-            'continuous_feature_names': self.schema.continuous_feature_names,
-            'categorical_feature_names': self.schema.categorical_feature_names,
-            'categorical_index_map': self.schema.categorical_index_map,
-            'categorical_mappings': self.schema.categorical_mappings
-        }
-        
+        """Returns the full configuration of the model."""        
         config = {
-            SchemaKeys.SCHEMA_DICT: schema_dict,
+            SchemaKeys.SCHEMA_DICT: self.schema.to_dict(),
             'out_targets': self.out_targets,
             **self.model_hparams
         }

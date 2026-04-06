@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Union, Any, Iterable
 from torch import nn
+import torch
 
 from ..serde import serialize_object_filename
 
@@ -14,6 +15,7 @@ __all__ = [
     "build_optimizer_params",
     "set_parameter_requires_grad",
     "save_pretrained_transforms",
+    "validate_torch_device"
 ]
 
 
@@ -203,3 +205,31 @@ def save_pretrained_transforms(model: nn.Module, output_dir: Union[str, Path]):
     except Exception as e:
         _LOGGER.error(f"Failed to serialize transformations: {e}")
         raise
+
+
+def validate_torch_device(device: str):
+    """
+    Validates the specified PyTorch device string and returns a valid torch.device object.
+    
+    Args:
+        device (str): The device string to validate (e.g., "cuda:0", "mps", "cpu").
+    """
+    device_lower = device.lower()
+    if "cuda" in device_lower and not torch.cuda.is_available():
+        _LOGGER.warning("CUDA not available, switching to CPU.")
+        device = "cpu"
+    elif device_lower == "mps" and not torch.backends.mps.is_available():
+        _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
+        device = "cpu"
+    elif device_lower == "cpu":
+        pass  # CPU is always available
+    else:
+        # For any other device string, we will attempt to create a torch.device and catch errors
+        try:
+            torch.device(device)
+        except Exception as e:
+            _LOGGER.error(f"Invalid device string '{device}': {e}. Defaulting to CPU.")
+            device = "cpu"
+    
+    return torch.device(device)
+

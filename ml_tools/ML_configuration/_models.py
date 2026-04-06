@@ -15,6 +15,8 @@ __all__ = [
     "DragonNodeParams",
     "DragonTabNetParams",
     "DragonAutoIntParams",
+    "DragonAutoencoderParams",
+    "DragonDiTParams"
 ]
 
 
@@ -203,4 +205,26 @@ class DragonTabNetParams(_BaseModelParams):
         self.momentum = momentum
         self.mask_type = mask_type
         self.batch_norm_continuous = batch_norm_continuous
+
+
+class DragonAutoencoderParams(_BaseModelParams):
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 embedding_dim: int = 64,
+                 fourier_sigma: float = 1.0) -> None:
+        self.schema = schema
+        self.embedding_dim = embedding_dim
+        self.fourier_sigma = fourier_sigma
+
+
+class DragonDiTParams(_BaseModelParams):
+    def __init__(self, *,
+                 embed_dim: int, 
+                 seq_len: int,
+                 num_heads: int=4, 
+                 depth: int=2) -> None:
+        self.embed_dim = embed_dim
+        self.seq_len = seq_len
+        self.num_heads = num_heads
+        self.depth = depth
 

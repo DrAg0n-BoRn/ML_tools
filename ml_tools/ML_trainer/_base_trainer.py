@@ -10,7 +10,7 @@ from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import plot_losses
-from ..ML_utilities import inspect_pth_file
+from ..ML_utilities import inspect_pth_file, validate_torch_device
 
 from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchCheckpointKeys, MagicWords
@@ -77,14 +77,8 @@ class _BaseDragonTrainer(ABC):
 
     def _validate_device(self, device: str) -> torch.device:
         """Validates the selected device and returns a torch.device object."""
-        device_lower = device.lower()
-        if "cuda" in device_lower and not torch.cuda.is_available():
-            _LOGGER.warning("CUDA not available, switching to CPU.")
-            device = "cpu"
-        elif device_lower == "mps" and not torch.backends.mps.is_available():
-            _LOGGER.warning("Apple Metal Performance Shaders (MPS) not available, switching to CPU.")
-            device = "cpu"
-        return torch.device(device)
+        validated_device = validate_torch_device(device)
+        return validated_device
 
     def _set_trainer_on_callbacks(self):
         """Gives each callback a reference to this trainer instance."""

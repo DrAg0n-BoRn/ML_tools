@@ -14,6 +14,7 @@ from ._train_tools import (
     build_optimizer_params,
     set_parameter_requires_grad,
     save_pretrained_transforms,
+    validate_torch_device
 )
 
 from .._core import _imprimir_disponibles
@@ -28,7 +29,8 @@ __all__ = [
     "inspect_pth_file",
     "set_parameter_requires_grad",
     "save_pretrained_transforms",
-    "select_features_by_shap"
+    "select_features_by_shap",
+    "validate_torch_device"
 ]
 
 

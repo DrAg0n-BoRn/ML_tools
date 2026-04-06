@@ -29,7 +29,7 @@ class DragonDataset(_BaseDatasetMaker):
     def __init__(self,
                  pandas_df: pandas.DataFrame,
                  schema: FeatureSchema,
-                 kind: Literal["regression", "binary classification", "multiclass classification"],
+                 kind: Literal["regression", "binary classification", "multiclass classification", "diffusion", "autoencoder"],
                  feature_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  target_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  validation_size: float = 0.2,
@@ -47,11 +47,13 @@ class DragonDataset(_BaseDatasetMaker):
                 The type of ML task. Must be one of:
                 - "regression"
                 - "binary classification"
-                - "multiclass classification" 
+                - "multiclass classification"
+                - "diffusion"
+                - "autoencoder"
             validation_size (float):
                 The proportion of the *original* dataset to allocate to the validation split.
             test_size (float): 
-                The proportion of the dataset to allocate to the test split (can be 0).
+                The proportion of the dataset to allocate to the test split.
             class_map (dict[str,int] | None): Optional class map for the target classes in classification tasks. Can be set later using `.set_class_map()`.
             random_state (int): 
                 The seed for the random number of generator for reproducibility.
@@ -99,19 +101,26 @@ class DragonDataset(_BaseDatasetMaker):
         features_df = pandas_df[self._feature_names]
         target_series = pandas_df[target_name]
         
-        X_train_val, X_test, y_train_val, y_test = train_test_split(
-            features_df, target_series, test_size=test_size, random_state=random_state
-        )
-        val_split_size = validation_size / (1.0 - test_size)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
-        )
+        if test_size > 0.0:
+            X_train_val, X_test, y_train_val, y_test = train_test_split(
+                features_df, target_series, test_size=test_size, random_state=random_state
+            )
+        else:
+            X_train_val, X_test, y_train_val, y_test = features_df, pandas.DataFrame(), target_series, pandas.Series()
+        
+        if validation_size > 0.0:
+            val_split_size = validation_size / (1.0 - test_size)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
+            )
+        else:
+            X_train, X_val, y_train, y_val = X_train_val, pandas.DataFrame(), y_train_val, pandas.Series()
         
         self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
         self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
         
         # --- label_dtype logic ---
-        if kind == MLTaskKeys.REGRESSION or kind == MLTaskKeys.BINARY_CLASSIFICATION:
+        if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.AUTOENCODER]:
             label_dtype = torch.float32
         elif kind == MLTaskKeys.MULTICLASS_CLASSIFICATION:
             label_dtype = torch.int64
@@ -143,8 +152,8 @@ class DragonDataset(_BaseDatasetMaker):
                 _LOGGER.info("Features have not been scaled as specified.")
             X_train_final, X_val_final, X_test_final = X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
 
-        # --- 5. Scale Targets (Regression Only) ---
-        if kind == MLTaskKeys.REGRESSION:
+        # --- 5. Scale Targets (Regression, and Diffusion Only) ---
+        if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION]:
             if target_scaler == "fit":
                 self.target_scaler = None
                 _apply_t_scaling = True
@@ -165,7 +174,7 @@ class DragonDataset(_BaseDatasetMaker):
                 y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
                 y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
         else:
-            # No scaling for Classification targets
+            # No scaling for Classification targets or Autoencoder (features only)
             y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
             y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
             y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
@@ -179,7 +188,7 @@ class DragonDataset(_BaseDatasetMaker):
         self._attach_scalers_to_datasets()
         
         # --- 8. Set class map if classification ---
-        if self.kind != MLTaskKeys.REGRESSION:
+        if self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             if class_map is None:
                 if verbose >= 1:
                     _LOGGER.warning("No class map provided for classification task at initialization. Use `.set_class_map()`.")
@@ -190,7 +199,7 @@ class DragonDataset(_BaseDatasetMaker):
             self.class_map = dict()
 
     def set_class_map(self, class_map: dict[str, int], force_overwrite: bool=False) -> None:
-        if self.kind == MLTaskKeys.REGRESSION:
+        if self.kind not in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
             _LOGGER.warning(f"Class Map is for classifications tasks only.")
             return
         
@@ -322,13 +331,20 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         features_df = pandas_df[self._feature_names]
         target_df = pandas_df[self._target_names]
         
-        X_train_val, X_test, y_train_val, y_test = train_test_split(
-            features_df, target_df, test_size=test_size, random_state=random_state
-        )
-        val_split_size = validation_size / (1.0 - test_size)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
-        )
+        if test_size > 0.0:
+            X_train_val, X_test, y_train_val, y_test = train_test_split(
+                features_df, target_df, test_size=test_size, random_state=random_state
+            )
+        else:
+            X_train_val, X_test, y_train_val, y_test = features_df, pandas.DataFrame(), target_df, pandas.DataFrame()
+
+        if validation_size > 0.0:
+            val_split_size = validation_size / (1.0 - test_size)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
+            )
+        else:
+            X_train, X_val, y_train, y_val = X_train_val, pandas.DataFrame(), y_train_val, pandas.DataFrame()
 
         self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
         self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape

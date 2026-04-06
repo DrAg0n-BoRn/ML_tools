@@ -14,6 +14,14 @@ from ._dragon_distribution_trainer import (
     DragonDistributionTrainer
 )
 
+from ._autoencoder_trainer import (
+    DragonAutoencoderTrainer
+)
+
+from ._dit_trainer_tabular import (
+    DragonTabularDiTTrainer
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -21,7 +29,9 @@ __all__ = [
     "DragonTrainer",
     "DragonSequenceTrainer",
     "DragonDetectionTrainer",
-    "DragonDistributionTrainer"
+    "DragonDistributionTrainer",
+    "DragonAutoencoderTrainer",
+    "DragonTabularDiTTrainer"
 ]
 
 

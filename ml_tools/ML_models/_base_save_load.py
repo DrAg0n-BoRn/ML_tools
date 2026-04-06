@@ -10,8 +10,6 @@ from .._core import get_logger
 from ..path_manager import make_fullpath
 from ..keys._keys import PytorchModelArchitectureKeys, SchemaKeys
 
-from .._core._schema_load_ops import prepare_schema_from_json
-
 
 _LOGGER = get_logger("DragonModel: Save/Load")
 
@@ -128,10 +126,7 @@ class _ArchitectureBuilder(_ArchitectureHandlerMixin, nn.Module, ABC):
             
         schema_data = config.pop(SchemaKeys.SCHEMA_DICT)
         
-        # Use shared helper to prepare arguments (handles tuple/int conversion)
-        schema_kwargs = prepare_schema_from_json(schema_data)
-        
-        schema = FeatureSchema(**schema_kwargs)
+        schema = FeatureSchema.from_dict(schema_data)
         
         config['schema'] = schema
         return config

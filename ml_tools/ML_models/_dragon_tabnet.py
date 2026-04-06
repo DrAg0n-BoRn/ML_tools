@@ -211,8 +211,8 @@ class DragonTabNet(_ArchitectureBuilder):
         for step in range(self.n_steps):
             # 1. Attention
             mask = self.att_transformers[step](priors, att)
-            # 2. Accumulate sparsity loss matching original implementation
-            loss = torch.sum(torch.mul(mask, torch.log(mask + self.epsilon)), dim=1)
+            # 2. Accumulate sparsity loss matching original implementation (minimize entropy of mask)
+            loss = torch.sum(torch.mul(mask, torch.log(mask + self.epsilon)), dim=1) * -1.0
             self.regularization_loss += torch.mean(loss)
             # 3. Update Prior
             priors = torch.mul(self.gamma - mask, priors)
@@ -237,17 +237,9 @@ class DragonTabNet(_ArchitectureBuilder):
             _LOGGER.info("TabNet does not require data-aware initialization. Skipping.")
 
     def get_architecture_config(self) -> dict[str, Any]:
-        """Returns the full configuration of the model."""
-        schema_dict = {
-            'feature_names': self.schema.feature_names,
-            'continuous_feature_names': self.schema.continuous_feature_names,
-            'categorical_feature_names': self.schema.categorical_feature_names,
-            'categorical_index_map': self.schema.categorical_index_map,
-            'categorical_mappings': self.schema.categorical_mappings
-        }
-        
+        """Returns the full configuration of the model."""        
         config = {
-            SchemaKeys.SCHEMA_DICT: schema_dict,
+            SchemaKeys.SCHEMA_DICT: self.schema.to_dict(),
             'out_targets': self.out_targets,
             **self.model_hparams
         }

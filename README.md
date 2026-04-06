@@ -71,6 +71,7 @@ ML_inference
 ML_inference_sequence
 ML_inference_vision
 ML_models
+ML_models_diffusion
 ML_models_sequence
 ML_models_vision
 ML_optimization

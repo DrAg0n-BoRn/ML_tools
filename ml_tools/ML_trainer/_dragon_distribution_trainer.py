@@ -76,8 +76,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks
-        )
+            extra_callbacks=extra_callbacks)
         
         if kind not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
             raise ValueError(f"DragonDistributionTrainer only supports regression tasks. Received: '{kind}'")

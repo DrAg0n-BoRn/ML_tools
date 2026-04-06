@@ -206,6 +206,7 @@ class DragonTrainer(_BaseDragonTrainer):
     def _validation_step(self):
         self.model.eval()
         running_loss = 0.0
+        total_samples = 0
         
         with torch.no_grad():
             for features, target in self.validation_loader: # type: ignore
@@ -232,12 +233,13 @@ class DragonTrainer(_BaseDragonTrainer):
                 loss = self.criterion(output, target)
                 
                 running_loss += loss.item() * features.size(0)
+                total_samples += features.size(0)
                 
         if not self.validation_loader.dataset: # type: ignore
             _LOGGER.warning("No samples processed in _validation_step. Returning 0 loss.")
             return {PyTorchLogKeys.VAL_LOSS: 0.0}
         
-        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / len(self.validation_loader.dataset)} # type: ignore
+        logs = {PyTorchLogKeys.VAL_LOSS: running_loss / total_samples} # type: ignore
         return logs
     
     def _predict_for_eval(self, dataloader: DataLoader):

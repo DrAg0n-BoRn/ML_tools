@@ -235,8 +235,12 @@ class GhostBatchNorm1d(nn.Module):
         self.bn = nn.BatchNorm1d(num_features, momentum=momentum)
 
     def forward(self, x):
-        if self.virtual_batch_size is None or x.shape[0] <= self.virtual_batch_size:
+        # Optimize for inference and small batches by skipping chunking
+        if not self.training or self.virtual_batch_size is None or x.shape[0] <= self.virtual_batch_size:
             return self.bn(x)
+        
+        # if self.virtual_batch_size is None or x.shape[0] <= self.virtual_batch_size:
+        #     return self.bn(x)
         
         # Split into chunks
         chunks = x.chunk(int(np.ceil(x.shape[0] / self.virtual_batch_size)), 0)
@@ -888,7 +892,10 @@ class GLU_Block(nn.Module):
             self.glu_layers.append(GLU_Layer(output_dim, output_dim, fc=fc, **params))
 
     def forward(self, x):
-        scale = torch.sqrt(torch.FloatTensor([0.5]).to(x.device))
+        # math.sqrt is more efficient and avoids device placement overhead
+        scale = math.sqrt(0.5)
+        # scale = torch.sqrt(torch.FloatTensor([0.5]).to(x.device))
+        
         if self.first:  # the first layer of the block has no scale multiplication
             x = self.glu_layers[0](x)
             layers_left = range(1, self.n_glu)
