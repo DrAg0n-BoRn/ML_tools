@@ -241,19 +241,19 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_format_configuration)
             
-            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{test_metrics_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{test_metrics_path.name}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current",
                            data=test_data,
                            format_configuration=test_format_configuration)
         else:
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
             self._evaluate(save_dir=save_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
@@ -304,7 +304,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         batch_size = self._batch_size
         num_steps = 20
         
-        _LOGGER.info(f"Generating {total_samples} synthetic samples to compare against real distribution...")
+        # _LOGGER.info(f"Generating {total_samples} synthetic samples to compare against real distribution...")
         
         with torch.no_grad():
             for i in range(0, total_samples, batch_size):
@@ -389,7 +389,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                 else:
                     cat_class_maps.append(None)
 
-        _LOGGER.info("Calculating diffusion distribution metrics for tabular data...")
+        # _LOGGER.info("Calculating diffusion distribution metrics for tabular data...")
         dit_generation_metrics(
             real_num=real_num,
             gen_num=gen_num,
