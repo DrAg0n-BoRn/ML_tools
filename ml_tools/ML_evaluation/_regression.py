@@ -183,8 +183,9 @@ def multi_target_regression_metrics(
         _LOGGER.error("Number of target names must match the number of columns in y_true.")
         raise ValueError()
     
-    # --- Pre-process target names for abbreviation ---
-    target_names = [check_and_abbreviate_name(name) for name in target_names]
+    # # --- Pre-process target names for abbreviation ---
+    # Abbreviate only for plotting purposes, keep original names in the report
+    # target_names = [check_and_abbreviate_name(name) for name in target_names]
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     metrics_summary = []
@@ -207,6 +208,10 @@ def multi_target_regression_metrics(
         # print(f"  -> Evaluating target: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i]
+        
+        # abbreviate name for plotting if needed
+        name_abbreviated = check_and_abbreviate_name(name)
+        
         sanitized_name = sanitize_filename(name)
 
         # --- Calculate Metrics ---
@@ -233,7 +238,7 @@ def multi_target_regression_metrics(
         ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--') # Use config color
         ax_res.set_xlabel("Predicted Values", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_res.set_ylabel("Residuals", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
-        ax_res.set_title(f"Residual Plot for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_res.set_title(f"Residual Plot '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         
         # Apply Ticks
         ax_res.tick_params(axis='x', labelsize=xtick_size)
@@ -258,7 +263,7 @@ def multi_target_regression_metrics(
                     color=format_config.ideal_line_color) # Use config color
         ax_tvp.set_xlabel('True Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_tvp.set_ylabel('Predicted Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
-        ax_tvp.set_title(f"True vs. Predicted for '{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_tvp.set_title(f"True vs. Predicted '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         
         # Apply Ticks
         ax_tvp.tick_params(axis='x', labelsize=xtick_size)

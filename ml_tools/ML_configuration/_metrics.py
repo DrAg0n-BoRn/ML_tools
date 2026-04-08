@@ -734,7 +734,7 @@ class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
                  hist_bins: Union[int, str] = 50,
                  confidence_bins: Union[int, str] = 20,
                  cmap: str = "Blues",
-                 font_size: int = 25,
+                 font_size: int = 26,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
                  cm_font_size: int = 26) -> None:

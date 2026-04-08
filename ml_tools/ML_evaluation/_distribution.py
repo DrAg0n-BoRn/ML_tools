@@ -200,7 +200,6 @@ def multi_target_distribution_metrics(
         _LOGGER.error("Arrays must be 2D for multi-target distribution metrics.")
         raise ValueError()
     
-    target_names = [check_and_abbreviate_name(name) for name in target_names]
     format_config = config if config is not None else _BaseRegressionFormat()
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
@@ -212,6 +211,10 @@ def multi_target_distribution_metrics(
         true_i = y_true[:, i]
         mean_i = mean_pred[:, i]
         var_i = var_pred[:, i]
+        
+        # abbreviate name for plotting if needed
+        name_abbreviated = check_and_abbreviate_name(name)
+        
         sanitized_name = sanitize_filename(name)
 
         # --- Metrics ---
@@ -225,13 +228,13 @@ def multi_target_distribution_metrics(
 
         # --- Plots ---
         fig_pi, ax_pi = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
-        _plot_prediction_intervals(true_i, mean_i, var_i, ax_pi, format_config, f"Prediction Intervals '{name}'")
+        _plot_prediction_intervals(true_i, mean_i, var_i, ax_pi, format_config, f"Prediction Intervals '{name_abbreviated}'")
         plt.tight_layout()
         plt.savefig(save_dir_path / f"prediction_intervals_{sanitized_name}.svg")
         plt.close(fig_pi)
 
         fig_eu, ax_eu = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
-        _plot_error_vs_uncertainty(true_i, mean_i, var_i, ax_eu, format_config, f"Error vs. Uncertainty '{name}'")
+        _plot_error_vs_uncertainty(true_i, mean_i, var_i, ax_eu, format_config, f"Error vs. Uncertainty '{name_abbreviated}'")
         plt.tight_layout()
         plt.savefig(save_dir_path / f"error_vs_uncertainty_{sanitized_name}.svg")
         plt.close(fig_eu)

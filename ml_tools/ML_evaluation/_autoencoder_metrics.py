@@ -18,6 +18,9 @@ from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
+from ._helpers import check_and_abbreviate_name
+
+
 _LOGGER = get_logger("AutoencoderMetrics")
 
 
@@ -84,7 +87,7 @@ def autoencoder_metrics(
         # Plot Distribution of Sample-wise Reconstruction Errors
         fig_err, ax_err = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
         ax_err.hist(sample_mse, bins=format_config.hist_bins, color=format_config.hist_color, alpha=0.7, edgecolor='black')
-        ax_err.set_title("Distribution of Sample-wise Numerical Reconstruction Error", fontsize=format_config.font_size + 2)
+        ax_err.set_title("Numerical Reconstruction Error", fontsize=format_config.font_size + 2)
         ax_err.set_xlabel("Mean Squared Error per Sample", fontsize=format_config.font_size)
         ax_err.set_ylabel("Frequency", fontsize=format_config.font_size)
         
@@ -131,6 +134,9 @@ def autoencoder_metrics(
         for i, feat_name in enumerate(cat_target_names):
             y_true_c = cat_true_list[i]
             y_pred_c = cat_pred_list[i]
+            
+            # abbreviate feature name if too long for plotting
+            feat_name_abbrev = check_and_abbreviate_name(feat_name)
             
             # Calculate metrics
             acc = accuracy_score(y_true_c, y_pred_c)
@@ -200,7 +206,7 @@ def autoencoder_metrics(
                 plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
 
             # Set titles and labels with padding
-            ax_cm.set_title(f"Reconstruction CM: {feat_name}", pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size + 2)
+            ax_cm.set_title(f"Reconstruction: {feat_name_abbrev}", pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size + 2)
             ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
             ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
             
@@ -219,15 +225,34 @@ def autoencoder_metrics(
                 probs_c = cat_prob_list[i]
                 max_probs = np.max(probs_c, axis=1)
                 
+                # Clip probabilities to ensure they are within [0, 1] for plotting, in case of any numerical issues
+                max_probs = np.clip(max_probs, 0.0, 1.0)
+                
                 fig_prob, ax_prob = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
                 correct_mask = (y_true_c == y_pred_c)
                 
-                ax_prob.hist(max_probs[correct_mask], bins=format_config.confidence_bins, alpha=0.6, color='tab:green', label='Correct Reconstructions', density=True)
-                ax_prob.hist(max_probs[~correct_mask], bins=format_config.confidence_bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True)
+                correct_probs = max_probs[correct_mask]
+                incorrect_probs = max_probs[~correct_mask]
                 
-                ax_prob.set_title(f"Reconstruction Confidence Distribution: {feat_name}", fontsize=format_config.font_size)
+                # Explicitly define bin edges to prevent zero-width bins when all probabilities are 1.0
+                if isinstance(format_config.confidence_bins, int):
+                    bins = np.linspace(0.0, 1.0, format_config.confidence_bins + 1)
+                else:
+                    bins = format_config.confidence_bins
+                
+                if len(correct_probs) > 0:
+                    ax_prob.hist(correct_probs, bins=bins, alpha=0.6, color='tab:green', label='Correct Reconstructions', density=True) # type: ignore
+                if len(incorrect_probs) > 0:
+                    ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True) # type: ignore
+                
+                ax_prob.set_title(f"Reconstruction Confidence: {feat_name_abbrev}", fontsize=format_config.font_size)
                 ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.xtick_size)
                 ax_prob.set_ylabel("Density", fontsize=format_config.ytick_size)
+                
+                # Force the X-axis to display the full probability range
+                ax_prob.set_xlim(-0.1, 1.1)
+                ax_prob.set_xticks(np.arange(0.0, 1.1, 0.1))
+                
                 ax_prob.legend(fontsize=format_config.font_size - 4)
                 ax_prob.grid(True, linestyle='--', alpha=0.6)
                 

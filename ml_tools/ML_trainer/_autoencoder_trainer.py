@@ -11,7 +11,7 @@ from ..ML_configuration._metrics import FormatAutoencoderMetrics
 from ..ML_evaluation import autoencoder_metrics
 from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint
-from ..ML_callbacks._early_stop import _DragonEarlyStopping
+from ..ML_callbacks._early_stop import _DragonEarlyStopping, DragonPrecheltEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 
 from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, DragonTrainerKeys
@@ -50,11 +50,16 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             optimizer (torch.optim.Optimizer): The optimizer to use for training the model.
             device (Union[Literal['cuda', 'mps', 'cpu'],str]): The device to train on.
             checkpoint_callback (Optional[DragonModelCheckpoint]): A callback to save model checkpoints during training. Can be None to disable checkpointing.
-            early_stopping_callback (Optional[_DragonEarlyStopping]): A callback to perform early stopping based on a chosen metric. Can be None to disable early stopping.
+            early_stopping_callback (Optional[_DragonEarlyStopping]): A callback to perform early stopping based on a chosen metric. Can be None to disable early stopping. Must work with the uncertainty weighting loss technique, loss values can drop below zero.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): A callback to adjust the learning rate during training. Can be None to disable learning rate scheduling.
             extra_callbacks (Optional[list[_Callback]]): A list of any additional callbacks to use during training.
             dataloader_workers (int): The number of worker processes to use for data loading.
         """
+        # Block incompatible params
+        if isinstance(early_stopping_callback, DragonPrecheltEarlyStopping):
+            _LOGGER.error("DragonPrecheltEarlyStopping is incompatible because the uncertainty weighting loss can drop below zero.")
+            raise TypeError()
+        
         super().__init__(
             model=model,
             optimizer=optimizer,

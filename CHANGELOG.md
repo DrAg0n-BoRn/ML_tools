@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.0.2] 2026-04-08
+
+### Changed
+
+- ML_evaluation:
+    - `check_and_abbreviate_name()`, now only used for plotting purposes. The original target names are preserved in the metrics report for clarity. Enhanced logic to handle various edge cases more robustly.
+
+### Fixed
+
+- ML_trainer:
+    - `DragonAutoencoderTrainer`, added a check to block `DragonPrecheltEarlyStopping` callback that rely on monotonic loss improvements, which can be violated by the uncertainty weighting loss used in autoencoder training (loss can drop below zero).
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, added a check to handle cases where all samples are correctly reconstructed (all probabilities are 1.0), which would cause zero-width bins in the confidence histogram. Now explicitly defines bin edges from 0 to 1 to ensure proper histogram visualization even in edge cases.
+
 ## [22.0.1] 2026-04-08
 
 ### Fixed
