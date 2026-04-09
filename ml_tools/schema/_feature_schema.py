@@ -37,11 +37,16 @@ class FeatureSchema(NamedTuple):
     # Map string-to-int category values (e.g., {'color': {'red': 0, 'blue': 1}})
     categorical_mappings: Optional[dict[str, dict[str, int]]]
     
-    def to_json(self, directory: Union[str, Path], verbose: bool = True) -> None:
+    def to_json(self, directory: Union[str, Path], verbose: bool = True, save_description: bool = True) -> None:
         """
         Saves the schema as 'FeatureSchema.json' to the provided directory. 
         
         Handles conversion of Tuple->List and IntKeys->StrKeys automatically.
+        
+        Args:
+            directory: The directory where the JSON file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+            save_description: If True, also saves a summary description of the schema to a .txt file in the same directory.
         """
         # validate path
         dir_path = make_fullpath(directory, make=True, enforce="directory")
@@ -61,6 +66,10 @@ class FeatureSchema(NamedTuple):
         except (IOError, TypeError) as e:
             _LOGGER.error(f"Failed to save FeatureSchema to JSON: {e}")
             raise e
+        
+        # Optionally save a human-readable description
+        if save_description:
+            self.save_description(directory=dir_path, verbose=verbose)
     
     def to_dict(self) -> dict[str, Any]:
         """
@@ -256,7 +265,11 @@ class FeatureSchema(NamedTuple):
         
         if verbose:
             _LOGGER.info(f"All FeatureSchema artifacts saved to directory: '{directory}'")
-        
+    
+    def number_of_features(self) -> int:
+        """Returns the total number of features defined in the schema."""
+        return len(self.feature_names)
+    
     def __repr__(self) -> str:
         """Returns a concise representation of the schema's contents."""
         total = len(self.feature_names)

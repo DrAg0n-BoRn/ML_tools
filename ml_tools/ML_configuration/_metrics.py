@@ -443,6 +443,7 @@ class _BaseTabularDiffusionFormat:
                  legend_size: int = 26,
                  real_color: str = 'tab:blue',
                  gen_color: str = 'tab:orange',
+                 cmap: str = "coolwarm",
                  alpha: float = 0.6) -> None:
         """
         Initializes the formatting configuration for tabular diffusion metrics.
@@ -454,11 +455,18 @@ class _BaseTabularDiffusionFormat:
             legend_size (int): Font size for plot legends.
             real_color (str): Matplotlib color for the real data distributions.
             gen_color (str): Matplotlib color for the generated data distributions.
+            cmap (str): The matplotlib colormap name for the correlation difference heatmap.
+                - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
+                - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
             alpha (float): Alpha transparency for the overlaid plots.
         
         <br>
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+        
+        <br>
+        
+        ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
         self.font_size = font_size
         self.xtick_size = xtick_size
@@ -467,6 +475,7 @@ class _BaseTabularDiffusionFormat:
         self.real_color = real_color
         self.gen_color = gen_color
         self.alpha = alpha
+        self.cmap = cmap
 
     def __repr__(self) -> str:
         parts = [
@@ -476,7 +485,9 @@ class _BaseTabularDiffusionFormat:
             f"legend_size={self.legend_size}",
             f"real_color='{self.real_color}'",
             f"gen_color='{self.gen_color}'",
-            f"alpha={self.alpha}"
+            f"alpha={self.alpha}",
+            f"cmap='{self.cmap}'"
+
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -760,6 +771,7 @@ class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
                  legend_size: int = 26,
                  real_color: str = 'tab:blue',
                  gen_color: str = 'tab:orange',
+                 cmap: str = "coolwarm",
                  alpha: float = 0.6) -> None:
         super().__init__(font_size=font_size,
                          xtick_size=xtick_size,
@@ -767,5 +779,6 @@ class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
                          legend_size=legend_size,
                          real_color=real_color,
                          gen_color=gen_color,
+                         cmap=cmap,
                          alpha=alpha)
         

@@ -88,17 +88,32 @@ def dit_generation_metrics(
             w_dist = wasserstein_distance(real_i, gen_i)
             ks_stat, ks_pval = ks_2samp(real_i, gen_i)
             
+            # Calculate Relative Wasserstein Distance (handle zero variance)
+            real_std = np.std(real_i)
+            rel_w_dist = w_dist / real_std if real_std > 0 else np.nan
+            
             metrics_summary.append({
                 'Feature': name,
                 'Wasserstein Distance': w_dist,
+                'Relative Wasserstein Distance': rel_w_dist,
                 'KS Statistic': ks_stat,
                 'KS p-value': ks_pval
             })
             
             # Plot KDE Overlays
             fig, ax = plt.subplots(figsize=DISTRIBUTION_PLOT_SIZE, dpi=DPI_value)
-            sns.kdeplot(real_i, fill=True, color=format_config.real_color, alpha=format_config.alpha, label='Real Data', ax=ax)
-            sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)
+            
+            # Handle zero variance for Real Data
+            if np.std(real_i) == 0:
+                ax.axvline(x=real_i[0], color=format_config.real_color, linestyle='--', linewidth=2.5, label='Real Data (Constant)')
+            else:
+                sns.kdeplot(real_i, fill=True, color=format_config.real_color, alpha=format_config.alpha, label='Real Data', ax=ax)
+            
+            # Handle zero variance for Generated Data
+            if np.std(gen_i) == 0:
+                ax.axvline(x=gen_i[0], color=format_config.gen_color, linestyle='--', linewidth=2.5, label='Generated Data (Constant)')
+            else:
+                sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)    
             
             ax.set_title(f"Distribution Comparison: {abbreviated_name}", fontsize=format_config.font_size + 2)
             ax.set_xlabel("Value", fontsize=format_config.font_size)
@@ -118,7 +133,15 @@ def dit_generation_metrics(
         csv_path = save_dir_path / "continuous_generation_summary.csv"
         summary_df.to_csv(csv_path, index=False)
         _LOGGER.info(f"🔢 Continuous distribution summary saved to '{csv_path.name}'")
-        overall_report_lines.append(f"Average Wasserstein Distance: {summary_df['Wasserstein Distance'].mean():.4f}")
+        
+        # Calculate averages, skipping NaNs automatically with pandas .mean()
+        avg_w_dist = summary_df['Wasserstein Distance'].mean()
+        avg_rel_w_dist = summary_df['Relative Wasserstein Distance'].mean()
+        avg_ks_stat = summary_df['KS Statistic'].mean()
+        
+        overall_report_lines.append(f"Average Wasserstein Distance: {avg_w_dist:.4f}")
+        overall_report_lines.append(f"Average Relative Wasserstein Distance: {avg_rel_w_dist:.4f}")
+        overall_report_lines.append(f"Average KS Statistic: {avg_ks_stat:.4f}")
 
     # ==========================================
     # 2. Categorical Features (Proportions)
@@ -230,7 +253,7 @@ def dit_generation_metrics(
         sns.heatmap(corr_diff_abs, 
                     annot=show_annotations, 
                     fmt=".2f", 
-                    cmap="Reds", 
+                    cmap=format_config.cmap, 
                     cbar_kws={'label': 'Absolute Correlation Difference'},
                     ax=ax,
                     vmin=0, vmax=1.0)
@@ -250,3 +273,74 @@ def dit_generation_metrics(
     report_path = save_dir_path / "global_generation_report.txt"
     report_path.write_text(report_string, encoding="utf-8")
     _LOGGER.info(f"🌎 Global generation report saved to '{report_path.name}'")
+
+
+# Metrics explanation:
+"""
+We generally want to answer two main questions: 
+    1. Do the individual features look realistic? (Marginal Distributions)
+    2. Do the features interact with each other realistically? (Multivariate Relationships).
+
+1. Marginal Distributions: Categorical Data
+
+    1.1 Total Variation Distance (TVD):
+    
+    Lower is better
+    
+    - A measure of the difference between two discrete probability distributions (categorical features).
+    - When looking at a bar chart of the "Real" categories overlapping with the "Generated" categories. 
+    TVD is exactly half of the sum of the absolute differences between the heights of those bars.
+    - TVD ranges from 0 to 1, where 0 means the distributions are identical and 1 means they are completely different.
+
+2. Marginal Distributions: Continuous Data
+    
+    2.1 Wasserstein Distance (Earth Mover's Distance):
+    
+    Lower is better
+    
+    - A metric for continuous features that measures the minimum "cost" 
+    required to transform the generated distribution into the real distribution.
+    - Imagine the real distribution as a specific landscape of dirt piles, and the generated distribution as a different landscape. 
+    The Wasserstein distance calculates the minimum amount of "dirt" you have to move, 
+    multiplied by the distance you have to move it, to make the generated landscape look exactly like the real one.
+    - Ranges from 0 to infinity, where 0 means the distributions are identical.
+    
+    2.2 Kolmogorov-Smirnov (KS) Statistic:
+    
+    Lower is better
+    
+    - A metric that compares the Cumulative Distribution Functions (CDFs) of two continuous arrays.
+    - Look at the CDF curves (which start at 0 and climb to 100%). 
+    The KS Statistic is simply the maximum vertical gap between the real data's curve and the generated data's curve at any single point.
+    - Ranges from 0 to 1, where 0 means the distributions are identical. A higher KS statistic indicates a greater difference between the two distributions.
+    
+    2.3 KS p-value:
+    
+    Higher is better (ideally > 0.05)
+    
+    - The statistical confidence level accompanying the KS Statistic. 
+    It tests the "null hypothesis" that both your real and generated samples were drawn from the exact same underlying distribution.
+    - A high p-value (commonly above 0.05) means you fail to reject the null hypothesis, 
+    suggesting that the real and generated data could plausibly come from the same distribution (what we want).
+    - A low p-value means you reject the null hypothesis, indicating a statistically significant difference between the distributions.
+    - NOTE: Large datasets tend to yield very low p-values. In practice, it's often more informative to look at the KS Statistic itself rather than relying solely on the p-value for large samples.
+
+3. Multivariate Relationships: Continuous Data
+
+    3.1 Correlation Matrix Mean Absolute Error (MAE):
+    
+    Lower is better
+    
+    - The average absolute difference between the correlation matrix of the real data and the correlation matrix of the generated data.
+    - If Feature A and Feature B have a correlation of 0.8 in the real data, but a correlation of 0.6 in the generated data, the absolute error is 0.2.
+    - A lower MAE indicates that the generated data better captures the relationships between features as observed in the real data.
+
+    3.2 Correlation Matrix Mean Squared Error (MSE):
+    
+    Lower is better
+    
+    - Similar to MAE but squares the differences before averaging, which penalizes larger errors more heavily.
+    - A lower MSE indicates that the generated data better captures the relationships between features, 
+    with a stronger emphasis on avoiding large discrepancies in correlations compared to the real data.
+    
+"""

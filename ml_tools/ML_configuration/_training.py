@@ -27,7 +27,7 @@ class DragonTrainingConfig(_BaseModelParams):
     
     Accepts arbitrary keyword arguments which are set as instance attributes.
     """
-    def __init__(self,
+    def __init__(self, *, #enforce keyword args for core params
                  validation_size: float,
                  test_size: float,
                  initial_learning_rate: float,
@@ -36,8 +36,16 @@ class DragonTrainingConfig(_BaseModelParams):
                  device: str,
                  finalized_filename: str,
                  random_state: int = 101,
+                 # optional targets
+                 targets: Optional[Union[list[str], str]] = None,
+                 # optional for callbacks
+                 weight_decay: Optional[float] = None,
+                 early_stop_patience: Optional[int] = None,
+                 scheduler_patience: Optional[int] = None,
+                 scheduler_lr_factor: Optional[float] = None,
+                 monitor_metric: Optional[Union[Literal["Validation Loss"], Literal["Training Loss"], str]] = None,
                  **kwargs: Any) -> None:
-        """  
+        """
         Args:
             validation_size (float): Proportion of data for validation set.
             test_size (float): Proportion of data for test set.
@@ -47,6 +55,12 @@ class DragonTrainingConfig(_BaseModelParams):
             device (str): Device to run training on.
             finalized_filename (str): Filename for the Dragon ML Finalized-file.
             random_state (int): Seed for reproducibility.
+            targets (List[str] | str | None): Optional list of target column names or a single target name.
+            weight_decay (float | None): Optional weight decay for optimizers.
+            early_stop_patience (int | None): Optional patience for early stopping.
+            scheduler_patience (int | None): Optional patience for learning rate scheduler.
+            scheduler_lr_factor (float | None): Optional factor for reducing learning rate in scheduler.
+            monitor_metric (str | None): Optional metric to monitor for callbacks (e.g., "Validation Loss").
             **kwargs: Additional training parameters as key-value pairs.
         """
         self.validation_size = validation_size
@@ -56,7 +70,12 @@ class DragonTrainingConfig(_BaseModelParams):
         self.device = device
         self.finalized_filename = finalized_filename
         self.random_state = random_state        
-        
+        self.targets = targets
+        self.weight_decay = weight_decay
+        self.early_stop_patience = early_stop_patience
+        self.scheduler_patience = scheduler_patience
+        self.scheduler_lr_factor = scheduler_lr_factor
+        self.monitor_metric = monitor_metric
         # validate task
         if task not in MLTaskKeys.ALL_TASKS:
             _LOGGER.error(f"Invalid task '{task}'. Must be one of: {MLTaskKeys.ALL_TASKS}")

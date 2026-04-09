@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.2.0] 2026-04-09
+
+### Changed
+
+- ML_evaluation:
+    - `dit_generation_metrics()`, added relative Wasserstein Distance to the report.
+
+- ML_configuration:
+    - `FormatTabularDiffusionMetrics`, added `cmap` parameter for correlation difference heatmap customization.
+    - `DragonTrainingConfig`, added support for extra optional configuration parameters for better flexibility and future-proofing.
+
+- schema:
+    - `FeatureSchema.to_json()`, added `save_description` parameter to optionally save a summary description of the schema alongside the JSON file.
+
+### Added
+
+- schema:
+    - `FeatureSchema.number_of_features()`, Returns the total number of features defined in the schema as an integer.
+
 ## [22.1.3] 2026-04-09
 
 ### Fixed
