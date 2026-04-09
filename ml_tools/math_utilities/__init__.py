@@ -3,6 +3,8 @@ from ._math_utilities import (
     threshold_binary_values,
     threshold_binary_values_batch,
     discretize_categorical_values,
+    handle_negative_values,
+    round_float_values
 )
 
 
@@ -14,6 +16,8 @@ __all__ = [
     "threshold_binary_values",
     "threshold_binary_values_batch",
     "discretize_categorical_values",
+    "handle_negative_values",
+    "round_float_values"
 ]
 
 

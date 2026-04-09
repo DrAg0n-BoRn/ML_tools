@@ -3,7 +3,6 @@ import torch
 from torch import nn
 
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
-from ..ML_utilities import validate_torch_device
 from ..ML_utilities._artifact_finder import DragonArtifactFinder
 from ..ML_finalize_handler import FinalizedFileHandler
 
@@ -92,14 +91,12 @@ class DragonDiT(_ArchitectureHandlerMixin, nn.Module):
     @torch.no_grad()
     def generate_sequence(self, 
                           batch_size: int, 
-                          device: str, 
                           num_steps: int = 20) -> torch.Tensor:
         """
         Generates new discrete token sequences from pure noise using Flow Matching. Must be decoded back to the original feature space using the tokenizer's decoder.
         
         Args:
             batch_size (int): The number of samples to generate in the batch.
-            device (str): The device to perform generation on. (e.g., "cuda:0", "mps", "cpu"). Will be validated for compatibility.
             num_steps (int): The number of steps to use in the ODE solver.
         
         Returns:
@@ -109,7 +106,10 @@ class DragonDiT(_ArchitectureHandlerMixin, nn.Module):
         
         _LOGGER.info(f"Generating a batch of {batch_size} samples with {self.seq_len} features using Flow Matching with {num_steps} steps.")
         
-        validated_device = validate_torch_device(device)
+        # validated_device = validate_torch_device(device)
+        # Dynamically infer the device from the model's own parameters
+        validated_device = next(self.parameters()).device
+        
         
         # 1. Start with pure Gaussian noise at t = 0
         # x_t shape: [batch_size, seq_len, embed_dim]

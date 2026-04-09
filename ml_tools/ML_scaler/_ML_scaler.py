@@ -134,7 +134,8 @@ class DragonScaler:
             _LOGGER.warning("Scaler has not been fitted. Returning data without transformation.")
             return data
         
-        data_clone = data.clone()
+        # Clone and convert to float for safe arithmetic operations
+        data_clone = data.clone().float()
         
         # Robust check: If data is 1D, assume it's a single feature/target column and reshape it to (N, 1) for the operation, then reshape back.
         input_is_1d = (data_clone.ndim == 1)
@@ -167,7 +168,8 @@ class DragonScaler:
             _LOGGER.warning("Scaler has not been fitted. Returning data without inverse transformation.")
             return data
         
-        data_clone = data.clone()
+        # Clone and convert to float for safe arithmetic operations
+        data_clone = data.clone().float()
         
         input_is_1d = (data_clone.ndim == 1)
         if input_is_1d:

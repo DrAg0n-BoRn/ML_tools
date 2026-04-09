@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.3.0] 2026-04-10
+
+### Added
+
+- math_utilities:
+    - `handle_negative_values()`, Sets negative values in numeric columns of a pandas DataFrame to zero.
+    - `round_float_values()`, Rounds float values in a pandas DataFrame to a specified number of decimal places.
+
+### Changed
+
+- ML_scaler:
+    - `DragonScaler`, casts data to float before operations to ensure a defensive implementation in case a non-float tensor is passed.
+
+- ML_models_diffusion:
+    - `DragonDiT` and `DragonDiTGuided`, in the `generate_sequence()` method, the device is now dynamically inferred from the model's own parameters instead of being passed as an argument. This ensures that generation always occurs on the correct device without requiring explicit specification.
+
 ## [22.2.0] 2026-04-09
 
 ### Changed

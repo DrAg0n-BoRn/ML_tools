@@ -2,7 +2,6 @@ from typing import Any, Optional
 import torch
 from torch import nn
 
-from ..ML_utilities import validate_torch_device
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 from ..ML_scaler._ML_scaler import DragonScaler
 from ..ML_utilities._artifact_finder import DragonArtifactFinder
@@ -126,7 +125,6 @@ class DragonDiTGuided(_ArchitectureHandlerMixin, nn.Module):
     @torch.no_grad()
     def generate_sequence(self, 
                           batch_size: int, 
-                          device: str, 
                           target_value: float, 
                           num_steps: int = 20, 
                           guidance_scale: float = 3.0) -> torch.Tensor:
@@ -135,7 +133,6 @@ class DragonDiTGuided(_ArchitectureHandlerMixin, nn.Module):
         
         Args:
             batch_size (int): The number of samples to generate in the batch.
-            device (str): The device to perform generation on. (e.g., "cuda:0", "mps", "cpu"). Will be validated for compatibility.
             target_value (float): The regression target value to condition on during generation.
                 - If a `target_scaler` is set, the value provided will be automatically scaled before being fed into the model.
                 - Else, it is assumed that the value has been pre-scaled to match the scale used during training.
@@ -152,13 +149,16 @@ class DragonDiTGuided(_ArchitectureHandlerMixin, nn.Module):
         """
         self.eval()
         
-        validated_device = validate_torch_device(device)
+        # validated_device = validate_torch_device(device)
+        # Dynamically infer the device from the model's own parameters
+        validated_device = next(self.parameters()).device
         
         _LOGGER.info(f"Generating a batch of {batch_size} samples with {self.seq_len} features using Classifier-Free Guidance with guidance scale {guidance_scale} and {num_steps} steps.")
         
         # Scale the target value if a scaler is set
         if self.target_scaler is not None:
-            target_value_scaled = self.target_scaler.transform(torch.tensor([[target_value]], device=validated_device)).item()
+            # cast value
+            target_value_scaled = self.target_scaler.transform(torch.tensor([[target_value]], device=validated_device, dtype=torch.float32)).item()
             _LOGGER.info(f"Target value {target_value} scaled to {target_value_scaled} using the provided target scaler.")
         else:
             target_value_scaled = target_value

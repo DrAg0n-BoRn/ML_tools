@@ -14,6 +14,8 @@ __all__ = [
     "threshold_binary_values",
     "threshold_binary_values_batch",
     "discretize_categorical_values",
+    "handle_negative_values",
+    "round_float_values"
 ]
 
 
@@ -259,3 +261,102 @@ def discretize_categorical_values(
     else:
         return final_output
 
+
+def handle_negative_values(df: pd.DataFrame,
+                           columns: Optional[list[str]] = None) -> pd.DataFrame:
+    """
+    Handle negative values in the DataFrame by setting them to zero.
+    
+    Safely copies the data and validates input.
+    
+    Args:
+        df (pd.DataFrame): The input DataFrame to be processed.
+        columns (list[str] | None): Optional list of column names to apply the thresholding to. If None, all numeric columns will be processed.
+    
+    Returns:
+        pd.DataFrame: A new DataFrame with negative values set to zero.
+    """
+    # Guard 1: Ensure input is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error(f"Expected a pandas DataFrame, got {type(df).__name__}.")
+        raise TypeError()
+        
+    # Guard 2: Handle empty DataFrames gracefully
+    if df.empty:
+        _LOGGER.warning("Input DataFrame is empty. Returning an empty DataFrame.")
+        return df.copy()
+        
+    # Create a deep copy to prevent in-place modifications of the original df
+    df_safe = df.copy()
+    
+    # Identify numeric columns
+    all_numeric_cols = set(df_safe.select_dtypes(include=['number']).columns)
+    
+    if columns is not None:
+        target_cols = []
+        for col in columns:
+            if col not in df_safe.columns:
+                _LOGGER.warning(f"Column '{col}' does not exist in the DataFrame. Skipping.")
+            elif col not in all_numeric_cols:
+                _LOGGER.warning(f"Column '{col}' is not numerical. Skipping.")
+            else:
+                target_cols.append(col)
+    else:
+        target_cols = list(all_numeric_cols)
+    
+    if target_cols:
+        df_safe[target_cols] = df_safe[target_cols].clip(lower=0.0)
+    
+    return df_safe
+
+
+def round_float_values(df: pd.DataFrame, 
+                       n: int = 2, 
+                       columns: Optional[list[str]] = None) -> pd.DataFrame:
+    """
+    Round numerical values in the DataFrame to 'n' decimal places.
+    
+    Safely copies the data and validates input.
+    
+    Args:
+        df (pd.DataFrame): The input DataFrame to be processed.
+        n (int): Number of decimal places to round to. Default is 2.
+        columns (Optional[list[str]]): Specific columns to process. If None, applies to all numeric columns.
+    
+    Returns:
+        pd.DataFrame: A new DataFrame with rounded numerical values.
+    """
+    # Guard 1: Ensure input is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error(f"Expected a pandas DataFrame, got {type(df).__name__}.")
+        raise TypeError()
+        
+    # Guard 2: Handle empty DataFrames gracefully
+    if df.empty:
+        _LOGGER.warning("Input DataFrame is empty. Returning an empty DataFrame.")
+        return df.copy()
+        
+    # Create a deep copy to prevent in-place modifications
+    df_safe = df.copy()
+    
+    # Identify all numeric columns
+    all_numeric_cols = set(df_safe.select_dtypes(include=['number']).columns)
+    
+    # Validate requested columns
+    if columns is not None:
+        target_cols = []
+        for col in columns:
+            if col not in df_safe.columns:
+                _LOGGER.warning(f"Column '{col}' does not exist in the DataFrame. Skipping.")
+            elif col not in all_numeric_cols:
+                _LOGGER.warning(f"Column '{col}' is not numerical. Skipping.")
+            else:
+                target_cols.append(col)
+    else:
+        target_cols = list(all_numeric_cols)
+    
+    # Apply rounding to the validated columns
+    if target_cols:
+        df_safe[target_cols] = df_safe[target_cols].round(n)
+    
+    return df_safe
