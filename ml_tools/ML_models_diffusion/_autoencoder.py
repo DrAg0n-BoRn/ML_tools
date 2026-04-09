@@ -262,8 +262,7 @@ class DragonAutoencoder(_ArchitectureBuilder):
         Expects the artifact finder to locate the following files:
             - Model architecture JSON
             - Model weights .pth
-            - FeatureSchema JSON
-            - (Optional but recommended) Scaler .pth
+            - (Optional but recommended) Scaler .pth with feature scaler.
         """
         # Validation: Ensure required files exist
         if not artifact_finder.model_architecture_path:
@@ -272,18 +271,8 @@ class DragonAutoencoder(_ArchitectureBuilder):
         if not artifact_finder.weights_path:
             _LOGGER.error(f"Model weights file not found at expected path.")
             raise FileNotFoundError()
-        if not artifact_finder.feature_schema:
-            _LOGGER.error(f"Feature schema file not loaded by the artifact finder.")
-            raise FileNotFoundError()
         
-        with open(artifact_finder.model_architecture_path, "r") as f:
-            config = json.load(f)
-        
-        schema = artifact_finder.feature_schema
-        embedding_dim = config["embedding_dim"]
-        fourier_sigma = config.get("fourier_sigma", 1.0)
-        
-        model = cls(schema=schema, embedding_dim=embedding_dim, fourier_sigma=fourier_sigma)
+        model: 'DragonAutoencoder' = cls.load_architecture(artifact_finder.model_architecture_path, verbose=False) # type: ignore
         
         state_dict = torch.load(artifact_finder.weights_path, map_location="cpu")
         model.load_state_dict(state_dict)
@@ -301,7 +290,7 @@ class DragonAutoencoder(_ArchitectureBuilder):
                 _LOGGER.warning(f"No scaler artifact found.")
         
         if verbose >= 2:
-            base_msg = f"Model loaded with architecture: embedding_dim={embedding_dim} and {schema}."
+            base_msg = f"Model architecture and weights successfully loaded."
             if model.scaler is not None:
                 base_msg += f" Feature scaler successfully loaded and set."
             _LOGGER.info(base_msg)
