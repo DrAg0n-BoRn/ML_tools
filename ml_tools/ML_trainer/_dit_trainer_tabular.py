@@ -32,6 +32,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                  token_embedder: DragonAutoencoder,
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
+                 save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'], str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint] = None,
@@ -49,6 +50,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             token_embedder (DragonAutoencoder): A pretrained autoencoder used to embed tabular features into a continuous latent space suitable for diffusion modeling. The embedder's weights are frozen during DiT training.
             train_dataset (Dataset): The training dataset containing tabular data. Each sample should be a tensor of shape (num_features,) or a tuple (features, target) if using the guided DiT.
             validation_dataset (Dataset): The validation dataset for evaluating model performance during training. Should have the same format as the training dataset.
+            save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created for organization.
             optimizer (torch.optim.Optimizer): The optimizer used for training the DiT model.
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device on which to train the model.
             checkpoint_callback (Optional[DragonModelCheckpoint]): Optional callback for saving model checkpoints during training.
@@ -66,7 +68,8 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks
+            extra_callbacks=extra_callbacks,
+            save_dir=save_dir
         )
         self.token_embedder = token_embedder
         self.train_dataset = train_dataset
@@ -215,7 +218,6 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         return {PyTorchLogKeys.VAL_LOSS: running_loss / total_samples}
 
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[FormatTabularDiffusionMetrics] = None,
@@ -224,21 +226,21 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         Evaluates the diffusion model by comparing generated distributions against the real distributions.
         
         Args:
-            save_dir (Union[str, Path]): Directory where evaluation metrics and artifacts will be saved.
             model_checkpoint (Union[Path, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             test_data (Optional[Union[DataLoader, Dataset]]): Optional test dataset to evaluate on after validation. If None, only validation evaluation will be performed.
             val_format_configuration (Optional[FormatTabularDiffusionMetrics]): Configuration for formatting validation metrics.
             test_format_configuration (Optional[FormatTabularDiffusionMetrics]): Configuration for formatting test metrics.
         """
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
 
         if test_data is not None:
             if not isinstance(test_data, (DataLoader, Dataset)):
                 _LOGGER.error(f"Invalid type for 'test_data': '{type(test_data)}'.")
                 raise ValueError()
             
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
@@ -253,8 +255,8 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                            data=test_data,
                            format_configuration=test_format_configuration)
         else:
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_format_configuration)
@@ -404,14 +406,12 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
 
     def finalize_model_training(self, 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
-                                save_dir: Union[str, Path],
                                 finalize_config: FinalizeTabularDiffusion):
         """
         Saves a finalized, inference-ready DiT model state to a .pth file.
         
         Args:
             model_checkpoint (Union[Path, Literal['best', 'current']]): Which checkpoint to load for finalization. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
-            save_dir (Union[str, Path]): Directory where the finalized model state will be saved.
             finalize_config (FinalizeTabularDiffusion): Configuration object containing metadata about the training run and instructions for finalization.
         """
         self._load_model_state_wrapper(model_checkpoint)
@@ -424,6 +424,6 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )

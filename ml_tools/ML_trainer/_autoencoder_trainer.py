@@ -33,6 +33,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
                  model: DragonAutoencoder, 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
+                 save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
@@ -47,6 +48,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             model (DragonAutoencoder): The autoencoder model to be trained.
             train_dataset (Dataset): The dataset to use for training. Should yield either (features) or (features, target) tuples, but only the features will be used for training since this is an unsupervised task.
             validation_dataset (Dataset): The dataset to use for validation during training. Should have the same format as train_dataset.
+            save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             optimizer (torch.optim.Optimizer): The optimizer to use for training the model.
             device (Union[Literal['cuda', 'mps', 'cpu'],str]): The device to train on.
             checkpoint_callback (Optional[DragonModelCheckpoint]): A callback to save model checkpoints during training. Can be None to disable checkpointing.
@@ -68,8 +70,9 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks)
-        
+            extra_callbacks=extra_callbacks,
+            save_dir=save_dir)
+
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.kind = MLTaskKeys.AUTOENCODER
@@ -149,7 +152,6 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         return logs
 
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[FormatAutoencoderMetrics] = None,
@@ -158,14 +160,15 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         Evaluates the autoencoder's reconstruction performance.
         
         Args:
-            save_dir (Union[str, Path]): Directory where evaluation metrics and artifacts will be saved.
             model_checkpoint (Union[Path, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             test_data (Optional[Union[DataLoader, Dataset]]): Optional test dataset to evaluate on after validation. If None, only validation evaluation will be performed.
             val_format_configuration (Optional[FormatAutoencoderMetrics]): Configuration for formatting validation metrics and artifacts. If None, default formatting will be applied.
             test_format_configuration (Optional[FormatAutoencoderMetrics]): Configuration for formatting test metrics and artifacts. If None, default formatting will be applied.
         """
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
         
         # Validate val_format_configuration
         if val_format_configuration is not None:
@@ -192,7 +195,6 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
                 _LOGGER.error(f"Invalid type for 'test_data': '{type(test_data)}'.")
                 raise ValueError()
             
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
@@ -207,8 +209,8 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
                            data=test_data,
                            format_configuration=validated_test_format_config)
         else:
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=validated_val_format_config)
@@ -300,14 +302,12 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
 
     def finalize_model_training(self, 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
-                                save_dir: Union[str, Path],
                                 finalize_config: FinalizeAutoencoder):
         """
         Saves a finalized, inference-ready model state to a .pth file.
         
         Args:
             model_checkpoint (Union[Path, Literal['best', 'current']]): Which checkpoint to load for finalization. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
-            save_dir (Union[str, Path]): Directory where the finalized model state will be saved.
             finalize_config (FinalizeAutoencoder): Configuration object containing metadata about the training run and instructions for finalization.
         """
         self._load_model_state_wrapper(model_checkpoint)
@@ -320,7 +320,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )
 

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from typing import Union, Literal
+from typing import Literal, Optional
 from pathlib import Path
 
 from ..path_manager import make_fullpath
@@ -23,23 +23,21 @@ class DragonModelCheckpoint(_Callback):
     Saves the model weights, optimizer state, LR scheduler state (if any), and epoch number to a directory with automated filename generation and rotation. 
     """
     def __init__(self, 
-                 save_dir: Union[str, Path], 
                  monitor: Literal["Training Loss", "Validation Loss", "both"] = "Validation Loss",
                  save_three_best: bool = True, 
                  mode: Literal['min', 'max'] = 'min', 
                  verbose: int = 0):
         """
         Args:
-            save_dir (str): Directory where checkpoint files will be saved.
             monitor (str): Metric to monitor. If "both", the sum of training loss and validation loss is used.
             save_three_best (bool): 
                 - If True, keeps the top 3 best checkpoints found during training (based on metric).
                 - If False, keeps the 3 most recent checkpoints (rolling window).
-            mode (str): One of {'min', 'max'}.
+            mode (str): One of {'min', 'max'}. Condition to determine if the monitored metric is improving. 'min' means lower is better, 'max' means higher is better.
             verbose (int): Verbosity mode.
         """
         super().__init__()
-        self.save_dir = make_fullpath(save_dir, make=True, enforce="directory")
+        self.save_dir: Optional[Path] = None # Will be set by Trainer when callback is attached, based on Trainer's save_dir and a subdirectory for checkpoints.
         
         # Standardize monitor key
         if monitor == "Training Loss":
@@ -126,6 +124,11 @@ class DragonModelCheckpoint(_Callback):
 
     def _save_checkpoint_file(self, epoch, current_score):
         """Helper to physically save the file."""
+        # Ensure save_dir is set by Trainer and exists
+        if self.save_dir is None:
+            _LOGGER.error("Checkpoint save_dir is not set. Ensure the Trainer sets this when attaching the callback.")
+            raise ValueError()
+        
         self.save_dir.mkdir(parents=True, exist_ok=True)
         
         # Create filename

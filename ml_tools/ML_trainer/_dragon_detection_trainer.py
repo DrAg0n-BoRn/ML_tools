@@ -32,6 +32,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  collate_fn: Callable, 
+                 save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  checkpoint_callback: Optional[DragonModelCheckpoint],
@@ -49,6 +50,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             train_dataset (Dataset): The training dataset.
             validation_dataset (Dataset): The testing/validation dataset.
             collate_fn (Callable): The collate function from `ObjectDetectionDatasetMaker.collate_fn`.
+            save_dir (str | Path): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
             dataloader_workers (int): Subprocesses for data loading.
@@ -69,7 +71,8 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks)
+            extra_callbacks=extra_callbacks,
+            save_dir=save_dir)
         
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset # <-- Renamed
@@ -178,14 +181,12 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         return logs
     
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model using object detection mAP metrics.
 
         Args:
-            save_dir (str | Path): Directory to save all reports and plots.
             model_checkpoint (Path | "best" | "current"): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
@@ -194,7 +195,9 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         """
         # Validate inputs using base helpers
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
         
         # Validate test data and dispatch
         if test_data is not None:
@@ -203,24 +206,23 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                 raise ValueError()
             test_data_validated = test_data
             
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None) # 'None' triggers use of self.test_dataset
             
             # Dispatch test set
-            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{test_metrics_path.name}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current", # Use 'current' state after loading checkpoint once
                            data=test_data_validated)
         else:
             # Dispatch validation set
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None) # 'None' triggers use of self.test_dataset
     
@@ -299,7 +301,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         )
     
     def finalize_model_training(self, 
-                                save_dir: Union[str, Path], 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: FinalizeObjectDetection
                                 ):
@@ -309,7 +310,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         This method saves the model's `state_dict` and the final epoch number.
 
         Args:
-            save_dir (Union[str, Path]): The directory to save the finalized model.
             model_checkpoint (Union[Path, Literal["best", "current"]]):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
@@ -336,6 +336,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         # Save using base helper
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )

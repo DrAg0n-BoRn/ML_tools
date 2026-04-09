@@ -13,7 +13,7 @@ from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
 
 from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchCheckpointKeys, MagicWords
+from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
 from .._core import get_logger
 
 
@@ -36,7 +36,8 @@ class _BaseDragonTrainer(ABC):
     def __init__(self, 
                  model: nn.Module, 
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str],
+                 save_dir: Union[str, Path],
                  dataloader_workers: int = 2,
                  checkpoint_callback: Optional[DragonModelCheckpoint] = None,
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
@@ -48,6 +49,7 @@ class _BaseDragonTrainer(ABC):
         self.scheduler = None
         self.device = self._validate_device(device)
         self.dataloader_workers = dataloader_workers
+        self.training_directory_root = make_fullpath(save_dir, make=True, enforce="directory")
         
         # Callback handler
         default_callbacks = [History(), TqdmProgressBar()]
@@ -56,6 +58,9 @@ class _BaseDragonTrainer(ABC):
         if checkpoint_callback:
             default_callbacks.append(checkpoint_callback)
             self._checkpoint_callback = checkpoint_callback
+            # attach save_dir to checkpoint callback for artifact organization
+            _checkpoints_directory = make_fullpath(self.training_directory_root / DragonTrainerKeys.CHECKPOINT_DIR, make=True, enforce="directory")
+            self._checkpoint_callback.save_dir = _checkpoints_directory
         if early_stopping_callback:
             default_callbacks.append(early_stopping_callback)
         if lr_scheduler_callback:
@@ -282,7 +287,6 @@ class _BaseDragonTrainer(ABC):
         self._load_checkpoint(path=path, verbose=verbose)
 
     def fit(self, 
-            save_dir: Union[str,Path],
             epochs: int = 100, 
             batch_size: int = 10, 
             shuffle: bool = True,
@@ -293,7 +297,6 @@ class _BaseDragonTrainer(ABC):
         Returns the "History" callback dictionary.
 
         Args:
-            save_dir (str | Path): Directory to save the loss plot.
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
             shuffle (bool): Whether to shuffle the training data at each epoch.
@@ -340,7 +343,7 @@ class _BaseDragonTrainer(ABC):
         self._callbacks_hook('on_train_end')
         
         # Training History
-        plot_losses(self.history, save_dir=save_dir)
+        plot_losses(self.history, save_dir=self.training_directory_root)
         
         return self.history
 

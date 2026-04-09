@@ -38,6 +38,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  model: nn.Module, 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
+                 save_dir: Union[str, Path],
                  kind: Literal["sequence-to-sequence", "sequence-to-value"],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
@@ -56,6 +57,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
             validation_dataset (Dataset): The validation dataset.
+            save_dir (str | Path): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             kind (str): Used to redirect to the correct process ('sequence-to-sequence' or 'sequence-to-value'). 
             criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
             optimizer (torch.optim.Optimizer): The optimizer.
@@ -68,6 +70,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             model=model,
             optimizer=optimizer,
             device=device,
+            save_dir=save_dir,
             dataloader_workers=dataloader_workers,
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
@@ -247,7 +250,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[FormatSequenceValueMetrics, 
@@ -262,14 +264,16 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 - Path to a valid checkpoint for the model.
                 - If 'best', the best checkpoint will be loaded.
                 - If 'current', use the current state of the trained model.
-            save_dir (str | Path): Directory to save all reports and plots.
             test_data (DataLoader | Dataset | None): Optional Test data.
             val_format_configuration: Optional configuration for validation metrics.
             test_format_configuration: Optional configuration for test metrics.
         """
         # Validate inputs using base helpers
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
+        
         
         # Validate val configuration
         if val_format_configuration is not None:
@@ -284,7 +288,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 raise ValueError()
             test_data_validated = test_data
     
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
@@ -316,8 +319,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                            format_configuration=test_configuration_validated)
         else:
             # Dispatch validation set
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_format_configuration)
@@ -375,7 +378,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                                          config=config)
             
     def explain_captum(self,
-                       save_dir: Union[str, Path],
                        explain_dataset: Optional[Dataset] = None,
                        n_samples: int = 100,
                        feature_names: Optional[list[str]] = None,
@@ -390,7 +392,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         - For **univariate** sequences, it attributes importance to the single signal feature.
 
         Args:
-            save_dir (str | Path): Directory to save the importance plots and CSV reports.
             explain_dataset (Dataset | None): A specific dataset to sample from. If None, the 
                                             trainer's validation dataset is used.
             n_samples (int): The number of samples to use for the explanation (background + inputs).
@@ -405,6 +406,9 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         if dataset_to_use is None:
             _LOGGER.error("No dataset available for explanation.")
             return
+        
+        # set captum subdirectory
+        captum_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.CAPTUM_DIR)
 
         # Helper to sample data (same as DragonTrainer)
         def _get_samples(ds, n):
@@ -436,14 +440,13 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             model=self.model,
             input_data=input_data,
             feature_names=feature_names,
-            save_dir=save_dir,
+            save_dir=captum_save_dir,
             target_names=target_names,
             n_steps=n_steps,
             device=self.device
         )
     
     def finalize_model_training(self, 
-                                save_dir: Union[str, Path], 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: Union[FinalizeSequenceSequencePrediction, FinalizeSequenceValuePrediction]):
         """
@@ -484,7 +487,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         # Save using base helper
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )
 

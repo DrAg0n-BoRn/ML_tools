@@ -198,8 +198,12 @@ class MLTaskKeys:
 
 
 class DragonTrainerKeys:
-    VALIDATION_METRICS_DIR = "Validation_Metrics"
-    TEST_METRICS_DIR = "Test_Metrics"
+    VALIDATION_METRICS_DIR = "Evaluation_Validation"
+    TEST_METRICS_DIR = "Evaluation_Test"
+    CHECKPOINT_DIR = "Checkpoints"
+    CAPTUM_DIR = "Explain_Captum"
+    SHAP_DIR = "Explain_SHAP"
+    ATTENTION_DIR = "Explain_Attention"
 
 
 class SequenceDatasetKeys:

@@ -32,6 +32,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                  model: nn.Module, 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
+                 save_dir: Union[str, Path],
                  kind: Literal["regression", "multitarget regression"],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'], str], 
@@ -52,6 +53,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                 mean, and the second half represents the variance logits.
             train_dataset (Dataset): The training dataset.
             validation_dataset (Dataset): The validation dataset.
+            save_dir (str | Path): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             kind (str): Used to redirect to the correct process. Must be either 'regression' or 'multitarget regression'.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
@@ -76,10 +78,12 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks)
+            extra_callbacks=extra_callbacks,
+            save_dir=save_dir)
         
         if kind not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
-            raise ValueError(f"DragonDistributionTrainer only supports regression tasks. Received: '{kind}'")
+            _LOGGER.error(f"Invalid 'kind' argument: '{kind}'. Must be either {MLTaskKeys.REGRESSION} or {MLTaskKeys.MULTITARGET_REGRESSION}.")
+            raise ValueError()
 
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
@@ -220,7 +224,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                     yield mean.cpu().numpy(), var.cpu().numpy(), target.cpu().numpy()
 
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[
@@ -239,7 +242,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         and 95% MPIW) utilizing both the predicted mean and variance. 
 
         Args:
-            save_dir (str | Path): The base directory where all evaluation reports and SVG plots will be saved.
             model_checkpoint (Path | "best" | "current"): 
                 - Path to a valid `.pth` checkpoint file.
                 - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
@@ -253,7 +255,9 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                 Optional configuration to customize the appearance of the test set plots.
         """
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
         
         # Validate val configuration
         if val_format_configuration is not None:
@@ -272,10 +276,9 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                 raise ValueError()
             test_data_validated = test_data
                 
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
@@ -297,14 +300,14 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             else:
                 test_configuration_validated = None
             
-            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{test_metrics_path.name}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current",
                            data=test_data_validated,
                            format_configuration=test_configuration_validated)
         else:
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            data=None,
                            format_configuration=val_configuration_validated)
@@ -379,7 +382,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                                               config=config)
     
     def explain_captum(self,
-                       save_dir: Union[str, Path],
                        explain_dataset: Optional[Dataset] = None,
                        n_samples: int = 100,
                        feature_names: Optional[list[str]] = None,
@@ -390,7 +392,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         Explains the model's MEAN predictions using Captum's Integrated Gradients.
         
         Args:
-            save_dir (str | Path): Directory to save artifacts.
             explain_dataset (Dataset | None): Dataset to sample from. Defaults to validation set.
             n_samples (int): Number of samples to evaluate.
             feature_names (list[str] | None): Feature names. Required for Tabular tasks.
@@ -401,6 +402,9 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         if dataset_to_use is None:
             _LOGGER.error("No dataset available for explanation.")
             return
+        
+        #set subdirectory for Captum explanations
+        captum_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.CAPTUM_DIR)
 
         # Efficient sampling helper
         def _get_samples(ds, n):
@@ -449,7 +453,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             model=wrapped_model,
             input_data=input_data,
             feature_names=feature_names,
-            save_dir=save_dir,
+            save_dir=captum_save_dir,
             target_names=target_names,
             n_steps=n_steps,
             device=self.device,
@@ -458,7 +462,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
     
     def finalize_model_training(self, 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
-                                save_dir: Union[str, Path], 
                                 finalize_config: Union[FinalizeRegression, FinalizeMultiTargetRegression]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
@@ -470,7 +473,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's state as it is.
-            save_dir (str | Path): The directory to save the finalized model.
             finalize_config (object): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if self.kind == MLTaskKeys.REGRESSION and not isinstance(finalize_config, FinalizeRegression):
@@ -499,6 +501,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         # Save model file using base helper
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )

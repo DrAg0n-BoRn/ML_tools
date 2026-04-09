@@ -53,6 +53,7 @@ class DragonTrainer(_BaseDragonTrainer):
                  model: nn.Module, 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
+                 save_dir: Union[str, Path],
                  kind: Literal["regression", 
                                "binary classification", 
                                "multiclass classification", 
@@ -79,6 +80,7 @@ class DragonTrainer(_BaseDragonTrainer):
             model (nn.Module): The PyTorch model to train.
             train_dataset (Dataset): The training dataset.
             validation_dataset (Dataset): The validation dataset.
+            save_dir (str | Path): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             kind (str): Used to redirect to the correct process. 
             criterion (nn.Module | "auto"): The loss function to use. If "auto", it will be inferred from the selected task
             optimizer (torch.optim.Optimizer): The optimizer.
@@ -104,6 +106,7 @@ class DragonTrainer(_BaseDragonTrainer):
             model=model,
             optimizer=optimizer,
             device=device,
+            save_dir=save_dir,
             dataloader_workers=dataloader_workers,
             checkpoint_callback=checkpoint_callback,
             early_stopping_callback=early_stopping_callback,
@@ -352,7 +355,6 @@ class DragonTrainer(_BaseDragonTrainer):
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
     def evaluate(self, 
-                 save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
@@ -386,7 +388,6 @@ class DragonTrainer(_BaseDragonTrainer):
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
-            save_dir (str | Path): Directory to save all reports and plots.
             classification_threshold (float | None): Used for tasks using a binary approach (binary classification, binary segmentation, multilabel binary classification)
             test_data (DataLoader | Dataset | None): Optional Test data to evaluate the model performance. Validation and Test metrics will be saved to subdirectories.
             val_format_configuration (object): Optional configuration for metric format output for the validation set.
@@ -394,7 +395,9 @@ class DragonTrainer(_BaseDragonTrainer):
         """
         # Validate inputs using base helpers
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
-        save_path = self._validate_save_dir(save_dir)
+        save_path = self._validate_save_dir(self.training_directory_root)
+        
+        validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
         
         # Validate classification threshold
         if self.kind not in MLTaskKeys.ALL_BINARY_TASKS:
@@ -436,7 +439,6 @@ class DragonTrainer(_BaseDragonTrainer):
                 raise ValueError()
             test_data_validated = test_data
                 
-            validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
             # Dispatch validation set
@@ -480,8 +482,8 @@ class DragonTrainer(_BaseDragonTrainer):
                            format_configuration=test_configuration_validated)
         else:
             # Dispatch validation set
-            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{save_path.name}'")
-            self._evaluate(save_dir=save_path,
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            classification_threshold=threshold_validated,
                            data=None,
@@ -668,7 +670,6 @@ class DragonTrainer(_BaseDragonTrainer):
                                  config=config)
     
     def explain_shap(self,
-                save_dir: Union[str,Path], 
                 explain_dataset: Optional[Dataset] = None, 
                 n_samples: int = 300,
                 feature_names: Optional[list[str]] = None,
@@ -692,7 +693,6 @@ class DragonTrainer(_BaseDragonTrainer):
             n_samples (int): The number of samples to use for both background and explanation.
             feature_names (list[str] | None): Feature names. If None, the names will be extracted from the Dataset and raise an error on failure.
             target_names (list[str] | None): Target names for multi-target tasks.
-            save_dir (str | Path): Directory to save all SHAP artifacts.
             explainer_type (Literal['deep', 'kernel']): The explainer to use.
                 - 'deep': Uses shap.DeepExplainer. Fast and efficient for PyTorch models.
                 - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY slow and memory-intensive. Use with a very low 'n_samples'< 100.
@@ -779,6 +779,9 @@ class DragonTrainer(_BaseDragonTrainer):
             
         # move model to device
         self.model.to(self.device)
+        
+        # make shap subdirectory
+        shap_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.SHAP_DIR)
 
         # 3. Call the plotting function
         if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
@@ -787,7 +790,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 background_data=background_data,
                 instances_to_explain=instances_to_explain,
                 feature_names=feature_names,
-                save_dir=save_dir,
+                save_dir=shap_save_dir,
                 explainer_type=explainer_type,
                 device=self.device
             )
@@ -814,13 +817,12 @@ class DragonTrainer(_BaseDragonTrainer):
                 instances_to_explain=instances_to_explain,
                 feature_names=feature_names, # type: ignore
                 target_names=target_names, # type: ignore
-                save_dir=save_dir,
+                save_dir=shap_save_dir,
                 explainer_type=explainer_type,
                 device=self.device
             )
 
     def explain_captum(self,
-                       save_dir: Union[str, Path],
                        explain_dataset: Optional[Dataset] = None,
                        n_samples: int = 100,
                        feature_names: Optional[list[str]] = None,
@@ -834,7 +836,6 @@ class DragonTrainer(_BaseDragonTrainer):
         - **Segmentation:** Generates Spatial Heatmaps for each class.
         
         Args:
-            save_dir (str | Path): Directory to save artifacts.
             explain_dataset (Dataset | None): Dataset to sample from. Defaults to validation set.
             n_samples (int): Number of samples to evaluate.
             feature_names (list[str] | None): Feature names. 
@@ -850,6 +851,9 @@ class DragonTrainer(_BaseDragonTrainer):
         if dataset_to_use is None:
             _LOGGER.error("No dataset available for explanation.")
             return
+        
+        # make captum subdirectory
+        captum_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.CAPTUM_DIR)
 
         # Efficient sampling helper
         def _get_samples(ds, n):
@@ -904,7 +908,7 @@ class DragonTrainer(_BaseDragonTrainer):
             captum_segmentation_heatmap(
                 model=self.model,
                 input_data=input_data,
-                save_dir=save_dir,
+                save_dir=captum_save_dir,
                 target_names=target_names, # Can be None, helper handles it
                 n_steps=n_steps,
                 device=self.device
@@ -914,7 +918,7 @@ class DragonTrainer(_BaseDragonTrainer):
             captum_image_heatmap(
                 model=self.model,
                 input_data=input_data,
-                save_dir=save_dir,
+                save_dir=captum_save_dir,
                 target_names=target_names,
                 n_steps=n_steps,
                 device=self.device
@@ -926,7 +930,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 model=self.model,
                 input_data=input_data,
                 feature_names=feature_names,
-                save_dir=save_dir,
+                save_dir=captum_save_dir,
                 target_names=target_names,
                 n_steps=n_steps,
                 device=self.device,
@@ -960,7 +964,7 @@ class DragonTrainer(_BaseDragonTrainer):
 
                 yield attention_weights
     
-    def explain_attention(self, save_dir: Union[str, Path], 
+    def explain_attention(self,
                           feature_names: Optional[list[str]] = None, 
                           explain_dataset: Optional[Dataset] = None,
                           plot_n_features: int = 10):
@@ -970,13 +974,13 @@ class DragonTrainer(_BaseDragonTrainer):
         This method only works for models with models with 'has_interpretable_attention'.
 
         Args:
-            save_dir (str | Path): Directory to save the plot and summary data.
             feature_names (List[str] | None): Names for the features for plot labeling. If None, the names will be extracted from the Dataset and raise an error on failure.
             explain_dataset (Dataset, optional): A specific dataset to explain. If None, the trainer's test dataset is used.
             plot_n_features (int): Number of top features to plot.
         """
         
-        # print("\n--- Attention Analysis ---")
+        # make attention subdirectory
+        attention_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.ATTENTION_DIR)
         
         # --- Step 1: Check if the model supports this explanation ---
         if not getattr(self.model, 'has_interpretable_attention', False):
@@ -1014,7 +1018,7 @@ class DragonTrainer(_BaseDragonTrainer):
             plot_attention_importance(
                 weights=all_weights,
                 feature_names=feature_names,
-                save_dir=save_dir,
+                save_dir=attention_save_dir,
                 top_n=plot_n_features
             )
         else:
@@ -1022,7 +1026,6 @@ class DragonTrainer(_BaseDragonTrainer):
         
     def finalize_model_training(self, 
                                 model_checkpoint: Union[Path, Literal['best', 'current']],
-                                save_dir: Union[str, Path], 
                                 finalize_config: Union[FinalizeRegression,
                                                        FinalizeMultiTargetRegression,
                                                        FinalizeBinaryClassification,
@@ -1042,7 +1045,6 @@ class DragonTrainer(_BaseDragonTrainer):
                 - Path: Loads the model state from a specific checkpoint file.
                 - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's state as it is.
-            save_dir (str | Path): The directory to save the finalized model.
             finalize_config (object): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if self.kind == MLTaskKeys.REGRESSION and not isinstance(finalize_config, FinalizeRegression):
@@ -1096,7 +1098,7 @@ class DragonTrainer(_BaseDragonTrainer):
         # Save model file using base helper
         self._save_finalized_artifact(
             finalized_data=finalized_data,
-            save_dir=save_dir,
+            save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )
 

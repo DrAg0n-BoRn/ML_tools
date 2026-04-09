@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.1.0] 2026-04-09
+
+### Changed
+
+- ML_callbacks:
+    - `DragonModelCheckpoint`, does not require a save directory upon initialization. The save directory will be set by the Trainer when the callbacks are attached. Breaking change incompatible with previous versions.
+
+- ML_trainer:
+    - All trainer classes now require a save directory to be specified at initialization. This is used to set the save directory for callbacks, evaluation, and finalization handlers, ensuring all artifacts are organized in a consistent location. All methods that required a save directory now use the trainer's save directory by default, simplifying method signatures and usage. Breaking change incompatible with previous versions.
+
 ## [22.0.2] 2026-04-08
 
 ### Changed
