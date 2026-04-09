@@ -80,6 +80,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         self.kind = MLTaskKeys.DIFFUSION
         
         # Ensure token embedder weights are frozen during DiT training
+        self.token_embedder.to(self.device)
         self.token_embedder.eval()
         self.token_embedder.requires_grad_(False)
 
@@ -427,3 +428,14 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             save_dir=self.training_directory_root,
             filename=finalize_config.filename
         )
+        
+    #override device changing methods
+    def to_cpu(self):
+        """Moves the trainer, model, and token embedder to the CPU."""
+        super().to_cpu()
+        self.token_embedder.to(self.device)
+        
+    def to_device(self, device: str):
+        """Moves the trainer, model, and token embedder to the specified device."""
+        super().to_device(device)
+        self.token_embedder.to(self.device)

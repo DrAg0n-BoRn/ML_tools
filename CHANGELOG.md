@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.1.3] 2026-04-09
+
+### Fixed
+
+- ML_trainer:
+    - `DragonTabularDiTTrainer`, move tokenizer to the correct device at initialization. Override `.to_cpu()` and `.to_device()` methods to ensure the tokenizer is moved along with the model, preventing device mismatch errors during training and inference.
+
 ## [22.1.2] 2026-04-09
 
 ### Fixed
