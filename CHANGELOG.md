@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.1.2] 2026-04-09
+
+### Fixed
+
+- ML_models_diffusion:
+    - Reconstruction logic of the method `from_artifact_finder()` for the models `DragonAutoencoder`, `DragonDiT`, `DragonDiTGuided` now uses the `FinalizedFileHandler` class to load the model state dict, ensuring compatibility with the finalized-file format or raw state dicts, improving robustness.
+
 ## [22.1.1] 2026-04-09
 
 ### Fixed

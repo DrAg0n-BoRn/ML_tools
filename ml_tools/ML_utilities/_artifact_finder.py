@@ -130,7 +130,7 @@ class DragonArtifactFinder:
     
     @property
     def weights_path(self) -> Union[Path, None]:
-        """Returns the path to the state dictionary pth file."""
+        """Returns the path to the state dictionary or Finalized-File `.pth`."""
         if self._strict and self._weights_path is None:
             _LOGGER.error("No weights file loaded for Strict mode.")
             raise ValueError()

@@ -1,12 +1,13 @@
 from typing import Any
 import torch
 from torch import nn
-import json
 
-from .._core import get_logger
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 from ..ML_utilities import validate_torch_device
 from ..ML_utilities._artifact_finder import DragonArtifactFinder
+from ..ML_finalize_handler import FinalizedFileHandler
+
+from .._core import get_logger
 
 from ._dit_parts import TimeEmbedding, DiTBlockFlash
 
@@ -162,7 +163,10 @@ class DragonDiT(_ArchitectureHandlerMixin, nn.Module):
             raise FileNotFoundError()
         
         model: 'DragonDiT' = cls.load_architecture(artifact_finder.model_architecture_path, verbose=False) # type: ignore
-        model.load_state_dict(torch.load(artifact_finder.weights_path, map_location="cpu"))
+        
+        finalized_file = FinalizedFileHandler(artifact_finder.weights_path)
+        
+        model.load_state_dict(finalized_file.model_state_dict)
         model.eval()
 
         if verbose >= 2:

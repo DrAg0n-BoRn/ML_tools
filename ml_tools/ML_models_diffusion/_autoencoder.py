@@ -3,12 +3,12 @@ import torch
 from torch import nn
 import math
 import pandas as pd
-import json
 
 from ..schema import FeatureSchema
 from ..ML_scaler._ML_scaler import DragonScaler
 from ..ML_models._base_save_load import _ArchitectureBuilder
 from ..ML_utilities._artifact_finder import DragonArtifactFinder
+from ..ML_finalize_handler import FinalizedFileHandler
 
 from ..keys._keys import SchemaKeys, ScalerKeys
 from .._core import get_logger
@@ -261,7 +261,7 @@ class DragonAutoencoder(_ArchitectureBuilder):
         
         Expects the artifact finder to locate the following files:
             - Model architecture JSON
-            - Model weights .pth
+            - Model weights .pth (Finalized-file)
             - (Optional but recommended) Scaler .pth with feature scaler.
         """
         # Validation: Ensure required files exist
@@ -274,8 +274,9 @@ class DragonAutoencoder(_ArchitectureBuilder):
         
         model: 'DragonAutoencoder' = cls.load_architecture(artifact_finder.model_architecture_path, verbose=False) # type: ignore
         
-        state_dict = torch.load(artifact_finder.weights_path, map_location="cpu")
-        model.load_state_dict(state_dict)
+        finalized_file = FinalizedFileHandler(artifact_finder.weights_path)
+
+        model.load_state_dict(finalized_file.model_state_dict)
         model.eval()
         
         if artifact_finder.scaler_path is not None:
