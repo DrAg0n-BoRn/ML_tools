@@ -159,10 +159,10 @@ class DragonDiTGuided(_ArchitectureHandlerMixin, nn.Module):
         if self.target_scaler is not None:
             # cast value
             target_value_scaled = self.target_scaler.transform(torch.tensor([[target_value]], device=validated_device, dtype=torch.float32)).item()
-            _LOGGER.info(f"Target value {target_value} scaled to {target_value_scaled} using the provided target scaler.")
+            _LOGGER.info(f"Target value {target_value} scaled to {target_value_scaled:<10.4f} using the provided target scaler.")
         else:
             target_value_scaled = target_value
-            _LOGGER.info(f"No target scaler set. Assuming value {target_value_scaled} is expected by the model.")
+            _LOGGER.info(f"No target scaler set. Assuming value {target_value_scaled:<10.4f} is expected by the model.")
             
         x_t = torch.randn(batch_size, self.seq_len, self.embed_dim, device=validated_device)
         t_steps = torch.linspace(0.0, 1.0, num_steps + 1, device=validated_device)

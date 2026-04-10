@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.4.0] 2026-04-10
+
+### Changed
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot()`, function revamped to include 3 strategy options for handling varying ranges of numeric features:
+        - "value": Plots raw values (default).
+        - "log": Applies log transformation to handle skewed distributions.
+        - "scale": Applies Min-Max scaling to bring all features to the \[0, 1\] range.
+
 ## [22.3.0] 2026-04-10
 
 ### Added
