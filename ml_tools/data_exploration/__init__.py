@@ -31,7 +31,8 @@ from ._features import (
     reconstruct_one_hot,
     reconstruct_binary,
     reconstruct_multibinary,
-    filter_subset,
+    filter_subset_categorical,
+    filter_subset_continuous
 )
 
 from ._schema_ops import (
@@ -50,7 +51,6 @@ __all__ = [
     "drop_columns_with_missing_data",
     "drop_macro",
     "clean_column_names",
-    "filter_subset",
     "plot_value_distributions",
     "plot_numeric_overview_boxplot",
     "split_features_targets", 
@@ -65,6 +65,8 @@ __all__ = [
     "apply_feature_schema",
     "reconstruct_from_schema",
     "match_and_filter_columns_by_regex",
+    "filter_subset_categorical",
+    "filter_subset_continuous",
     "show_null_columns",
     "check_class_balance",
     "standardize_percentages",

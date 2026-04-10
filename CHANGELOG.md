@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.5.0] 2026-04-10
+
+### Changed
+
+- data_exploration:
+    - `filter_subset()`, function revamped and split into two separate functions for filtering based on categorical and continuous features:
+        - `filter_subset_categorical()`, Filters a DataFrame based on categorical column-value conditions.
+        - `filter_subset_continuous()`, Filters a DataFrame based on continuous column range conditions.
+
 ## [22.4.0] 2026-04-10
 
 ### Changed

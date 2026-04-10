@@ -22,7 +22,8 @@ __all__ = [
     "reconstruct_one_hot",
     "reconstruct_binary",
     "reconstruct_multibinary",
-    "filter_subset"
+    "filter_subset_categorical",
+    "filter_subset_continuous"
 ]
 
 
@@ -676,10 +677,10 @@ def reconstruct_multibinary(
     return new_df, target_columns
 
 
-def filter_subset(
+def filter_subset_categorical(
     df: pd.DataFrame,
     filters: Union[dict[str, Any], dict[str, list[Any]]],
-    drop_filter_cols: bool = True,
+    drop_filter_cols: bool = False,
     reset_index: bool = True,
     verbose: int = 3
 ) -> pd.DataFrame:
@@ -727,6 +728,65 @@ def filter_subset(
         if verbose >= 3:
             _LOGGER.info(f"Dropping filter columns: {list(filters.keys())}")
         df_filtered.drop(columns=list(filters.keys()), inplace=True)
+
+    if reset_index:
+        if verbose >= 3:
+            _LOGGER.info("Resetting index of the filtered DataFrame.")
+        df_filtered.reset_index(drop=True, inplace=True)
+
+    if verbose >= 2:
+        _LOGGER.info(f"Filtered shape: {df_filtered.shape}")
+
+    return df_filtered
+
+
+def filter_subset_continuous(
+    df: pd.DataFrame,
+    range_filters: dict[str, tuple[Optional[float], Optional[float]]],
+    drop_filter_cols: bool = False,
+    reset_index: bool = True,
+    verbose: int = 3
+) -> pd.DataFrame:
+    """
+    Filters the DataFrame based on numerical ranges for continuous columns.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        range_filters (dict[str, tuple[Optional[float], Optional[float]]]): 
+            - Dictionary where keys are column names and values are tuples of (min_value, max_value). 
+            - Use None for a one-sided bound.
+        drop_filter_cols (bool): If True, drops the columns used for filtering.
+        reset_index (bool): If True, resets the index of the resulting DataFrame.
+        verbose (int): Verbosity level.
+
+    Returns:
+        pd.DataFrame: The filtered DataFrame.
+    """
+    df_filtered = df.copy()
+
+    # Validate columns exist
+    missing_cols = [col for col in range_filters.keys() if col not in df.columns]
+    if missing_cols:
+        _LOGGER.error(f"Columns not found: {missing_cols}")
+        raise ValueError()
+
+    if verbose >= 2:
+        _LOGGER.info(f"Original shape: {df.shape}")
+
+    for col, (min_val, max_val) in range_filters.items():
+        if not is_numeric_dtype(df_filtered[col]) and verbose >= 1:
+            _LOGGER.warning(f"Column '{col}' is not numeric. Filtering may behave unexpectedly.")
+
+        if min_val is not None:
+            df_filtered = df_filtered[df_filtered[col] >= min_val]
+        
+        if max_val is not None:
+            df_filtered = df_filtered[df_filtered[col] <= max_val]
+
+    if drop_filter_cols:
+        if verbose >= 3:
+            _LOGGER.info(f"Dropping filter columns: {list(range_filters.keys())}")
+        df_filtered.drop(columns=list(range_filters.keys()), inplace=True)
 
     if reset_index:
         if verbose >= 3:
