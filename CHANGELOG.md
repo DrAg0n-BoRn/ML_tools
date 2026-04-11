@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.6.0] 2026-04-11
+
+### Changed
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot()`
+        - Replaced Min-Max scaling with Robust Scaling to better handle outliers in numeric features, which are common in tabular datasets.
+        - Automatically includes the strategy option in the saved plot filename for better organization and clarity. 
+        - Enforced X-axis tick placement for log-scaled plots to ensure proper visualization of the numeric feature distributions.
+    - `plot_correlation_heatmap()`, added guard to check for at least 2 numeric columns before attempting to generate the heatmap. If save_dir is provided, the heatmap is saved as a SVG file instead of being displayed.
+
 ## [22.5.0] 2026-04-10
 
 ### Changed
