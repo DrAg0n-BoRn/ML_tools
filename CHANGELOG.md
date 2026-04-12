@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.7.0] 2026-04-12
+
+### Added
+
+- ETL_cleaning:
+    - `verify_continuous_range()`, Verifies that all values in a specified continuous column fall within a defined range. Logs any out-of-range value found.
+
+### Changed
+
+- ETL_cleaning:
+    - `DragonColumnCleaner`, added a new parameter `verify_continuous_range` to specify a range for continuous value verification as part of the cleaning process. It only triggers when using the method `.preview()`.
+
 ## [22.6.0] 2026-04-11
 
 ### Changed

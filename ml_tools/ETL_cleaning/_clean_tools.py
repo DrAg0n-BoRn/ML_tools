@@ -14,6 +14,7 @@ _LOGGER = get_logger("ETL Clean Tools")
 __all__ = [
     "save_unique_values",
     "save_category_counts",
+    "verify_continuous_range"
 ]
 
 
@@ -235,3 +236,60 @@ def save_category_counts(csv_path_or_df: Union[str, Path, pl.DataFrame],
              counter += 1
 
     _LOGGER.info(f"{counter} distribution files created.")
+
+
+################ Continuous Range Verification #################
+def verify_continuous_range(data: Union[pl.Series, pl.DataFrame], 
+                            min_max: tuple[Optional[float], Optional[float]]) -> None:
+    """
+    Verifies that all values in the provided Polars Series or single-column DataFrame fall within the specified min and max range.
+    
+    Args:
+        data (pl.Series | pl.DataFrame): The data to verify. If a DataFrame is provided, it must have exactly one column.
+        min_max (tuple[float | None, float | None]): A tuple containing the minimum and maximum values for the range. 
+            - Use None for either min or max to enforce only one side of the range.
+    """
+    if isinstance(data, pl.DataFrame):
+        if len(data.columns) != 1:
+            _LOGGER.error("DataFrame must have exactly one column.")
+            raise ValueError()
+        series = data.to_series(0)
+    elif isinstance(data, pl.Series):
+        series = data
+    else:
+        _LOGGER.error("Data must be a Polars Series or a Polars DataFrame.")
+        raise TypeError()
+    
+    min_val, max_val = min_max
+    
+    if min_val is None and max_val is None:
+        _LOGGER.error("At least one of min_val or max_val must be specified.")
+        raise ValueError()
+    
+    if min_val is not None and max_val is not None and min_val > max_val:
+        _LOGGER.error("The minimum value cannot be greater than the maximum value.")
+        raise ValueError()
+
+
+    try:
+        series = series.cast(pl.Float64)
+    except Exception as e:
+        _LOGGER.error(f"Could not cast data to float for range verification: {e}")
+        raise e
+
+    valid_series = series.drop_nulls()
+
+    if min_val is not None and max_val is not None:
+        out_of_bounds = valid_series.filter((valid_series < min_val) | (valid_series > max_val))
+    elif min_val is not None:
+        out_of_bounds = valid_series.filter(valid_series < min_val)
+    elif max_val is not None:
+        out_of_bounds = valid_series.filter(valid_series > max_val)
+
+    if out_of_bounds.is_empty():
+        _LOGGER.info(f"All values are within the specified range {min_max}.")
+    else:
+        out_vals = out_of_bounds.unique().to_list()
+        # format one value per line in the log
+        out_val_str = '\n\t'.join(f'{v}' for v in out_vals)
+        _LOGGER.warning(f"Found values outside the range {min_max}:\n\t{out_val_str}")

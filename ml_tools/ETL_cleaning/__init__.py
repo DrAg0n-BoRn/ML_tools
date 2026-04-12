@@ -12,6 +12,7 @@ from ._dragon_cleaner import (
 from ._clean_tools import (
     save_unique_values,
     save_category_counts,
+    verify_continuous_range
 )
 
 from .._core import _imprimir_disponibles
@@ -25,6 +26,7 @@ __all__ = [
     "basic_clean",
     "basic_clean_drop",
     "drop_macro_polars",
+    "verify_continuous_range"
 ]
 
 

@@ -7,7 +7,7 @@ from ..utilities import save_dataframe_filename, load_dataframe
 from .._core import get_logger
 from ..path_manager import make_fullpath
 
-from ._clean_tools import save_unique_values, save_category_counts
+from ._clean_tools import save_unique_values, save_category_counts, verify_continuous_range
 
 
 _LOGGER = get_logger("DragonCleaner")
@@ -35,7 +35,8 @@ class DragonColumnCleaner:
                  column_name: str, 
                  exact_matches: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None,
                  rules: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None, 
-                 case_insensitive: bool = False):
+                 case_insensitive: bool = False,
+                 verify_continuous_range: Optional[tuple[Optional[float], Optional[float]]] = None):
         """
         Args:
             column_name (str):
@@ -51,6 +52,10 @@ class DragonColumnCleaner:
                 - Can use backreferences (e.g., r'$1 $2') for captured groups. Note that Polars uses a '$' prefix for backreferences.
             case_insensitive (bool):
                 If True, regex matching ignores case.
+            verify_continuous_range (tuple[float | None, float | None], optional):
+                A tuple containing the minimum and maximum values for the numerical range.
+                - Used only for numeric columns and for the `.preview()` method. 
+                - Use None for either min or max to constrain only one side of the range.
 
         ## Usage Example
 
@@ -103,6 +108,19 @@ class DragonColumnCleaner:
         self.rules = rules if rules else {}
         self.exact_matches = exact_matches if exact_matches else {}
         self.case_insensitive = case_insensitive
+        
+        # Validate continuous range if provided
+        if verify_continuous_range is not None:
+            if (not isinstance(verify_continuous_range, tuple) or 
+                len(verify_continuous_range) != 2 or 
+                not all(isinstance(x, (int, float, type(None))) for x in verify_continuous_range)):
+                _LOGGER.error("The 'verify_continuous_range' must be a tuple of two numbers (min, max) or None.")
+                raise TypeError()
+            # if both are None, then just set it to None
+            if all(x is None for x in verify_continuous_range):
+                verify_continuous_range = None
+            
+        self._verify_continuous_range = verify_continuous_range
 
     def preview(self, 
                 csv_path: Union[str, Path], 
@@ -146,6 +164,10 @@ class DragonColumnCleaner:
                                  use_columns=[self.column_name],
                                  verbose=False,
                                  keep_column_order=False)
+            
+        # verify continuous range if applicable
+        if self._verify_continuous_range is not None:
+            verify_continuous_range(data=df_preview, min_max=self._verify_continuous_range)
 
 
 class DragonDataFrameCleaner:
