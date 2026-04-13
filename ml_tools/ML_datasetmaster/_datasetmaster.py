@@ -86,20 +86,28 @@ class DragonDataset(_BaseDatasetMaker):
         feature_cols_set = set(self._feature_names)
         target_cols_set = all_cols_set - feature_cols_set
         
-        if len(target_cols_set) == 0:
-            _LOGGER.error("No target column found. The schema's features match the DataFrame's columns exactly.")
-            raise ValueError()
-        if len(target_cols_set) > 1:
-            _LOGGER.error(f"Ambiguous target. Found {len(target_cols_set)} columns not in the schema: {list(target_cols_set)}. One target required.")
-            raise ValueError()
-            
-        target_name = list(target_cols_set)[0]
-        self._target_names = [target_name]
-        self._id = target_name
+        # intercept "autoencoder" as a special case where there is no target column and we create a dummy target of zeros. 
+        if kind == "autoencoder" or kind == MLTaskKeys.AUTOENCODER:
+            target_name = "dummy_target"
+            self._target_names = [target_name]
+            self._id = "autoencoder"
+            # Create a dummy target series filled with zeros for the autoencoder
+            target_series = pandas.Series(0.0, index=pandas_df.index, name=target_name)
+        else:
+            if len(target_cols_set) == 0:
+                _LOGGER.error("No target column found. The schema's features match the DataFrame's columns exactly.")
+                raise ValueError()
+            if len(target_cols_set) > 1:
+                _LOGGER.error(f"Ambiguous target. Found {len(target_cols_set)} columns not in the schema: {list(target_cols_set)}. One target required.")
+                raise ValueError()
+                
+            target_name = list(target_cols_set)[0]
+            self._target_names = [target_name]
+            self._id = target_name
+            target_series = pandas_df[target_name]
         
         # --- 3. Split Data ---
         features_df = pandas_df[self._feature_names]
-        target_series = pandas_df[target_name]
         
         if test_size > 0.0:
             X_train_val, X_test, y_train_val, y_test = train_test_split(

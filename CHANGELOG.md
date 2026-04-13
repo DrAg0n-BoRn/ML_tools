@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+### [22.7.1] 2026-04-13
+
+### Added
+
+- ML_trainer:
+    - `.fit()` method of all trainer classes, added `skip_first_epoch` parameter to control whether the first epoch is included in the loss plots. This can help prevent skewed loss curves if the first epoch has a much higher loss than subsequent epochs. Non-breaking change with backward compatibility.
+- ML_evaluation:
+    - `plot_losses()`, added `skip_first_epoch` parameter to control whether the first epoch is included in the loss plots. 
+
+### Fixed
+
+- ML_datasetmaster:
+    - `DragonDataset`, properly handles "autoencoder" tasks ignoring any target columns if present or not without raising an error.
+- ETL_cleaning:
+    - `verify_continuous_range()`, added handling for empty strings in the series before attempting to cast to float, which can cause errors. Empty strings are now treated as null values.
+
 ## [22.7.0] 2026-04-12
 
 ### Added

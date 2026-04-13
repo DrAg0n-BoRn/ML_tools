@@ -269,7 +269,9 @@ def verify_continuous_range(data: Union[pl.Series, pl.DataFrame],
     if min_val is not None and max_val is not None and min_val > max_val:
         _LOGGER.error("The minimum value cannot be greater than the maximum value.")
         raise ValueError()
-
+    
+    #cast empty strings to nulls before casting to float
+    series = series.replace("", None)
 
     try:
         series = series.cast(pl.Float64)

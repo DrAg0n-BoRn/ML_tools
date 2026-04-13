@@ -20,7 +20,9 @@ __all__ = [
 DPI_value = _EvaluationConfig.DPI
 
 
-def plot_losses(history: dict, save_dir: Union[str, Path]):
+def plot_losses(history: dict, 
+                save_dir: Union[str, Path],
+                skip_first_epoch: bool = True):
     """
     Plots training & validation loss curves from a history object.
     Also plots the learning rate if available in the history.
@@ -28,10 +30,19 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     Args:
         history (dict): A dictionary containing 'train_loss' and 'val_loss'.
         save_dir (str | Path): Directory to save the plot image.
+        skip_first_epoch (bool): If True, skips the first epoch in the plot to avoid skewing the scale.
     """
     train_loss = history.get(PyTorchLogKeys.TRAIN_LOSS, [])
     val_loss = history.get(PyTorchLogKeys.VAL_LOSS, [])
     lr_history = history.get(PyTorchLogKeys.LEARNING_RATE, [])
+    
+    if skip_first_epoch:
+        start_epoch = 2
+        train_loss = train_loss[1:] if len(train_loss) > 1 else train_loss
+        val_loss = val_loss[1:] if len(val_loss) > 1 else val_loss
+        lr_history = lr_history[1:] if len(lr_history) > 1 else lr_history
+    else:
+        start_epoch = 1
     
     if not train_loss and not val_loss:
         _LOGGER.warning("Loss history is empty or incomplete. Cannot plot.")
@@ -44,13 +55,13 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     
     # Plot training loss only if data for it exists
     if train_loss:
-        epochs = range(1, len(train_loss) + 1)
+        epochs = range(start_epoch, start_epoch + len(train_loss))
         line1, = ax.plot(epochs, train_loss, 'o-', label='Training Loss', color='tab:blue')
         line_handles.append(line1)
     
     # Plot validation loss only if data for it exists
     if val_loss:
-        epochs = range(1, len(val_loss) + 1)
+        epochs = range(start_epoch, start_epoch + len(val_loss))
         line2, = ax.plot(epochs, val_loss, 'o-', label='Validation Loss', color='tab:orange')
         line_handles.append(line2)
     
@@ -59,12 +70,13 @@ def plot_losses(history: dict, save_dir: Union[str, Path]):
     ax.set_ylabel('Loss', color='tab:blue', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
     ax.tick_params(axis='y', labelcolor='tab:blue', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
     ax.tick_params(axis='x', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
+    ax.set_xlim(left=1) # Ensures the x-axis begins at 1 to prevent empty space
     ax.grid(True, linestyle='--')
     
     # --- Plot Learning Rate (Right Y-axis) ---
     if lr_history:
         ax2 = ax.twinx() # Create a second y-axis
-        epochs = range(1, len(lr_history) + 1)
+        epochs = range(start_epoch, start_epoch + len(lr_history))
         line3, = ax2.plot(epochs, lr_history, 'g--', label='Learning Rate')
         line_handles.append(line3)
         
