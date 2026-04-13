@@ -74,8 +74,9 @@ def autoencoder_metrics(
     # ==========================================
     # 1. Global Numerical Metrics & Distribution
     # ==========================================
-    if y_true_num is not None and y_pred_num is not None and num_target_names is not None:
-        # _LOGGER.info("Processing continuous feature reconstruction...")
+    if (y_true_num is not None and len(y_true_num) > 0 and 
+        y_pred_num is not None and len(y_pred_num) > 0 and 
+        num_target_names is not None and len(num_target_names) > 0):
         
         # Calculate sample-wise MSE (useful for anomaly detection later)
         sample_mse = np.mean(np.square(y_true_num - y_pred_num), axis=1)
@@ -124,8 +125,10 @@ def autoencoder_metrics(
     # ==========================================
     # 2. Global Categorical Metrics
     # ==========================================
-    if cat_true_list is not None and cat_pred_list is not None and cat_target_names is not None:
-        # _LOGGER.info("Processing categorical feature reconstruction...")
+    if (cat_true_list is not None and len(cat_true_list) > 0 and 
+        cat_pred_list is not None and len(cat_pred_list) > 0 and 
+        cat_target_names is not None and len(cat_target_names) > 0):
+        
         overall_report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
         
         global_accuracies = []

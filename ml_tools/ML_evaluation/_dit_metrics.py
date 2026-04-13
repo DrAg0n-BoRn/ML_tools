@@ -71,8 +71,10 @@ def dit_generation_metrics(
     # ==========================================
     # 1. Continuous Features (Marginal Distributions)
     # ==========================================
-    if real_num is not None and gen_num is not None and num_target_names is not None:
-        # _LOGGER.info("Processing continuous feature distributions...")
+    if (real_num is not None and len(real_num) > 0 and 
+        gen_num is not None and len(gen_num) > 0 and 
+        num_target_names is not None and len(num_target_names) > 0):
+        
         overall_report_lines.append(f"\n[Continuous Features: {len(num_target_names)}]")
         
         metrics_summary = []
@@ -104,13 +106,13 @@ def dit_generation_metrics(
             fig, ax = plt.subplots(figsize=DISTRIBUTION_PLOT_SIZE, dpi=DPI_value)
             
             # Handle zero variance for Real Data
-            if np.std(real_i) == 0:
+            if np.isclose(np.std(real_i), 0, atol=1e-5):
                 ax.axvline(x=real_i[0], color=format_config.real_color, linestyle='--', linewidth=2.5, label='Real Data (Constant)')
             else:
                 sns.kdeplot(real_i, fill=True, color=format_config.real_color, alpha=format_config.alpha, label='Real Data', ax=ax)
             
             # Handle zero variance for Generated Data
-            if np.std(gen_i) == 0:
+            if np.isclose(np.std(gen_i), 0, atol=1e-5):
                 ax.axvline(x=gen_i[0], color=format_config.gen_color, linestyle='--', linewidth=2.5, label='Generated Data (Constant)')
             else:
                 sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)    
@@ -133,21 +135,26 @@ def dit_generation_metrics(
         csv_path = save_dir_path / "continuous_generation_summary.csv"
         summary_df.to_csv(csv_path, index=False)
         _LOGGER.info(f"🔢 Continuous distribution summary saved to '{csv_path.name}'")
-        
-        # Calculate averages, skipping NaNs automatically with pandas .mean()
-        avg_w_dist = summary_df['Wasserstein Distance'].mean()
-        avg_rel_w_dist = summary_df['Relative Wasserstein Distance'].mean()
-        avg_ks_stat = summary_df['KS Statistic'].mean()
-        
-        overall_report_lines.append(f"Average Wasserstein Distance: {avg_w_dist:.4f}")
-        overall_report_lines.append(f"Average Relative Wasserstein Distance: {avg_rel_w_dist:.4f}")
-        overall_report_lines.append(f"Average KS Statistic: {avg_ks_stat:.4f}")
+                
+        if not summary_df.empty:
+            # Calculate averages, skipping NaNs automatically with pandas .mean()
+            avg_w_dist = summary_df['Wasserstein Distance'].mean()
+            avg_rel_w_dist = summary_df['Relative Wasserstein Distance'].mean()
+            avg_ks_stat = summary_df['KS Statistic'].mean()
+            
+            overall_report_lines.append(f"Average Wasserstein Distance: {avg_w_dist:.4f}")
+            overall_report_lines.append(f"Average Relative Wasserstein Distance: {avg_rel_w_dist:.4f}")
+            overall_report_lines.append(f"Average KS Statistic: {avg_ks_stat:.4f}")
+        else:
+            overall_report_lines.append("Average Continuous Metrics: N/A")
 
     # ==========================================
     # 2. Categorical Features (Proportions)
     # ==========================================
-    if real_cat_list is not None and gen_cat_list is not None and cat_target_names is not None:
-        # _LOGGER.info("Processing categorical feature distributions...")
+    if (real_cat_list is not None and len(real_cat_list) > 0 and 
+        gen_cat_list is not None and len(gen_cat_list) > 0 and 
+        cat_target_names is not None and len(cat_target_names) > 0):
+        
         overall_report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
         
         cat_metrics_summary = []
@@ -207,13 +214,19 @@ def dit_generation_metrics(
         cat_csv_path = save_dir_path / "categorical_generation_summary.csv"
         cat_summary_df.to_csv(cat_csv_path, index=False)
         _LOGGER.info(f"🔢 Categorical distribution summary saved to '{cat_csv_path.name}'")
-        overall_report_lines.append(f"Average Total Variation Distance: {cat_summary_df['Total Variation Distance'].mean():.4f}")
+        
+        if not cat_summary_df.empty and 'Total Variation Distance' in cat_summary_df.columns:
+            overall_report_lines.append(f"Average Total Variation Distance: {cat_summary_df['Total Variation Distance'].mean():.4f}")
+        else:
+            overall_report_lines.append("Average Total Variation Distance: N/A")
     
     # ==========================================
     # 3. Multivariate Relationships (Numerical Correlation)
     # ==========================================
-    if real_num is not None and gen_num is not None and num_target_names is not None and real_num.shape[1] > 1:
-        # _LOGGER.info("Processing numerical feature correlations...")
+    if (real_num is not None and len(real_num) > 0 and 
+        gen_num is not None and len(gen_num) > 0 and 
+        num_target_names is not None and len(num_target_names) > 1):
+        
         overall_report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
         
         # Calculate Pearson correlation matrices

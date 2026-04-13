@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+### [22.7.2] 2026-06-13
+
+### Fixed
+
+- ML_evaluation:
+    - `dit_generation_metrics()`, added handling for cases where the data has zero variance. Also skip non-existent categorical or continuous features.
+    - `autoencoder_metrics()`, skip non-existent categorical or continuous features in the input data.
+
 ### [22.7.1] 2026-04-13
 
 ### Added
