@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-### [22.7.2] 2026-06-13
+## [22.8.0] 2026-04-14
+
+### Added
+
+- New module: ML_inference_diffusion
+    - `DragonDiTGenerator`, Inference handler for generating samples using the DiT diffusion model and an autoencoder.
+    - `DragonDiTGuidedGenerator`, Inference handler for generating samples using the guided version of the DiT diffusion model and an autoencoder.
+
+## [22.7.2] 2026-04-13
 
 ### Fixed
 
@@ -12,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - `dit_generation_metrics()`, added handling for cases where the data has zero variance. Also skip non-existent categorical or continuous features.
     - `autoencoder_metrics()`, skip non-existent categorical or continuous features in the input data.
 
-### [22.7.1] 2026-04-13
+## [22.7.1] 2026-04-13
 
 ### Added
 

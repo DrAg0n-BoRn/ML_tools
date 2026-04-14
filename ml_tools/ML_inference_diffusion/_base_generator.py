@@ -1,4 +1,4 @@
-from typing import Union, Optional, Any, Literal
+from typing import Union, Any
 import torch
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -7,10 +7,6 @@ from ..ML_models_diffusion import DragonAutoencoder, DragonDiT, DragonDiTGuided
 from ..ML_utilities import validate_torch_device
 
 from ..path_manager import make_fullpath
-from .._core import get_logger
-
-
-_LOGGER = get_logger("DiffusionGenerator")
 
 
 __all__ = [

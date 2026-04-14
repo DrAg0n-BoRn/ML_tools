@@ -13,20 +13,34 @@ from .._core import get_logger
 from ._base_generator import _BaseDiffusionGenerator
 
 
-_LOGGER = get_logger("DiffusionTabularGenerator")
+_LOGGER = get_logger("DragonDiTGenerator")
 
 
 __all__ = [
-    "DiffusionTabularGenerator",
+    "DragonDiTGenerator",
 ]
 
-class DiffusionTabularGenerator(_BaseDiffusionGenerator):
+
+class DragonDiTGenerator(_BaseDiffusionGenerator):
+    """
+    A DataFrame generator for creating synthetic tabular data using a diffusion model.
+    
+    This generator takes a trained diffusion model and an autoencoder to generate synthetic tabular data, and plots relevant metrics to evaluate the generated data.
+    """
     def __init__(self,
                  save_dir: Union[Path, str],
                  diffusion_model: DragonDiT,
                  encoder: DragonAutoencoder,
                  device: Union[torch.device, str]):
+        """
+        Initializes the DragonDiTGenerator with the specified parameters.
         
+        Args:
+            save_dir (Path | str): The root directory where generated data and plots will be saved.
+            diffusion_model (DragonDiT): The trained diffusion model to use for generating synthetic data.
+            encoder (DragonAutoencoder): The autoencoder used to decode the generated embeddings back to tabular format.
+            device (torch.device | str): The device to run the model on (e.g., "cpu" or "cuda"). The models will be moved to this device for generation.
+        """
         super().__init__(save_dir, diffusion_model, encoder, device)
     
     def generate(self, 
@@ -50,6 +64,9 @@ class DiffusionTabularGenerator(_BaseDiffusionGenerator):
                 - If "none", no columns will be modified for rounding.
             float_rounding_precision (int): The number of decimal places to round float values to if `round_float_columns` is not "none".
             autosave (bool): Whether to automatically save the generated DataFrame to a CSV file in the provided save directory.
+            
+        Returns:
+            pd.DataFrame: The generated synthetic tabular data as a DataFrame.
         """
         self.diffusion_model: DragonDiT #type hint
         
@@ -83,7 +100,8 @@ class DiffusionTabularGenerator(_BaseDiffusionGenerator):
     def plot_metrics(self, 
                      df_generated: pd.DataFrame, 
                      base_plot_title: str = "Generated Data Distributions",
-                     add_strategy_title: bool = True) -> None:
+                     add_strategy_title: bool = True,
+                     handle_zero_variance: Literal["constant", "drop"] = "constant") -> None:
         """
         Plots value distributions and numeric overview boxplots for the generated DataFrame.
         
@@ -91,6 +109,7 @@ class DiffusionTabularGenerator(_BaseDiffusionGenerator):
             df_generated (pd.DataFrame): The generated DataFrame for which to plot metrics.
             base_plot_title (str): The base title for the plots.
             add_strategy_title (bool): Whether to include the strategy name in the plot titles for clarity.
+            handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance.
         """
         # check if df_generated is empty
         if df_generated.empty:
@@ -99,14 +118,16 @@ class DiffusionTabularGenerator(_BaseDiffusionGenerator):
         
         plot_value_distributions(df=df_generated, save_dir=self.save_root_dir)
         
-        for _strategy in ["value", "scale", "log"]:
+        strategies: tuple[Literal["value", "scale", "log"], ...] = ("value", "scale", "log")
+        
+        for _strategy in strategies:
             if add_strategy_title:
                 final_plot_title = f"{base_plot_title} ({_strategy.capitalize()})"
             else:
                 final_plot_title = base_plot_title
 
             plot_numeric_overview_boxplot(df=df_generated, 
-                                          strategy=_strategy,  # type: ignore
+                                          strategy=_strategy,
                                           save_dir=self.save_root_dir, 
                                           plot_title=final_plot_title,
-                                          handle_zero_variance="constant")
+                                          handle_zero_variance=handle_zero_variance)
