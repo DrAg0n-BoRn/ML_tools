@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.9.0] 2026-04-14
+
+### Added
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot_macro()`, Generates a macro-level boxplot overview of all numeric features in the dataset using all plotting strategies.
+
+### Changed
+
+- ML_inference_diffusion:
+    - `DragonDiTGenerator` and `DragonDiTGuidedGenerator`, removed `add_strategy_title` parameter from the `plot_metrics()` method to simplify functionality. The method now calls the `plot_numeric_overview_boxplot_macro()` function to automate the task.
+
 ## [22.8.0] 2026-04-14
 
 ### Added

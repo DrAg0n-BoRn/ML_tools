@@ -5,7 +5,7 @@ import pandas as pd
 
 from ..ML_models_diffusion import DragonAutoencoder, DragonDiT
 from ..math_utilities import handle_negative_values, round_float_values
-from ..data_exploration import plot_value_distributions, plot_numeric_overview_boxplot
+from ..data_exploration import plot_value_distributions, plot_numeric_overview_boxplot_macro
 from ..utilities import save_dataframe_filename
 
 from .._core import get_logger
@@ -100,7 +100,6 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
     def plot_metrics(self, 
                      df_generated: pd.DataFrame, 
                      base_plot_title: str = "Generated Data Distributions",
-                     add_strategy_title: bool = True,
                      handle_zero_variance: Literal["constant", "drop"] = "constant") -> None:
         """
         Plots value distributions and numeric overview boxplots for the generated DataFrame.
@@ -108,7 +107,6 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
         Args:
             df_generated (pd.DataFrame): The generated DataFrame for which to plot metrics.
             base_plot_title (str): The base title for the plots.
-            add_strategy_title (bool): Whether to include the strategy name in the plot titles for clarity.
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance.
         """
         # check if df_generated is empty
@@ -117,17 +115,8 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
             return
         
         plot_value_distributions(df=df_generated, save_dir=self.save_root_dir)
-        
-        strategies: tuple[Literal["value", "scale", "log"], ...] = ("value", "scale", "log")
-        
-        for _strategy in strategies:
-            if add_strategy_title:
-                final_plot_title = f"{base_plot_title} ({_strategy.capitalize()})"
-            else:
-                final_plot_title = base_plot_title
 
-            plot_numeric_overview_boxplot(df=df_generated, 
-                                          strategy=_strategy,
-                                          save_dir=self.save_root_dir, 
-                                          plot_title=final_plot_title,
-                                          handle_zero_variance=handle_zero_variance)
+        plot_numeric_overview_boxplot_macro(df=df_generated, 
+                                            save_dir=self.save_root_dir, 
+                                            plot_title=base_plot_title,
+                                            handle_zero_variance=handle_zero_variance)

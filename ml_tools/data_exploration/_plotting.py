@@ -17,6 +17,7 @@ _LOGGER = get_logger("Data Exploration: Visualization")
 __all__ = [
     "plot_value_distributions",
     "plot_numeric_overview_boxplot",
+    "plot_numeric_overview_boxplot_macro",
     "plot_continuous_vs_target",
     "plot_categorical_vs_target",
     "plot_correlation_heatmap",
@@ -242,8 +243,13 @@ def plot_numeric_overview_boxplot(
     plt.grid(True, linestyle='--', alpha=0.6, axis='x')
     plt.tight_layout()
     
-    safe_title = sanitize_filename(plot_title)
-    plot_filename = f"{safe_title}_{strategy}.svg"
+    safe_title = sanitize_filename(plot_title).replace(".", "_")
+    
+    if strategy not in safe_title.lower():
+        plot_filename = f"{safe_title}_{strategy}.svg"
+    else:
+        plot_filename = f"{safe_title}.svg"
+    
     full_path = save_path / plot_filename
     
     try:
@@ -253,6 +259,38 @@ def plot_numeric_overview_boxplot(
         _LOGGER.error(f"Failed to save numeric overview boxplot. Error: {e}")
     
     plt.close()
+
+
+# macro function to plot overview boxplots sing all strategies in one go
+def plot_numeric_overview_boxplot_macro(df: pd.DataFrame, 
+                                        save_dir: Union[str, Path], 
+                                        plot_title: str = "Distribution Overview",
+                                        handle_zero_variance: Literal["drop", "constant"] = "drop",
+                                        show_means: bool = True):
+    """
+    Plots numeric overview boxplots using all strategies ("value", "log", "scale") in one go, saving each plot with a strategy-specific suffix.
+    
+    Args:
+        df (pd.DataFrame): The input dataset.
+        save_dir (str | Path): Directory path to save the plot.
+        plot_title (str): The title of the plot.
+        handle_zero_variance (Literal["drop", "constant"]): How to handle zero-variance columns when strategy="scale".
+            - "drop": Exclude zero-variance columns from the plot (default).
+            - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
+        show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
+    """
+    
+    strategies: tuple[Literal["value", "log", "scale"], ...] = ("value", "log", "scale")
+    
+    for strategy in strategies:
+        plot_numeric_overview_boxplot(
+            df=df,
+            save_dir=save_dir,
+            plot_title=f"{plot_title} ({strategy.title()})",
+            strategy=strategy,
+            handle_zero_variance=handle_zero_variance,
+            show_means=show_means
+        )
 
 
 def plot_continuous_vs_target(

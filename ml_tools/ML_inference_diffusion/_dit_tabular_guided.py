@@ -5,7 +5,7 @@ import pandas as pd
 
 from ..ML_models_diffusion import DragonAutoencoder, DragonDiTGuided
 from ..math_utilities import handle_negative_values, round_float_values
-from ..data_exploration import plot_value_distributions, plot_numeric_overview_boxplot
+from ..data_exploration import plot_value_distributions, plot_numeric_overview_boxplot_macro
 from ..utilities import save_dataframe_filename
 
 from ..path_manager import make_fullpath, sanitize_filename
@@ -108,7 +108,6 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                      df_generated: pd.DataFrame, 
                      target_value: float,
                      base_plot_title: str = "Generated Data Distributions",
-                     add_strategy_title: bool = True,
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
                      subdirectory: Optional[str] = None) -> None:
         """
@@ -118,7 +117,6 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             df_generated (pd.DataFrame): The generated DataFrame for which to plot metrics.
             target_value (float): The target value used for generation, included in plot titles for clarity.
             base_plot_title (str): The base title for the plots.
-            add_strategy_title (bool): Whether to include the strategy name in the plot titles for clarity.
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance when plotting boxplots.
             subdirectory (str | None): Optional subdirectory within the save directory to save the plots. If None, saves in the root save directory.
         """
@@ -137,21 +135,15 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
         
         plot_value_distributions(df=df_generated, save_dir=target_dir)
         
-        strategies: tuple[Literal["value", "scale", "log"], ...] = ("value", "scale", "log")
-        
-        for _strategy in strategies:
-            final_plot_title = f"{target_title} ({_strategy.capitalize()})" if add_strategy_title else target_title
-
-            plot_numeric_overview_boxplot(
+        plot_numeric_overview_boxplot_macro(
                 df=df_generated, 
-                strategy=_strategy,
                 save_dir=target_dir, 
-                plot_title=final_plot_title,
+                plot_title=target_title,
                 handle_zero_variance=handle_zero_variance
             )
 
     def generate_plot_multi(self,
-                            targets: list[float],
+                            targets: list[Union[float, int]],
                             batch_size: int,
                             guidance_scale: float = 3.0,
                             ode_steps: int = 20,
@@ -163,7 +155,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
         Iterates over a list of targets, generating and plotting data for each, saving outputs in isolated subdirectories.
         
         Args:
-            targets (list[float]): A list of target values to condition the generation on.
+            targets (list[float | int]): A list of target values to condition the generation on.
             batch_size (int): The number of synthetic samples to generate for each target.
             guidance_scale (float): The strength of the guidance during generation.
             ode_steps (int): The number of ODE steps to use during sampling. More steps might improve quality but will increase generation time.
