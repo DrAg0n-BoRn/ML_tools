@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.10.0] 2026-04-15
+
+### Changed
+
+- outlier_detection:
+    - `isolation_forest_continuous()`, renamed from the previous `isolation_forest()`. To clarify that this function is specifically for continuous features.
+    - `local_outlier_factor_continuous()`, renamed from the previous `local_outlier_factor()`. To clarify that this function is specifically for continuous features.
+    - Both functions have a new parameter `ignore_columns` to specify columns to exclude from outlier detection.
+
+### Added
+
+- outlier_detection:
+    - `isolation_forest()`, New function that applies Isolation Forest outlier detection to a mix of continuous and categorical features, with automatic inference of feature types if not provided.
+    - `local_outlier_factor()`, New function that applies Local Outlier Factor detection to a mix of continuous and categorical features, with automatic inference of feature types if not provided.
+
 ## [22.9.0] 2026-04-14
 
 ### Added

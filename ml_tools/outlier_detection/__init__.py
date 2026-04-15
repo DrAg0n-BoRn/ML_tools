@@ -1,8 +1,10 @@
 from ._isolation_forest import (
+    isolation_forest_continuous,
     isolation_forest
 )
 
 from ._lof import (
+    local_outlier_factor_continuous,
     local_outlier_factor
 )
 
@@ -19,8 +21,12 @@ from .._core import _imprimir_disponibles
 
 
 __all__ = [
+    # algorithms
     "isolation_forest",
     "local_outlier_factor",
+    "isolation_forest_continuous",
+    "local_outlier_factor_continuous",
+    # helper functions
     "clip_outliers_single",
     "clip_outliers_multi",
     "drop_outliers_rule",
