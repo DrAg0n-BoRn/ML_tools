@@ -16,6 +16,7 @@ from ._cleaning import (
 
 from ._plotting import (
     plot_value_distributions,
+    plot_value_distributions_multi,
     plot_numeric_overview_boxplot,
     plot_numeric_overview_boxplot_macro,
     plot_continuous_vs_target,
@@ -56,6 +57,7 @@ __all__ = [
     "split_continuous_binary", 
     "split_continuous_categorical_targets",
     "plot_value_distributions",
+    "plot_value_distributions_multi",
     "plot_numeric_overview_boxplot",
     "plot_numeric_overview_boxplot_macro",
     "plot_continuous_vs_target",

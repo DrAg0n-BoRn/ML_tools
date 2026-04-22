@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [22.11.0] 2026-04-22
+
+### Added
+
+- data_exploration:
+    - `plot_value_distributions_multi()`, New function that generates distribution plots for multiple datasets in a single combined plot, allowing for easy comparison of feature distributions across different datasets.
+
+### Changed
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot()` and `plot_numeric_overview_boxplot_macro()`, added `font_scaling` parameter to allow scaling of all text elements in the plot for better readability with varying numbers of features. Adjusted default figure size and font sizes for improved aesthetics.
+
 ## [22.10.0] 2026-04-15
 
 ### Changed

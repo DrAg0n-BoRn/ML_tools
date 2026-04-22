@@ -16,6 +16,7 @@ _LOGGER = get_logger("Data Exploration: Visualization")
 
 __all__ = [
     "plot_value_distributions",
+    "plot_value_distributions_multi",
     "plot_numeric_overview_boxplot",
     "plot_numeric_overview_boxplot_macro",
     "plot_continuous_vs_target",
@@ -151,13 +152,165 @@ def plot_value_distributions(
     _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution plots to '{categorical_dir.name}'.")
 
 
+def plot_value_distributions_multi(
+    named_dataframes: dict[str, pd.DataFrame],
+    save_dir: Union[str, Path],
+    max_categories: int = 100,
+    fill_na_with: str = "MISSING DATA",
+    font_scaling: float = 1.0
+):
+    """
+    Plots and saves the value distributions for all columns across multiple DataFrames.
+    Overlaps the data from each DataFrame for comparison.
+    
+    All DataFrames must have the same columns and data types for consistent plotting. 
+    The function will automatically detect numeric vs categorical features and plot them accordingly.
+
+    Plots are saved as SVG files under two subdirectories in `save_dir`:
+    - "Distribution_Continuous" for continuous numeric features.
+    - "Distribution_Categorical" for categorical features.
+
+    Args:
+        named_dataframes (dict[str, pd.DataFrame]): Dictionary mapping dataset names to DataFrames.
+        save_dir (str | Path): Directory path to save the plots.
+        max_categories (int): The maximum number of unique categories a categorical feature can have to be plotted.
+        fill_na_with (str): A string to replace NaN values in categorical columns.
+        font_scaling (float): Scaling factor for all fonts in the generated plots.
+    """
+    # 1. Setup save directories
+    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
+    numeric_dir = base_save_path / "Distribution_Continuous"
+    categorical_dir = base_save_path / "Distribution_Categorical"
+    numeric_dir.mkdir(parents=True, exist_ok=True)
+    categorical_dir.mkdir(parents=True, exist_ok=True)
+    
+    SECRET_COLUMN_NAME = "__SoUrCe_DaTaSeT__"
+
+    # 2. Combine DataFrames for efficient plotting with Seaborn
+    combined_dfs = []
+    valid_data_types = None
+    for name, df in named_dataframes.items():
+        df_pd = df.copy()
+        current_dtypes = df_pd.dtypes.sort_index()
+        
+        # Check for consistent columns and data types across DataFrames
+        if valid_data_types is None:
+            valid_data_types = current_dtypes
+        elif not current_dtypes.equals(valid_data_types):
+            _LOGGER.error(
+                f"Schema mismatch in '{name}'. "
+                f"Expected columns and types:\n{valid_data_types}\n"
+                f"But found:\n{current_dtypes}"
+            )
+            raise ValueError()
+
+        df_pd[SECRET_COLUMN_NAME] = name
+        combined_dfs.append(df_pd)
+        
+    if not combined_dfs:
+        _LOGGER.warning("No dataframes provided.")
+        return
+    
+    # Concatenate over axis=0 to add rows
+    plot_df = pd.concat(combined_dfs, ignore_index=True)
+    
+    # Filter columns to plot (excluding the temporary label column)
+    columns_to_plot = [col for col in plot_df.columns if col != SECRET_COLUMN_NAME]
+
+    numeric_plots_saved = 0
+    categorical_plots_saved = 0
+    
+    # Apply font scaling context to all plots generated in this block
+    with sns.plotting_context("notebook", font_scale=font_scaling):
+        for col_name in columns_to_plot:
+            try:
+                is_numeric = is_numeric_dtype(plot_df[col_name])
+                n_unique = plot_df[col_name].nunique()
+
+                # --- Case 1: Continuous Numeric (Overlapping Histogram/KDE) ---
+                if is_numeric:
+                    plt.figure(figsize=(10, 6))
+                    
+                    # Drop NaNs for plotting numeric axes
+                    plot_data = plot_df[[col_name, SECRET_COLUMN_NAME]].dropna()
+                    
+                    sns.histplot(
+                        data=plot_data, 
+                        x=col_name, 
+                        hue=SECRET_COLUMN_NAME, 
+                        kde=True, 
+                        common_norm=False, 
+                        bins=30, 
+                        alpha=0.5
+                    )
+                    
+                    plt.title(f"Distribution of '{col_name}' (Continuous Comparison)")
+                    plt.xlabel(col_name)
+                    plt.ylabel("Count")
+                    
+                    save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
+                    numeric_plots_saved += 1
+
+                # --- Case 2: Categorical (Grouped Count Plot) ---
+                else:
+                    if n_unique > max_categories:
+                        _LOGGER.warning(f"Skipping plot for '{col_name}': {n_unique} unique values > {max_categories}.")
+                        continue
+
+                    # Adaptive figure size
+                    fig_width = max(10, n_unique * 0.8)
+                    plt.figure(figsize=(fig_width, 8))
+                    
+                    plot_data = plot_df[[col_name, SECRET_COLUMN_NAME]].copy()
+                    
+                    if plot_data[col_name].isnull().any():
+                        plot_data[col_name] = plot_data[col_name].astype(object).fillna(fill_na_with)
+                    
+                    plot_data[col_name] = plot_data[col_name].astype(str)
+                    
+                    # Get category order by total frequency across all datasets
+                    order = plot_data[col_name].value_counts().index
+                    
+                    sns.countplot(
+                        data=plot_data, 
+                        x=col_name, 
+                        hue=SECRET_COLUMN_NAME, 
+                        order=order
+                    )
+                    
+                    plt.title(f"Distribution of '{col_name}' (Categorical Comparison)")
+                    plt.xlabel(col_name)
+                    plt.ylabel("Count")
+                    
+                    max_label_len = max([len(str(s)) for s in order] + [0])
+                    if max_label_len > 10 or n_unique > 15:
+                        plt.xticks(rotation=45, ha='right')
+                    
+                    save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
+                    categorical_plots_saved += 1
+
+                # --- 4. Save Plot ---
+                plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+                plt.tight_layout()
+                plt.savefig(save_path, format='svg', bbox_inches="tight")
+                plt.close()
+
+            except Exception as e:
+                _LOGGER.error(f"Failed to plot distribution for '{col_name}'. Error: {e}")
+                plt.close()
+    
+    _LOGGER.info(f"Saved {numeric_plots_saved} continuous distribution comparison plots to '{numeric_dir.name}'.")
+    _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution comparison plots to '{categorical_dir.name}'.")
+
+
 def plot_numeric_overview_boxplot(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
     plot_title: str = "Distribution Overview",
     strategy: Literal["value", "log", "scale"] = "value",
     handle_zero_variance: Literal["drop", "constant"] = "drop",
-    show_means: bool = True
+    show_means: bool = True,
+    font_scaling: float = 1.0
 ):
     """
     Creates a single boxplot showing the distribution and range of all numeric columns.
@@ -174,6 +327,7 @@ def plot_numeric_overview_boxplot(
             - "drop": Exclude zero-variance columns from the plot (default).
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
+        font_scaling (float): Multiplier for all text elements in the plot.
     """
     numeric_df = df.select_dtypes(include='number')
     
@@ -225,7 +379,11 @@ def plot_numeric_overview_boxplot(
     plt.figure(figsize=(12, fig_height))
     
     # Using orient='h' for better label readability with many features
-    ax = sns.boxplot(data=numeric_df, orient='h', palette="Set2", showmeans=show_means, meanprops={"marker":"D", "markerfacecolor":"white", "markeredgecolor":"black", "markersize":6})
+    ax = sns.boxplot(data=numeric_df, 
+                     orient='h', 
+                     palette="Set2", 
+                     showmeans=show_means, 
+                     meanprops={"marker":"D", "markerfacecolor":"white", "markeredgecolor":"black", "markersize":6})
     
     # Robust scaling cannot use a fixed range
     if strategy == "log":
@@ -235,10 +393,18 @@ def plot_numeric_overview_boxplot(
     elif strategy == "scale":
         # Add a vertical reference line at 0.0 (the aligned median for all robust-scaled features)
         ax.axvline(x=0.0, color='red', linestyle='-', linewidth=1.5, alpha=0.4, zorder=0)
- 
-    plt.title(plot_title, fontsize=18)
-    plt.xlabel(x_label, fontsize=14)
+    
+    # Calculate scaled font sizes
+    title_fs = 18 * font_scaling
+    label_fs = 14 * font_scaling
+    tick_fs = 12 * font_scaling
+    
+    plt.title(plot_title, fontsize=title_fs)
+    plt.xlabel(x_label, fontsize=label_fs)
     plt.ylabel("", fontsize=0)
+    
+    # scale tick labels
+    ax.tick_params(axis='both', which='major', labelsize=tick_fs)
     
     plt.grid(True, linestyle='--', alpha=0.6, axis='x')
     plt.tight_layout()
@@ -261,12 +427,13 @@ def plot_numeric_overview_boxplot(
     plt.close()
 
 
-# macro function to plot overview boxplots sing all strategies in one go
+# macro function to plot overview boxplots using all strategies in one go
 def plot_numeric_overview_boxplot_macro(df: pd.DataFrame, 
                                         save_dir: Union[str, Path], 
                                         plot_title: str = "Distribution Overview",
                                         handle_zero_variance: Literal["drop", "constant"] = "drop",
-                                        show_means: bool = True):
+                                        show_means: bool = True,
+                                        font_scaling: float = 1.0):
     """
     Plots numeric overview boxplots using all strategies ("value", "log", "scale") in one go, saving each plot with a strategy-specific suffix.
     
@@ -278,6 +445,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
             - "drop": Exclude zero-variance columns from the plot (default).
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
+        font_scaling (float): Multiplier for all text elements in the plot.
     """
     
     strategies: tuple[Literal["value", "log", "scale"], ...] = ("value", "log", "scale")
@@ -289,7 +457,8 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
             plot_title=f"{plot_title} ({strategy.title()})",
             strategy=strategy,
             handle_zero_variance=handle_zero_variance,
-            show_means=show_means
+            show_means=show_means,
+            font_scaling=font_scaling
         )
 
 
