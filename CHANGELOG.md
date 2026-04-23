@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.11.1] 2026-04-23 
+
+### Changed
+
+- data_exploration:
+    - `plot_value_distributions_multi()`, added "mode" parameter to specify absolute counts or relative percentages in the distribution plots.
+    - `plot_value_distributions()`, added "mode" parameter to specify absolute counts or relative percentages in the distribution plots. Added "font_scaling" parameter to allow scaling of all text elements in the plot for better readability with varying numbers of features.
+    - Changed default values for some functions in the module to more commonly used values.
 
 ## [22.11.0] 2026-04-22
 

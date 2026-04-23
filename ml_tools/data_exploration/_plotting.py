@@ -29,8 +29,10 @@ def plot_value_distributions(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
     categorical_columns: Optional[list[str]] = None,
-    max_categories: int = 100,
-    fill_na_with: str = "MISSING DATA"
+    max_categories: int = 50,
+    fill_na_with: str = "MISSING DATA",
+    font_scaling: float = 1.0,
+    mode: Literal["count", "percentage"] = "count"
 ):
     """
     Plots and saves the value distributions for all columns in a DataFrame,
@@ -46,6 +48,8 @@ def plot_value_distributions(
         categorical_columns (List[str] | None): If provided, these will be treated as categorical, and all other columns will be treated as continuous.
         max_categories (int): The maximum number of unique categories a categorical feature can have to be plotted. Features exceeding this limit will be skipped.
         fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category.
+        font_scaling (float): Scaling factor for all fonts in the generated plots.
+        mode (Literal["count", "percentage"]): Whether to plot absolute counts or relative percentages.
 
     Notes:
         - `seaborn.histplot` with KDE is used for continuous features.
@@ -67,87 +71,112 @@ def plot_value_distributions(
     numeric_plots_saved = 0
     categorical_plots_saved = 0
 
-    for col_name in columns_to_plot:
-        try:
-            is_numeric = is_numeric_dtype(df[col_name])
-            n_unique = df[col_name].nunique()
+    with sns.plotting_context("notebook", font_scale=font_scaling):
+        for col_name in columns_to_plot:
+            try:
+                is_numeric = is_numeric_dtype(df[col_name])
+                n_unique = df[col_name].nunique()
 
-            # --- 3. Determine Plot Type ---
-            is_continuous = False
-            if categorical_set is not None:
-                # Use the explicit list
-                if col_name not in categorical_set:
-                    is_continuous = True
-            else:
-                # Use auto-detection
-                if is_numeric:
-                    is_continuous = True
-            
-            # --- Case 1: Continuous Numeric (Histogram) ---
-            if is_continuous:
-                plt.figure(figsize=(10, 6))
-                # Drop NaNs for histogram, as they can't be plotted on a numeric axis
-                sns.histplot(x=df[col_name].dropna(), kde=True, bins=30)
-                plt.title(f"Distribution of '{col_name}' (Continuous)")
-                plt.xlabel(col_name)
-                plt.ylabel("Count")
+                # --- 3. Determine Plot Type ---
+                is_continuous = False
+                if categorical_set is not None:
+                    # Use the explicit list
+                    if col_name not in categorical_set:
+                        is_continuous = True
+                else:
+                    # Use auto-detection
+                    if is_numeric:
+                        is_continuous = True
                 
-                save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
-                numeric_plots_saved += 1
+                # --- Case 1: Continuous Numeric (Histogram) ---
+                if is_continuous:
+                    plt.figure(figsize=(10, 6))
+                    # Drop NaNs for histogram, as they can't be plotted on a numeric axis
+                    sns.histplot(
+                        x=df[col_name].dropna(), 
+                        kde=True, 
+                        bins=30,
+                        stat="percent" if mode == "percentage" else "count"
+                    )
+                    plt.title(f"Distribution of '{col_name}' (Continuous)")
+                    plt.xlabel(col_name)
+                    plt.ylabel("Percentage (%)" if mode == "percentage" else "Count")
+                    
+                    save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
+                    numeric_plots_saved += 1
 
-            # --- Case 2: Categorical (Count Plot) ---
-            else:
-                # Check max categories
-                if n_unique > max_categories:
-                    _LOGGER.warning(f"Skipping plot for '{col_name}': {n_unique} unique values > {max_categories} max_categories.")
-                    continue
+                # --- Case 2: Categorical (Count Plot) ---
+                else:
+                    # Check max categories
+                    if n_unique > max_categories:
+                        _LOGGER.warning(f"Skipping plot for '{col_name}': {n_unique} unique values > {max_categories} max_categories.")
+                        continue
 
-                # Adaptive figure size
-                fig_width = max(10, n_unique * 0.5)
-                plt.figure(figsize=(fig_width, 8))
-                
-                # Make a temporary copy for plotting to handle NaNs
-                temp_series = df[col_name].copy()
-                
-                # Handle NaNs by replacing them with the specified string
-                if temp_series.isnull().any():
-                    # Convert to object type first to allow string replacement
-                    temp_series = temp_series.astype(object).fillna(fill_na_with)
-                
-                # Convert all to string to be safe (handles low-card numeric)
-                temp_series = temp_series.astype(str)
-                
-                # Get category order by frequency
-                order = temp_series.value_counts().index
-                sns.countplot(x=temp_series, order=order, palette="Oranges", hue=temp_series, legend=False)
-                
-                plt.title(f"Distribution of '{col_name}' (Categorical)")
-                plt.xlabel(col_name)
-                plt.ylabel("Count")
-                
-                # Smart tick rotation
-                max_label_len = 0
-                if n_unique > 0:
-                    max_label_len = max(len(str(s)) for s in order)
-                
-                # Rotate if labels are long OR there are many categories
-                if max_label_len > 10 or n_unique > 25:
-                    plt.xticks(rotation=45, ha='right')
-                
-                save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
-                categorical_plots_saved += 1
+                    # Adaptive figure size
+                    fig_width = max(10, n_unique * 0.5)
+                    plt.figure(figsize=(fig_width, 8))
+                    
+                    # Make a temporary copy for plotting to handle NaNs
+                    temp_series = df[col_name].copy()
+                    
+                    # Handle NaNs by replacing them with the specified string
+                    if temp_series.isnull().any():
+                        # Convert to object type first to allow string replacement
+                        temp_series = temp_series.astype(object).fillna(fill_na_with)
+                    
+                    # Convert all to string to be safe (handles low-card numeric)
+                    temp_series = temp_series.astype(str)
+                    
+                    # Get category order by frequency
+                    order = temp_series.value_counts().index
+                    
+                    if mode == "percentage":
+                        prop_series = temp_series.value_counts(normalize=True).rename('percent').reset_index()
+                        prop_series['percent'] *= 100
+                        sns.barplot(
+                            data=prop_series,
+                            x=col_name,
+                            y='percent',
+                            order=order,
+                            palette="Oranges"
+                        )
+                        plt.ylabel("Percentage (%)")
+                    else:
+                        sns.countplot(
+                            x=temp_series, 
+                            order=order, 
+                            palette="Oranges", 
+                            hue=temp_series, 
+                            legend=False
+                        )
+                        plt.ylabel("Count")
+                    
+                    plt.title(f"Distribution of '{col_name}' (Categorical)")
+                    plt.xlabel(col_name)
+                    
+                    # Smart tick rotation
+                    max_label_len = 0
+                    if n_unique > 0:
+                        max_label_len = max(len(str(s)) for s in order)
+                    
+                    # Rotate if labels are long OR there are many categories
+                    if max_label_len > 10 or n_unique > 25:
+                        plt.xticks(rotation=45, ha='right')
+                    
+                    save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
+                    categorical_plots_saved += 1
 
-            # --- 4. Save Plot ---
-            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
-            plt.tight_layout()
-            # Save as .svg
-            plt.savefig(save_path, format='svg', bbox_inches="tight")
-            plt.close()
+                # --- 4. Save Plot ---
+                plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+                plt.tight_layout()
+                # Save as .svg
+                plt.savefig(save_path, format='svg', bbox_inches="tight")
+                plt.close()
 
-        except Exception as e:
-            _LOGGER.error(f"Failed to plot distribution for '{col_name}'. Error: {e}")
-            plt.close()
-    
+            except Exception as e:
+                _LOGGER.error(f"Failed to plot distribution for '{col_name}'. Error: {e}")
+                plt.close()
+        
     _LOGGER.info(f"Saved {numeric_plots_saved} continuous distribution plots to '{numeric_dir.name}'.")
     _LOGGER.info(f"Saved {categorical_plots_saved} categorical distribution plots to '{categorical_dir.name}'.")
 
@@ -155,9 +184,10 @@ def plot_value_distributions(
 def plot_value_distributions_multi(
     named_dataframes: dict[str, pd.DataFrame],
     save_dir: Union[str, Path],
-    max_categories: int = 100,
+    max_categories: int = 50,
     fill_na_with: str = "MISSING DATA",
-    font_scaling: float = 1.0
+    font_scaling: float = 1.0,
+    mode: Literal["count", "percentage"] = "percentage"
 ):
     """
     Plots and saves the value distributions for all columns across multiple DataFrames.
@@ -176,6 +206,7 @@ def plot_value_distributions_multi(
         max_categories (int): The maximum number of unique categories a categorical feature can have to be plotted.
         fill_na_with (str): A string to replace NaN values in categorical columns.
         font_scaling (float): Scaling factor for all fonts in the generated plots.
+        mode (Literal["count", "percentage"]): Whether to plot absolute counts or relative percentages.
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -234,19 +265,23 @@ def plot_value_distributions_multi(
                     # Drop NaNs for plotting numeric axes
                     plot_data = plot_df[[col_name, SECRET_COLUMN_NAME]].dropna()
                     
-                    sns.histplot(
+                    ax = sns.histplot(
                         data=plot_data, 
                         x=col_name, 
                         hue=SECRET_COLUMN_NAME, 
                         kde=True, 
                         common_norm=False, 
                         bins=30, 
-                        alpha=0.5
+                        alpha=0.5,
+                        stat="percent" if mode == "percentage" else "count"
                     )
                     
-                    plt.title(f"Distribution of '{col_name}' (Continuous Comparison)")
+                    if ax.get_legend() is not None:
+                        ax.get_legend().set_title(None)
+                    
+                    plt.title(f"Distribution of '{col_name}' (Continuous)")
                     plt.xlabel(col_name)
-                    plt.ylabel("Count")
+                    plt.ylabel("Percentage (%)" if mode == "percentage" else "Count")
                     
                     save_path = numeric_dir / f"{sanitize_filename(col_name)}.svg"
                     numeric_plots_saved += 1
@@ -271,16 +306,34 @@ def plot_value_distributions_multi(
                     # Get category order by total frequency across all datasets
                     order = plot_data[col_name].value_counts().index
                     
-                    sns.countplot(
-                        data=plot_data, 
-                        x=col_name, 
-                        hue=SECRET_COLUMN_NAME, 
-                        order=order
-                    )
+                    ax = plt.gca()
+                    if mode == "percentage":
+                        prop_df = plot_data.groupby(SECRET_COLUMN_NAME)[col_name].value_counts(normalize=True).rename('percent').reset_index()
+                        prop_df['percent'] *= 100
+                        sns.barplot(
+                            data=prop_df,
+                            x=col_name,
+                            y='percent',
+                            hue=SECRET_COLUMN_NAME,
+                            order=order,
+                            ax=ax
+                        )
+                        plt.ylabel("Percentage (%)")
+                    else:
+                        sns.countplot(
+                            data=plot_data, 
+                            x=col_name, 
+                            hue=SECRET_COLUMN_NAME, 
+                            order=order,
+                            ax=ax
+                        )
+                        plt.ylabel("Count")
+
+                    if ax.get_legend() is not None:
+                        ax.get_legend().set_title(None)
                     
-                    plt.title(f"Distribution of '{col_name}' (Categorical Comparison)")
+                    plt.title(f"Distribution of '{col_name}' (Categorical)")
                     plt.xlabel(col_name)
-                    plt.ylabel("Count")
                     
                     max_label_len = max([len(str(s)) for s in order] + [0])
                     if max_label_len > 10 or n_unique > 15:
@@ -308,7 +361,7 @@ def plot_numeric_overview_boxplot(
     save_dir: Union[str, Path],
     plot_title: str = "Distribution Overview",
     strategy: Literal["value", "log", "scale"] = "value",
-    handle_zero_variance: Literal["drop", "constant"] = "drop",
+    handle_zero_variance: Literal["drop", "constant"] = "constant",
     show_means: bool = True,
     font_scaling: float = 1.0
 ):
@@ -324,7 +377,7 @@ def plot_numeric_overview_boxplot(
             - "log": Applies log transformation to handle skewed distributions.
             - "scale": Applies Robust scaling (using Median and IQR) to handle different scales while ignoring extreme outliers.
         handle_zero_variance (Literal["drop", "constant"]): How to handle zero-variance columns when strategy="scale".
-            - "drop": Exclude zero-variance columns from the plot (default).
+            - "drop": Exclude zero-variance columns from the plot.
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
         font_scaling (float): Multiplier for all text elements in the plot.
@@ -361,7 +414,7 @@ def plot_numeric_overview_boxplot(
         # Intercept the NaNs generated by division by zero and set to 0.0
         if handle_zero_variance == "constant" and not zero_iqr_cols.empty:
             numeric_df[zero_iqr_cols] = 0.0
-            _LOGGER.warning(f"Set zero-IQR columns to 0 during robust scaling: {list(zero_iqr_cols)}")
+            _LOGGER.info(f"Set zero-IQR columns to 0 during robust scaling: {list(zero_iqr_cols)}")
             
         x_label = "Value (Robust Scaled)"
     elif strategy == "log":
@@ -431,7 +484,7 @@ def plot_numeric_overview_boxplot(
 def plot_numeric_overview_boxplot_macro(df: pd.DataFrame, 
                                         save_dir: Union[str, Path], 
                                         plot_title: str = "Distribution Overview",
-                                        handle_zero_variance: Literal["drop", "constant"] = "drop",
+                                        handle_zero_variance: Literal["drop", "constant"] = "constant",
                                         show_means: bool = True,
                                         font_scaling: float = 1.0):
     """
@@ -442,7 +495,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
         save_dir (str | Path): Directory path to save the plot.
         plot_title (str): The title of the plot.
         handle_zero_variance (Literal["drop", "constant"]): How to handle zero-variance columns when strategy="scale".
-            - "drop": Exclude zero-variance columns from the plot (default).
+            - "drop": Exclude zero-variance columns from the plot.
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
         font_scaling (float): Multiplier for all text elements in the plot.
