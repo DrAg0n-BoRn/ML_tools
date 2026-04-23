@@ -100,7 +100,9 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
     def plot_metrics(self, 
                      df_generated: pd.DataFrame, 
                      base_plot_title: str = "Generated Data Distributions",
-                     handle_zero_variance: Literal["constant", "drop"] = "constant") -> None:
+                     handle_zero_variance: Literal["constant", "drop"] = "constant",
+                     show_means: bool = True,
+                     font_scaling: float = 1.0) -> None:
         """
         Plots value distributions and numeric overview boxplots for the generated DataFrame.
         
@@ -108,15 +110,21 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
             df_generated (pd.DataFrame): The generated DataFrame for which to plot metrics.
             base_plot_title (str): The base title for the plots.
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance.
+            show_means (bool): Whether to display means on the plots.
+            font_scaling (float): The scaling factor for font sizes on the plots.
         """
         # check if df_generated is empty
         if df_generated.empty:
             _LOGGER.warning("The provided DataFrame for plotting is empty. No plots will be generated.")
             return
         
-        plot_value_distributions(df=df_generated, save_dir=self.save_root_dir)
+        plot_value_distributions(df=df_generated, 
+                                 save_dir=self.save_root_dir,
+                                 font_scaling=font_scaling,)
 
         plot_numeric_overview_boxplot_macro(df=df_generated, 
                                             save_dir=self.save_root_dir, 
                                             plot_title=base_plot_title,
-                                            handle_zero_variance=handle_zero_variance)
+                                            handle_zero_variance=handle_zero_variance,
+                                            show_means=show_means,
+                                            font_scaling=font_scaling)

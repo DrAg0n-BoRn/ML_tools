@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [22.11.1] 2026-04-23 
+## [22.11.2] 2026-04-23
+
+### Changed
+
+- ML_inference_diffusion:
+    - `DragonDiTGuidedGenerator` and `DragonDiTGenerator`, updated method parameters to add more control over plot aesthetics.
+
+## [22.11.1] 2026-04-23
 
 ### Changed
 

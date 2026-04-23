@@ -109,6 +109,8 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                      target_value: float,
                      base_plot_title: str = "Generated Data Distributions",
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
+                     show_means: bool = True,
+                     font_scaling: float = 1.0,
                      subdirectory: Optional[str] = None) -> None:
         """
         Plots value distributions and numeric overview boxplots.
@@ -118,6 +120,8 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             target_value (float): The target value used for generation, included in plot titles for clarity.
             base_plot_title (str): The base title for the plots.
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance when plotting boxplots.
+            show_means (bool): Whether to display means on the plots.
+            font_scaling (float): The scaling factor for font sizes on the plots.
             subdirectory (str | None): Optional subdirectory within the save directory to save the plots. If None, saves in the root save directory.
         """
         if df_generated.empty:
@@ -133,13 +137,17 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
         else:
             target_dir = self.save_root_dir
         
-        plot_value_distributions(df=df_generated, save_dir=target_dir)
+        plot_value_distributions(df=df_generated, 
+                                 save_dir=target_dir,
+                                 font_scaling=font_scaling,)
         
         plot_numeric_overview_boxplot_macro(
                 df=df_generated, 
                 save_dir=target_dir, 
                 plot_title=target_title,
-                handle_zero_variance=handle_zero_variance
+                handle_zero_variance=handle_zero_variance,
+                show_means=show_means,
+                font_scaling=font_scaling
             )
 
     def generate_plot_multi(self,
@@ -150,7 +158,8 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                             positive_columns: Union[list[str], Literal["all"], Literal["none"]] = "none",
                             round_float_columns: Union[list[str], Literal["all"], Literal["none"]] = "all",
                             float_rounding_precision: int = 3,
-                            handle_zero_variance: Literal["constant", "drop"] = "constant") -> None:
+                            handle_zero_variance: Literal["constant", "drop"] = "constant",
+                            font_scaling: float = 1.0) -> None:
         """
         Iterates over a list of targets, generating and plotting data for each, saving outputs in isolated subdirectories.
         
@@ -167,6 +176,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                 - If "none", no columns will be modified for rounding.
             float_rounding_precision (int): The number of decimal places to round float values to if `round_float_columns` is not "none".
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance when plotting boxplots.
+            font_scaling (float): The scaling factor for font sizes on the plots.
         """
         for target in targets:
             # Create a dedicated directory for this specific target
@@ -189,7 +199,9 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                 df_generated=df_generated,
                 target_value=target,
                 subdirectory=basic_info,
-                handle_zero_variance=handle_zero_variance
+                handle_zero_variance=handle_zero_variance,
+                show_means=True,
+                font_scaling=font_scaling
             )
             
             # save the generated DataFrame for this target
