@@ -4,7 +4,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from typing import Union, Optional
-from scipy.stats import wasserstein_distance, ks_2samp
+from scipy.stats import wasserstein_distance, ks_2samp, chi2_contingency
+# PCA and ROC analysis
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve, roc_auc_score
 
 from ..ML_configuration import FormatTabularDiffusionMetrics
 
@@ -229,9 +235,12 @@ def dit_generation_metrics(
         
         overall_report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
         
-        # Calculate Pearson correlation matrices
-        real_df = pd.DataFrame(real_num, columns=num_target_names)
-        gen_df = pd.DataFrame(gen_num, columns=num_target_names)
+        # Abbreviate names for the plot
+        abbr_num_names = [check_and_abbreviate_name(name) for name in num_target_names]
+        
+        # Calculate Pearson correlation matrices using abbreviated names
+        real_df = pd.DataFrame(real_num, columns=abbr_num_names)
+        gen_df = pd.DataFrame(gen_num, columns=abbr_num_names)
         
         # Fill NaNs with 0 in case some features generated as pure constants (variance=0)
         real_corr = real_df.corr().fillna(0)
@@ -257,21 +266,42 @@ def dit_generation_metrics(
         
         # Plot Correlation Difference Heatmap
         # Scale figure size dynamically if there are many features
-        fig_size_xy = max(8, len(num_target_names) * 0.6)
+        num_feats = len(abbr_num_names)
+        fig_size_xy = max(8, num_feats * 0.8)
         fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
         
         # Only display annotations if there are fewer than 15 features to avoid clutter
-        show_annotations = len(num_target_names) <= 15
+        show_annotations = num_feats <= 15
+        
+        # Adjust font sizes for heatmaps to prevent clipping and balance elements
+        title_fs = max(14, format_config.font_size - 8)
+        # Dynamically scale annotation size: large for few features, smaller for many
+        annot_fs = max(10, format_config.font_size - max(4, num_feats // 2))
         
         sns.heatmap(corr_diff_abs, 
                     annot=show_annotations, 
                     fmt=".2f", 
                     cmap=format_config.cmap, 
-                    cbar_kws={'label': 'Absolute Correlation Difference'},
+                    cbar_kws={}, # Removed label
+                    annot_kws={"size": annot_fs},
                     ax=ax,
                     vmin=0, vmax=1.0)
                     
-        ax.set_title("Absolute Difference in Feature Correlations (Real vs Gen)", fontsize=format_config.font_size + 2)
+        ax.set_title("Absolute Difference in Numerical Associations\n(Real vs Generated)", 
+                     fontsize=title_fs, pad=15)
+                     
+        # Update Ticks and explicitly rotate them 45 degrees
+        ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size - 2)
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
+        plt.setp(ax.get_yticklabels(), rotation=0)
+        
+        # Increase colorbar tick size
+        if ax.collections:
+            cbar = ax.collections[0].colorbar
+            if cbar:
+                cbar.ax.tick_params(labelsize=format_config.ytick_size - 4)
+        
         plt.tight_layout()
         plot_path = save_dir_path / "correlation_difference_heatmap.svg"
         plt.savefig(plot_path)
@@ -280,7 +310,33 @@ def dit_generation_metrics(
         _LOGGER.info(f"🔗 Correlation matrix metrics calculated and heatmap saved to '{plot_path.name}'")
     
     # ==========================================
-    # 4. Save Overall Report
+    # 4. Global Multivariate Projections (PCA)
+    # ==========================================
+    if real_num is not None and gen_num is not None and num_target_names is not None and len(num_target_names) > 1:
+        overall_report_lines.append(f"\n[Global Projection: PCA]")
+        _plot_pca_projection(real_num, gen_num, save_dir_path, format_config)
+        overall_report_lines.append("- PCA 2D projection plot generated.")
+
+    # ==========================================
+    # 5. Global Categorical Associations (Cramer's V)
+    # ==========================================
+    if real_cat_list is not None and gen_cat_list is not None and cat_target_names is not None and len(cat_target_names) > 1:
+        overall_report_lines.append(f"\n[Global Categorical Associations: Cramer's V]")
+        _plot_cramers_v_heatmap(real_cat_list, gen_cat_list, cat_target_names, save_dir_path, format_config)
+        overall_report_lines.append("- Cramer's V difference heatmap generated.")
+
+    # ==========================================
+    # 6. Global Realism Evaluation (Discriminator ROC)
+    # ==========================================
+    has_num = real_num is not None and gen_num is not None and len(real_num) > 0
+    has_cat = real_cat_list is not None and gen_cat_list is not None and len(real_cat_list) > 0
+    if has_num or has_cat:
+        overall_report_lines.append(f"\n[Global Realism: Discriminator ROC]")
+        _plot_discriminator_roc(real_num, gen_num, real_cat_list, gen_cat_list, save_dir_path, format_config)
+        overall_report_lines.append("- Discriminator ROC curve generated (target ideal AUC is ~0.50).")
+    
+    # ==========================================
+    # 7. Save Overall Report
     # ==========================================
     report_string = "\n".join(overall_report_lines)
     report_path = save_dir_path / "global_generation_report.txt"
@@ -357,3 +413,262 @@ We generally want to answer two main questions:
     with a stronger emphasis on avoiding large discrepancies in correlations compared to the real data.
     
 """
+
+
+def _plot_pca_projection(real_num: np.ndarray, 
+                         gen_num: np.ndarray, 
+                         save_dir_path: Path, 
+                         format_config: FormatTabularDiffusionMetrics) -> None:
+    """
+    [PRIVATE] Helper function to plot a 2D PCA projection of numerical features.
+    """
+    if real_num is None or gen_num is None or real_num.shape[1] < 2:
+        return
+        
+    try:
+        # Standardize based on real data distribution
+        scaler = StandardScaler()
+        real_scaled = scaler.fit_transform(real_num)
+        gen_scaled = scaler.transform(gen_num)
+        
+        # Fit PCA on real data to define the manifold
+        pca = PCA(n_components=2)
+        real_pca = pca.fit_transform(real_scaled)
+        gen_pca = pca.transform(gen_scaled)
+        
+        fig, ax = plt.subplots(figsize=DISTRIBUTION_PLOT_SIZE, dpi=DPI_value)
+        
+        # Add Density contours (overlapping areas with high transparency)
+        sns.kdeplot(x=real_pca[:, 0], y=real_pca[:, 1], 
+                    fill=True, alpha=0.2, color=format_config.real_color, 
+                    ax=ax, zorder=1)
+        sns.kdeplot(x=gen_pca[:, 0], y=gen_pca[:, 1], 
+                    fill=True, alpha=0.2, color=format_config.gen_color, 
+                    ax=ax, zorder=1)
+        
+        # Plot Real Data Scatter (on top of density)
+        ax.scatter(real_pca[:, 0], real_pca[:, 1], 
+                   c=format_config.real_color, 
+                   alpha=format_config.alpha, 
+                   label='Real Data', 
+                   s=10, zorder=2, edgecolors='none')
+        
+        # Plot Generated Data Scatter
+        ax.scatter(gen_pca[:, 0], gen_pca[:, 1], 
+                   c=format_config.gen_color, 
+                   alpha=format_config.alpha, 
+                   label='Generated Data', 
+                   s=10, zorder=2, edgecolors='none')
+                   
+        explained_variance = pca.explained_variance_ratio_
+        ax.set_title("2D PCA Projection (Numerical Features)", fontsize=format_config.font_size + 2)
+        ax.set_xlabel(f"Principal Component 1 ({explained_variance[0]:.1%})", fontsize=format_config.font_size)
+        ax.set_ylabel(f"Principal Component 2 ({explained_variance[1]:.1%})", fontsize=format_config.font_size)
+        
+        ax.tick_params(axis='x', labelsize=format_config.xtick_size)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size)
+        ax.legend(fontsize=format_config.legend_size - 4) # Slightly smaller legend font
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
+        plot_path = save_dir_path / "pca_projection_numerical.svg"
+        plt.savefig(plot_path)
+        plt.close(fig)
+        
+        _LOGGER.info(f"📊 PCA projection plot saved to '{plot_path.name}'")
+    except Exception as e:
+        _LOGGER.error(f"Failed to generate PCA plot: {e}")
+
+        
+def _cramers_v(x: np.ndarray, y: np.ndarray) -> float:
+    """Calculates Cramer's V statistic for categorical-categorical association."""
+    crosstab = pd.crosstab(x, y)
+    if crosstab.empty or crosstab.size == 0:
+        return 0.0
+    
+    chi2, _, _, _ = chi2_contingency(crosstab, correction=False)
+    n = crosstab.sum().sum()
+    r, k = crosstab.shape
+    min_dim = min(k - 1, r - 1)
+    
+    if min_dim == 0 or n == 0:
+        return 0.0
+    return float(np.sqrt(chi2 / (n * min_dim)))
+
+
+def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray], 
+                            gen_cat_list: list[np.ndarray], 
+                            cat_target_names: list[str], 
+                            save_dir_path: Path, 
+                            format_config: FormatTabularDiffusionMetrics) -> None:
+    """
+    [PRIVATE] Helper function to plot Cramer's V categorical association difference heatmap.
+    """
+    num_cat = len(cat_target_names) if cat_target_names else 0
+    if not real_cat_list or not gen_cat_list or num_cat < 2:
+        return
+        
+    try:
+        # Initialize matrices
+        real_corr = np.zeros((num_cat, num_cat))
+        gen_corr = np.zeros((num_cat, num_cat))
+        
+        # Calculate pairwise Cramer's V
+        for i in range(num_cat):
+            for j in range(num_cat):
+                if i == j:
+                    real_corr[i, j] = 1.0
+                    gen_corr[i, j] = 1.0
+                elif i < j:
+                    # Calculate for Real Data
+                    cv_real = _cramers_v(real_cat_list[i], real_cat_list[j])
+                    real_corr[i, j] = cv_real
+                    real_corr[j, i] = cv_real
+                    
+                    # Calculate for Generated Data
+                    cv_gen = _cramers_v(gen_cat_list[i], gen_cat_list[j])
+                    gen_corr[i, j] = cv_gen
+                    gen_corr[j, i] = cv_gen
+
+        # Abbreviate names for the plot
+        abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
+
+        real_df = pd.DataFrame(real_corr, index=abbr_cat_names, columns=abbr_cat_names)
+        gen_df = pd.DataFrame(gen_corr, index=abbr_cat_names, columns=abbr_cat_names)
+        
+        corr_diff_abs = (real_df - gen_df).abs()
+        
+        # Dynamically scale figure size based on number of categorical features
+        fig_size_xy = max(8, num_cat * 0.8)
+        fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
+        
+        show_annotations = num_cat <= 15
+        
+        # Adjust font sizes for heatmaps to prevent clipping and balance elements
+        title_fs = max(14, format_config.font_size - 8)
+        # Dynamically scale annotation size: large for few categories, smaller for many
+        annot_fs = max(10, format_config.font_size - max(4, num_cat // 2))
+        
+        sns.heatmap(corr_diff_abs, 
+                    annot=show_annotations, 
+                    fmt=".2f", 
+                    cmap=format_config.cmap, 
+                    cbar_kws={}, # Removed label
+                    annot_kws={"size": annot_fs},
+                    ax=ax,
+                    vmin=0, vmax=1.0)
+                    
+        ax.set_title("Absolute Difference in Categorical Associations\n(Real vs Generated)", 
+                     fontsize=title_fs, pad=15)
+        
+        # Update Ticks and explicitly rotate them 45 degrees
+        ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size - 2)
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
+        plt.setp(ax.get_yticklabels(), rotation=0)
+        
+        # Increase colorbar tick size
+        if ax.collections:
+            cbar = ax.collections[0].colorbar
+            if cbar:
+                cbar.ax.tick_params(labelsize=format_config.ytick_size - 4)
+        
+        plt.tight_layout()
+        
+        plot_path = save_dir_path / "cramers_v_difference_heatmap.svg"
+        plt.savefig(plot_path)
+        plt.close(fig)
+        
+        _LOGGER.info(f"📊 Cramer's V heatmap saved to '{plot_path.name}'")
+    except Exception as e:
+        _LOGGER.error(f"Failed to generate Cramer's V heatmap: {e}")
+
+
+def _plot_discriminator_roc(real_num: Optional[np.ndarray], 
+                            gen_num: Optional[np.ndarray], 
+                            real_cat_list: Optional[list[np.ndarray]], 
+                            gen_cat_list: Optional[list[np.ndarray]], 
+                            save_dir_path: Path, 
+                            format_config: FormatTabularDiffusionMetrics) -> None:
+    """
+    [PRIVATE] Helper function to plot Discriminator ROC curve to evaluate global realism.
+    Trains a lightweight classifier to distinguish real (class 0) from generated (class 1) data.
+    An AUC close to 0.5 indicates highly realistic generated data.
+    """
+    try:
+        X_real_parts = []
+        X_gen_parts = []
+        
+        # 1. Prepare Numerical Features
+        if real_num is not None and gen_num is not None and len(real_num) > 0:
+            X_real_parts.append(real_num)
+            X_gen_parts.append(gen_num)
+            
+        # 2. Prepare Categorical Features (Factorize to handle strings safely)
+        if real_cat_list is not None and gen_cat_list is not None and len(real_cat_list) > 0:
+            real_cat_encoded = []
+            gen_cat_encoded = []
+            for r_cat, g_cat in zip(real_cat_list, gen_cat_list):
+                combined = np.concatenate([r_cat, g_cat])
+                codes, _ = pd.factorize(combined)
+                real_cat_encoded.append(codes[:len(r_cat)])
+                gen_cat_encoded.append(codes[len(r_cat):])
+            
+            X_real_parts.append(np.column_stack(real_cat_encoded))
+            X_gen_parts.append(np.column_stack(gen_cat_encoded))
+            
+        if not X_real_parts or not X_gen_parts:
+            return
+            
+        X_real = np.hstack(X_real_parts)
+        X_gen = np.hstack(X_gen_parts)
+        
+        # 3. Create labels (Real = 0, Generated = 1)
+        y_real = np.zeros(len(X_real))
+        y_gen = np.ones(len(X_gen))
+        
+        X = np.vstack([X_real, X_gen])
+        y = np.concatenate([y_real, y_gen])
+        
+        # Safety fallback for NaNs
+        X = np.nan_to_num(X, nan=0.0)
+        
+        # 4. Train/Test Split & Train Model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+        
+        clf = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=-1)
+        clf.fit(X_train, y_train)
+        
+        # 5. Predict and calculate Metrics
+        y_prob = clf.predict_proba(X_test)[:, 1]
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        auc_score = roc_auc_score(y_test, y_prob)
+        
+        # 6. Plotting
+        fig, ax = plt.subplots(figsize=DISTRIBUTION_PLOT_SIZE, dpi=DPI_value)
+        
+        ax.plot(fpr, tpr, color=format_config.gen_color, linewidth=2, 
+                label=f'Discriminator AUC = {auc_score:.2f}')
+        
+        # Ideal line for generative models is the random guess diagonal
+        ax.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Ideal AUC = 0.5')
+        
+        ax.set_title("Discriminator ROC Curve (Real vs Generated)", fontsize=format_config.font_size + 2)
+        ax.set_xlabel("False Positive Rate", fontsize=format_config.font_size)
+        ax.set_ylabel("True Positive Rate", fontsize=format_config.font_size)
+        
+        ax.tick_params(axis='x', labelsize=format_config.xtick_size)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size)
+        ax.legend(loc='lower right', fontsize=format_config.legend_size)
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
+        plot_path = save_dir_path / "discriminator_roc_curve.svg"
+        plt.savefig(plot_path)
+        plt.close(fig)
+        
+        _LOGGER.info(f"📊 Discriminator ROC curve saved to '{plot_path.name}' (AUC: {auc_score:.2f})")
+        
+    except Exception as e:
+        _LOGGER.error(f"Failed to generate Discriminator ROC curve: {e}")
+

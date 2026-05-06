@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.12.0] 2026-05-06
+
+### Changed
+
+- ML_evaluation:
+    - `dit_generation_metrics()`, integrated new metrics and plots: 
+        - Global Multivariate Projections (PCA)
+        - Global Categorical Associations (Cramer's V)
+        - Global Realism Evaluation (Discriminator ROC)
+
 ## [22.11.2] 2026-04-23
 
 ### Changed
