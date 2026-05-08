@@ -80,21 +80,24 @@ def autoencoder_metrics(
         save_dir_path, format_config
     )
     
+    # 4. Sample-wise Error Scatter Plot (Anomaly Detection)
     _plot_sample_error_scatter(
         y_true_num, y_pred_num, cat_true_list, cat_pred_list, save_dir_path, format_config
     )
     
+    # 5. Error Correlation Heatmap for Numerical Features
     _plot_error_correlation_heatmap(
         y_true_num, y_pred_num, num_target_names, save_dir_path, format_config
     )
     
+    # 6. Global Radar Chart of Numerical MAE and Categorical F1
     _plot_global_radar_chart(
         y_true_num, y_pred_num, num_target_names,
         cat_true_list, cat_pred_list, cat_target_names,
         save_dir_path, format_config
     )
 
-    # 4. Save Overall Report
+    # 7. Save Overall Report
     report_string = "\n".join(overall_report_lines)
     report_path = save_dir_path / "global_autoencoder_report.txt"
     report_path.write_text(report_string, encoding="utf-8")
@@ -139,7 +142,7 @@ def _evaluate_numerical_features(
     
     plt.tight_layout()
     hist_path = save_dir_path / "global_numerical_error_distribution.svg"
-    plt.savefig(hist_path)
+    plt.savefig(hist_path, bbox_inches='tight')
     plt.close(fig_err)
 
     # Calculate Per-Feature Numerical Summary 
@@ -255,13 +258,21 @@ def _evaluate_categorical_features(
         
         plt.tight_layout()
         cm_path = save_dir_path / f"categorical_cm_{sanitize_filename(feat_name)}.svg"
-        plt.savefig(cm_path)
+        plt.savefig(cm_path, bbox_inches='tight')
         plt.close(fig_cm)
 
         # 2. Confidence Distribution Plot
         if cat_prob_list is not None:
             probs_c = cat_prob_list[i]
-            max_probs = np.clip(np.max(probs_c, axis=1), 0.0, 1.0)
+            
+            # Ensure probs_c is 2D before applying max along axis 1
+            if probs_c.ndim == 1:
+                # If 1D, assume it's the probability of the positive class
+                max_probs = np.maximum(probs_c, 1 - probs_c)
+            else:
+                max_probs = np.max(probs_c, axis=1)
+            
+            max_probs = np.clip(max_probs, 0.0, 1.0)
             
             fig_prob, ax_prob = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
             correct_mask = (y_true_c == y_pred_c)
@@ -275,9 +286,9 @@ def _evaluate_categorical_features(
                 bins = format_config.confidence_bins
             
             if len(correct_probs) > 0:
-                ax_prob.hist(correct_probs, bins=bins, alpha=0.6, color='tab:green', label='Correct Reconstructions', density=True)
+                ax_prob.hist(correct_probs, bins=bins, alpha=0.6, color='tab:green', label='Correct Reconstructions', density=True) # type: ignore
             if len(incorrect_probs) > 0:
-                ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True)
+                ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True) # type: ignore
             
             ax_prob.set_title(f"Reconstruction Confidence: {feat_name_abbrev}", fontsize=format_config.font_size)
             ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.xtick_size)
@@ -291,7 +302,7 @@ def _evaluate_categorical_features(
             
             plt.tight_layout()
             prob_path = save_dir_path / f"categorical_confidence_{sanitize_filename(feat_name)}.svg"
-            plt.savefig(prob_path)
+            plt.savefig(prob_path, bbox_inches='tight')
             plt.close(fig_prob)
     
     _LOGGER.info(f"📊 Saved Confusion Matrices and Distribution Plots for categorical features to '{save_dir_path.name}'")    
@@ -328,10 +339,11 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         n_plots = sum([has_num, has_cat])
         
         # Scale figure height dynamically based on the maximum number of features to ensure readability
-        max_features = max(len(num_target_names) if has_num else 0, len(cat_target_names) if has_cat else 0)
-        fig_height = max(6.0, max_features * 0.4)
+        max_features = max(len(num_target_names) if has_num else 0, len(cat_target_names) if has_cat else 0) # type: ignore
+        fig_height = max(6.0, max_features * 0.8) # Slightly increased vertical space per feature
         
-        fig, axes = plt.subplots(1, n_plots, figsize=(max(8, 7 * n_plots), fig_height), dpi=DPI_value)
+        # Increased base width per plot to give large fonts more room
+        fig, axes = plt.subplots(1, n_plots, figsize=(max(10, 9 * n_plots), fig_height), dpi=DPI_value)
         
         # Make axes iterable if there's only one plot
         if n_plots == 1:
@@ -342,9 +354,9 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         # Numerical Features (MAE)
         if has_num:
             mae_scores = []
-            abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
-            for i in range(len(num_target_names)):
-                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
+            abbr_names = [check_and_abbreviate_name(name) for name in num_target_names] # type: ignore
+            for i in range(len(num_target_names)): # type: ignore
+                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i]) # type: ignore
                 mae_scores.append(mae)
             
             # Sort by MAE (ascending, so best/lowest error is at the top)
@@ -353,7 +365,7 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             sorted_names = [abbr_names[i] for i in sorted_indices]
             
             y_pos = np.arange(len(sorted_names))
-            axes[ax_idx].barh(y_pos, sorted_maes, color='tab:blue', alpha=0.7)
+            axes[ax_idx].barh(y_pos, sorted_maes, color=format_config.num_color, alpha=0.7)
             axes[ax_idx].set_yticks(y_pos)
             axes[ax_idx].set_yticklabels(sorted_names, fontsize=format_config.ytick_size)
             axes[ax_idx].invert_yaxis()  # Best (lowest MAE) at the top
@@ -367,9 +379,9 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         # Categorical Features (F1-Macro)
         if has_cat:
             f1_scores = []
-            abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
-            for i in range(len(cat_target_names)):
-                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0)
+            abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names] # type: ignore
+            for i in range(len(cat_target_names)): # type: ignore
+                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0) # type: ignore
                 f1_scores.append(f1)
             
             # Sort by F1 (descending, so best/highest score is at the top)
@@ -378,7 +390,7 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             sorted_cat_names = [abbr_cat_names[i] for i in sorted_indices]
             
             y_pos = np.arange(len(sorted_cat_names))
-            axes[ax_idx].barh(y_pos, sorted_f1s, color='tab:orange', alpha=0.7)
+            axes[ax_idx].barh(y_pos, sorted_f1s, color=format_config.cat_color, alpha=0.7)
             axes[ax_idx].set_yticks(y_pos)
             axes[ax_idx].set_yticklabels(sorted_cat_names, fontsize=format_config.ytick_size)
             axes[ax_idx].invert_yaxis()  # Best (highest F1) at the top
@@ -389,9 +401,10 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             axes[ax_idx].grid(axis='x', linestyle='--', alpha=0.6)
             axes[ax_idx].tick_params(axis='x', labelsize=format_config.xtick_size)
 
-        plt.tight_layout()
+        # Added horizontal padding (w_pad) and bbox_inches to prevent clipping
+        plt.tight_layout(w_pad=4.0)
         plot_path = save_dir_path / "global_feature_performance.svg"
-        plt.savefig(plot_path)
+        plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
         _LOGGER.info(f"📊 Global feature performance bar chart saved to '{plot_path.name}'")
@@ -426,21 +439,21 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         # Calculate numerical sample-wise MAE
         if has_num:
             # Absolute error per feature, then mean across features for each sample
-            x_data = np.mean(np.abs(y_true_num - y_pred_num), axis=1) 
-            x_label = "Sample Mean Absolute Error (Numerical)"
+            x_data = np.mean(np.abs(y_true_num - y_pred_num), axis=1)  # type: ignore
+            x_label = "Numerical Mean Absolute Error"
             
         # Calculate categorical sample-wise misclassifications
         if has_cat:
             # Stack arrays to shape (n_samples, n_features)
-            cat_true_stacked = np.column_stack(cat_true_list)
-            cat_pred_stacked = np.column_stack(cat_pred_list)
+            cat_true_stacked = np.column_stack(cat_true_list)  # type: ignore
+            cat_pred_stacked = np.column_stack(cat_pred_list)  # type: ignore
             # Count misclassifications per sample
             y_data = np.sum(cat_true_stacked != cat_pred_stacked, axis=1)
-            y_label = "Categorical Misclassifications (Count)"
+            y_label = "Categorical Misclassifications"
 
         if has_num and has_cat:
             # Both: 2D Scatter
-            ax.scatter(x_data, y_data, alpha=0.6, color='tab:purple', edgecolors='none')
+            ax.scatter(x_data, y_data, alpha=format_config.scatter_alpha, color=format_config.scatter_color, edgecolors='none') # type: ignore
             ax.set_xlabel(x_label, fontsize=format_config.font_size)
             ax.set_ylabel(y_label, fontsize=format_config.font_size)
             ax.set_title("Global Sample-wise Error", fontsize=format_config.font_size + 2)
@@ -450,8 +463,8 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         elif has_num:
             # Only num: 1D Scatter with jitter for visibility
             y_zeros = np.zeros_like(x_data)
-            jitter = np.random.normal(0, 0.05, size=len(x_data))
-            ax.scatter(x_data, y_zeros + jitter, alpha=0.6, color='tab:blue', edgecolors='none')
+            jitter = np.random.normal(0, 0.05, size=len(x_data)) # type: ignore
+            ax.scatter(x_data, y_zeros + jitter, alpha=format_config.scatter_alpha, color=format_config.num_color, edgecolors='none') # type: ignore
             ax.set_xlabel(x_label, fontsize=format_config.font_size)
             ax.set_yticks([])
             ax.set_ylabel("Density", fontsize=format_config.font_size)
@@ -460,8 +473,8 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         elif has_cat:
             # Only cat: 1D Scatter with jitter for visibility
             x_zeros = np.zeros_like(y_data)
-            jitter = np.random.normal(0, 0.05, size=len(y_data))
-            ax.scatter(x_zeros + jitter, y_data, alpha=0.6, color='tab:orange', edgecolors='none')
+            jitter = np.random.normal(0, 0.05, size=len(y_data)) # type: ignore
+            ax.scatter(x_zeros + jitter, y_data, alpha=format_config.scatter_alpha, color=format_config.cat_color, edgecolors='none') # type: ignore
             ax.set_ylabel(y_label, fontsize=format_config.font_size)
             ax.set_xticks([])
             ax.set_xlabel("Density", fontsize=format_config.font_size)
@@ -474,7 +487,7 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         
         plt.tight_layout()
         plot_path = save_dir_path / "global_sample_error_scatter.svg"
-        plt.savefig(plot_path)
+        plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
         _LOGGER.info(f"📊 Sample-wise error scatter plot saved to '{plot_path.name}'")
@@ -542,7 +555,7 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         
         plt.tight_layout()
         plot_path = save_dir_path / "global_error_correlation_heatmap.svg"
-        plt.savefig(plot_path)
+        plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
         _LOGGER.info(f"📊 Error correlation heatmap saved to '{plot_path.name}'")
@@ -572,18 +585,18 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
 
     try:
         n_plots = sum([has_num, has_cat])
-        fig = plt.figure(figsize=(max(7, 7 * n_plots), 7), dpi=DPI_value)
+        fig = plt.figure(figsize=(max(8, 8 * n_plots), 8), dpi=DPI_value)
         
         plot_idx = 1
         
         # Numerical Radar (MAE)
         if has_num:
             ax = fig.add_subplot(1, n_plots, plot_idx, polar=True)
-            abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
+            abbr_names = [check_and_abbreviate_name(name) for name in num_target_names] # type: ignore
             
             mae_scores = []
-            for i in range(len(num_target_names)):
-                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
+            for i in range(len(num_target_names)): # type: ignore
+                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i]) # type: ignore
                 mae_scores.append(mae)
                 
             # Close the loop to connect the last point back to the first
@@ -591,23 +604,33 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             angles = [n / float(len(abbr_names)) * 2 * math.pi for n in range(len(abbr_names))]
             angles += angles[:1]
             
-            ax.plot(angles, mae_scores, linewidth=2, linestyle='solid', color='tab:blue')
-            ax.fill(angles, mae_scores, 'tab:blue', alpha=0.2)
+            ax.plot(angles, mae_scores, linewidth=2.5, linestyle='solid', color=format_config.num_color)
+            ax.fill(angles, mae_scores, format_config.num_color, alpha=format_config.radar_fill_alpha) # Softer fill
             
+            # X-ticks (Feature names)
             ax.set_xticks(angles[:-1])
             ax.set_xticklabels(abbr_names, fontsize=format_config.xtick_size)
+            ax.tick_params(axis='x', pad=20) # Push feature labels away from the edge
             
-            ax.set_title("Numerical MAE", fontsize=format_config.font_size + 2, pad=20)
+            # Y-ticks (Radial numbers)
+            ax.set_rlabel_position(30) # type: ignore # Shift numbers to a 30-degree angle so they don't overlap with the rightmost feature
+            ax.tick_params(axis='y', labelsize=format_config.ytick_size - 6, colors='dimgrey')
+            
+            # Soften the grid and outer spine
+            ax.grid(color='lightgrey', linestyle='--', linewidth=1)
+            ax.spines['polar'].set_color('lightgrey')
+            
+            ax.set_title("Numerical MAE", fontsize=format_config.font_size + 2, pad=35)
             plot_idx += 1
             
         # Categorical Radar (F1-Macro)
         if has_cat:
             ax = fig.add_subplot(1, n_plots, plot_idx, polar=True)
-            abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
+            abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names] # type: ignore
             
             f1_scores = []
-            for i in range(len(cat_target_names)):
-                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0)
+            for i in range(len(cat_target_names)): # type: ignore
+                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0) # type: ignore
                 f1_scores.append(f1)
                 
             # Close the loop
@@ -615,22 +638,29 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             angles = [n / float(len(abbr_cat_names)) * 2 * math.pi for n in range(len(abbr_cat_names))]
             angles += angles[:1]
             
-            ax.plot(angles, f1_scores, linewidth=2, linestyle='solid', color='tab:orange')
-            ax.fill(angles, f1_scores, 'tab:orange', alpha=0.2)
+            ax.plot(angles, f1_scores, linewidth=2.5, linestyle='solid', color=format_config.cat_color)
+            ax.fill(angles, f1_scores, format_config.cat_color, alpha=format_config.radar_fill_alpha)
             
             ax.set_xticks(angles[:-1])
             ax.set_xticklabels(abbr_cat_names, fontsize=format_config.xtick_size)
-            ax.set_ylim(0, 1.0)
+            ax.tick_params(axis='x', pad=20)
             
-            ax.set_title("Categorical F1-Macro", fontsize=format_config.font_size + 2, pad=20)
+            ax.set_ylim(0, 1.0)
+            ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0]) # Clean, predictable radial ticks for F1
+            ax.set_rlabel_position(30) # type: ignore
+            ax.tick_params(axis='y', labelsize=format_config.ytick_size - 6, colors='dimgrey')
+            
+            ax.grid(color='lightgrey', linestyle='--', linewidth=1)
+            ax.spines['polar'].set_color('lightgrey')
+            
+            ax.set_title("Categorical F1-Macro", fontsize=format_config.font_size + 2, pad=35)
 
         plt.tight_layout()
         plot_path = save_dir_path / "global_radar_chart.svg"
-        plt.savefig(plot_path)
+        plt.savefig(plot_path, bbox_inches='tight') # Prevents the padded labels from being cut off
         plt.close(fig)
         
         _LOGGER.info(f"📊 Global radar chart saved to '{plot_path.name}'")
         
     except Exception as e:
         _LOGGER.error(f"Failed to generate radar chart: {e}")
-

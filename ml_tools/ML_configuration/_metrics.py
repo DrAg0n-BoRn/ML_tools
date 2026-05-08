@@ -376,6 +376,11 @@ class _BaseAutoencoderFormat:
                  hist_color: str = 'teal',
                  hist_bins: Union[int, str] = 50,
                  confidence_bins: Union[int, str] = 20,
+                 num_color: str = 'tab:blue',
+                 cat_color: str = 'tab:orange',
+                 scatter_color: str = 'tab:purple',
+                 scatter_alpha: float = 0.6,
+                 radar_fill_alpha: float = 0.15,
                  cmap: str = "Blues",
                  font_size: int = 26,
                  xtick_size: int = 22,
@@ -393,6 +398,14 @@ class _BaseAutoencoderFormat:
             confidence_bins (int | str): The number of bins for the categorical confidence distribution.
                 - This controls the granularity of the confidence distribution plot, which can help identify if the model is overconfident (many samples in high-confidence bins) or underconfident (many samples in low-confidence bins).
                 - Options: 'auto', 'sqrt', 10, 20, 50
+            num_color (str): Matplotlib color for the numerical feature metrics (Bar charts, Radar lines).
+                - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
+            cat_color (str): Matplotlib color for the categorical feature metrics (Bar charts, Radar lines).
+                - Common color names: 'tab:orange', 'crimson', 'forestgreen', '#4682B4'
+            scatter_color (str): Matplotlib color for the combined 2D anomaly scatter plot points.
+                - Common color names: 'tab:purple', 'crimson', 'forestgreen', '#4682B4'
+            scatter_alpha (float): Transparency for the anomaly scatter plot points.
+            radar_fill_alpha (float): Transparency for the filled area inside the radar chart polygons.
             cmap (str): The matplotlib colormap name for the per-feature reconstruction error heatmap.
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
                 - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'    
@@ -417,6 +430,11 @@ class _BaseAutoencoderFormat:
         self.ytick_size = ytick_size
         self.cmap = cmap
         self.cm_font_size = cm_font_size
+        self.num_color = num_color
+        self.cat_color = cat_color
+        self.scatter_color = scatter_color
+        self.scatter_alpha = scatter_alpha
+        self.radar_fill_alpha = radar_fill_alpha
 
     def __repr__(self) -> str:
         parts = [
@@ -427,7 +445,12 @@ class _BaseAutoencoderFormat:
             f"xtick_size={self.xtick_size}",
             f"ytick_size={self.ytick_size}",
             f"cmap='{self.cmap}'",
-            f"cm_font_size={self.cm_font_size}"
+            f"cm_font_size={self.cm_font_size}",
+            f"num_color='{self.num_color}'",
+            f"cat_color='{self.cat_color}'",
+            f"scatter_color='{self.scatter_color}'",
+            f"scatter_alpha={self.scatter_alpha}",
+            f"radar_fill_alpha={self.radar_fill_alpha}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -744,6 +767,11 @@ class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
                  hist_color: str = 'teal',
                  hist_bins: Union[int, str] = 50,
                  confidence_bins: Union[int, str] = 20,
+                 num_color: str = 'tab:blue',
+                 cat_color: str = 'tab:orange',
+                 scatter_color: str = 'tab:purple',
+                 scatter_alpha: float = 0.6,
+                 radar_fill_alpha: float = 0.15,
                  cmap: str = "Blues",
                  font_size: int = 26,
                  xtick_size: int = 22,
@@ -753,6 +781,11 @@ class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
         super().__init__(hist_color=hist_color,
                          hist_bins=hist_bins,
                          confidence_bins=confidence_bins,
+                         num_color=num_color,
+                         cat_color=cat_color,
+                         scatter_color=scatter_color,
+                         scatter_alpha=scatter_alpha,
+                         radar_fill_alpha=radar_fill_alpha,
                          font_size=font_size,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,

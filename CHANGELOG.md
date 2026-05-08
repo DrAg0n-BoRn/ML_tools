@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.12.1] 2026-05-08
+
+### Changed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, integrated new metrics and plots:
+        - Sample-wise Error Scatter Plot (Anomaly Detection)
+        - Error Correlation Heatmap for Numerical Features
+        - Global Radar Chart of Numerical MAE and Categorical F1
+- ML_configuration:
+    - `FormatAutoencoderMetrics`, updated format parameters for the new metrics added.
+
 ## [22.12.0] 2026-05-06
 
 ### Changed
