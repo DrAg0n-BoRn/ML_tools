@@ -225,6 +225,9 @@ def _evaluate_continuous_features(
     report_lines.append(f"\n[Continuous Features: {len(num_target_names)}]")
     metrics_summary = []
     
+    local_save_dir = save_dir_path / "numerical_distributions"
+    local_save_dir.mkdir(exist_ok=True)
+    
     for i, name in enumerate(num_target_names):
         real_i = real_num[:, i]
         gen_i = gen_num[:, i]
@@ -269,8 +272,12 @@ def _evaluate_continuous_features(
         ax.legend(fontsize=format_config.legend_size)
         ax.grid(True, linestyle='--', alpha=0.6)
         
+        # Turn off the top and right borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
         plt.tight_layout()
-        plot_path = save_dir_path / f"kde_{sanitize_filename(name)}.svg"
+        plot_path = local_save_dir / f"{sanitize_filename(name)}_kde.svg"
         plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
@@ -312,6 +319,9 @@ def _evaluate_categorical_features(
     report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
     cat_metrics_summary = []
     
+    local_save_dir = save_dir_path / "categorical_distributions"
+    local_save_dir.mkdir(exist_ok=True)
+    
     for i, feat_name in enumerate(cat_target_names):
         real_c = real_cat_list[i]
         gen_c = gen_cat_list[i]
@@ -352,8 +362,12 @@ def _evaluate_categorical_features(
         ax.legend(fontsize=format_config.legend_size)
         ax.grid(True, linestyle='--', alpha=0.6, axis='y')
         
+        # Turn off the top and right borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
         plt.tight_layout()
-        plot_path = save_dir_path / f"bar_{sanitize_filename(feat_name)}.svg"
+        plot_path = local_save_dir / f"{sanitize_filename(feat_name)}_bar.svg"
         plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
@@ -504,6 +518,10 @@ def _plot_pca_projection(real_num: np.ndarray,
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         ax.legend(fontsize=format_config.legend_size - 4) # Slightly smaller legend font
         ax.grid(True, linestyle='--', alpha=0.6)
+        
+        # Turn off the top and right borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         plot_path = save_dir_path / "pca_projection_numerical.svg"
@@ -696,6 +714,10 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         ax.legend(loc='lower right', fontsize=format_config.legend_size)
         ax.grid(True, linestyle='--', alpha=0.6)
+        
+        # Turn off the top and right borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         plot_path = save_dir_path / "discriminator_roc_curve.svg"

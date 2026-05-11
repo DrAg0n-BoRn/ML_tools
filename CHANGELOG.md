@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.12.2] 2026-05-11
+
+### Changed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`
+        - modified the correlation heatmap, which now compares the true and predicted feature correlations to evaluate how well the autoencoder captures feature relationships. It calculates the correlation matrices for both true and predicted data, computes the difference, and visualizes it as a heatmap.
+        - added a standardized error violin plot for numerical features, which standardizes the reconstruction errors by the standard deviation of the true features.
+    - `dit_generation_metrics()`
+        - Changed plot aesthetics, removed top and right borders for a cleaner look.
+
 ## [22.12.1] 2026-05-08
 
 ### Changed

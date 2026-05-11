@@ -96,8 +96,13 @@ def autoencoder_metrics(
         cat_true_list, cat_pred_list, cat_target_names,
         save_dir_path, format_config
     )
+    
+    # 7. Standardized Error Violin Plot for Numerical Features
+    _plot_standardized_error_violin(
+        y_true_num, y_pred_num, num_target_names, save_dir_path, format_config
+    )
 
-    # 7. Save Overall Report
+    # 8. Save Overall Report
     report_string = "\n".join(overall_report_lines)
     report_path = save_dir_path / "global_autoencoder_report.txt"
     report_path.write_text(report_string, encoding="utf-8")
@@ -140,6 +145,10 @@ def _evaluate_numerical_features(
     ax_err.tick_params(axis='y', labelsize=format_config.ytick_size)
     ax_err.grid(True, linestyle='--', alpha=0.6)
     
+    # Turn off the top and right borders
+    ax_err.spines['top'].set_visible(False)
+    ax_err.spines['right'].set_visible(False)
+    
     plt.tight_layout()
     hist_path = save_dir_path / "global_numerical_error_distribution.svg"
     plt.savefig(hist_path, bbox_inches='tight')
@@ -179,6 +188,9 @@ def _evaluate_categorical_features(
 ) -> list[str]:
     """Evaluates categorical marginal distributions and returns report lines."""
     report_lines = []
+    
+    local_save_dir = save_dir_path / "categorical_feature_plots"
+    local_save_dir.mkdir(exist_ok=True)
     
     if not (cat_true_list is not None and len(cat_true_list) > 0 and 
             cat_pred_list is not None and len(cat_pred_list) > 0 and 
@@ -257,7 +269,7 @@ def _evaluate_categorical_features(
         cbar.ax.tick_params(labelsize=cm_tick_size)
         
         plt.tight_layout()
-        cm_path = save_dir_path / f"categorical_cm_{sanitize_filename(feat_name)}.svg"
+        cm_path = local_save_dir / f"{sanitize_filename(feat_name)}_cm.svg"
         plt.savefig(cm_path, bbox_inches='tight')
         plt.close(fig_cm)
 
@@ -300,12 +312,16 @@ def _evaluate_categorical_features(
             ax_prob.legend(fontsize=format_config.font_size - 4)
             ax_prob.grid(True, linestyle='--', alpha=0.6)
             
+            # Turn off the top and right borders
+            ax_prob.spines['top'].set_visible(False)
+            ax_prob.spines['right'].set_visible(False)
+            
             plt.tight_layout()
-            prob_path = save_dir_path / f"categorical_confidence_{sanitize_filename(feat_name)}.svg"
+            prob_path = local_save_dir / f"{sanitize_filename(feat_name)}_confidence.svg"
             plt.savefig(prob_path, bbox_inches='tight')
             plt.close(fig_prob)
     
-    _LOGGER.info(f"📊 Saved Confusion Matrices and Distribution Plots for categorical features to '{save_dir_path.name}'")    
+    _LOGGER.info(f"📊 Saved Confusion Matrices and Distribution Plots for categorical features to '{local_save_dir.name}'")    
     
     report_lines.append(f"Macro Average Categorical Accuracy: {np.mean(global_accuracies):.4f}")
     
@@ -348,6 +364,11 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         # Make axes iterable if there's only one plot
         if n_plots == 1:
             axes = [axes]
+            
+        # Turn off the top and right borders
+        for ax in axes:
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
             
         ax_idx = 0
         
@@ -485,6 +506,10 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         
+        # Turn off the top and right borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
         plt.tight_layout()
         plot_path = save_dir_path / "global_sample_error_scatter.svg"
         plt.savefig(plot_path, bbox_inches='tight')
@@ -502,25 +527,33 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
                                     save_dir_path: Path, 
                                     format_config: FormatAutoencoderMetrics) -> None:
     """
-    [PRIVATE] Helper function to plot the correlation of absolute reconstruction errors 
-    across numerical features. Helps identify if errors in certain features are linked.
+    [PRIVATE] Helper function to plot the Cross-Correlation between True and Predicted 
+    numerical features. 
+    Main diagonal = Reconstruction Fidelity (1.0 is perfect, 0.0 means complete failure).
+    Off-diagonal = Feature entanglement / Cross-talk.
     """
     if y_true_num is None or y_pred_num is None or num_target_names is None or len(num_target_names) < 2:
         return
         
     try:
-        # Calculate absolute reconstruction errors
-        abs_errors = np.abs(y_true_num - y_pred_num)
-        
-        # Abbreviate names for the plot to prevent overlapping text
+        num_feats = len(num_target_names)
         abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
         
-        # Create DataFrame and calculate correlation matrix
-        error_df = pd.DataFrame(abs_errors, columns=abbr_names)
-        error_corr = error_df.corr().fillna(0) # Fill NaNs in case of zero variance in errors
+        # Calculate full correlation matrix (True features concatenated with Pred features)
+        # Resulting shape is (2N, 2N)
+        full_corr = np.corrcoef(y_true_num, y_pred_num, rowvar=False)
+        
+        # Extract the top-right N x N block: True vs Predicted
+        # y_true is indices 0 to N-1, y_pred is indices N to 2N-1
+        cross_corr = full_corr[:num_feats, num_feats:]
+        
+        # If a predicted feature has 0 variance (collapsed), it results in NaN. 
+        # Fill with 0.0 to correctly represent "no correlation/failed reconstruction".
+        cross_corr = np.nan_to_num(cross_corr, nan=0.0)
+        
+        cross_corr_df = pd.DataFrame(cross_corr, index=abbr_names, columns=abbr_names)
         
         # Dynamically scale figure size based on number of features
-        num_feats = len(abbr_names)
         fig_size_xy = max(8, num_feats * 0.8)
         fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
         
@@ -531,37 +564,39 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         title_fs = max(14, format_config.font_size - 8)
         annot_fs = max(10, format_config.font_size - max(4, num_feats // 2))
         
-        sns.heatmap(error_corr, 
+        # Use a diverging colormap centered at 0.0
+        sns.heatmap(cross_corr_df, 
                     annot=show_annotations, 
                     fmt=".2f", 
                     cmap=format_config.cmap, 
                     annot_kws={"size": annot_fs},
                     ax=ax,
-                    vmin=-1.0, vmax=1.0)
+                    vmin=-1.0, vmax=1.0, center=0.0)
                     
-        ax.set_title("Reconstruction Error Correlation\n(Numerical Features)", 
+        ax.set_title("True vs. Predicted Cross-Correlation", 
                      fontsize=title_fs, pad=15)
+        ax.set_ylabel("True Features", fontsize=format_config.font_size - 2)
+        ax.set_xlabel("Predicted Features", fontsize=format_config.font_size - 2)
                      
         ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size - 2)
         plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
         plt.setp(ax.get_yticklabels(), rotation=0)
         
-        # Increase colorbar tick size
         if ax.collections:
             cbar = ax.collections[0].colorbar
             if cbar:
                 cbar.ax.tick_params(labelsize=format_config.ytick_size - 4)
         
         plt.tight_layout()
-        plot_path = save_dir_path / "global_error_correlation_heatmap.svg"
+        plot_path = save_dir_path / "global_true_vs_pred_correlation_heatmap.svg"
         plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
-        _LOGGER.info(f"📊 Error correlation heatmap saved to '{plot_path.name}'")
+        _LOGGER.info(f"📊 True vs Pred cross-correlation heatmap saved to '{plot_path.name}'")
         
     except Exception as e:
-        _LOGGER.error(f"Failed to generate error correlation heatmap: {e}")
+        _LOGGER.error(f"Failed to generate True vs Pred cross-correlation heatmap: {e}")
 
 
 def _plot_global_radar_chart(y_true_num: Optional[np.ndarray], 
@@ -664,3 +699,78 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
         
     except Exception as e:
         _LOGGER.error(f"Failed to generate radar chart: {e}")
+
+
+def _plot_standardized_error_violin(y_true_num: Optional[np.ndarray], 
+                                    y_pred_num: Optional[np.ndarray], 
+                                    num_target_names: Optional[list[str]], 
+                                    save_dir_path: Path, 
+                                    format_config: FormatAutoencoderMetrics) -> None:
+    """
+    [PRIVATE] Helper function to plot the standardized error distribution 
+    (y_true - y_pred) / std(y_true) for numerical features using a Violin Plot.
+    Shows bias (shift from 0) and error spread (tails) per feature.
+    """
+    if y_true_num is None or y_pred_num is None or num_target_names is None or len(num_target_names) == 0:
+        return
+        
+    try:
+        # Abbreviate names for the plot to prevent overlapping text
+        abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
+        
+        # Calculate raw errors (True - Predicted)
+        raw_errors = y_true_num - y_pred_num
+        
+        # Standardize errors: divide by the standard deviation of the true features
+        true_std = np.std(y_true_num, axis=0)
+        
+        # If standard deviation is 0, divide by 1.0 instead. This gracefully falls back to plotting the raw error for that feature without blowing up the Y-axis to infinity.
+        true_std_safe = np.where(true_std == 0, 1.0, true_std)
+        
+        std_errors = raw_errors / true_std_safe
+        
+        # Create a DataFrame for Seaborn
+        error_df = pd.DataFrame(std_errors, columns=abbr_names)
+        
+        # Dynamically scale figure width based on number of features
+        num_feats = len(abbr_names)
+        fig_width = max(10, num_feats * 0.8)
+        fig, ax = plt.subplots(figsize=(fig_width, 8), dpi=DPI_value)
+        
+        # Plot violin plot
+        sns.violinplot(data=error_df, 
+                       palette="husl", # for a colorful palette that can help differentiate features
+                       inner="quartile", 
+                       alpha=0.7,
+                       linewidth=1.5,
+                       ax=ax)
+                       
+        # Add a horizontal line at 0 (Perfect reconstruction)
+        ax.axhline(0, color="#FF0000", linestyle='--', alpha=0.7, linewidth=1.5)
+        
+        # Remove top and right borders for a clean academic look
+        sns.despine(ax=ax)
+        
+        ax.set_title("Numerical Reconstruction Error Distribution", 
+                     fontsize=format_config.font_size + 2, pad=15)
+        ax.set_ylabel("Standardized Error", fontsize=format_config.font_size)
+        # remove x label as the feature names are already on the x-ticks
+        ax.set_xlabel("")
+        # ax.set_xlabel("Numerical Features", fontsize=format_config.font_size)
+                     
+        ax.tick_params(axis='x', labelsize=format_config.xtick_size)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size)
+        
+        # Rotate labels 
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
+        
+        plt.tight_layout()
+        plot_path = save_dir_path / "global_standardized_error_violin.svg"
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close(fig)
+        
+        _LOGGER.info(f"📊 Standardized error violin plot saved to '{plot_path.name}'")
+        
+    except Exception as e:
+        _LOGGER.error(f"Failed to generate standardized error violin plot: {e}")
+
