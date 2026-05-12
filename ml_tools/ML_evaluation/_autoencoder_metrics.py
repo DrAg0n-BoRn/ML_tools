@@ -97,8 +97,8 @@ def autoencoder_metrics(
         save_dir_path, format_config
     )
     
-    # 7. Standardized Error Violin Plot for Numerical Features
-    _plot_standardized_error_violin(
+    # 7. Standardized Error Boxplot for Numerical Features
+    _plot_standardized_error_boxplot(
         y_true_num, y_pred_num, num_target_names, save_dir_path, format_config
     )
 
@@ -701,15 +701,14 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
         _LOGGER.error(f"Failed to generate radar chart: {e}")
 
 
-def _plot_standardized_error_violin(y_true_num: Optional[np.ndarray], 
+def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray], 
                                     y_pred_num: Optional[np.ndarray], 
                                     num_target_names: Optional[list[str]], 
                                     save_dir_path: Path, 
                                     format_config: FormatAutoencoderMetrics) -> None:
     """
-    [PRIVATE] Helper function to plot the standardized error distribution 
-    (y_true - y_pred) / std(y_true) for numerical features using a Violin Plot.
-    Shows bias (shift from 0) and error spread (tails) per feature.
+    [PRIVATE] Helper function to plot the standardized error distribution.
+    Boxplot + Symlog scale for universal robustness across projects.
     """
     if y_true_num is None or y_pred_num is None or num_target_names is None or len(num_target_names) == 0:
         return
@@ -724,9 +723,8 @@ def _plot_standardized_error_violin(y_true_num: Optional[np.ndarray],
         # Standardize errors: divide by the standard deviation of the true features
         true_std = np.std(y_true_num, axis=0)
         
-        # If standard deviation is 0, divide by 1.0 instead. This gracefully falls back to plotting the raw error for that feature without blowing up the Y-axis to infinity.
-        true_std_safe = np.where(true_std == 0, 1.0, true_std)
-        
+        # Safe division to prevent float explosion on zero-variance features
+        true_std_safe = np.where(true_std < 1e-6, 1.0, true_std)
         std_errors = raw_errors / true_std_safe
         
         # Create a DataFrame for Seaborn
@@ -737,26 +735,33 @@ def _plot_standardized_error_violin(y_true_num: Optional[np.ndarray],
         fig_width = max(10, num_feats * 0.8)
         fig, ax = plt.subplots(figsize=(fig_width, 8), dpi=DPI_value)
         
-        # Plot violin plot
-        sns.violinplot(data=error_df, 
-                       palette="husl", # for a colorful palette that can help differentiate features
-                       inner="quartile", 
-                       alpha=0.7,
-                       linewidth=1.5,
-                       ax=ax)
+        # Plot boxplot
+        sns.boxplot(data=error_df, 
+                    palette="husl", 
+                    linewidth=1.5,
+                    fliersize=4, 
+                    ax=ax)
                        
         # Add a horizontal line at 0 (Perfect reconstruction)
         ax.axhline(0, color="#FF0000", linestyle='--', alpha=0.7, linewidth=1.5)
         
-        # Remove top and right borders for a clean academic look
+        # Dynamically adjust Y-axis scale based on max absolute error
+        max_abs_err = np.max(np.abs(std_errors))
+        if max_abs_err > 5.0:
+            ax.set_yscale('symlog', linthresh=1.0)
+            ax.set_ylabel("Standardized Error (SymLog Scale)", fontsize=format_config.font_size)
+            # Force clean number formatting instead of scientific notation
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:g}"))
+        else:
+            ax.set_yscale('linear')
+            ax.set_ylabel("Standardized Error", fontsize=format_config.font_size)
+        
+        # Remove top and right borders
         sns.despine(ax=ax)
         
         ax.set_title("Numerical Reconstruction Error Distribution", 
                      fontsize=format_config.font_size + 2, pad=15)
-        ax.set_ylabel("Standardized Error", fontsize=format_config.font_size)
-        # remove x label as the feature names are already on the x-ticks
         ax.set_xlabel("")
-        # ax.set_xlabel("Numerical Features", fontsize=format_config.font_size)
                      
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
@@ -765,12 +770,12 @@ def _plot_standardized_error_violin(y_true_num: Optional[np.ndarray],
         plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
         
         plt.tight_layout()
-        plot_path = save_dir_path / "global_standardized_error_violin.svg"
+        
+        plot_path = save_dir_path / "global_standardized_error_boxplot.svg"
         plt.savefig(plot_path, bbox_inches='tight')
         plt.close(fig)
         
-        _LOGGER.info(f"📊 Standardized error violin plot saved to '{plot_path.name}'")
+        _LOGGER.info(f"📊 Standardized error boxplot saved to '{plot_path.name}'")
         
     except Exception as e:
-        _LOGGER.error(f"Failed to generate standardized error violin plot: {e}")
-
+        _LOGGER.error(f"Failed to generate standardized error boxplot: {e}")

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.12.3] 2026-05-12
+
+### Changed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, replaced the violin plot with a boxplot for the standardized reconstruction error of numerical features. The boxplot provides a clearer visualization of the distribution of reconstruction errors, including median, quartiles, and potential outliers, which can be more informative for evaluating autoencoder performance on numerical features.
+
 ## [22.12.2] 2026-05-11
 
 ### Changed
