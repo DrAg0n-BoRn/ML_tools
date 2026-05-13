@@ -110,7 +110,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                      base_plot_title: str = "Generated Data Distributions",
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
                      show_means: bool = True,
-                     font_scaling: float = 1.0,
+                     font_scaling: float = 1.5,
                      subdirectory: Optional[str] = None) -> None:
         """
         Plots value distributions and numeric overview boxplots.
@@ -151,7 +151,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             )
 
     def generate_plot_multi(self,
-                            targets: list[Union[float, int]],
+                            targets: Union[list[float], list[int], list[Union[float, int]]],
                             batch_size: int,
                             guidance_scale: float = 3.0,
                             ode_steps: int = 20,
@@ -159,7 +159,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                             round_float_columns: Union[list[str], Literal["all"], Literal["none"]] = "all",
                             float_rounding_precision: int = 3,
                             handle_zero_variance: Literal["constant", "drop"] = "constant",
-                            font_scaling: float = 1.0) -> None:
+                            font_scaling: float = 1.5) -> None:
         """
         Iterates over a list of targets, generating and plotting data for each, saving outputs in isolated subdirectories.
         

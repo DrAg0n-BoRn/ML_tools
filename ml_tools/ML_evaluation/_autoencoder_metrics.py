@@ -540,8 +540,9 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
         
         # Calculate full correlation matrix (True features concatenated with Pred features)
-        # Resulting shape is (2N, 2N)
-        full_corr = np.corrcoef(y_true_num, y_pred_num, rowvar=False)
+        # Resulting shape is (2N, 2N) - Ignoring warnings for zero-variance features which lead to NaN correlations
+        with np.errstate(divide='ignore', invalid='ignore'):
+            full_corr = np.corrcoef(y_true_num, y_pred_num, rowvar=False)
         
         # Extract the top-right N x N block: True vs Predicted
         # y_true is indices 0 to N-1, y_pred is indices N to 2N-1

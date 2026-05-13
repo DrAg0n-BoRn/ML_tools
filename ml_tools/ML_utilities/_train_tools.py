@@ -63,8 +63,11 @@ def build_optimizer_params(model: nn.Module, weight_decay: float = 0.01) -> list
             no_decay_params.append(param)
         else:
             decay_params.append(param)
-            
-    _LOGGER.info(f"Weight decay configured:\n    Decaying parameters: {len(decay_params)}\n    Non-decaying parameters: {len(no_decay_params)}")
+    
+    if weight_decay == 0.0:
+        _LOGGER.info(f"Weight decay set to 0.0, all parameters will be treated as non-decaying (total: {len(decay_params) + len(no_decay_params)}).")
+    else:
+        _LOGGER.info(f"Weight decay {weight_decay}:\n    Decaying parameters: {len(decay_params)}\n    Non-decaying parameters: {len(no_decay_params)}")
 
     return [
         {

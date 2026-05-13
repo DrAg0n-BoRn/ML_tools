@@ -91,7 +91,7 @@ class DragonDiT(_ArchitectureHandlerMixin, nn.Module):
     @torch.no_grad()
     def generate_sequence(self, 
                           batch_size: int, 
-                          num_steps: int = 20) -> torch.Tensor:
+                          num_steps: int = 25) -> torch.Tensor:
         """
         Generates new discrete token sequences from pure noise using Flow Matching. Must be decoded back to the original feature space using the tokenizer's decoder.
         

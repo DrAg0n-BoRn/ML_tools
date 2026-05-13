@@ -266,10 +266,21 @@ class FeatureSchema(NamedTuple):
         if verbose:
             _LOGGER.info(f"All FeatureSchema artifacts saved to directory: '{directory}'")
     
+    @property
     def number_of_features(self) -> int:
         """Returns the total number of features defined in the schema."""
         return len(self.feature_names)
     
+    @property
+    def number_of_continuous_features(self) -> int:
+        """Returns the number of continuous features defined in the schema."""
+        return len(self.continuous_feature_names)
+
+    @property
+    def number_of_categorical_features(self) -> int:
+        """Returns the number of categorical features defined in the schema."""
+        return len(self.categorical_feature_names)
+
     def __repr__(self) -> str:
         """Returns a concise representation of the schema's contents."""
         total = len(self.feature_names)

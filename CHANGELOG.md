@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.13.0] 2026-05-13
+
+### Fixed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, silenced the warnings in the correlation heatmap calculation where zero-variance would lead to NaN correlations. This is expected behavior when features have zero variance, and the heatmap will still be generated with NaN values appropriately handled.
+
+### Added
+
+- schema:
+    - `FeatureSchema`, added new properties `number_of_continuous_features` and `number_of_categorical_features` to provide quick access to the counts of continuous and categorical features defined in the schema, enhancing usability.
+
+### Changed
+
+- schema:
+    - `FeatureSchema`, changed method `number_of_features()` to a property for more intuitive access as an attribute rather than a method call.
+- Changed logging messages in some modules for better clarity and consistency.
+
 ## [22.12.3] 2026-05-12
 
 ### Changed

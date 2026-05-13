@@ -126,7 +126,7 @@ class DragonDiTGuided(_ArchitectureHandlerMixin, nn.Module):
     def generate_sequence(self, 
                           batch_size: int, 
                           target_value: float, 
-                          num_steps: int = 20, 
+                          num_steps: int = 25, 
                           guidance_scale: float = 3.0) -> torch.Tensor:
         """
         Generates sequences using Classifier-Free Guidance. Must be decoded back to the original feature space using the tokenizer's decoder.

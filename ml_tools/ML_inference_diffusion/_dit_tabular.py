@@ -102,7 +102,7 @@ class DragonDiTGenerator(_BaseDiffusionGenerator):
                      base_plot_title: str = "Generated Data Distributions",
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
                      show_means: bool = True,
-                     font_scaling: float = 1.0) -> None:
+                     font_scaling: float = 1.5) -> None:
         """
         Plots value distributions and numeric overview boxplots for the generated DataFrame.
         
