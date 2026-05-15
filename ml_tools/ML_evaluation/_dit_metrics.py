@@ -232,7 +232,7 @@ def _evaluate_continuous_features(
         real_i = real_num[:, i]
         gen_i = gen_num[:, i]
         
-        abbreviated_name = check_and_abbreviate_name(name)
+        # abbreviated_name = check_and_abbreviate_name(name)
         
         # Calculate Statistical Distances
         w_dist = wasserstein_distance(real_i, gen_i)
@@ -263,9 +263,9 @@ def _evaluate_continuous_features(
         else:
             sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)    
         
-        ax.set_title(f"Distribution Comparison: {abbreviated_name}", fontsize=format_config.font_size + 2)
-        ax.set_xlabel("Value", fontsize=format_config.font_size)
-        ax.set_ylabel("Density", fontsize=format_config.font_size)
+        ax.set_title(name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_xlabel(name, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
@@ -319,14 +319,14 @@ def _evaluate_categorical_features(
     report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
     cat_metrics_summary = []
     
-    local_save_dir = save_dir_path / "categorical_distributions"
+    local_save_dir = save_dir_path / "categorical_proportions"
     local_save_dir.mkdir(exist_ok=True)
     
     for i, feat_name in enumerate(cat_target_names):
         real_c = real_cat_list[i]
         gen_c = gen_cat_list[i]
         
-        abbreviated_cat_name = check_and_abbreviate_name(feat_name)
+        # abbreviated_cat_name = check_and_abbreviate_name(feat_name)
         
         real_counts = pd.Series(real_c).value_counts(normalize=True)
         gen_counts = pd.Series(gen_c).value_counts(normalize=True)
@@ -354,9 +354,10 @@ def _evaluate_categorical_features(
         ax.bar(x - width/2, real_props, width, label='Real Data', color=format_config.real_color, alpha=format_config.alpha)
         ax.bar(x + width/2, gen_props, width, label='Generated Data', color=format_config.gen_color, alpha=format_config.alpha)
 
-        ax.set_title(f"Proportion Comparison: {abbreviated_cat_name}", fontsize=format_config.font_size + 2)
-        ax.set_xlabel("Categories", fontsize=format_config.font_size)
-        ax.set_ylabel("Proportion", fontsize=format_config.font_size)
+        ax.set_title(feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        # ax.set_xlabel("Categories", fontsize=format_config.font_size)
+        ax.set_xlabel("") # remove x-axis label for cleaner look since category names are on the ticks
+        ax.set_ylabel("Proportion", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         ax.set_xticks(x)
         ax.set_xticklabels(plot_labels, rotation=45 if len(plot_labels) > 3 else 0, ha='right')
         ax.legend(fontsize=format_config.legend_size)
@@ -441,8 +442,7 @@ def _evaluate_numerical_correlations(
                 ax=ax,
                 vmin=0, vmax=1.0)
                 
-    ax.set_title("Absolute Difference in Numerical Associations\n(Real vs Generated)", 
-                 fontsize=title_fs, pad=15)
+    ax.set_title("Absolute Difference in Numerical Associations\n(Real vs Generated)", fontsize=title_fs, pad=_EvaluationConfig.LABEL_PADDING)
                  
     ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
     ax.tick_params(axis='y', labelsize=format_config.ytick_size - 2)
@@ -510,9 +510,9 @@ def _plot_pca_projection(real_num: np.ndarray,
                    s=10, zorder=2, edgecolors='none')
                    
         explained_variance = pca.explained_variance_ratio_
-        ax.set_title("2D PCA Projection (Numerical Features)", fontsize=format_config.font_size + 2)
-        ax.set_xlabel(f"Principal Component 1 ({explained_variance[0]:.1%})", fontsize=format_config.font_size)
-        ax.set_ylabel(f"Principal Component 2 ({explained_variance[1]:.1%})", fontsize=format_config.font_size)
+        ax.set_title("2D PCA Projection (Numerical Features)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_xlabel(f"Principal Component 1 ({explained_variance[0]:.1%})", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_ylabel(f"Principal Component 2 ({explained_variance[1]:.1%})", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
@@ -611,8 +611,7 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
                     ax=ax,
                     vmin=0, vmax=1.0)
                     
-        ax.set_title("Absolute Difference in Categorical Associations\n(Real vs Generated)", 
-                     fontsize=title_fs, pad=15)
+        ax.set_title("Absolute Difference in Categorical Associations\n(Real vs Generated)", fontsize=title_fs, pad=_EvaluationConfig.LABEL_PADDING)
         
         # Update Ticks and explicitly rotate them 45 degrees
         ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
@@ -689,7 +688,7 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
         # 4. Train/Test Split & Train Model
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
         
-        clf = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=-1)
+        clf = RandomForestClassifier(n_estimators=30, max_depth=3, random_state=42, n_jobs=-1)
         clf.fit(X_train, y_train)
         
         # 5. Predict and calculate Metrics
@@ -706,9 +705,9 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
         # Ideal line for generative models is the random guess diagonal
         ax.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Ideal AUC = 0.5')
         
-        ax.set_title("Discriminator ROC Curve (Real vs Generated)", fontsize=format_config.font_size + 2)
-        ax.set_xlabel("False Positive Rate", fontsize=format_config.font_size)
-        ax.set_ylabel("True Positive Rate", fontsize=format_config.font_size)
+        ax.set_title("Discriminator ROC Curve (Real vs Generated)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_xlabel("False Positive Rate", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_ylabel("True Positive Rate", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)

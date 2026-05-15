@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import re
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
@@ -218,7 +219,7 @@ def check_class_balance(
     df: pd.DataFrame,
     target: Union[str, list[str]],
     plot_to_dir: Optional[Union[str, Path]] = None,
-    plot_filename: str = "Class_Balance"
+    color: str = 'lightgreen',
 ) -> pd.DataFrame:
     """
     Analyzes the class balance for classification targets.
@@ -232,7 +233,7 @@ def check_class_balance(
         target (str | list[str]): The target column name (for single/multi-class classification) 
                                   or list of column names (for multi-label-binary classification).
         plot_to_dir (str | Path | None): Directory to save the balance plot.
-        plot_filename (str): Filename for the plot (without extension).
+        color (str): Matplotlib color for the bars in the plot.
 
     Returns:
         pd.DataFrame: Summary table of counts and percentages.
@@ -240,6 +241,11 @@ def check_class_balance(
     # Early fail for empty DataFrame and handle list of targets with only one item
     if df.empty:
         _LOGGER.error("Input DataFrame is empty.")
+        raise ValueError()
+    
+    # validate matplotlib color
+    if not mcolors.is_color_like(color):
+        _LOGGER.error(f"Invalid color '{color}' provided for plotting.")
         raise ValueError()
     
     if isinstance(target, list):
@@ -273,7 +279,7 @@ def check_class_balance(
                 plt.figure(figsize=(10, 6))
                 # Convert index to str to handle numeric classes cleanly on x-axis
                 x_labels = summary.index.astype(str)
-                bars = plt.bar(x_labels, summary['Count'], color='lightgreen', edgecolor='black', alpha=0.7)
+                bars = plt.bar(x_labels, summary['Count'], color=color, edgecolor='black', alpha=0.7)
                 
                 plt.title(f"Class Balance: {target}")
                 plt.xlabel(target)
@@ -285,12 +291,18 @@ def check_class_balance(
                     height = bar.get_height()
                     plt.text(bar.get_x() + bar.get_width()/2, height, 
                              f'{pct:.1f}%', ha='center', va='bottom', fontsize=10)
+                    
+                # remove top and right spines for a cleaner look
+                plt.gca().spines['top'].set_visible(False)
+                plt.gca().spines['right'].set_visible(False)
                 
                 plt.tight_layout()
-                full_filename = sanitize_filename(plot_filename) + ".svg"
-                plt.savefig(save_path / full_filename, format='svg', bbox_inches="tight")
+                # Generate filename using sanitized target name
+                plot_filename = f"Class_Balance_{sanitize_filename(target)}.svg"
+                
+                plt.savefig(save_path / plot_filename, format='svg', bbox_inches="tight")
                 plt.close()
-                _LOGGER.info(f"Saved class balance plot: '{full_filename}'")
+                _LOGGER.info(f"Saved class balance plot: '{plot_filename}'")
             except Exception as e:
                 _LOGGER.error(f"Failed to plot class balance. Error: {e}")
                 plt.close()
@@ -335,7 +347,7 @@ def check_class_balance(
                 height = max(6, len(target) * 0.4)
                 plt.figure(figsize=(10, height))
                 
-                bars = plt.barh(summary.index, summary['Positive_Percentage'], color='lightgreen', edgecolor='black', alpha=0.7)
+                bars = plt.barh(summary.index, summary['Positive_Percentage'], color=color, edgecolor='black', alpha=0.7)
                 
                 plt.title(f"Multi-label Binary Class Balance")
                 plt.xlabel("Positive Class Percentage (%)")
@@ -343,12 +355,20 @@ def check_class_balance(
                 plt.grid(axis='x', linestyle='--', alpha=0.5)
                 
                 # Add count labels at the end of bars
-                for bar, count in zip(bars, summary['Positive_Count']):
+                for bar, _count in zip(bars, summary['Positive_Count']):
                     width = bar.get_width()
                     plt.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', ha='left', va='center', fontsize=9)
                 
+                # remove top and right spines for a cleaner look
+                plt.gca().spines['top'].set_visible(False)
+                plt.gca().spines['right'].set_visible(False)
+                
                 plt.tight_layout()
-                full_filename = sanitize_filename(plot_filename) + ".svg"
+                
+                # generate filename based on all target column names
+                combined_targets = "_".join([sanitize_filename(t) for t in target])
+                full_filename = f"Class_Balance_{combined_targets}.svg"
+                
                 plt.savefig(save_path / full_filename, format='svg', bbox_inches="tight")
                 plt.close()
                 _LOGGER.info(f"Saved multi-label balance plot: '{full_filename}'")

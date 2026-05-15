@@ -79,6 +79,10 @@ def _plot_prediction_intervals(y_true: np.ndarray, mean_pred: np.ndarray, var_pr
     ax.tick_params(axis='both', labelsize=format_config.xtick_size)
     ax.legend(fontsize=format_config.font_size - 6)
     ax.grid(True, linestyle='--', alpha=0.6)
+    
+    # remove top and right spines for a cleaner look
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
 def _plot_error_vs_uncertainty(y_true: np.ndarray, mean_pred: np.ndarray, var_pred: np.ndarray, 
                                ax: Axes, format_config: _BaseRegressionFormat, title: str):
@@ -99,6 +103,9 @@ def _plot_error_vs_uncertainty(y_true: np.ndarray, mean_pred: np.ndarray, var_pr
     ax.set_title(title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
     ax.tick_params(axis='both', labelsize=format_config.xtick_size)
     ax.grid(True, linestyle='--', alpha=0.6)
+    # remove top and right spines for a cleaner look
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
 
 def distribution_metrics(
@@ -154,7 +161,7 @@ def distribution_metrics(
     _plot_prediction_intervals(y_true, mean_pred, var_pred, ax_pi, format_config, "Prediction Intervals")
     plt.tight_layout()
     pi_path = save_dir_path / "prediction_intervals.svg"
-    plt.savefig(pi_path)
+    plt.savefig(pi_path, bbox_inches='tight')
     _LOGGER.info(f"📊 Prediction Intervals plot saved as '{pi_path.name}'")
     plt.close(fig_pi)
 
@@ -163,7 +170,7 @@ def distribution_metrics(
     _plot_error_vs_uncertainty(y_true, mean_pred, var_pred, ax_eu, format_config, "Error vs. Uncertainty")
     plt.tight_layout()
     eu_path = save_dir_path / "error_vs_uncertainty.svg"
-    plt.savefig(eu_path)
+    plt.savefig(eu_path, bbox_inches='tight')
     _LOGGER.info(f"📊 Error vs Uncertainty plot saved as '{eu_path.name}'")
     plt.close(fig_eu)
 
@@ -230,13 +237,13 @@ def multi_target_distribution_metrics(
         fig_pi, ax_pi = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
         _plot_prediction_intervals(true_i, mean_i, var_i, ax_pi, format_config, f"Prediction Intervals '{name_abbreviated}'")
         plt.tight_layout()
-        plt.savefig(save_dir_path / f"prediction_intervals_{sanitized_name}.svg")
+        plt.savefig(save_dir_path / f"{sanitized_name}_prediction_intervals.svg", bbox_inches='tight')
         plt.close(fig_pi)
 
         fig_eu, ax_eu = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
         _plot_error_vs_uncertainty(true_i, mean_i, var_i, ax_eu, format_config, f"Error vs. Uncertainty '{name_abbreviated}'")
         plt.tight_layout()
-        plt.savefig(save_dir_path / f"error_vs_uncertainty_{sanitized_name}.svg")
+        plt.savefig(save_dir_path / f"{sanitized_name}_error_vs_uncertainty.svg", bbox_inches='tight')
         plt.close(fig_eu)
 
     # --- Summary Report ---

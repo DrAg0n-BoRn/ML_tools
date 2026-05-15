@@ -147,11 +147,11 @@ def segmentation_metrics(
             fmt='.3f',
             linewidths=0.5
         )
-        plt.title("Per-Class Segmentation Metrics")
+        plt.title("Per-Class Segmentation Metrics", pad=_EvaluationConfig.LABEL_PADDING)
         plt.tight_layout()
         heatmap_filename = VisionKeys.SEGMENTATION_HEATMAP + ".svg"
         heatmap_path = save_dir_path / heatmap_filename
-        plt.savefig(heatmap_path)
+        plt.savefig(heatmap_path, bbox_inches='tight')
         _LOGGER.info(f"📊 Metrics heatmap saved as '{heatmap_path.name}'")
         plt.close()
     except Exception as e:
@@ -174,11 +174,11 @@ def segmentation_metrics(
         for text in disp.text_.flatten(): # type: ignore
             text.set_fontsize(format_config.font_size)
         
-        ax_cm.set_title("Pixel-Level Confusion Matrix")
+        ax_cm.set_title("Pixel-Level Confusion Matrix", pad=_EvaluationConfig.LABEL_PADDING)
         plt.tight_layout()
         segmentation_cm_filename = VisionKeys.SEGMENTATION_CONFUSION_MATRIX + ".svg"
         cm_path = save_dir_path / segmentation_cm_filename
-        plt.savefig(cm_path)
+        plt.savefig(cm_path, bbox_inches='tight')
         _LOGGER.info(f"❇️ Pixel-level confusion matrix saved as '{cm_path.name}'")
         plt.close(fig_cm)
     except Exception as e:

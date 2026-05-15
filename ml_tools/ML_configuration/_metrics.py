@@ -1,4 +1,11 @@
 from typing import Union, Literal
+from matplotlib import colormaps as matplotcolormaps
+import matplotlib.colors as mcolors
+
+from .._core import get_logger
+
+_LOGGER = get_logger("Format Configuration")
+
 
 __all__ = [
     # --- Metrics Formats ---
@@ -68,6 +75,12 @@ class _BaseClassificationFormat:
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
+        # color validation
+        _validate_color(ROC_PR_line, "ROC_PR_line")
+        _validate_cmap(cmap, "cmap")
+        # bins validation
+        _validate_calibration_bins(calibration_bins, "calibration_bins")
+        
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
         self.calibration_bins = calibration_bins
@@ -139,6 +152,12 @@ class _BaseMultiLabelFormat:
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
+        # color validation
+        _validate_cmap(cmap, "cmap")
+        _validate_color(ROC_PR_line, "ROC_PR_line")
+        # bins validation
+        _validate_calibration_bins(calibration_bins, "calibration_bins")
+        
         self.cmap = cmap
         self.ROC_PR_line = ROC_PR_line
         self.calibration_bins = calibration_bins
@@ -199,6 +218,13 @@ class _BaseRegressionFormat:
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
+        # color validation
+        _validate_color(scatter_color, "scatter_color")
+        _validate_color(ideal_line_color, "ideal_line_color")
+        _validate_color(residual_line_color, "residual_line_color")
+        # bins validation
+        _validate_hist_bins(hist_bins, "hist_bins")
+
         self.font_size = font_size
         self.scatter_color = scatter_color
         self.scatter_alpha = scatter_alpha
@@ -247,6 +273,10 @@ class _BaseSegmentationFormat:
         
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
+        # color validation
+        _validate_cmap(heatmap_cmap, "heatmap_cmap")
+        _validate_cmap(cm_cmap, "cm_cmap")
+        
         self.heatmap_cmap = heatmap_cmap
         self.cm_cmap = cm_cmap
         self.font_size = font_size
@@ -293,6 +323,15 @@ class _BaseSequenceValueFormat:
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         """
+        # color validation
+        _validate_color(scatter_color, "scatter_color")
+        _validate_color(ideal_line_color, "ideal_line_color")
+        _validate_color(residual_line_color, "residual_line_color")
+        # bins validation
+        _validate_hist_bins(hist_bins, "hist_bins")
+        # alpha validation
+        _validate_alpha(scatter_alpha, "scatter_alpha")
+        
         self.font_size = font_size
         self.scatter_color = scatter_color
         self.scatter_alpha = scatter_alpha
@@ -351,6 +390,10 @@ class _BaseSequenceSequenceFormat:
         
         ### [Matplotlib Markers](https://matplotlib.org/stable/api/markers_api.html)
         """
+        # color validation
+        _validate_color(rmse_color, "rmse_color")
+        _validate_color(mae_color, "mae_color")
+
         self.font_size = font_size
         self.grid_style = grid_style
         self.rmse_color = rmse_color
@@ -422,6 +465,19 @@ class _BaseAutoencoderFormat:
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         
         """
+        # color validation
+        _validate_color(hist_color, "hist_color")
+        _validate_color(num_color, "num_color")
+        _validate_color(cat_color, "cat_color")
+        _validate_color(scatter_color, "scatter_color")
+        _validate_cmap(cmap, "cmap")
+        # bins validation
+        _validate_hist_bins(hist_bins, "hist_bins")
+        _validate_hist_bins(confidence_bins, "confidence_bins")
+        # validate alpha
+        _validate_alpha(scatter_alpha, "scatter_alpha")
+        _validate_alpha(radar_fill_alpha, "radar_fill_alpha")
+
         self.hist_color = hist_color
         self.hist_bins = hist_bins
         self.confidence_bins = confidence_bins
@@ -491,6 +547,13 @@ class _BaseTabularDiffusionFormat:
         
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
         """
+        # color validation
+        _validate_color(real_color, "real_color")
+        _validate_color(gen_color, "gen_color")
+        _validate_cmap(cmap, "cmap")
+        # alpha validation
+        _validate_alpha(alpha, "alpha")
+        
         self.font_size = font_size
         self.xtick_size = xtick_size
         self.ytick_size = ytick_size
@@ -815,3 +878,53 @@ class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
                          cmap=cmap,
                          alpha=alpha)
         
+
+
+
+
+############ Validate colors and colormaps ###########
+def _validate_color(color_value: str, arg_name: str) -> None:
+    if not mcolors.is_color_like(color_value):
+        _LOGGER.error(f"Invalid color '{color_value}' provided for '{arg_name}'.")
+        raise ValueError()
+
+def _validate_cmap(cmap_name: str, arg_name: str) -> None:
+    if cmap_name not in matplotcolormaps:
+        _LOGGER.error(f"Invalid colormap '{cmap_name}' provided for '{arg_name}'.")
+        raise ValueError()
+
+
+############ Validate bins and alpha transparency ############
+def _validate_alpha(alpha_value: Union[float, int], arg_name: str) -> None:
+    if not isinstance(alpha_value, (float, int)) or not (0.0 <= alpha_value <= 1.0):
+        _LOGGER.error(f"Invalid alpha '{alpha_value}' provided for '{arg_name}'. Must be a number between 0.0 and 1.0.")
+        raise ValueError()
+
+def _validate_hist_bins(bins_value: Union[int, str], arg_name: str) -> None:
+    valid_strings = {'auto', 'fd', 'doane', 'scott', 'stone', 'rice', 'sturges', 'sqrt'}
+    
+    if isinstance(bins_value, int):
+        if bins_value <= 0:
+            _LOGGER.error(f"Invalid integer bins '{bins_value}' provided for '{arg_name}'. Must be greater than 0.")
+            raise ValueError()
+    elif isinstance(bins_value, str):
+        if bins_value not in valid_strings:
+            _LOGGER.error(f"Invalid string bins '{bins_value}' provided for '{arg_name}'. Must be one of {valid_strings}.")
+            raise ValueError()
+    else:
+        _LOGGER.error(f"Invalid type for '{arg_name}'. Must be an integer or a string.")
+        raise ValueError()
+
+def _validate_calibration_bins(bins_value: Union[int, str], arg_name: str) -> None:
+    if isinstance(bins_value, int):
+        if bins_value <= 0:
+            _LOGGER.error(f"Invalid integer bins '{bins_value}' provided for '{arg_name}'. Must be greater than 0.")
+            raise ValueError()
+    elif isinstance(bins_value, str):
+        if bins_value != 'auto':
+            _LOGGER.error(f"Invalid string '{bins_value}' provided for '{arg_name}'. Only 'auto' is supported.")
+            raise ValueError()
+    else:
+        _LOGGER.error(f"Invalid type for '{arg_name}'. Must be an integer or the string 'auto'.")
+        raise ValueError()
+

@@ -100,10 +100,14 @@ def regression_metrics(
     ax_res.tick_params(axis='x', labelsize=xtick_size)
     ax_res.tick_params(axis='y', labelsize=ytick_size)
     
+    # remove top and right spines for cleaner look
+    ax_res.spines['top'].set_visible(False)
+    ax_res.spines['right'].set_visible(False)
+    
     ax_res.grid(True)
     plt.tight_layout()
     res_path = save_dir_path / "residual_plot.svg"
-    plt.savefig(res_path)
+    plt.savefig(res_path, bbox_inches='tight')
     _LOGGER.info(f"📈 Residual plot saved as '{res_path.name}'")
     plt.close(fig_res)
 
@@ -124,10 +128,14 @@ def regression_metrics(
     ax_tvp.tick_params(axis='x', labelsize=xtick_size)
     ax_tvp.tick_params(axis='y', labelsize=ytick_size)
     
+    # remove top and right spines for cleaner look
+    ax_tvp.spines['top'].set_visible(False)
+    ax_tvp.spines['right'].set_visible(False)
+    
     ax_tvp.grid(True)
     plt.tight_layout()
     tvp_path = save_dir_path / "true_vs_predicted_plot.svg"
-    plt.savefig(tvp_path)
+    plt.savefig(tvp_path, bbox_inches='tight')
     _LOGGER.info(f"📉 True vs. Predicted plot saved as '{tvp_path.name}'")
     plt.close(fig_tvp)
     
@@ -144,10 +152,14 @@ def regression_metrics(
     ax_hist.tick_params(axis='x', labelsize=xtick_size)
     ax_hist.tick_params(axis='y', labelsize=ytick_size)
     
+    # remove top and right spines for cleaner look
+    ax_hist.spines['top'].set_visible(False)
+    ax_hist.spines['right'].set_visible(False)
+    
     ax_hist.grid(True)
     plt.tight_layout()
     hist_path = save_dir_path / "residuals_histogram.svg"
-    plt.savefig(hist_path)
+    plt.savefig(hist_path, bbox_inches='tight')
     _LOGGER.info(f"📊 Residuals histogram saved as '{hist_path.name}'")
     plt.close(fig_hist)
 
@@ -244,10 +256,14 @@ def multi_target_regression_metrics(
         ax_res.tick_params(axis='x', labelsize=xtick_size)
         ax_res.tick_params(axis='y', labelsize=ytick_size)
         
+        # remove top and right spines for cleaner look
+        ax_res.spines['top'].set_visible(False)
+        ax_res.spines['right'].set_visible(False)
+        
         ax_res.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
-        res_path = save_dir_path / f"residual_plot_{sanitized_name}.svg"
-        plt.savefig(res_path)
+        res_path = save_dir_path / f"{sanitized_name}_residual_plot.svg"
+        plt.savefig(res_path, bbox_inches='tight')
         plt.close(fig_res)
 
         # --- Save True vs. Predicted Plot ---
@@ -263,17 +279,44 @@ def multi_target_regression_metrics(
                     color=format_config.ideal_line_color) # Use config color
         ax_tvp.set_xlabel('True Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_tvp.set_ylabel('Predicted Values', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
-        ax_tvp.set_title(f"True vs. Predicted '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_tvp.set_title(name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         
         # Apply Ticks
         ax_tvp.tick_params(axis='x', labelsize=xtick_size)
         ax_tvp.tick_params(axis='y', labelsize=ytick_size)
         
+        # remove top and right spines for cleaner look
+        ax_tvp.spines['top'].set_visible(False)
+        ax_tvp.spines['right'].set_visible(False)
+        
         ax_tvp.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout()
-        tvp_path = save_dir_path / f"true_vs_predicted_plot_{sanitized_name}.svg"
-        plt.savefig(tvp_path)
+        tvp_path = save_dir_path / f"{sanitized_name}_true_vs_predicted.svg"
+        plt.savefig(tvp_path, bbox_inches='tight')
         plt.close(fig_tvp)
+        
+        # --- Save Histogram of Residuals ---
+        fig_hist, ax_hist = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
+        sns.histplot(residuals, kde=True, ax=ax_hist, 
+                     bins=format_config.hist_bins, 
+                     color=format_config.scatter_color)
+        ax_hist.set_xlabel("Residual Value", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_hist.set_ylabel("Frequency", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
+        ax_hist.set_title(f"Distribution of Residuals '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        
+        # Apply Ticks
+        ax_hist.tick_params(axis='x', labelsize=xtick_size)
+        ax_hist.tick_params(axis='y', labelsize=ytick_size)
+        
+        # remove top and right spines for cleaner look
+        ax_hist.spines['top'].set_visible(False)
+        ax_hist.spines['right'].set_visible(False)
+        
+        ax_hist.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        hist_path = save_dir_path / f"{sanitized_name}_residuals_histogram.svg"
+        plt.savefig(hist_path, bbox_inches='tight')
+        plt.close(fig_hist)
 
     # --- Save Summary Report ---
     summary_df = pd.DataFrame(metrics_summary)

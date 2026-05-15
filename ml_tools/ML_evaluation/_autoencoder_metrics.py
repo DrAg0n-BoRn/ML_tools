@@ -137,9 +137,9 @@ def _evaluate_numerical_features(
     # Plot Distribution of Sample-wise Reconstruction Errors
     fig_err, ax_err = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
     ax_err.hist(sample_mse, bins=format_config.hist_bins, color=format_config.hist_color, alpha=0.7, edgecolor='black')
-    ax_err.set_title("Numerical Reconstruction Error", fontsize=format_config.font_size + 2)
-    ax_err.set_xlabel("Mean Squared Error per Sample", fontsize=format_config.font_size)
-    ax_err.set_ylabel("Frequency", fontsize=format_config.font_size)
+    ax_err.set_title("Numerical Reconstruction Error", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+    ax_err.set_xlabel("Mean Squared Error per Sample", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_err.set_ylabel("Frequency", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
     
     ax_err.tick_params(axis='x', labelsize=format_config.xtick_size)
     ax_err.tick_params(axis='y', labelsize=format_config.ytick_size)
@@ -189,7 +189,7 @@ def _evaluate_categorical_features(
     """Evaluates categorical marginal distributions and returns report lines."""
     report_lines = []
     
-    local_save_dir = save_dir_path / "categorical_feature_plots"
+    local_save_dir = save_dir_path / "categorical_features"
     local_save_dir.mkdir(exist_ok=True)
     
     if not (cat_true_list is not None and len(cat_true_list) > 0 and 
@@ -302,9 +302,9 @@ def _evaluate_categorical_features(
             if len(incorrect_probs) > 0:
                 ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True) # type: ignore
             
-            ax_prob.set_title(f"Reconstruction Confidence: {feat_name_abbrev}", fontsize=format_config.font_size)
-            ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.xtick_size)
-            ax_prob.set_ylabel("Density", fontsize=format_config.ytick_size)
+            ax_prob.set_title(f"Reconstruction Confidence: {feat_name_abbrev}", fontsize=format_config.font_size, pad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.xtick_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_ylabel("Density", fontsize=format_config.ytick_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             
             ax_prob.set_xlim(-0.1, 1.1)
             ax_prob.set_xticks(np.arange(0.0, 1.1, 0.1))
@@ -475,9 +475,9 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         if has_num and has_cat:
             # Both: 2D Scatter
             ax.scatter(x_data, y_data, alpha=format_config.scatter_alpha, color=format_config.scatter_color, edgecolors='none') # type: ignore
-            ax.set_xlabel(x_label, fontsize=format_config.font_size)
-            ax.set_ylabel(y_label, fontsize=format_config.font_size)
-            ax.set_title("Global Sample-wise Error", fontsize=format_config.font_size + 2)
+            ax.set_xlabel(x_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax.set_ylabel(y_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax.set_title("Global Sample-wise Error", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
             # Ensure y-axis only shows integers for misclassifications
             ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
             
@@ -486,20 +486,20 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
             y_zeros = np.zeros_like(x_data)
             jitter = np.random.normal(0, 0.05, size=len(x_data)) # type: ignore
             ax.scatter(x_data, y_zeros + jitter, alpha=format_config.scatter_alpha, color=format_config.num_color, edgecolors='none') # type: ignore
-            ax.set_xlabel(x_label, fontsize=format_config.font_size)
+            ax.set_xlabel(x_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_yticks([])
-            ax.set_ylabel("Density", fontsize=format_config.font_size)
-            ax.set_title("Global Sample-wise Error (Numerical)", fontsize=format_config.font_size + 2)
+            ax.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax.set_title("Global Sample-wise Error (Numerical)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
             
         elif has_cat:
             # Only cat: 1D Scatter with jitter for visibility
             x_zeros = np.zeros_like(y_data)
             jitter = np.random.normal(0, 0.05, size=len(y_data)) # type: ignore
             ax.scatter(x_zeros + jitter, y_data, alpha=format_config.scatter_alpha, color=format_config.cat_color, edgecolors='none') # type: ignore
-            ax.set_ylabel(y_label, fontsize=format_config.font_size)
+            ax.set_ylabel(y_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_xticks([])
-            ax.set_xlabel("Density", fontsize=format_config.font_size)
-            ax.set_title("Global Sample-wise Error (Categorical)", fontsize=format_config.font_size + 2)
+            ax.set_xlabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax.set_title("Global Sample-wise Error (Categorical)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
             ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
             
         ax.grid(True, linestyle='--', alpha=0.6)
@@ -575,9 +575,9 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
                     vmin=-1.0, vmax=1.0, center=0.0)
                     
         ax.set_title("True vs. Predicted Cross-Correlation", 
-                     fontsize=title_fs, pad=15)
-        ax.set_ylabel("True Features", fontsize=format_config.font_size - 2)
-        ax.set_xlabel("Predicted Features", fontsize=format_config.font_size - 2)
+                     fontsize=title_fs, pad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_ylabel("True Features", fontsize=format_config.font_size - 2, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_xlabel("Predicted Features", fontsize=format_config.font_size - 2, labelpad=_EvaluationConfig.LABEL_PADDING)
                      
         ax.tick_params(axis='x', labelsize=format_config.xtick_size - 2)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size - 2)
@@ -656,7 +656,7 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             ax.grid(color='lightgrey', linestyle='--', linewidth=1)
             ax.spines['polar'].set_color('lightgrey')
             
-            ax.set_title("Numerical MAE", fontsize=format_config.font_size + 2, pad=35)
+            ax.set_title("Numerical MAE", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING + 10)
             plot_idx += 1
             
         # Categorical Radar (F1-Macro)
@@ -689,7 +689,7 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             ax.grid(color='lightgrey', linestyle='--', linewidth=1)
             ax.spines['polar'].set_color('lightgrey')
             
-            ax.set_title("Categorical F1-Macro", fontsize=format_config.font_size + 2, pad=35)
+            ax.set_title("Categorical F1-Macro", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING + 10)
 
         plt.tight_layout()
         plot_path = save_dir_path / "global_radar_chart.svg"
@@ -750,18 +750,17 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         max_abs_err = np.max(np.abs(std_errors))
         if max_abs_err > 5.0:
             ax.set_yscale('symlog', linthresh=1.0)
-            ax.set_ylabel("Standardized Error (SymLog Scale)", fontsize=format_config.font_size)
+            ax.set_ylabel("Standardized Error (SymLog Scale)", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             # Force clean number formatting instead of scientific notation
             ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:g}"))
         else:
             ax.set_yscale('linear')
-            ax.set_ylabel("Standardized Error", fontsize=format_config.font_size)
+            ax.set_ylabel("Standardized Error", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
         # Remove top and right borders
         sns.despine(ax=ax)
         
-        ax.set_title("Numerical Reconstruction Error Distribution", 
-                     fontsize=format_config.font_size + 2, pad=15)
+        ax.set_title("Numerical Reconstruction Error Distribution", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
         ax.set_xlabel("")
                      
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)

@@ -90,13 +90,18 @@ def sequence_to_value_metrics(
                    alpha=format_config.scatter_alpha, 
                    color=format_config.scatter_color)
     ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--')
-    ax_res.set_xlabel("Predicted Values")
-    ax_res.set_ylabel("Residuals")
-    ax_res.set_title("Sequence-to-Value Residual Plot")
+    ax_res.set_xlabel("Predicted Values", labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_res.set_ylabel("Residuals", labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_res.set_title("Sequence-to-Value Residual Plot", pad=_EvaluationConfig.LABEL_PADDING)
+    
+    # remove top and right spines for cleaner look
+    ax_res.spines['top'].set_visible(False)
+    ax_res.spines['right'].set_visible(False)
+    
     ax_res.grid(True)
     plt.tight_layout()
     res_path = save_dir_path / "sequence_to_value_residual_plot.svg"
-    plt.savefig(res_path)
+    plt.savefig(res_path, bbox_inches='tight')
     _LOGGER.info(f"📈 Seq-to-Value residual plot saved as '{res_path.name}'")
     plt.close(fig_res)
 
@@ -109,15 +114,40 @@ def sequence_to_value_metrics(
                 linestyle='--', 
                 lw=2,
                 color=format_config.ideal_line_color)
-    ax_tvp.set_xlabel('True Values')
-    ax_tvp.set_ylabel('Predictions')
-    ax_tvp.set_title('Sequence-to-Value: True vs. Predicted')
+    ax_tvp.set_xlabel('True Values', labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_tvp.set_ylabel('Predictions', labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_tvp.set_title('Sequence-to-Value: True vs. Predicted', pad=_EvaluationConfig.LABEL_PADDING)
+
+    # remove top and right spines for cleaner look
+    ax_tvp.spines['top'].set_visible(False)
+    ax_tvp.spines['right'].set_visible(False)
+    
     ax_tvp.grid(True)
     plt.tight_layout()
     tvp_path = save_dir_path / "sequence_to_value_true_vs_predicted_plot.svg"
-    plt.savefig(tvp_path)
+    plt.savefig(tvp_path, bbox_inches='tight')
     _LOGGER.info(f"📉 Seq-to-Value True vs. Predicted plot saved as '{tvp_path.name}'")
     plt.close(fig_tvp)
+    
+    # --- Save Histogram of Residuals ---
+    fig_hist, ax_hist = plt.subplots(figsize=SEQUENCE_PLOT_SIZE, dpi=DPI_value)
+    sns.histplot(residuals, kde=True, ax=ax_hist, 
+                 bins=getattr(format_config, 'hist_bins', 30), 
+                 color=format_config.scatter_color)
+    ax_hist.set_xlabel("Residual Value", labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_hist.set_ylabel("Frequency", labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax_hist.set_title("Distribution of Residuals", pad=_EvaluationConfig.LABEL_PADDING)
+    
+    # remove top and right spines for cleaner look
+    ax_hist.spines['top'].set_visible(False)
+    ax_hist.spines['right'].set_visible(False)
+    
+    ax_hist.grid(True)
+    plt.tight_layout()
+    hist_path = save_dir_path / "sequence_to_value_residuals_histogram.svg"
+    plt.savefig(hist_path, bbox_inches='tight')
+    _LOGGER.info(f"📉 Seq-to-Value Residuals histogram saved as '{hist_path.name}'")
+    plt.close(fig_hist)
     
     # --- Restore RC params ---
     plt.rcParams.update(original_rc_params)
@@ -190,8 +220,8 @@ def sequence_to_sequence_metrics(
 
     # Plot RMSE
     color_rmse = format_config.rmse_color
-    ax1.set_xlabel('Prediction Step')
-    ax1.set_ylabel('RMSE', color=color_rmse)
+    ax1.set_xlabel('Prediction Step', labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax1.set_ylabel('RMSE', color=color_rmse, labelpad=_EvaluationConfig.LABEL_PADDING)
     ax1.plot(steps, per_step_rmse, format_config.rmse_marker, color=color_rmse, label='RMSE')
     ax1.tick_params(axis='y', labelcolor=color_rmse)
     ax1.grid(True, linestyle=format_config.grid_style)
@@ -199,21 +229,25 @@ def sequence_to_sequence_metrics(
     # Create a second y-axis for MAE
     ax2 = ax1.twinx()
     color_mae = format_config.mae_color
-    ax2.set_ylabel('MAE', color=color_mae)
+    ax2.set_ylabel('MAE', color=color_mae, labelpad=_EvaluationConfig.LABEL_PADDING)
     ax2.plot(steps, per_step_mae, format_config.mae_marker, color=color_mae, label='MAE')
     ax2.tick_params(axis='y', labelcolor=color_mae)
+    
+    # Academic formatting: hide top spine, but KEEP right spine for the second axis
+    ax1.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
 
-    fig.suptitle('Sequence-to-Sequence Metrics (Per-Step)')
+    ax1.set_title('Sequence-to-Sequence Metrics (Per-Step)', pad=_EvaluationConfig.LABEL_PADDING)
     
     # Add a single legend
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc='best')
     
-    fig.tight_layout(rect=(0, 0.03, 1, 0.95)) # Adjust for suptitle
+    plt.tight_layout()
     
     plot_path = save_dir_path / "sequence_to_sequence_metrics_plot.svg"
-    plt.savefig(plot_path)
+    plt.savefig(plot_path, bbox_inches='tight')
     _LOGGER.info(f"📈 Seq-to-Seq per-step metrics plot saved as '{plot_path.name}'")
     plt.close(fig)
     

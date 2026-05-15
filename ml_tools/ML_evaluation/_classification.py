@@ -157,7 +157,7 @@ def classification_metrics(save_dir: Union[str, Path],
         plt.tight_layout()
         
         heatmap_path = save_dir_path / "classification_report_heatmap.svg"
-        plt.savefig(heatmap_path)
+        plt.savefig(heatmap_path, bbox_inches='tight')
         _LOGGER.info(f"📊 Report heatmap saved as '{heatmap_path.name}'")
         plt.close(fig_heat)
         
@@ -226,7 +226,7 @@ def classification_metrics(save_dir: Union[str, Path],
     fig_cm.tight_layout()
     
     cm_path = save_dir_path / "confusion_matrix.svg"
-    plt.savefig(cm_path)
+    plt.savefig(cm_path, bbox_inches='tight')
     _LOGGER.info(f"❇️ Confusion matrix saved as '{cm_path.name}'")
     plt.close(fig_cm)
 
@@ -345,12 +345,16 @@ def classification_metrics(save_dir: Union[str, Path],
             ax_roc.tick_params(axis='y', labelsize=ytick_size)
             ax_roc.legend(loc='lower right', fontsize=legend_size)
             
+            # remove top and right spines for cleaner look
+            ax_roc.spines['top'].set_visible(False)
+            ax_roc.spines['right'].set_visible(False)
+            
             ax_roc.grid(True)
             roc_path = save_dir_path / f"roc_curve{save_suffix}.svg"
             
             plt.tight_layout()
             
-            plt.savefig(roc_path)
+            plt.savefig(roc_path, bbox_inches='tight')
             plt.close(fig_roc)
 
             # --- Save Precision-Recall Curve ---
@@ -371,12 +375,16 @@ def classification_metrics(save_dir: Union[str, Path],
             ax_pr.tick_params(axis='y', labelsize=ytick_size)
             ax_pr.legend(loc='lower left', fontsize=legend_size)
             
+            # remove top and right spines for cleaner look
+            ax_pr.spines['top'].set_visible(False)
+            ax_pr.spines['right'].set_visible(False)
+            
             ax_pr.grid(True)
             pr_path = save_dir_path / f"pr_curve{save_suffix}.svg"
             
             plt.tight_layout()
             
-            plt.savefig(pr_path)
+            plt.savefig(pr_path, bbox_inches='tight')
             plt.close(fig_pr)
             
             # --- Save Calibration Plot ---
@@ -429,11 +437,15 @@ def classification_metrics(save_dir: Union[str, Path],
             ax_cal.tick_params(axis='y', labelsize=ytick_size)
             ax_cal.legend(loc='lower right', fontsize=legend_size)
             
+            # remove top and right spines for cleaner look
+            ax_cal.spines['top'].set_visible(False)
+            ax_cal.spines['right'].set_visible(False)
+            
             ax_cal.grid(True)
             plt.tight_layout()
             
             cal_path = save_dir_path / f"calibration_plot{save_suffix}.svg"
-            plt.savefig(cal_path)
+            plt.savefig(cal_path, bbox_inches='tight')
             plt.close(fig_cal)
         
         _LOGGER.info(f"📈 Saved {len(class_indices_to_plot)} sets of ROC, Precision-Recall, and Calibration plots.")
@@ -448,7 +460,7 @@ def multi_label_classification_metrics(
     config: Optional[FormatMultiLabelBinaryClassificationMetrics] = None
 ):
     """
-    Calculates and saves classification metrics for each label individually.
+    Calculates and saves classification metrics for each label individually in a multilabel binary classification setting.
 
     This function first computes overall multi-label metrics (Hamming Loss, Jaccard Score)
     and then iterates through each label to generate and save individual reports,
@@ -475,7 +487,7 @@ def multi_label_classification_metrics(
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     # --- Pre-process target names for abbreviation ---
-    target_names = [check_and_abbreviate_name(name) for name in target_names]
+    abbr_target_names = [check_and_abbreviate_name(name) for name in target_names]
     
     # --- Parse Config or use defaults ---
     if config is None:
@@ -516,7 +528,7 @@ def multi_label_classification_metrics(
     # --- Save Classification Report Heatmap (Multi-label) ---
     try:
          # Generate full report as dict
-        full_report_dict = classification_report(y_true, y_pred, target_names=target_names, output_dict=True)
+        full_report_dict = classification_report(y_true, y_pred, target_names=abbr_target_names, output_dict=True)
         report_df = pd.DataFrame(full_report_dict)
         
         # Cleanup
@@ -559,7 +571,7 @@ def multi_label_classification_metrics(
 
         plt.tight_layout()
         heatmap_path = save_dir_path / "classification_report_heatmap.svg"
-        plt.savefig(heatmap_path)
+        plt.savefig(heatmap_path, bbox_inches='tight')
         _LOGGER.info(f"📊 Report heatmap saved as '{heatmap_path.name}'")
         plt.close(fig_heat)
 
@@ -570,6 +582,8 @@ def multi_label_classification_metrics(
     for i, name in enumerate(target_names):
         # strip whitespace from name
         name = name.strip()
+        
+        current_abbr_name = check_and_abbreviate_name(name)
         
         # print(f"  -> Evaluating label: '{name}'")
         true_i = y_true[:, i]
@@ -607,7 +621,7 @@ def multi_label_classification_metrics(
         ax_cm.tick_params(axis='y', labelsize=ytick_size)
         
         # Set titles and labels with padding
-        ax_cm.set_title(f"Confusion Matrix - {name}", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cm.set_title(name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -621,7 +635,7 @@ def multi_label_classification_metrics(
         plt.tight_layout()
         
         cm_path = save_dir_path / f"confusion_matrix_{sanitized_name}.svg"
-        plt.savefig(cm_path)
+        plt.savefig(cm_path, bbox_inches='tight')
         plt.close(fig_cm)
 
         # --- Save ROC Curve (uses y_prob) ---
@@ -664,7 +678,7 @@ def multi_label_classification_metrics(
         ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
         
-        ax_roc.set_title(f'ROC Curve - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_roc.set_title(f'ROC Curve - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -673,12 +687,16 @@ def multi_label_classification_metrics(
         ax_roc.tick_params(axis='y', labelsize=ytick_size)
         ax_roc.legend(loc='lower right', fontsize=legend_size)
         
+        # remove top and right spines for cleaner look
+        ax_roc.spines['top'].set_visible(False)
+        ax_roc.spines['right'].set_visible(False)
+        
         ax_roc.grid(True, linestyle='--', alpha=0.6)
         
         plt.tight_layout()
         
         roc_path = save_dir_path / f"roc_curve_{sanitized_name}.svg"
-        plt.savefig(roc_path)
+        plt.savefig(roc_path, bbox_inches='tight')
         plt.close(fig_roc)
 
         # --- Save Precision-Recall Curve (uses y_prob) ---
@@ -686,7 +704,7 @@ def multi_label_classification_metrics(
         ap_score = average_precision_score(true_i, prob_i)
         fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
         ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=format_config.ROC_PR_line) # Use config color
-        ax_pr.set_title(f'PR Curve - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_pr.set_title(f'PR Curve - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -695,12 +713,16 @@ def multi_label_classification_metrics(
         ax_pr.tick_params(axis='y', labelsize=ytick_size)
         ax_pr.legend(loc='lower left', fontsize=legend_size)
         
+        # remove top and right spines for cleaner look
+        ax_pr.spines['top'].set_visible(False)
+        ax_pr.spines['right'].set_visible(False)
+        
         ax_pr.grid(True, linestyle='--', alpha=0.6)
         
         fig_pr.tight_layout()
         
         pr_path = save_dir_path / f"pr_curve_{sanitized_name}.svg"
-        plt.savefig(pr_path)
+        plt.savefig(pr_path, bbox_inches='tight')
         plt.close(fig_pr)
         
         # --- Save Calibration Plot (New Feature) ---
@@ -737,7 +759,7 @@ def multi_label_classification_metrics(
                     label=f"Model Calibration", 
                     color=format_config.ROC_PR_line)
         
-        ax_cal.set_title(f'Calibration - {name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cal.set_title(f'Calibration - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -747,11 +769,16 @@ def multi_label_classification_metrics(
         ax_cal.tick_params(axis='x', labelsize=xtick_size)
         ax_cal.tick_params(axis='y', labelsize=ytick_size)
         ax_cal.legend(loc='lower right', fontsize=legend_size)
+        
+        # remove top and right spines for cleaner look
+        ax_cal.spines['top'].set_visible(False)
+        ax_cal.spines['right'].set_visible(False)
+        
         ax_cal.grid(True)
         
         plt.tight_layout()
         cal_path = save_dir_path / f"calibration_plot_{sanitized_name}.svg"
-        plt.savefig(cal_path)
+        plt.savefig(cal_path, bbox_inches='tight')
         plt.close(fig_cal)
 
     _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")

@@ -3,6 +3,7 @@ import numpy as np
 from typing import Optional, Union, Literal
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib import colormaps as matplotcolormaps
 import matplotlib.ticker as ticker
 import seaborn as sns
 from pandas.api.types import is_numeric_dtype, is_object_dtype
@@ -152,7 +153,8 @@ def plot_value_distributions(
                         plt.ylabel("Count")
                     
                     plt.title(f"Distribution of '{col_name}' (Categorical)")
-                    plt.xlabel(col_name)
+                    #plt.xlabel(col_name)
+                    plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
                     
                     # Smart tick rotation
                     max_label_len = 0
@@ -168,6 +170,10 @@ def plot_value_distributions(
 
                 # --- 4. Save Plot ---
                 plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+                
+                # remove top and right spines for a cleaner look
+                sns.despine()
+                
                 plt.tight_layout()
                 # Save as .svg
                 plt.savefig(save_path, format='svg', bbox_inches="tight")
@@ -197,8 +203,8 @@ def plot_value_distributions_multi(
     The function will automatically detect numeric vs categorical features and plot them accordingly.
 
     Plots are saved as SVG files under two subdirectories in `save_dir`:
-    - "Distribution_Continuous" for continuous numeric features.
-    - "Distribution_Categorical" for categorical features.
+    - "Distribution_Continuous_Comparison" for continuous numeric features.
+    - "Distribution_Categorical_Comparison" for categorical features.
 
     Args:
         named_dataframes (dict[str, pd.DataFrame]): Dictionary mapping dataset names to DataFrames.
@@ -210,8 +216,8 @@ def plot_value_distributions_multi(
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
-    numeric_dir = base_save_path / "Distribution_Continuous"
-    categorical_dir = base_save_path / "Distribution_Categorical"
+    numeric_dir = base_save_path / "Distribution_Continuous_Comparison"
+    categorical_dir = base_save_path / "Distribution_Categorical_Comparison"
     numeric_dir.mkdir(parents=True, exist_ok=True)
     categorical_dir.mkdir(parents=True, exist_ok=True)
     
@@ -333,7 +339,8 @@ def plot_value_distributions_multi(
                         ax.get_legend().set_title(None)
                     
                     plt.title(f"Distribution of '{col_name}' (Categorical)")
-                    plt.xlabel(col_name)
+                    # plt.xlabel(col_name)
+                    plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
                     
                     max_label_len = max([len(str(s)) for s in order] + [0])
                     if max_label_len > 10 or n_unique > 15:
@@ -344,6 +351,10 @@ def plot_value_distributions_multi(
 
                 # --- 4. Save Plot ---
                 plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+                
+                # remove top and right spines for a cleaner look
+                sns.despine()
+                
                 plt.tight_layout()
                 plt.savefig(save_path, format='svg', bbox_inches="tight")
                 plt.close()
@@ -621,6 +632,11 @@ def plot_continuous_vs_target(
             ax.set_xlabel(feature_name)
             ax.set_ylabel(target_name)
             ax.legend()
+            
+            # remove top and right spines for a cleaner look
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
             plt.grid(True, linestyle='--', alpha=0.6)
             plt.tight_layout()
 
@@ -756,10 +772,16 @@ def plot_categorical_vs_target(
             sns.boxplot(x=feature_name, y=target_name, data=temp_df)
 
             plt.title(f'{target_name} vs {feature_name}')
-            plt.xlabel(feature_name)
+            # plt.xlabel(feature_name)
+            plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
             plt.ylabel(target_name)
             plt.xticks(rotation=45, ha='right')
             plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+            
+            # remove top and right spines for a cleaner look
+            plt.gca().spines['top'].set_visible(False)
+            plt.gca().spines['right'].set_visible(False)
+            
             plt.tight_layout()
 
             # 6. Save the plot
@@ -783,7 +805,8 @@ def plot_categorical_vs_target(
 def plot_correlation_heatmap(df: pd.DataFrame,
                              plot_title: str,
                              save_dir: Union[str, Path, None] = None, 
-                             method: Literal["pearson", "kendall", "spearman"]="pearson"):
+                             method: Literal["pearson", "kendall", "spearman"]="pearson",
+                             cmap: str = "coolwarm"):
     """
     Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
     
@@ -795,6 +818,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
             - 'pearson' (default): measures linear correlation (assumes normally distributed data),
             - 'kendall': rank correlation (non-parametric),
             - 'spearman': monotonic relationship (non-parametric).
+        cmap (str): Colormap to use for the heatmap. Must be a valid Matplotlib colormap name.
 
     Notes:
         - Only numeric columns are included.
@@ -807,6 +831,9 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         return
     if method not in ["pearson", "kendall", "spearman"]:
         _LOGGER.error(f"'method' must be pearson, kendall, or spearman.")
+        raise ValueError()
+    if cmap not in matplotcolormaps:
+        _LOGGER.error(f"Invalid colormap '{cmap}' provided.")
         raise ValueError()
     
     corr = numeric_df.corr(method=method)
@@ -827,7 +854,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         corr,
         mask=mask,
         annot=annot_bool,
-        cmap='coolwarm',
+        cmap=cmap,
         fmt=".2f",
         cbar_kws={"shrink": 0.8},
         vmin=-1,  # Anchors minimum color to -1

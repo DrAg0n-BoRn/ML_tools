@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.14.0] 2026-05-15
+
+### Changed
+
+- data_exploration:
+    - Improved aesthetics of all plotting functions.
+    - `check_class_balance()`, function revamped for streamlined execution.
+- ML_evaluation:
+    - Major revamp to all metrics scripts to standardize outputs and enhance plot aesthetics.
+
+### Added
+
+- ML_configuration: 
+    - Metric Format Classes: Added validation for colors, colormaps, histogram bins, and alpha values in the metrics format classes to ensure that provided values are valid and fail early with informative error messages if not.
+
 ## [22.13.0] 2026-05-13
 
 ### Fixed
