@@ -263,7 +263,7 @@ def _evaluate_continuous_features(
         else:
             sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)    
         
-        ax.set_title(name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        # ax.set_title(name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING) # Remove title, use x-label instead for cleaner look
         ax.set_xlabel(name, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         ax.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
@@ -434,6 +434,7 @@ def _evaluate_numerical_correlations(
     annot_fs = max(10, format_config.font_size - max(4, num_feats // 2))
     
     sns.heatmap(corr_diff_abs, 
+                mask=mask,
                 annot=show_annotations, 
                 fmt=".2f", 
                 cmap=format_config.cmap, 
@@ -602,7 +603,11 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
         # Dynamically scale annotation size: large for few categories, smaller for many
         annot_fs = max(10, format_config.font_size - max(4, num_cat // 2))
         
-        sns.heatmap(corr_diff_abs, 
+        # create a lower triangular mask to only show one triangle of the heatmap since it's symmetric
+        cat_mask = np.triu(np.ones_like(corr_diff_abs, dtype=bool), k=1)
+        
+        sns.heatmap(corr_diff_abs,
+                    mask=cat_mask,
                     annot=show_annotations, 
                     fmt=".2f", 
                     cmap=format_config.cmap, 

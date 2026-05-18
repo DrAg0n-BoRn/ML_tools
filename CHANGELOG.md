@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.14.1] 2026-05-18
+
+### Changed
+
+- ML_evaluation:
+    - `dit_generation_metrics()`
+        - Remove title from the distribution plots (continuous) for a cleaner look, and use the x-axis label to indicate the feature name instead.
+        - Added a mask to the numerical correlation heatmap to only show the lower triangle since it's symmetric.
+        - Added a mask to the categorical association heatmap to only show the lower triangle since it's symmetric.
+
 ## [22.14.0] 2026-05-15
 
 ### Changed
