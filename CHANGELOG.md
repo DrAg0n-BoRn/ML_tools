@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.14.3] 2026-05-18
+
+### Changed
+
+- data_exploration:
+    - `plot_value_distributions()` and `plot_value_distributions_multi()`
+        - Changed plot aesthetics to use the feature names as x-axis labels instead of the title. 
+        - Categorical feature plots will always rotate x-ticks for better readability.
+        - Fixed y-axis limits for percentage mode to ensure they do not exceed 100%, and added logic to adjust y-axis limits in count mode to prevent the KDE line from pushing the axis too high above the tallest bar, improving visualization of distributions with varying scales.
+
 ## [22.14.2] 2026-05-18
 
 ### Changed

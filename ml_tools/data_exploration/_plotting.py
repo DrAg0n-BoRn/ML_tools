@@ -32,7 +32,7 @@ def plot_value_distributions(
     categorical_columns: Optional[list[str]] = None,
     max_categories: int = 50,
     fill_na_with: str = "MISSING DATA",
-    font_scaling: float = 1.0,
+    font_scaling: float = 1.5,
     mode: Literal["count", "percentage"] = "count"
 ):
     """
@@ -93,13 +93,24 @@ def plot_value_distributions(
                 if is_continuous:
                     plt.figure(figsize=(10, 6))
                     # Drop NaNs for histogram, as they can't be plotted on a numeric axis
-                    sns.histplot(
+                    ax = sns.histplot(
                         x=df[col_name].dropna(), 
                         kde=True, 
                         bins=30,
                         stat="percent" if mode == "percentage" else "count"
                     )
-                    plt.title(f"Distribution of '{col_name}' (Continuous)")
+                    
+                    # Set y axis limit to 100% if in percentage mode and the max is above 100
+                    if mode == "percentage" and ax.get_ylim()[1] > 100:
+                        ax.set_ylim(top=100)
+                    elif mode == "count":
+                        # Find the highest histogram bar
+                        max_bar_height = max([p.get_height() for p in ax.patches], default=0) # type: ignore
+                        # If the KDE line pushes the axis more than 10% above the highest bar, clamp it
+                        if max_bar_height > 0 and ax.get_ylim()[1] > max_bar_height * 1.1:
+                            ax.set_ylim(top=max_bar_height * 1.1)
+                    
+                    # plt.title(f"Distribution of '{col_name}' (Continuous)")
                     plt.xlabel(col_name)
                     plt.ylabel("Percentage (%)" if mode == "percentage" else "Count")
                     
@@ -152,18 +163,17 @@ def plot_value_distributions(
                         )
                         plt.ylabel("Count")
                     
-                    plt.title(f"Distribution of '{col_name}' (Categorical)")
-                    #plt.xlabel(col_name)
-                    plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
+                    # plt.title(f"Distribution of '{col_name}' (Categorical)")
+                    plt.xlabel(col_name)
                     
                     # Smart tick rotation
-                    max_label_len = 0
-                    if n_unique > 0:
-                        max_label_len = max(len(str(s)) for s in order)
+                    # max_label_len = 0
+                    # if n_unique > 0:
+                    #     max_label_len = max(len(str(s)) for s in order)
                     
-                    # Rotate if labels are long OR there are many categories
-                    if max_label_len > 10 or n_unique > 25:
-                        plt.xticks(rotation=45, ha='right')
+                    # Rotate labels
+                    # if max_label_len > 10 or n_unique > 25:
+                    plt.xticks(rotation=45, ha='right')
                     
                     save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
                     categorical_plots_saved += 1
@@ -192,7 +202,7 @@ def plot_value_distributions_multi(
     save_dir: Union[str, Path],
     max_categories: int = 50,
     fill_na_with: str = "MISSING DATA",
-    font_scaling: float = 1.0,
+    font_scaling: float = 1.5,
     mode: Literal["count", "percentage"] = "percentage"
 ):
     """
@@ -282,10 +292,18 @@ def plot_value_distributions_multi(
                         stat="percent" if mode == "percentage" else "count"
                     )
                     
+                    if mode == "percentage" and ax.get_ylim()[1] > 100:
+                        ax.set_ylim(top=100)
+                    elif mode == "count":
+                        max_bar_height = max([p.get_height() for p in ax.patches], default=0)
+                        if max_bar_height > 0 and ax.get_ylim()[1] > max_bar_height * 1.1:
+                            ax.set_ylim(top=max_bar_height * 1.1)
+                    
+                    
                     if ax.get_legend() is not None:
                         ax.get_legend().set_title(None)
                     
-                    plt.title(f"Distribution of '{col_name}' (Continuous)")
+                    # plt.title(f"Distribution of '{col_name}' (Continuous)")
                     plt.xlabel(col_name)
                     plt.ylabel("Percentage (%)" if mode == "percentage" else "Count")
                     
@@ -338,13 +356,12 @@ def plot_value_distributions_multi(
                     if ax.get_legend() is not None:
                         ax.get_legend().set_title(None)
                     
-                    plt.title(f"Distribution of '{col_name}' (Categorical)")
-                    # plt.xlabel(col_name)
-                    plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
+                    # plt.title(f"Distribution of '{col_name}' (Categorical)")
+                    plt.xlabel(col_name)
                     
-                    max_label_len = max([len(str(s)) for s in order] + [0])
-                    if max_label_len > 10 or n_unique > 15:
-                        plt.xticks(rotation=45, ha='right')
+                    # max_label_len = max([len(str(s)) for s in order] + [0])
+                    # if max_label_len > 10 or n_unique > 15:
+                    plt.xticks(rotation=45, ha='right')
                     
                     save_path = categorical_dir / f"{sanitize_filename(col_name)}.svg"
                     categorical_plots_saved += 1
@@ -374,7 +391,7 @@ def plot_numeric_overview_boxplot(
     strategy: Literal["value", "log", "scale"] = "value",
     handle_zero_variance: Literal["drop", "constant"] = "constant",
     show_means: bool = True,
-    font_scaling: float = 1.0
+    font_scaling: float = 1.5
 ):
     """
     Creates a single boxplot showing the distribution and range of all numeric columns.
@@ -497,7 +514,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
                                         plot_title: str = "Distribution Overview",
                                         handle_zero_variance: Literal["drop", "constant"] = "constant",
                                         show_means: bool = True,
-                                        font_scaling: float = 1.0):
+                                        font_scaling: float = 1.5):
     """
     Plots numeric overview boxplots using all strategies ("value", "log", "scale") in one go, saving each plot with a strategy-specific suffix.
     
