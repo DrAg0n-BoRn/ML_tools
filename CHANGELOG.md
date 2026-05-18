@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.14.2] 2026-05-18
+
+### Changed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`
+        - Fixed an issue with the standardized error boxplots where duplicated abbreviated names were grouped together in the boxplot, causing incorrect visualization.
+        - All plots will use complete feature names instead of abbreviations.
+    - `dit_generation_metrics()`
+        - Added x-ticks and y-ticks fontsize for categorical plots.
+        - Changed the feature name display from the title to the x-axis for categorical feature plots, enforcing consistency.
+        - Remove y-axis ticks for continuous feature distribution plots to reduce clutter and improve aesthetics, since the density values can be misleading and are not the focus of the evaluation.
+        - All plots will use complete feature names instead of abbreviations.
+
 ## [22.14.1] 2026-05-18
 
 ### Changed

@@ -18,7 +18,7 @@ from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
-from ._helpers import check_and_abbreviate_name
+# from ._helpers import check_and_abbreviate_name
 
 
 _LOGGER = get_logger("DiTMetrics")
@@ -268,9 +268,11 @@ def _evaluate_continuous_features(
         ax.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
-        ax.tick_params(axis='y', labelsize=format_config.ytick_size)
+        # Remove the confusing density numbers but keep the axis line
+        ax.set_yticks([])
+        # ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         ax.legend(fontsize=format_config.legend_size)
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.grid(True, linestyle='--', alpha=0.6, axis='x') # use X axis only
         
         # Turn off the top and right borders
         ax.spines['top'].set_visible(False)
@@ -354,12 +356,12 @@ def _evaluate_categorical_features(
         ax.bar(x - width/2, real_props, width, label='Real Data', color=format_config.real_color, alpha=format_config.alpha)
         ax.bar(x + width/2, gen_props, width, label='Generated Data', color=format_config.gen_color, alpha=format_config.alpha)
 
-        ax.set_title(feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
-        # ax.set_xlabel("Categories", fontsize=format_config.font_size)
-        ax.set_xlabel("") # remove x-axis label for cleaner look since category names are on the ticks
+        # ax.set_title(feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+        ax.set_xlabel(feat_name, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING) # Use x-label for feature name instead of title for cleaner and consistent look
         ax.set_ylabel("Proportion", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         ax.set_xticks(x)
-        ax.set_xticklabels(plot_labels, rotation=45 if len(plot_labels) > 3 else 0, ha='right')
+        ax.set_xticklabels(plot_labels, rotation=45 if len(plot_labels) > 3 else 0, ha='right', fontsize=format_config.xtick_size)
+        ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         ax.legend(fontsize=format_config.legend_size)
         ax.grid(True, linestyle='--', alpha=0.6, axis='y')
         
@@ -402,10 +404,10 @@ def _evaluate_numerical_correlations(
         
     report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
     
-    abbr_num_names = [check_and_abbreviate_name(name) for name in num_target_names]
+    # abbr_num_names = [check_and_abbreviate_name(name) for name in num_target_names]
     
-    real_df = pd.DataFrame(real_num, columns=abbr_num_names)
-    gen_df = pd.DataFrame(gen_num, columns=abbr_num_names)
+    real_df = pd.DataFrame(real_num, columns=num_target_names)
+    gen_df = pd.DataFrame(gen_num, columns=num_target_names)
     
     real_corr = real_df.corr().fillna(0)
     gen_corr = gen_df.corr().fillna(0)
@@ -425,7 +427,7 @@ def _evaluate_numerical_correlations(
     report_lines.append(f"Correlation Matrix MAE: {corr_mae:.4f}")
     report_lines.append(f"Correlation Matrix MSE: {corr_mse:.4f}")
     
-    num_feats = len(abbr_num_names)
+    num_feats = len(num_target_names)
     fig_size_xy = max(8, num_feats * 0.8)
     fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
     
@@ -585,10 +587,10 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
                     gen_corr[j, i] = cv_gen
 
         # Abbreviate names for the plot
-        abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
+        # abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
 
-        real_df = pd.DataFrame(real_corr, index=abbr_cat_names, columns=abbr_cat_names)
-        gen_df = pd.DataFrame(gen_corr, index=abbr_cat_names, columns=abbr_cat_names)
+        real_df = pd.DataFrame(real_corr, index=cat_target_names, columns=cat_target_names)
+        gen_df = pd.DataFrame(gen_corr, index=cat_target_names, columns=cat_target_names)
         
         corr_diff_abs = (real_df - gen_df).abs()
         
