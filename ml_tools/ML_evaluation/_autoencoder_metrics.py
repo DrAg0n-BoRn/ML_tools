@@ -243,25 +243,26 @@ def _evaluate_categorical_features(
         disp_.im_.set_clim(vmin=0.0, vmax=1.0)
         ax_cm.grid(False)
         
-        cm_font_size = format_config.cm_font_size
-        cm_tick_size = cm_font_size - 4
+        # Smart dynamic font scaling
+        base_cm_font = format_config.cm_font_size
+        scale_factor = min(1.0, 15.0 / max(15.0, n_classes))
         
-        final_font_size = cm_font_size + 2
-        if n_classes > 2: 
-             final_font_size = cm_font_size - n_classes
+        annot_font_size = max(5, int((base_cm_font - 2) * scale_factor))
+        cm_tick_size = max(6, int(format_config.xtick_size * scale_factor))
         
         for text in ax_cm.texts:
-            text.set_fontsize(final_font_size)
+            text.set_fontsize(annot_font_size)
         
         ax_cm.tick_params(axis='x', labelsize=cm_tick_size)
         ax_cm.tick_params(axis='y', labelsize=cm_tick_size)
         
-        # rotate x-tick labels
-        plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
+        # rotate x-tick labels for 3 or more classes to prevent overlap
+        if n_classes >= 3:
+            plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
 
-        ax_cm.set_title(feat_name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size + 2)
-        ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
-        ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=cm_font_size)
+        ax_cm.set_title(feat_name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font + 2)
+        ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font)
+        ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font)
         
         cbar = fig_cm.colorbar(disp_.im_, ax=ax_cm, shrink=0.8)
         cbar.ax.tick_params(labelsize=cm_tick_size)
@@ -300,15 +301,19 @@ def _evaluate_categorical_features(
             if len(incorrect_probs) > 0:
                 ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True) # type: ignore
             
-            ax_prob.set_title(feat_name, fontsize=format_config.font_size, pad=_EvaluationConfig.LABEL_PADDING)
-            ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.xtick_size, labelpad=_EvaluationConfig.LABEL_PADDING)
-            ax_prob.set_ylabel("Density", fontsize=format_config.ytick_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_title(feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             
             ax_prob.set_xlim(-0.1, 1.1)
             ax_prob.set_xticks(np.arange(0.0, 1.1, 0.1))
             
-            ax_prob.legend(fontsize=format_config.font_size - 4)
-            ax_prob.grid(True, linestyle='--', alpha=0.6)
+            ax_prob.tick_params(axis='x', labelsize=format_config.xtick_size)
+            # ax_prob.tick_params(axis='y', labelsize=format_config.ytick_size)
+            ax_prob.set_yticks([]) # Hide the y-ticks to focus on the distribution shape
+            
+            ax_prob.legend(fontsize=max(8, format_config.font_size - 4))
+            ax_prob.grid(axis='x', linestyle='--', alpha=0.6)
             
             # Turn off the top and right borders
             ax_prob.spines['top'].set_visible(False)
@@ -357,7 +362,7 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         fig_height = max(6.0, max_features * 0.8) # Slightly increased vertical space per feature
         
         # Increased base width per plot to give large fonts more room
-        fig, axes = plt.subplots(1, n_plots, figsize=(max(10, 9 * n_plots), fig_height), dpi=DPI_value)
+        fig, axes = plt.subplots(1, n_plots, figsize=(max(15, 13 * n_plots), fig_height), dpi=DPI_value)
         
         # Make axes iterable if there's only one plot
         if n_plots == 1:
@@ -763,8 +768,11 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         
         ax.set_title("Numerical Reconstruction Error Distribution", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
         ax.set_xlabel("")
-                     
-        ax.tick_params(axis='x', labelsize=format_config.xtick_size)
+        
+        # smart font size adjustment based on number of features to prevent overcrowding
+        font_shrink_constant = 20
+        ax.tick_params(axis='x', 
+                       labelsize=max(format_config.xtick_size // 2, int(format_config.xtick_size * (font_shrink_constant / (font_shrink_constant + num_feats)))))
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         
         # Rotate labels 

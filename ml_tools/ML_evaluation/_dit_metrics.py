@@ -360,7 +360,14 @@ def _evaluate_categorical_features(
         ax.set_xlabel(feat_name, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING) # Use x-label for feature name instead of title for cleaner and consistent look
         ax.set_ylabel("Proportion", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
         ax.set_xticks(x)
-        ax.set_xticklabels(plot_labels, rotation=45 if len(plot_labels) > 3 else 0, ha='right', fontsize=format_config.xtick_size)
+        
+        # smart font size adjustment based on number of categories to prevent overcrowding
+        font_shrink_constant = 20
+        ax.set_xticklabels(plot_labels, 
+                   rotation=45 if len(plot_labels) > 3 else 0, 
+                   ha='right' if len(plot_labels) > 3 else 'center',
+                   fontsize=max(format_config.xtick_size // 2, int(format_config.xtick_size * (font_shrink_constant / (font_shrink_constant + len(plot_labels))))))
+        
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         ax.legend(fontsize=format_config.legend_size)
         ax.grid(True, linestyle='--', alpha=0.6, axis='y')
