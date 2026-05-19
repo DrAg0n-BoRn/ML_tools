@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.14.5] 2026-05-19
+
+### Fixed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, enlarge figure size for the standardized error boxplot and the radar chart to improve readability.
+
 ## [22.14.4] 2026-05-19
 
 ### Fixed

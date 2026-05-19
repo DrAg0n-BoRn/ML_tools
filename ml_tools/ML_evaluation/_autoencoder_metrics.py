@@ -624,7 +624,7 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
 
     try:
         n_plots = sum([has_num, has_cat])
-        fig = plt.figure(figsize=(max(8, 8 * n_plots), 8), dpi=DPI_value)
+        fig = plt.figure(figsize=(max(10, 9 * n_plots), 12), dpi=DPI_value)
         
         plot_idx = 1
         
@@ -735,8 +735,8 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         
         # Dynamically scale figure width based on number of features
         num_feats = len(num_target_names)
-        fig_width = max(10, num_feats * 0.8)
-        fig, ax = plt.subplots(figsize=(fig_width, 8), dpi=DPI_value)
+        fig_width = max(12, num_feats * 0.8)
+        fig, ax = plt.subplots(figsize=(fig_width, 10), dpi=DPI_value)
         
         # Plot boxplot using np array to prevent grouping of abbreviated names
         sns.boxplot(data=std_errors, 
@@ -770,7 +770,7 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         ax.set_xlabel("")
         
         # smart font size adjustment based on number of features to prevent overcrowding
-        font_shrink_constant = 20
+        font_shrink_constant = 60
         ax.tick_params(axis='x', 
                        labelsize=max(format_config.xtick_size // 2, int(format_config.xtick_size * (font_shrink_constant / (font_shrink_constant + num_feats)))))
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
