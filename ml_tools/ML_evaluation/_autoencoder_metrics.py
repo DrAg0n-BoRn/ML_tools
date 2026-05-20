@@ -6,7 +6,7 @@ import matplotlib.colors as mcolors
 import seaborn as sns
 from pathlib import Path
 from typing import Union, Optional
-import plotly.graph_objects as go
+import warnings
 from sklearn.metrics import (
     mean_squared_error, 
     mean_absolute_error, 
@@ -650,8 +650,12 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             for i in range(len(num_target_names)):
                 mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
                 mae_scores.append(round(mae, 2))
-                r2_scores.append(max(0.0, r2_score(y_true_num[:, i], y_pred_num[:, i])))
-                ev_scores.append(max(0.0, explained_variance_score(y_true_num[:, i], y_pred_num[:, i])))
+                
+                r2 = r2_score(y_true_num[:, i], y_pred_num[:, i])
+                r2_scores.append(0.0 if np.isnan(r2) else max(0.0, r2))
+                
+                ev = explained_variance_score(y_true_num[:, i], y_pred_num[:, i])
+                ev_scores.append(0.0 if np.isnan(ev) else max(0.0, ev))
             
             num_line_hex = mcolors.to_hex(format_config.num_color)
             num_fill_rgba = mpl_to_plotly_rgba(format_config.num_color, format_config.radar_fill_alpha)
@@ -713,7 +717,11 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
             for i in range(len(cat_target_names)):
                 f1_macro_scores.append(f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0))
                 f1_weighted_scores.append(f1_score(cat_true_list[i], cat_pred_list[i], average='weighted', zero_division=0))
-                bal_acc_scores.append(balanced_accuracy_score(cat_true_list[i], cat_pred_list[i]))
+                
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=UserWarning)
+                    b_acc = balanced_accuracy_score(cat_true_list[i], cat_pred_list[i])
+                    bal_acc_scores.append(0.0 if np.isnan(b_acc) else b_acc)
                 
             cat_line_hex = mcolors.to_hex(format_config.cat_color)
             cat_fill_rgba = mpl_to_plotly_rgba(format_config.cat_color, format_config.radar_fill_alpha)

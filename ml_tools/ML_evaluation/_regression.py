@@ -11,6 +11,7 @@ from sklearn.metrics import (
 )
 from pathlib import Path
 from typing import Union, Optional
+import warnings
 
 from ..ML_configuration._metrics import (_BaseRegressionFormat,
                                         FormatRegressionMetrics,
@@ -239,8 +240,11 @@ def multi_target_regression_metrics(
         # --- Calculate Metrics ---
         rmse = np.sqrt(mean_squared_error(true_i, pred_i))
         mae = mean_absolute_error(true_i, pred_i)
-        r2 = r2_score(true_i, pred_i)
         medae = median_absolute_error(true_i, pred_i)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            r2 = r2_score(true_i, pred_i)
         
         metrics_summary.append({
             'Target': name,
@@ -251,10 +255,12 @@ def multi_target_regression_metrics(
         })
         
         # Store rounded metrics for radar charts (clip R2 at 0 so the radar doesn't break on negative values)
-        rmse_scores.append(round(rmse, 4))
-        mae_scores.append(round(mae, 4))
-        medae_scores.append(round(medae, 4))
-        r2_scores.append(max(0.0, round(r2, 4)))
+        rmse_scores.append(0.0 if np.isnan(rmse) else round(rmse, 4))
+        mae_scores.append(0.0 if np.isnan(mae) else round(mae, 4))
+        medae_scores.append(0.0 if np.isnan(medae) else round(medae, 4))
+        
+        safe_r2 = 0.0 if np.isnan(r2) else r2
+        r2_scores.append(max(0.0, round(safe_r2, 4)))
 
         # --- Save Residual Plot ---
         residuals = true_i - pred_i

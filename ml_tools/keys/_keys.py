@@ -273,6 +273,8 @@ class _EvaluationConfig:
     # RADAR Plot settings
     RADAR_PLOT_WIDTH = 800
     RADAR_PLOT_HEIGHT = 800
+    RADAR_MAX_FEATURES_BEFORE_DYNAMIC_SIZING = 15
+    RADAR_MAX_FEATURE_NAME_LENGTH_FOR_MARGIN = 14
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""

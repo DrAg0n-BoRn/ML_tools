@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.15.1] 2026-06-20
+
+### Added
+
+- ML_evaluation:
+    - Greatly enhanced the radar chart visualizations by adding interactivity using Plotly. The radar charts now allow to change font sizes using sliders. Plots can be saved as SVG format with the original base name. HTML files now require internet connection to load Plotly.js from the CDN for better performance and smaller file sizes.
+    - `autoencoder_metrics()`, `multi_target_regression_metrics()`, and `multi_label_classification_metrics()`, Added safe guards when calculating metrics for the radar charts to handle cases where metrics may be NaN or infinite, ensuring that the radar charts can still be generated without errors and provide meaningful visualizations even in edge cases.
+
+- NOTE: "kaleido" requires a chromium-based browser to be installed on the system for saving Plotly figures as static images.
+
 ## [22.15.0] 2026-05-20
 
 - New package dependency: "kaleido", allows saving Plotly interactive plots as static images.

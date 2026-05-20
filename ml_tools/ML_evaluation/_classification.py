@@ -17,6 +17,7 @@ from sklearn.metrics import (
 )
 from pathlib import Path
 from typing import Union, Optional
+import warnings
 
 from ..ML_configuration._metrics import (_BaseMultiLabelFormat,
                                          _BaseClassificationFormat,
@@ -602,24 +603,28 @@ def multi_label_classification_metrics(
         sanitized_name = sanitize_filename(name)
         
         # Calculate metrics for radar charts
-        try:
-            auc_val = roc_auc_score(true_i, prob_i)
-        except ValueError:
-            auc_val = 0.0 # Handle case with only one class present
-        
-        try:
-            f1_val: float = f1_score(true_i, pred_i, zero_division=0) # type: ignore
-        except ValueError:
-            f1_val = 0.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             
-        try:
-            ap_val = average_precision_score(true_i, prob_i)
-        except ValueError:
-            ap_val = 0.0
+            try:
+                auc_val = roc_auc_score(true_i, prob_i)
+            except ValueError:
+                auc_val = 0.0 # Handle case with only one class present
+            
+            try:
+                f1_val: float = f1_score(true_i, pred_i, zero_division=0) # type: ignore
+            except ValueError:
+                f1_val = 0.0
+                
+            try:
+                ap_val = average_precision_score(true_i, prob_i)
+            except ValueError:
+                ap_val = 0.0
         
-        auc_scores.append(round(auc_val, 4))
-        f1_scores.append(round(f1_val, 4))
-        ap_scores.append(round(ap_val, 4))
+        # Safeguard against NaN before appending to radar chart lists
+        auc_scores.append(0.0 if np.isnan(auc_val) else round(auc_val, 4))
+        f1_scores.append(0.0 if np.isnan(f1_val) else round(f1_val, 4))
+        ap_scores.append(0.0 if np.isnan(ap_val) else round(ap_val, 4))
 
         # --- Save Classification Report for the label (uses y_pred) ---
         report_text = classification_report(true_i, pred_i)
