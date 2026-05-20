@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.metrics import (
     mean_squared_error,
@@ -20,6 +21,13 @@ from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
 from ._helpers import check_and_abbreviate_name
+from ._radar_plots import (
+    mpl_to_plotly_rgba,
+    calculate_smart_font_size,
+    calculate_smart_margin_left_right,
+    save_radar_chart
+)
+
 
 
 _LOGGER = get_logger("Regression Metrics")
@@ -194,13 +202,15 @@ def multi_target_regression_metrics(
     if y_true.shape[1] != len(target_names):
         _LOGGER.error("Number of target names must match the number of columns in y_true.")
         raise ValueError()
-    
-    # # --- Pre-process target names for abbreviation ---
-    # Abbreviate only for plotting purposes, keep original names in the report
-    # target_names = [check_and_abbreviate_name(name) for name in target_names]
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     metrics_summary = []
+    
+    # Initialize lists to store metrics for the radar charts
+    rmse_scores = []
+    mae_scores = []
+    medae_scores = []
+    r2_scores = []
     
     # --- Parse Config or use defaults ---
     if config is None:
@@ -231,6 +241,7 @@ def multi_target_regression_metrics(
         mae = mean_absolute_error(true_i, pred_i)
         r2 = r2_score(true_i, pred_i)
         medae = median_absolute_error(true_i, pred_i)
+        
         metrics_summary.append({
             'Target': name,
             'RMSE': rmse,
@@ -238,6 +249,12 @@ def multi_target_regression_metrics(
             'MedAE': medae,
             'R2-score': r2,
         })
+        
+        # Store rounded metrics for radar charts (clip R2 at 0 so the radar doesn't break on negative values)
+        rmse_scores.append(round(rmse, 4))
+        mae_scores.append(round(mae, 4))
+        medae_scores.append(round(medae, 4))
+        r2_scores.append(max(0.0, round(r2, 4)))
 
         # --- Save Residual Plot ---
         residuals = true_i - pred_i
@@ -324,3 +341,64 @@ def multi_target_regression_metrics(
     summary_df.to_csv(report_path, index=False)
     _LOGGER.info(f"Full regression report saved to '{report_path.name}'")
 
+    # --- Save Radar Charts ---
+    if len(target_names) > 2:
+        radar_dir = save_dir_path / "radar_charts"
+        radar_dir.mkdir(exist_ok=True)
+        
+        line_hex = mcolors.to_hex(format_config.scatter_color)
+        fill_rgba = mpl_to_plotly_rgba(format_config.scatter_color, 0.15) 
+        
+        smart_font_size = calculate_smart_font_size(len(target_names), base_font_size)
+        max_len = max([len(str(name)) for name in target_names])
+        dynamic_margin = calculate_smart_margin_left_right(max_len)
+        
+        # RMSE Radar
+        max_rmse = max(rmse_scores) if max(rmse_scores) > 0 else 0.1
+        save_radar_chart(rmse_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                         "RMSE across Targets", 
+                         radar_dir / "rmse_radar", 
+                         dynamic_margin, 
+                         smart_font_size, 
+                         tick_range=[0, max_rmse],
+                         tick_vals=[round(val, 2) for val in np.linspace(0, max_rmse, 6).tolist()])
+        
+        # MAE Radar
+        max_mae = max(mae_scores) if max(mae_scores) > 0 else 0.1
+        save_radar_chart(mae_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                         "MAE across Targets", 
+                         radar_dir / "mae_radar", 
+                         dynamic_margin, 
+                         smart_font_size, 
+                         tick_range=[0, max_mae],
+                         tick_vals=[round(val, 2) for val in np.linspace(0, max_mae, 6).tolist()])
+                         
+        # MedAE Radar
+        max_medae = max(medae_scores) if max(medae_scores) > 0 else 0.1
+        save_radar_chart(medae_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                         "MedAE across Targets", 
+                         radar_dir / "medae_radar", 
+                         dynamic_margin, 
+                         smart_font_size, 
+                         tick_range=[0, max_medae],
+                         tick_vals=[round(val, 2) for val in np.linspace(0, max_medae, 6).tolist()])
+        
+        # R2 Radar (Uses default 0.0 to 1.0 range)
+        save_radar_chart(r2_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                         "R2-Score across Targets", 
+                         radar_dir / "r2_radar", 
+                         dynamic_margin, smart_font_size)
+                         
+        _LOGGER.info(f"🌀 Radar charts saved to '{radar_dir.name}'")

@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "22.14.5"
+version = "22.15.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -43,6 +43,7 @@ ML = [
     "matplotlib",
     "seaborn",
     "plotly",              # Interactive plots
+    "kaleido",             # For static plotly image export
     "Pillow",
     "ipython",
     "ipykernel",
@@ -158,6 +159,7 @@ dev = [
     "ipywidgets>=8.1.8",
     "joblib>=1.5.2",
     "jupyterlab>=4.5.0",
+    "kaleido>=1.3.0",
     "matplotlib>=3.10.8",
     "notebook>=7.5.0",
     "numpy<2.0",

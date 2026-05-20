@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.15.0] 2026-05-20
+
+- New package dependency: "kaleido", allows saving Plotly interactive plots as static images.
+
+### Changed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, Radial plots are now handled using Plotly. Better aesthetics and interactivity, with improved font size calculation and margin adjustments for better readability. The radar chart is now saved as an interactive HTML file in addition to the static image.
+    - `multi_target_regression_metrics()`, added new radar chart visualizations using Plotly to compare the performance of multiple targets across different metrics (e.g., MAE, MSE, R2).
+    - `multi_label_classification_metrics()`, added new radar chart visualizations using Plotly to compare the performance of multiple labels across different metrics (e.g., Precision, Recall, F1).
+
 ## [22.14.5] 2026-05-19
 
 ### Fixed

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
@@ -11,7 +12,8 @@ from sklearn.metrics import (
     precision_recall_curve,
     average_precision_score,
     hamming_loss,
-    jaccard_score
+    jaccard_score,
+    f1_score
 )
 from pathlib import Path
 from typing import Union, Optional
@@ -29,6 +31,12 @@ from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
 from ._helpers import check_and_abbreviate_name
+from ._radar_plots import (
+    mpl_to_plotly_rgba,
+    calculate_smart_font_size,
+    calculate_smart_margin_left_right,
+    save_radar_chart
+)
 
 
 _LOGGER = get_logger("Classification Metrics")
@@ -486,9 +494,6 @@ def multi_label_classification_metrics(
 
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
-    # --- Pre-process target names for abbreviation ---
-    abbr_target_names = [check_and_abbreviate_name(name) for name in target_names]
-    
     # --- Parse Config or use defaults ---
     if config is None:
         # Create a default config if one wasn't provided
@@ -507,6 +512,11 @@ def multi_label_classification_metrics(
     # config font size for heatmap
     cm_font_size = format_config.cm_font_size
     cm_tick_size = cm_font_size - 4
+    
+    # Initialize lists to store metrics for the radar charts
+    auc_scores = []
+    ap_scores = []
+    f1_scores = []
 
     # --- Calculate and Save Overall Metrics (using y_pred) ---
     h_loss = hamming_loss(y_true, y_pred)
@@ -528,7 +538,7 @@ def multi_label_classification_metrics(
     # --- Save Classification Report Heatmap (Multi-label) ---
     try:
          # Generate full report as dict
-        full_report_dict = classification_report(y_true, y_pred, target_names=abbr_target_names, output_dict=True)
+        full_report_dict = classification_report(y_true, y_pred, target_names=target_names, output_dict=True)
         report_df = pd.DataFrame(full_report_dict)
         
         # Cleanup
@@ -590,6 +600,26 @@ def multi_label_classification_metrics(
         pred_i = y_pred[:, i] # Use passed-in y_pred
         prob_i = y_prob[:, i] # Use passed-in y_prob
         sanitized_name = sanitize_filename(name)
+        
+        # Calculate metrics for radar charts
+        try:
+            auc_val = roc_auc_score(true_i, prob_i)
+        except ValueError:
+            auc_val = 0.0 # Handle case with only one class present
+        
+        try:
+            f1_val: float = f1_score(true_i, pred_i, zero_division=0) # type: ignore
+        except ValueError:
+            f1_val = 0.0
+            
+        try:
+            ap_val = average_precision_score(true_i, prob_i)
+        except ValueError:
+            ap_val = 0.0
+        
+        auc_scores.append(round(auc_val, 4))
+        f1_scores.append(round(f1_val, 4))
+        ap_scores.append(round(ap_val, 4))
 
         # --- Save Classification Report for the label (uses y_pred) ---
         report_text = classification_report(true_i, pred_i)
@@ -780,6 +810,51 @@ def multi_label_classification_metrics(
         cal_path = save_dir_path / f"calibration_plot_{sanitized_name}.svg"
         plt.savefig(cal_path, bbox_inches='tight')
         plt.close(fig_cal)
+        
+    # --- Save Radar Charts ---
+    if len(target_names) > 2:
+        radar_dir = save_dir_path / "radar_charts"
+        radar_dir.mkdir(exist_ok=True)
+        
+        # Using ROC_PR_line as the theme color for these radar charts
+        line_hex = mcolors.to_hex(format_config.ROC_PR_line)
+        fill_rgba = mpl_to_plotly_rgba(format_config.ROC_PR_line, 0.15) 
+        
+        smart_font_size = calculate_smart_font_size(len(target_names), base_font_size)
+        max_len = max([len(str(name)) for name in target_names])
+        dynamic_margin = calculate_smart_margin_left_right(max_len)
+        
+        # ROC AUC Radar
+        save_radar_chart(auc_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                        "ROC AUC across Labels", 
+                        radar_dir / "auc_radar", 
+                        dynamic_margin, 
+                        smart_font_size)
+        
+        # Average Precision Radar
+        save_radar_chart(ap_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                        "Average Precision across Labels", 
+                        radar_dir / "ap_radar", 
+                        dynamic_margin, 
+                        smart_font_size)
+                        
+        # F1-Score Radar
+        save_radar_chart(f1_scores, 
+                         target_names, 
+                         line_hex, 
+                         fill_rgba, 
+                        "F1-Score across Labels", 
+                        radar_dir / "f1_radar", 
+                        dynamic_margin, 
+                        smart_font_size)
+                        
+        _LOGGER.info(f"🌀 Radar charts saved to '{radar_dir.name}'")
 
     _LOGGER.info(f"All individual label reports and plots saved to '{save_dir_path.name}'")
 

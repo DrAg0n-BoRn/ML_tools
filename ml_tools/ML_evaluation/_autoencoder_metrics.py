@@ -2,17 +2,20 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import matplotlib.colors as mcolors
 import seaborn as sns
-import math
 from pathlib import Path
 from typing import Union, Optional
+import plotly.graph_objects as go
 from sklearn.metrics import (
     mean_squared_error, 
     mean_absolute_error, 
     r2_score,
     accuracy_score,
     f1_score,
-    ConfusionMatrixDisplay
+    ConfusionMatrixDisplay,
+    explained_variance_score,
+    balanced_accuracy_score,
 )
 
 from ..ML_configuration._metrics import FormatAutoencoderMetrics
@@ -20,6 +23,13 @@ from ..ML_configuration._metrics import FormatAutoencoderMetrics
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
+
+from ._radar_plots import (
+    mpl_to_plotly_rgba,
+    calculate_smart_font_size,
+    calculate_smart_margin_left_right,
+    save_radar_chart
+)
 
 # from ._helpers import check_and_abbreviate_name
 
@@ -621,90 +631,133 @@ def _plot_global_radar_chart(y_true_num: Optional[np.ndarray],
     
     if not has_num and not has_cat:
         return
-
+    
+    local_dir = save_dir_path / "radar_charts"
+    local_dir.mkdir(exist_ok=True)
+    
     try:
-        n_plots = sum([has_num, has_cat])
-        fig = plt.figure(figsize=(max(10, 9 * n_plots), 12), dpi=DPI_value)
-        
-        plot_idx = 1
-        
-        # Numerical Radar (MAE)
+        #### NUMERICAL FEATURES ####
         if has_num:
-            ax = fig.add_subplot(1, n_plots, plot_idx, polar=True)
-            # abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
+            
+            # assert numerical related variables are not None for type checker
+            assert y_true_num is not None
+            assert y_pred_num is not None
+            assert num_target_names is not None
             
             mae_scores = []
-            for i in range(len(num_target_names)): # type: ignore
-                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i]) # type: ignore
-                mae_scores.append(mae)
-                
-            # Close the loop to connect the last point back to the first
-            mae_scores = mae_scores + [mae_scores[0]]
-            angles = [n / float(len(num_target_names)) * 2 * math.pi for n in range(len(num_target_names))] # type: ignore
-            angles += angles[:1]
+            r2_scores = []
+            ev_scores = []
+            for i in range(len(num_target_names)):
+                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
+                mae_scores.append(round(mae, 2))
+                r2_scores.append(max(0.0, r2_score(y_true_num[:, i], y_pred_num[:, i])))
+                ev_scores.append(max(0.0, explained_variance_score(y_true_num[:, i], y_pred_num[:, i])))
             
-            ax.plot(angles, mae_scores, linewidth=2.5, linestyle='solid', color=format_config.num_color)
-            ax.fill(angles, mae_scores, format_config.num_color, alpha=format_config.radar_fill_alpha) # Softer fill
+            num_line_hex = mcolors.to_hex(format_config.num_color)
+            num_fill_rgba = mpl_to_plotly_rgba(format_config.num_color, format_config.radar_fill_alpha)
             
-            # X-ticks (Feature names)
-            ax.set_xticks(angles[:-1])
-            # ax.set_xticklabels(abbr_names, fontsize=format_config.xtick_size)
-            ax.set_xticklabels(num_target_names) # type: ignore # Use default font size for better readability, especially with many features
-            ax.tick_params(axis='x', pad=20) # Push feature labels away from the edge
-            
-            # Y-ticks (Radial numbers)
-            ax.set_rlabel_position(30) # type: ignore # Shift numbers to a 30-degree angle so they don't overlap with the rightmost feature
-            ax.tick_params(axis='y', labelsize=format_config.ytick_size - 6, colors='dimgrey')
-            
-            # Soften the grid and outer spine
-            ax.grid(color='lightgrey', linestyle='--', linewidth=1)
-            ax.spines['polar'].set_color('lightgrey')
-            
-            ax.set_title("Numerical MAE", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING + 10)
-            plot_idx += 1
-            
-        # Categorical Radar (F1-Macro)
-        if has_cat:
-            ax = fig.add_subplot(1, n_plots, plot_idx, polar=True)
-            # abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
-            
-            f1_scores = []
-            for i in range(len(cat_target_names)): # type: ignore
-                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0) # type: ignore
-                f1_scores.append(f1)
-                
-            # Close the loop
-            f1_scores = f1_scores + [f1_scores[0]]
-            angles = [n / float(len(cat_target_names)) * 2 * math.pi for n in range(len(cat_target_names))] # type: ignore
-            angles += angles[:1]
-            
-            ax.plot(angles, f1_scores, linewidth=2.5, linestyle='solid', color=format_config.cat_color)
-            ax.fill(angles, f1_scores, format_config.cat_color, alpha=format_config.radar_fill_alpha)
-            
-            ax.set_xticks(angles[:-1])
-            # ax.set_xticklabels(abbr_cat_names, fontsize=format_config.xtick_size)
-            ax.set_xticklabels(cat_target_names) # type: ignore # Use default font size for better readability, especially with many features
-            ax.tick_params(axis='x', pad=20)
-            
-            ax.set_ylim(0, 1.0)
-            ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0]) # Clean, predictable radial ticks for F1
-            ax.set_rlabel_position(30) # type: ignore
-            ax.tick_params(axis='y', labelsize=format_config.ytick_size - 6, colors='dimgrey')
-            
-            ax.grid(color='lightgrey', linestyle='--', linewidth=1)
-            ax.spines['polar'].set_color('lightgrey')
-            
-            ax.set_title("Categorical F1-Macro", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING + 10)
+            num_feats = len(num_target_names)
+            smart_font_size_num = calculate_smart_font_size(num_feats, format_config.font_size)
+            max_num_len = max([len(str(name)) for name in num_target_names])
+            dynamic_margin_num = calculate_smart_margin_left_right(max_num_len)
 
-        plt.tight_layout()
-        plot_path = save_dir_path / "global_radar_chart.svg"
-        plt.savefig(plot_path, bbox_inches='tight') # Prevents the padded labels from being cut off
-        plt.close(fig)
+            # 1.1 Numerical MAE
+            min_mae = 0.0 
+            max_mae = max(mae_scores)
+            if np.isclose(min_mae, max_mae):
+                max_mae = max_mae if max_mae > 0 else 0.1
+            mae_tickvals = [round(val, 2) for val in np.linspace(min_mae, max_mae, 6).tolist()]
+            
+            save_radar_chart(mae_scores, 
+                             num_target_names, 
+                             num_line_hex, 
+                             num_fill_rgba, 
+                             "Numerical MAE", 
+                             local_dir / "num_mae", 
+                             dynamic_margin_num, 
+                             smart_font_size_num, 
+                             tick_range=[min_mae, max_mae], 
+                             tick_vals=mae_tickvals)
+
+            # 1.2 Numerical R2
+            save_radar_chart(r2_scores, 
+                             num_target_names, 
+                             num_line_hex, 
+                             num_fill_rgba, 
+                             "Numerical R2-Score", 
+                             local_dir / "num_r2", 
+                             dynamic_margin_num, 
+                             smart_font_size_num)
+            
+            # 1.3 Numerical Explained Variance
+            save_radar_chart(ev_scores, 
+                             num_target_names, 
+                             num_line_hex, 
+                             num_fill_rgba, 
+                             "Numerical Explained Variance", 
+                             local_dir / "num_ev", 
+                             dynamic_margin_num, 
+                             smart_font_size_num)
         
-        _LOGGER.info(f"📊 Global radar chart saved to '{plot_path.name}'")
+        #### CATEGORICAL FEATURES ####
+        if has_cat:
+            
+            # assert categorical related variables are not None for type checker
+            assert cat_true_list is not None
+            assert cat_pred_list is not None
+            assert cat_target_names is not None
+            
+            f1_macro_scores = []
+            f1_weighted_scores = []
+            bal_acc_scores = []
+            for i in range(len(cat_target_names)):
+                f1_macro_scores.append(f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0))
+                f1_weighted_scores.append(f1_score(cat_true_list[i], cat_pred_list[i], average='weighted', zero_division=0))
+                bal_acc_scores.append(balanced_accuracy_score(cat_true_list[i], cat_pred_list[i]))
+                
+            cat_line_hex = mcolors.to_hex(format_config.cat_color)
+            cat_fill_rgba = mpl_to_plotly_rgba(format_config.cat_color, format_config.radar_fill_alpha)
+            
+            cat_feats = len(cat_target_names)
+            smart_font_size_cat = calculate_smart_font_size(cat_feats, format_config.font_size)
+            max_cat_len = max([len(str(name)) for name in cat_target_names])
+            dynamic_margin_cat = calculate_smart_margin_left_right(max_cat_len)
+
+            # 2.1 Categorical F1 Macro
+            save_radar_chart(f1_macro_scores, 
+                             cat_target_names, 
+                             cat_line_hex, 
+                             cat_fill_rgba, 
+                             "Categorical F1-Macro", 
+                             local_dir / "cat_f1_macro", 
+                             dynamic_margin_cat, 
+                             smart_font_size_cat)
+            
+            # 2.2 Categorical F1-Weighted
+            save_radar_chart(f1_weighted_scores, 
+                             cat_target_names, 
+                             cat_line_hex, 
+                             cat_fill_rgba, 
+                             "Categorical F1-Weighted", 
+                             local_dir / "cat_f1_weighted", 
+                             dynamic_margin_cat, 
+                             smart_font_size_cat)
+
+            # 2.3 Categorical Balanced Accuracy
+            save_radar_chart(bal_acc_scores, 
+                             cat_target_names, 
+                             cat_line_hex, 
+                             cat_fill_rgba, 
+                             "Categorical Balanced Accuracy", 
+                             local_dir / "cat_balanced_accuracy", 
+                             dynamic_margin_cat, 
+                             smart_font_size_cat)
+            
         
+        _LOGGER.info(f"🌀 Radar charts saved to '{local_dir.name}'")
+            
     except Exception as e:
-        _LOGGER.error(f"Failed to generate radar chart: {e}")
+        _LOGGER.error(f"Failed to generate radar charts: {e}")
 
 
 def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray], 

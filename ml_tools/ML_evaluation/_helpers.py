@@ -37,6 +37,11 @@ def check_and_abbreviate_name(name: str) -> str:
     abbr = "".join(p[:3].capitalize() for p in parts if p.isalnum())
     if abbr and len(abbr) <= limit:
         return abbr
+    
+    # Attempt 2.1: Prefix abbreviation (First 2 letters of each word, TitleCase)
+    abbr = "".join(p[:2].capitalize() for p in parts if p.isalnum())
+    if abbr and len(abbr) <= limit:
+        return abbr
 
     # Attempt 3: Vowel-stripping
     abbr_words = []

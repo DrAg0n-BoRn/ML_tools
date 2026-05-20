@@ -270,6 +270,9 @@ class _EvaluationConfig:
     CM_SIZE = (9, 8)    # used for multi label binary classification confusion matrix 
     HEATMAP_WIDTH = 10.0 # default width for classification heatmaps, height is dynamic based on number of classes
     NAME_LIMIT = 15  # max number of characters for feature/label names in plots
+    # RADAR Plot settings
+    RADAR_PLOT_WIDTH = 800
+    RADAR_PLOT_HEIGHT = 800
 
 class _OneHotOtherPlaceholder:
     """Used internally by GUI_tools."""
