@@ -19,6 +19,7 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
 # from ._helpers import check_and_abbreviate_name
+from ._helpers import wrap_text
 
 
 _LOGGER = get_logger("DiTMetrics")
@@ -328,8 +329,6 @@ def _evaluate_categorical_features(
         real_c = real_cat_list[i]
         gen_c = gen_cat_list[i]
         
-        # abbreviated_cat_name = check_and_abbreviate_name(feat_name)
-        
         real_counts = pd.Series(real_c).value_counts(normalize=True)
         gen_counts = pd.Series(gen_c).value_counts(normalize=True)
         
@@ -348,6 +347,9 @@ def _evaluate_categorical_features(
         if cat_class_maps is not None and i < len(cat_class_maps) and cat_class_maps[i] is not None:
             inv_map = {v: k for k, v in cat_class_maps[i].items()} # type: ignore
             plot_labels = [inv_map.get(cls, str(cls)) for cls in all_classes]
+            
+        # Wrap long category class names
+        plot_labels = [wrap_text(str(label)) for label in plot_labels]
 
         x = np.arange(len(all_classes))
         width = 0.35
@@ -411,10 +413,10 @@ def _evaluate_numerical_correlations(
         
     report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
     
-    # abbr_num_names = [check_and_abbreviate_name(name) for name in num_target_names]
+    wrapped_num_names = [wrap_text(name) for name in num_target_names]
     
-    real_df = pd.DataFrame(real_num, columns=num_target_names)
-    gen_df = pd.DataFrame(gen_num, columns=num_target_names)
+    real_df = pd.DataFrame(real_num, columns=wrapped_num_names)
+    gen_df = pd.DataFrame(gen_num, columns=wrapped_num_names)
     
     real_corr = real_df.corr().fillna(0)
     gen_corr = gen_df.corr().fillna(0)
@@ -593,11 +595,11 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
                     gen_corr[i, j] = cv_gen
                     gen_corr[j, i] = cv_gen
 
-        # Abbreviate names for the plot
-        # abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
+        # Wrap names for the plot
+        wrapped_cat_names = [wrap_text(name) for name in cat_target_names]
 
-        real_df = pd.DataFrame(real_corr, index=cat_target_names, columns=cat_target_names)
-        gen_df = pd.DataFrame(gen_corr, index=cat_target_names, columns=cat_target_names)
+        real_df = pd.DataFrame(real_corr, index=wrapped_cat_names, columns=wrapped_cat_names)
+        gen_df = pd.DataFrame(gen_corr, index=wrapped_cat_names, columns=wrapped_cat_names)
         
         corr_diff_abs = (real_df - gen_df).abs()
         

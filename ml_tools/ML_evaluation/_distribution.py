@@ -14,8 +14,6 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
-from ._helpers import check_and_abbreviate_name
-
 
 _LOGGER = get_logger("Distribution Metrics")
 
@@ -167,7 +165,7 @@ def distribution_metrics(
 
     # --- Plot 2: Error vs Uncertainty ---
     fig_eu, ax_eu = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
-    _plot_error_vs_uncertainty(y_true, mean_pred, var_pred, ax_eu, format_config, "Error vs. Uncertainty")
+    _plot_error_vs_uncertainty(y_true, mean_pred, var_pred, ax_eu, format_config, "Error vs Uncertainty")
     plt.tight_layout()
     eu_path = save_dir_path / "error_vs_uncertainty.svg"
     plt.savefig(eu_path, bbox_inches='tight')
@@ -219,9 +217,6 @@ def multi_target_distribution_metrics(
         mean_i = mean_pred[:, i]
         var_i = var_pred[:, i]
         
-        # abbreviate name for plotting if needed
-        name_abbreviated = check_and_abbreviate_name(name)
-        
         sanitized_name = sanitize_filename(name)
 
         # --- Metrics ---
@@ -235,13 +230,13 @@ def multi_target_distribution_metrics(
 
         # --- Plots ---
         fig_pi, ax_pi = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
-        _plot_prediction_intervals(true_i, mean_i, var_i, ax_pi, format_config, f"Prediction Intervals '{name_abbreviated}'")
+        _plot_prediction_intervals(true_i, mean_i, var_i, ax_pi, format_config, f"Prediction Intervals\n'{name}'")
         plt.tight_layout()
         plt.savefig(save_dir_path / f"{sanitized_name}_prediction_intervals.svg", bbox_inches='tight')
         plt.close(fig_pi)
 
         fig_eu, ax_eu = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
-        _plot_error_vs_uncertainty(true_i, mean_i, var_i, ax_eu, format_config, f"Error vs. Uncertainty '{name_abbreviated}'")
+        _plot_error_vs_uncertainty(true_i, mean_i, var_i, ax_eu, format_config, f"Error vs Uncertainty\n'{name}'")
         plt.tight_layout()
         plt.savefig(save_dir_path / f"{sanitized_name}_error_vs_uncertainty.svg", bbox_inches='tight')
         plt.close(fig_eu)

@@ -1,10 +1,12 @@
+import re
+import textwrap
+
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import sanitize_filename
 from .._core import get_logger
-import re
 
 
-_LOGGER = get_logger("Metrics Helper")
+_LOGGER = get_logger("Evaluation Tools")
 
 
 def check_and_abbreviate_name(name: str) -> str:
@@ -72,3 +74,26 @@ def check_and_abbreviate_name(name: str) -> str:
     # Warn if we use the last resort fallback
     _LOGGER.warning(f"Label '{name}' is too long. Abbreviating to '{abbr}'.")
     return abbr
+
+
+def wrap_text(text: str, width: int=_EvaluationConfig.NAME_LIMIT, break_char: str = "\n") -> str:
+    """
+    Wraps text to a specified width while keeping trailing numbers attached to their base words.
+    Use break_char="<br>" for Plotly and break_char="\n" for Matplotlib.
+    """
+    clean_text = str(text).strip()
+    
+    # Protect underscores or spaces immediately followed by a digit 
+    # by temporarily replacing them with a null character (\x00)
+    clean_text = re.sub(r'[ _](?=\d)', '\x00', clean_text)
+    
+    # Replace remaining standard separators with spaces so textwrap can find logical break points
+    clean_text = clean_text.replace('_', ' ')
+    
+    # Wrap the text. break_long_words=False prevents aggressively chopping words in half.
+    wrapped_list = textwrap.wrap(clean_text, width=width, break_long_words=False)
+    
+    # Restore the protected characters as standard spaces
+    wrapped_list = [line.replace('\x00', ' ') for line in wrapped_list]
+    
+    return break_char.join(wrapped_list)

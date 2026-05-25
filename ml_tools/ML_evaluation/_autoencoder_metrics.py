@@ -31,7 +31,7 @@ from ._radar_plots import (
     save_radar_chart
 )
 
-# from ._helpers import check_and_abbreviate_name
+from ._helpers import wrap_text
 
 
 _LOGGER = get_logger("AutoencoderMetrics")
@@ -216,6 +216,9 @@ def _evaluate_categorical_features(
         y_true_c = cat_true_list[i]
         y_pred_c = cat_pred_list[i]
         
+        # wrap feature name for title
+        wrapped_feat_name = wrap_text(feat_name)
+        
         acc = accuracy_score(y_true_c, y_pred_c)
         f1_macro = f1_score(y_true_c, y_pred_c, average='macro', zero_division=0)
         f1_weighted = f1_score(y_true_c, y_pred_c, average='weighted', zero_division=0)
@@ -236,7 +239,8 @@ def _evaluate_categorical_features(
             class_map = cat_class_maps[i]
             if class_map is not None:
                 sorted_map = sorted(class_map.items(), key=lambda item: item[1])
-                plot_display_labels = [item[0] for item in sorted_map]
+                # Apply wrap_text to the display labels for the confusion matrix axes
+                plot_display_labels = [wrap_text(item[0]) for item in sorted_map]
                 plot_labels = [item[1] for item in sorted_map]
 
         n_classes = len(plot_labels) if plot_labels is not None else len(np.unique(y_true_c))
@@ -270,7 +274,7 @@ def _evaluate_categorical_features(
         if n_classes >= 3:
             plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
 
-        ax_cm.set_title(feat_name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font + 2)
+        ax_cm.set_title(wrapped_feat_name, pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font + 2)
         ax_cm.set_xlabel(ax_cm.get_xlabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font)
         ax_cm.set_ylabel(ax_cm.get_ylabel(), labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_cm_font)
         
@@ -311,7 +315,7 @@ def _evaluate_categorical_features(
             if len(incorrect_probs) > 0:
                 ax_prob.hist(incorrect_probs, bins=bins, alpha=0.6, color='tab:red', label='Incorrect Reconstructions', density=True) # type: ignore
             
-            ax_prob.set_title(feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
+            ax_prob.set_title(wrapped_feat_name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
             ax_prob.set_xlabel("Max Predicted Probability", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax_prob.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             
@@ -388,15 +392,22 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         # Numerical Features (MAE)
         if has_num:
             mae_scores = []
-            # abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
-            for i in range(len(num_target_names)): # type: ignore
-                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i]) # type: ignore
+            
+            # assert variables are not none
+            assert num_target_names is not None
+            assert y_true_num is not None
+            assert y_pred_num is not None
+            
+            for i in range(len(num_target_names)):
+                mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
                 mae_scores.append(mae)
             
             # Sort by MAE (ascending, so best/lowest error is at the top)
             sorted_indices = np.argsort(mae_scores)
             sorted_maes = [mae_scores[i] for i in sorted_indices]
-            sorted_names = [num_target_names[i] for i in sorted_indices] # type: ignore
+            
+            # apply wrap text to feature names for better readability in the plot
+            sorted_names = [wrap_text(num_target_names[i]) for i in sorted_indices]
             
             y_pos = np.arange(len(sorted_names))
             axes[ax_idx].barh(y_pos, sorted_maes, color=format_config.num_color, alpha=0.7)
@@ -413,15 +424,21 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
         # Categorical Features (F1-Macro)
         if has_cat:
             f1_scores = []
-            # abbr_cat_names = [check_and_abbreviate_name(name) for name in cat_target_names]
-            for i in range(len(cat_target_names)): # type: ignore
-                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0) # type: ignore
+            
+            # assert variables are not none
+            assert cat_target_names is not None
+            assert cat_true_list is not None
+            assert cat_pred_list is not None
+            
+            for i in range(len(cat_target_names)):
+                f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0)
                 f1_scores.append(f1)
             
             # Sort by F1 (descending, so best/highest score is at the top)
             sorted_indices = np.argsort(f1_scores)[::-1]
             sorted_f1s = [f1_scores[i] for i in sorted_indices]
-            sorted_cat_names = [cat_target_names[i] for i in sorted_indices] # type: ignore
+            # apply wrap text to feature names for better readability in the plot
+            sorted_cat_names = [wrap_text(cat_target_names[i]) for i in sorted_indices]
             
             y_pos = np.arange(len(sorted_cat_names))
             axes[ax_idx].barh(y_pos, sorted_f1s, color=format_config.cat_color, alpha=0.7)
@@ -550,7 +567,6 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         
     try:
         num_feats = len(num_target_names)
-        # abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
         
         # Calculate full correlation matrix (True features concatenated with Pred features)
         # Resulting shape is (2N, 2N) - Ignoring warnings for zero-variance features which lead to NaN correlations
@@ -565,7 +581,9 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         # Fill with 0.0 to correctly represent "no correlation/failed reconstruction".
         cross_corr = np.nan_to_num(cross_corr, nan=0.0)
         
-        cross_corr_df = pd.DataFrame(cross_corr, index=num_target_names, columns=num_target_names)
+        # Apply wrap_text to the numerical feature names for both X and Y axes
+        wrapped_names = [wrap_text(name) for name in num_target_names]
+        cross_corr_df = pd.DataFrame(cross_corr, index=wrapped_names, columns=wrapped_names)
         
         # Dynamically scale figure size based on number of features
         fig_size_xy = max(8, num_feats * 0.8)
@@ -781,9 +799,6 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         return
         
     try:
-        # Abbreviate names for the plot to prevent overlapping text
-        # abbr_names = [check_and_abbreviate_name(name) for name in num_target_names]
-        
         # Calculate raw errors (True - Predicted)
         raw_errors = y_true_num - y_pred_num
         
@@ -806,9 +821,10 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
                     fliersize=4, 
                     ax=ax)
         
-        # Manually set the x-tick labels to match feature names
+        # Manually set the x-tick labels to match feature names (wrapped)
         ax.set_xticks(np.arange(len(num_target_names)))
-        ax.set_xticklabels(num_target_names)
+        wrapped_names = [wrap_text(name) for name in num_target_names]
+        ax.set_xticklabels(wrapped_names)
                        
         # Add a horizontal line at 0 (Perfect reconstruction)
         ax.axhline(0, color="#FF0000", linestyle='--', alpha=0.7, linewidth=1.5)

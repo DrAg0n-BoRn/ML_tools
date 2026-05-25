@@ -21,7 +21,6 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
-from ._helpers import check_and_abbreviate_name
 from ._radar_plots import (
     mpl_to_plotly_rgba,
     calculate_smart_font_size,
@@ -232,9 +231,6 @@ def multi_target_regression_metrics(
         true_i = y_true[:, i]
         pred_i = y_pred[:, i]
         
-        # abbreviate name for plotting if needed
-        name_abbreviated = check_and_abbreviate_name(name)
-        
         sanitized_name = sanitize_filename(name)
 
         # --- Calculate Metrics ---
@@ -273,7 +269,7 @@ def multi_target_regression_metrics(
         ax_res.axhline(0, color=format_config.residual_line_color, linestyle='--') # Use config color
         ax_res.set_xlabel("Predicted Values", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_res.set_ylabel("Residuals", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
-        ax_res.set_title(f"Residual Plot '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_res.set_title(f"Residual Plot\n'{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         
         # Apply Ticks
         ax_res.tick_params(axis='x', labelsize=xtick_size)
@@ -325,7 +321,7 @@ def multi_target_regression_metrics(
                      color=format_config.scatter_color)
         ax_hist.set_xlabel("Residual Value", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_hist.set_ylabel("Frequency", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
-        ax_hist.set_title(f"Distribution of Residuals '{name_abbreviated}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_hist.set_title(f"Distribution of Residuals\n'{name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         
         # Apply Ticks
         ax_hist.tick_params(axis='x', labelsize=xtick_size)

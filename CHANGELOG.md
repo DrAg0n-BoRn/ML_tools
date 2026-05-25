@@ -4,7 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [22.15.1] 2026-06-20
+## [22.15.2] 2026-05-25
+
+### Changed
+
+- ML_evaluation:
+    - Enhanced aesthetics for all plots, using `textwrap` to wrap long feature names in the plot labels and titles for better readability.
+
+- ML_evaluation_captum:
+    - `captum_feature_importance()`, Enhanced aesthetics for feature importance plots, using `textwrap` to wrap long feature names in the plot labels for better readability. Increased font sizes.
+
+## [22.15.1] 2026-05-20
 
 ### Added
 

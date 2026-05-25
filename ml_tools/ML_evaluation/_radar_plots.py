@@ -7,8 +7,10 @@ from typing import Optional, List, Union
 from ..keys._keys import _EvaluationConfig
 from .._core import get_logger
 
+from ._helpers import wrap_text
 
-_LOGGER = get_logger("RadarPlots")
+
+_LOGGER = get_logger("Radar Plot")
 
 
 DEFAULT_PLOT_WIDTH = _EvaluationConfig.RADAR_PLOT_WIDTH
@@ -66,8 +68,7 @@ def save_radar_chart(
     # 3. Smart Text Wrapping: Replace underscores with spaces, wrap at N chars, use <br> for Plotly
     str_target_names = []
     for name in target_names:
-        clean_name = str(name).replace('_', ' ')
-        wrapped_name = "<br>".join(textwrap.wrap(clean_name, width=MAX_FEATURE_NAME_LENGTH_FOR_MARGIN))
+        wrapped_name = wrap_text(name, width=MAX_FEATURE_NAME_LENGTH_FOR_MARGIN, break_char="<br>")
         str_target_names.append(f"{wrapped_name}\u200b")
 
     # 4. Base figure

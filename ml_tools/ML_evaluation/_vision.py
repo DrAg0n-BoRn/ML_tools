@@ -21,6 +21,8 @@ from ..path_manager import make_fullpath
 from .._core import get_logger
 from ..keys._keys import VisionKeys, _EvaluationConfig
 
+from ._helpers import wrap_text
+
 
 _LOGGER = get_logger("Vision Metrics")
 
@@ -82,7 +84,7 @@ def segmentation_metrics(
             _LOGGER.warning(f"Number of class_names ({len(class_names)}) does not match number of unique labels ({len(labels)}). Using default names.")
             display_names = [f"Class {i}" for i in labels]
         else:
-            display_names = class_names
+            display_names = [wrap_text(_name) for _name in class_names] # Wrap class names for better display in plots
 
     # Flatten masks for sklearn metrics
     y_true_flat = y_true.ravel()
@@ -129,7 +131,6 @@ def segmentation_metrics(
     report_lines.append(per_class_df.to_string(index=False, float_format="%.4f"))
 
     report_string = "\n".join(report_lines)
-    # print(report_string) # <-- I removed the print(report_string)
     
     # Save text report
     save_filename = VisionKeys.SEGMENTATION_REPORT + ".txt"

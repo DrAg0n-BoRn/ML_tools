@@ -31,7 +31,7 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import _EvaluationConfig
 
-from ._helpers import check_and_abbreviate_name
+from ._helpers import wrap_text
 from ._radar_plots import (
     mpl_to_plotly_rgba,
     calculate_smart_font_size,
@@ -96,16 +96,18 @@ def classification_metrics(save_dir: Union[str, Path],
         try:
             sorted_items = sorted(class_map.items(), key=lambda item: item[1])
             map_labels = [item[1] for item in sorted_items]
-            # Abbreviate display labels if needed
-            map_display_labels = [check_and_abbreviate_name(item[0]) for item in sorted_items]
+            map_display_labels = [item[0] for item in sorted_items]
+            plot_display_labels = [wrap_text(mapped_name) for mapped_name in map_display_labels]
         except Exception as e:
             _LOGGER.warning(f"Could not parse 'class_map': {e}")
             map_labels = None
             map_display_labels = None
+            plot_display_labels = None
+
     
     # Generate report as both text and dictionary
     report_text: str = classification_report(y_true, y_pred, labels=map_labels, target_names=map_display_labels) # type: ignore
-    report_dict: dict = classification_report(y_true, y_pred, output_dict=True, labels=map_labels, target_names=map_display_labels) # type: ignore
+    report_dict: dict = classification_report(y_true, y_pred, output_dict=True, labels=map_labels, target_names=plot_display_labels) # type: ignore
     # print(report_text)
     
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -175,7 +177,6 @@ def classification_metrics(save_dir: Union[str, Path],
     
     # --- labels for Confusion Matrix ---
     plot_labels = map_labels
-    plot_display_labels = map_display_labels
     
     # 1. DYNAMIC SIZE CALCULATION
     # Calculate figure size based on number of classes. 
@@ -267,7 +268,7 @@ def classification_metrics(save_dir: Union[str, Path],
                 try:
                     # Ensure labels are safe for filenames
                     safe_names = [sanitize_filename(name) for name in map_display_labels]
-                    plot_titles = [f" ({name} vs. Rest)" for name in map_display_labels]
+                    plot_titles = [f" '{name}'" for name in map_display_labels]
                     save_suffixes = [f"_{safe_names[i]}" for i in class_indices_to_plot]
                     use_generic_names = False
                 except Exception as e:
@@ -275,7 +276,7 @@ def classification_metrics(save_dir: Union[str, Path],
                     use_generic_names = True
             
             if use_generic_names:
-                plot_titles = [f" (Class {i} vs. Rest)" for i in class_indices_to_plot]
+                plot_titles = [f" 'Class {i}'" for i in class_indices_to_plot]
                 save_suffixes = [f"_class_{i}" for i in class_indices_to_plot]
         
         else:
@@ -314,7 +315,7 @@ def classification_metrics(save_dir: Union[str, Path],
                     class_name = map_display_labels[class_index]
                     if num_classes > 2:
                         # Add 'vs. Rest' for multiclass one-vs-rest plots
-                        class_name += " (vs. Rest)"
+                        class_name += " (vs. Rest)" #unwrap for new string
                 else:
                     # Fallback to the generic title or default binary name
                     class_name = plot_title.strip() or "Binary Positive Class"
@@ -342,10 +343,11 @@ def classification_metrics(save_dir: Union[str, Path],
             ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line)
             ax_roc.plot([0, 1], [0, 1], 'k--')
             # use "ROC" if extra title, else use "Receiver Operating Characteristic" title
+            roc_master_title = "Receiver Operating Characteristic"
             if plot_title.strip():
-                ax_roc.set_title(f'ROC{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
-            else:
-                ax_roc.set_title(f'Receiver Operating Characteristic', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+                roc_master_title += f"\n{plot_title}"
+
+            ax_roc.set_title(roc_master_title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
@@ -372,10 +374,11 @@ def classification_metrics(save_dir: Union[str, Path],
             fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
             ax_pr.plot(recall, precision, label=f'Avg Precision = {ap_score:.2f}', color=format_config.ROC_PR_line)
             # Use "PR Curve" if extra title, else use "Precision-Recall Curve" title
+            pr_master_title = "Precision-Recall Curve"
             if plot_title.strip():
-                ax_pr.set_title(f'PR Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
-            else:
-                ax_pr.set_title(f'Precision-Recall Curve', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+                pr_master_title += f"\n{plot_title}"
+
+            ax_pr.set_title(pr_master_title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
@@ -433,7 +436,11 @@ def classification_metrics(save_dir: Union[str, Path],
                         label="Model calibration", 
                         color=format_config.ROC_PR_line)
             
-            ax_cal.set_title(f'Reliability Curve{plot_title}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            cal_master_title = "Calibration Curve"
+            if plot_title.strip():
+                cal_master_title += f"\n{plot_title}"
+
+            ax_cal.set_title(cal_master_title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
             ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)
             
@@ -594,9 +601,6 @@ def multi_label_classification_metrics(
         # strip whitespace from name
         name = name.strip()
         
-        current_abbr_name = check_and_abbreviate_name(name)
-        
-        # print(f"  -> Evaluating label: '{name}'")
         true_i = y_true[:, i]
         pred_i = y_pred[:, i] # Use passed-in y_pred
         prob_i = y_prob[:, i] # Use passed-in y_prob
@@ -713,7 +717,7 @@ def multi_label_classification_metrics(
         ax_roc.plot(fpr, tpr, label=f'AUC = {auc:.2f}', color=format_config.ROC_PR_line) # Use config color
         ax_roc.plot([0, 1], [0, 1], 'k--')
         
-        ax_roc.set_title(f'ROC Curve - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_roc.set_title(wrap_text(f"ROC Curve '{name}'", width=_EvaluationConfig.TITLE_LIMIT), pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_roc.set_xlabel('False Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_roc.set_ylabel('True Positive Rate', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -739,7 +743,7 @@ def multi_label_classification_metrics(
         ap_score = average_precision_score(true_i, prob_i)
         fig_pr, ax_pr = plt.subplots(figsize=CLASSIFICATION_PLOT_SIZE, dpi=DPI_value)
         ax_pr.plot(recall, precision, label=f'AP = {ap_score:.2f}', color=format_config.ROC_PR_line) # Use config color
-        ax_pr.set_title(f'PR Curve - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_pr.set_title(wrap_text(f"PR Curve '{name}'", width=_EvaluationConfig.TITLE_LIMIT), pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_pr.set_xlabel('Recall', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_pr.set_ylabel('Precision', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
@@ -794,7 +798,7 @@ def multi_label_classification_metrics(
                     label=f"Model Calibration", 
                     color=format_config.ROC_PR_line)
         
-        ax_cal.set_title(f'Calibration - {current_abbr_name}', pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
+        ax_cal.set_title(wrap_text(f"Calibration Curve '{name}'", width=_EvaluationConfig.TITLE_LIMIT), pad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size + 2)
         ax_cal.set_xlabel('Mean Predicted Probability', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         ax_cal.set_ylabel('Fraction of Positives', labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=base_font_size)
         
