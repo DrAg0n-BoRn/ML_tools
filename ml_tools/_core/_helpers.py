@@ -2,11 +2,7 @@ import re
 import textwrap
 
 from ..keys._keys import _EvaluationConfig
-from ..path_manager import sanitize_filename
-from .._core import get_logger
 
-
-_LOGGER = get_logger("Evaluation Tools")
 
 
 def check_and_abbreviate_name(name: str) -> str:
@@ -68,11 +64,8 @@ def check_and_abbreviate_name(name: str) -> str:
         return abbr
         
     # Attempt 5: Safe fallback - Truncate
-    sanitized = sanitize_filename(name)
-    abbr = sanitized[:limit]
+    abbr = name[:limit]
     
-    # Warn if we use the last resort fallback
-    _LOGGER.warning(f"Label '{name}' is too long. Abbreviating to '{abbr}'.")
     return abbr
 
 

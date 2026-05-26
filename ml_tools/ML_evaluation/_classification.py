@@ -28,10 +28,9 @@ from ..ML_configuration._metrics import (_BaseMultiLabelFormat,
                                         FormatMultiLabelBinaryClassificationMetrics)
 
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger
+from .._core import get_logger, wrap_text
 from ..keys._keys import _EvaluationConfig
 
-from ._helpers import wrap_text
 from ._radar_plots import (
     mpl_to_plotly_rgba,
     calculate_smart_font_size,

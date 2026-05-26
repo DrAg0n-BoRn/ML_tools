@@ -1,13 +1,10 @@
-import textwrap
 import plotly.graph_objects as go
 import matplotlib.colors as mcolors
 from pathlib import Path
 from typing import Optional, List, Union
 
 from ..keys._keys import _EvaluationConfig
-from .._core import get_logger
-
-from ._helpers import wrap_text
+from .._core import get_logger, wrap_text
 
 
 _LOGGER = get_logger("Radar Plot")

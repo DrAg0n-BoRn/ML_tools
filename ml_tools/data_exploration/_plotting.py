@@ -9,7 +9,7 @@ import seaborn as sns
 from pandas.api.types import is_numeric_dtype, is_object_dtype
 
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger
+from .._core import get_logger, wrap_text
 
 
 _LOGGER = get_logger("Data Exploration: Visualization")
@@ -31,7 +31,7 @@ def plot_value_distributions(
     save_dir: Union[str, Path],
     categorical_columns: Optional[list[str]] = None,
     max_categories: int = 50,
-    fill_na_with: str = "MISSING DATA",
+    fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
     mode: Literal["count", "percentage"] = "count"
 ):
@@ -139,6 +139,9 @@ def plot_value_distributions(
                     # Convert all to string to be safe (handles low-card numeric)
                     temp_series = temp_series.astype(str)
                     
+                    # Wrap the class names for better visualization
+                    temp_series = temp_series.apply(lambda x: wrap_text(x))
+                    
                     # Get category order by frequency
                     order = temp_series.value_counts().index
                     
@@ -201,7 +204,7 @@ def plot_value_distributions_multi(
     named_dataframes: dict[str, pd.DataFrame],
     save_dir: Union[str, Path],
     max_categories: int = 50,
-    fill_na_with: str = "MISSING DATA",
+    fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
     mode: Literal["count", "percentage"] = "percentage"
 ):
@@ -327,6 +330,9 @@ def plot_value_distributions_multi(
                     
                     plot_data[col_name] = plot_data[col_name].astype(str)
                     
+                    # Wrap the class names for better visualization
+                    plot_data[col_name] = plot_data[col_name].apply(lambda x: wrap_text(x))
+                    
                     # Get category order by total frequency across all datasets
                     order = plot_data[col_name].value_counts().index
                     
@@ -415,6 +421,9 @@ def plot_numeric_overview_boxplot(
     if numeric_df.empty:
         _LOGGER.warning("No numeric columns found. Overview boxplot not generated.")
         return
+    
+    # Wrap long feature names for better visualization on the y-axis
+    numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x))
 
     # Apply scaling if requested
     if strategy == "scale":
@@ -680,7 +689,7 @@ def plot_categorical_vs_target(
     df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
     max_categories: int = 50,
-    fill_na_with: str = "MISSING DATA",
+    fill_na_with: str = "[MISSING DATA]",
     drop_empty_targets: bool = True,
     verbose: int = 1
 ):
@@ -774,6 +783,9 @@ def plot_categorical_vs_target(
             
             # Convert to string to ensure consistent plotting and cardinality check
             temp_df[feature_name] = temp_df[feature_name].astype(str)
+            
+            # Wrap the class names for better visualization
+            temp_df[feature_name] = temp_df[feature_name].apply(lambda x: wrap_text(x))
 
             # Check cardinality
             n_unique = temp_df[feature_name].nunique()
@@ -852,6 +864,9 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     if cmap not in matplotcolormaps:
         _LOGGER.error(f"Invalid colormap '{cmap}' provided.")
         raise ValueError()
+    
+    # Wrap long feature names for better visualization on the axes
+    numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x))
     
     corr = numeric_df.corr(method=method)
 

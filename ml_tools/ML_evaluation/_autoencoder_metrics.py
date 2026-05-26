@@ -22,7 +22,7 @@ from ..ML_configuration._metrics import FormatAutoencoderMetrics
 
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger
+from .._core import get_logger, wrap_text
 
 from ._radar_plots import (
     mpl_to_plotly_rgba,
@@ -30,8 +30,6 @@ from ._radar_plots import (
     calculate_smart_margin_left_right,
     save_radar_chart
 )
-
-from ._helpers import wrap_text
 
 
 _LOGGER = get_logger("AutoencoderMetrics")

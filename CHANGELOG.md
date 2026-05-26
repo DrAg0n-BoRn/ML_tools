@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.15.3] 2026-05-26
+
+### Changed
+
+- data_exploration:
+    - Enhanced plot aesthetics and readability by integrating the `wrap_text` utility to automatically handle long text elements.
+    - Wrapped long feature names on axes in `plot_value_distributions()`, `plot_numeric_overview_boxplot()`, and `plot_correlation_heatmap()`.
+    - Wrapped categorical class names in `plot_value_distributions()`, `plot_value_distributions_multi()`, and `plot_categorical_vs_target()` to prevent text overlapping and ensure clean visualizations.
+
+
 ## [22.15.2] 2026-05-25
 
 ### Changed

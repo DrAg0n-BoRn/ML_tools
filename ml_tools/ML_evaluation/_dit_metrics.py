@@ -16,10 +16,7 @@ from ..ML_configuration import FormatTabularDiffusionMetrics
 
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger
-
-# from ._helpers import check_and_abbreviate_name
-from ._helpers import wrap_text
+from .._core import get_logger, wrap_text
 
 
 _LOGGER = get_logger("DiTMetrics")
@@ -232,8 +229,6 @@ def _evaluate_continuous_features(
     for i, name in enumerate(num_target_names):
         real_i = real_num[:, i]
         gen_i = gen_num[:, i]
-        
-        # abbreviated_name = check_and_abbreviate_name(name)
         
         # Calculate Statistical Distances
         w_dist = wasserstein_distance(real_i, gen_i)

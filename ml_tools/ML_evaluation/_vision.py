@@ -18,10 +18,8 @@ from torchmetrics.detection import MeanAveragePrecision
 from ..ML_configuration._metrics import FormatBinarySegmentationMetrics, FormatMultiClassSegmentationMetrics, _BaseSegmentationFormat
 
 from ..path_manager import make_fullpath
-from .._core import get_logger
+from .._core import get_logger, wrap_text
 from ..keys._keys import VisionKeys, _EvaluationConfig
-
-from ._helpers import wrap_text
 
 
 _LOGGER = get_logger("Vision Metrics")

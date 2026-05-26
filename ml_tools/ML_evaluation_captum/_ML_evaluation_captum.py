@@ -8,13 +8,9 @@ from torch import nn
 from captum.attr import IntegratedGradients
 from captum.attr import visualization as viz
 
-from ..ML_evaluation._helpers import wrap_text
-
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger
+from .._core import get_logger, wrap_text
 from ..keys._keys import CaptumKeys, _EvaluationConfig
-
-
 
 
 _LOGGER = get_logger("Captum")
