@@ -149,6 +149,15 @@ def _evaluate_numerical_features(
     ax_err.set_xlabel("Mean Squared Error per Sample", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
     ax_err.set_ylabel("Frequency", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
     
+    # Use scientific notation for small floats to prevent overlapping
+    formatter = ticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-2, 2))
+    ax_err.xaxis.set_major_formatter(formatter)
+    
+    # Force the scientific notation offset text to match the font size
+    ax_err.xaxis.get_offset_text().set_fontsize(format_config.xtick_size)
+    
     ax_err.tick_params(axis='x', labelsize=format_config.xtick_size)
     ax_err.tick_params(axis='y', labelsize=format_config.ytick_size)
     ax_err.grid(True, linestyle='--', alpha=0.6)
@@ -359,43 +368,19 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
     """
     [PRIVATE] Helper function to plot sorted global feature performance.
     Uses MAE for numerical features (lower is better) and F1-Macro for categorical (higher is better).
+    Saves numerical and categorical charts as separate files.
     """
     try:
         has_num = y_true_num is not None and y_pred_num is not None and num_target_names is not None and len(num_target_names) > 0
         has_cat = cat_true_list is not None and cat_pred_list is not None and cat_target_names is not None and len(cat_target_names) > 0
         
-        if not has_num and not has_cat:
-            return
-
-        n_plots = sum([has_num, has_cat])
-        
-        # Scale figure height dynamically based on the maximum number of features to ensure readability
-        max_features = max(len(num_target_names) if has_num else 0, len(cat_target_names) if has_cat else 0) # type: ignore
-        fig_height = max(6.0, max_features * 0.8) # Slightly increased vertical space per feature
-        
-        # Increased base width per plot to give large fonts more room
-        fig, axes = plt.subplots(1, n_plots, figsize=(max(15, 13 * n_plots), fig_height), dpi=DPI_value)
-        
-        # Make axes iterable if there's only one plot
-        if n_plots == 1:
-            axes = [axes]
-            
-        # Turn off the top and right borders
-        for ax in axes:
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            
-        ax_idx = 0
-        
-        # Numerical Features (MAE)
+        # 1. Numerical Features (MAE)
         if has_num:
-            mae_scores = []
-            
-            # assert variables are not none
             assert num_target_names is not None
             assert y_true_num is not None
             assert y_pred_num is not None
             
+            mae_scores = []
             for i in range(len(num_target_names)):
                 mae = mean_absolute_error(y_true_num[:, i], y_pred_num[:, i])
                 mae_scores.append(mae)
@@ -403,31 +388,39 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             # Sort by MAE (ascending, so best/lowest error is at the top)
             sorted_indices = np.argsort(mae_scores)
             sorted_maes = [mae_scores[i] for i in sorted_indices]
-            
-            # apply wrap text to feature names for better readability in the plot
             sorted_names = [wrap_text(num_target_names[i]) for i in sorted_indices]
             
+            fig_height_num = max(6.0, len(num_target_names) * 0.8)
+            fig_num, ax_num = plt.subplots(figsize=(15, fig_height_num), dpi=DPI_value)
+            
+            ax_num.spines['top'].set_visible(False)
+            ax_num.spines['right'].set_visible(False)
+            
             y_pos = np.arange(len(sorted_names))
-            axes[ax_idx].barh(y_pos, sorted_maes, color=format_config.num_color, alpha=0.7)
-            axes[ax_idx].set_yticks(y_pos)
-            axes[ax_idx].set_yticklabels(sorted_names, fontsize=format_config.ytick_size)
-            axes[ax_idx].invert_yaxis()  # Best (lowest MAE) at the top
+            ax_num.barh(y_pos, sorted_maes, color=format_config.num_color, alpha=0.7)
+            ax_num.set_yticks(y_pos)
+            ax_num.set_yticklabels(sorted_names, fontsize=format_config.ytick_size)
+            ax_num.invert_yaxis()  # Best (lowest MAE) at the top
             
-            axes[ax_idx].set_xlabel('Mean Absolute Error', fontsize=format_config.font_size)
-            axes[ax_idx].set_title('Numerical Reconstruction Performance', fontsize=format_config.font_size + 2)
-            axes[ax_idx].grid(axis='x', linestyle='--', alpha=0.6)
-            axes[ax_idx].tick_params(axis='x', labelsize=format_config.xtick_size)
-            ax_idx += 1
+            ax_num.set_xlabel('Mean Absolute Error', fontsize=format_config.font_size)
+            ax_num.set_title('Numerical Reconstruction Performance', fontsize=format_config.font_size + 2)
+            ax_num.grid(axis='x', linestyle='--', alpha=0.6)
+            ax_num.tick_params(axis='x', labelsize=format_config.xtick_size)
             
-        # Categorical Features (F1-Macro)
+            plt.tight_layout()
+            num_plot_path = save_dir_path / "global_numerical_performance.svg"
+            plt.savefig(num_plot_path, bbox_inches='tight')
+            plt.close(fig_num)
+            
+            _LOGGER.info(f"📊 Global numerical performance bar chart saved to '{num_plot_path.name}'")
+            
+        # 2. Categorical Features (F1-Macro)
         if has_cat:
-            f1_scores = []
-            
-            # assert variables are not none
             assert cat_target_names is not None
             assert cat_true_list is not None
             assert cat_pred_list is not None
             
+            f1_scores = []
             for i in range(len(cat_target_names)):
                 f1 = f1_score(cat_true_list[i], cat_pred_list[i], average='macro', zero_division=0)
                 f1_scores.append(f1)
@@ -435,30 +428,35 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             # Sort by F1 (descending, so best/highest score is at the top)
             sorted_indices = np.argsort(f1_scores)[::-1]
             sorted_f1s = [f1_scores[i] for i in sorted_indices]
-            # apply wrap text to feature names for better readability in the plot
             sorted_cat_names = [wrap_text(cat_target_names[i]) for i in sorted_indices]
             
-            y_pos = np.arange(len(sorted_cat_names))
-            axes[ax_idx].barh(y_pos, sorted_f1s, color=format_config.cat_color, alpha=0.7)
-            axes[ax_idx].set_yticks(y_pos)
-            axes[ax_idx].set_yticklabels(sorted_cat_names, fontsize=format_config.ytick_size)
-            axes[ax_idx].invert_yaxis()  # Best (highest F1) at the top
+            fig_height_cat = max(6.0, len(cat_target_names) * 0.8)
+            fig_cat, ax_cat = plt.subplots(figsize=(15, fig_height_cat), dpi=DPI_value)
             
-            axes[ax_idx].set_xlabel('F1-Macro Score', fontsize=format_config.font_size)
-            axes[ax_idx].set_title('Categorical Reconstruction Performance', fontsize=format_config.font_size + 2)
-            axes[ax_idx].set_xlim(0, 1.05)
-            axes[ax_idx].grid(axis='x', linestyle='--', alpha=0.6)
-            axes[ax_idx].tick_params(axis='x', labelsize=format_config.xtick_size)
+            ax_cat.spines['top'].set_visible(False)
+            ax_cat.spines['right'].set_visible(False)
+            
+            y_pos = np.arange(len(sorted_cat_names))
+            ax_cat.barh(y_pos, sorted_f1s, color=format_config.cat_color, alpha=0.7)
+            ax_cat.set_yticks(y_pos)
+            ax_cat.set_yticklabels(sorted_cat_names, fontsize=format_config.ytick_size)
+            ax_cat.invert_yaxis()  # Best (highest F1) at the top
+            
+            ax_cat.set_xlabel('F1-Macro Score', fontsize=format_config.font_size)
+            ax_cat.set_title('Categorical Reconstruction Performance', fontsize=format_config.font_size + 2)
+            ax_cat.set_xlim(0, 1.05)
+            ax_cat.grid(axis='x', linestyle='--', alpha=0.6)
+            ax_cat.tick_params(axis='x', labelsize=format_config.xtick_size)
 
-        # Added horizontal padding (w_pad) and bbox_inches to prevent clipping
-        plt.tight_layout(w_pad=4.0)
-        plot_path = save_dir_path / "global_feature_performance.svg"
-        plt.savefig(plot_path, bbox_inches='tight')
-        plt.close(fig)
-        
-        _LOGGER.info(f"📊 Global feature performance bar chart saved to '{plot_path.name}'")
+            plt.tight_layout()
+            cat_plot_path = save_dir_path / "global_categorical_performance.svg"
+            plt.savefig(cat_plot_path, bbox_inches='tight')
+            plt.close(fig_cat)
+            
+            _LOGGER.info(f"📊 Global categorical performance bar chart saved to '{cat_plot_path.name}'")
+
     except Exception as e:
-        _LOGGER.error(f"Failed to generate global feature performance plot: {e}")
+        _LOGGER.error(f"Failed to generate global feature performance plots: {e}")
 
 
 def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray], 
@@ -487,50 +485,83 @@ def _plot_sample_error_scatter(y_true_num: Optional[np.ndarray],
         
         # Calculate numerical sample-wise MAE
         if has_num:
+            assert y_true_num is not None
+            
             # Absolute error per feature, then mean across features for each sample
-            x_data = np.mean(np.abs(y_true_num - y_pred_num), axis=1)  # type: ignore
+            x_data = np.mean(np.abs(y_true_num - y_pred_num), axis=1)
             x_label = "Numerical Mean Absolute Error"
             
         # Calculate categorical sample-wise misclassifications
         if has_cat:
+            assert cat_true_list is not None
+            assert cat_pred_list is not None
+            
             # Stack arrays to shape (n_samples, n_features)
-            cat_true_stacked = np.column_stack(cat_true_list)  # type: ignore
-            cat_pred_stacked = np.column_stack(cat_pred_list)  # type: ignore
+            cat_true_stacked = np.column_stack(cat_true_list)
+            cat_pred_stacked = np.column_stack(cat_pred_list)
             # Count misclassifications per sample
             y_data = np.sum(cat_true_stacked != cat_pred_stacked, axis=1)
             y_label = "Categorical Misclassifications"
 
         if has_num and has_cat:
+            assert x_data is not None
+            assert y_data is not None
+            
             # Both: 2D Scatter
-            ax.scatter(x_data, y_data, alpha=format_config.scatter_alpha, color=format_config.scatter_color, edgecolors='none') # type: ignore
+            ax.scatter(x_data, y_data, alpha=format_config.scatter_alpha, color=format_config.scatter_color, edgecolors='none')
             ax.set_xlabel(x_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_ylabel(y_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_title("Global Sample-wise Error", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
-            # Ensure y-axis only shows integers for misclassifications
-            ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+            # Ensure y-axis only shows integers, and handle all-zero case
+            if np.max(y_data) == 0:
+                ax.set_ylim(-0.5, 1.5)
+                ax.set_yticks([0, 1])
+            else:
+                ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
             
         elif has_num:
+            assert x_data is not None
+            
             # Only num: 1D Scatter with jitter for visibility
             y_zeros = np.zeros_like(x_data)
-            jitter = np.random.normal(0, 0.05, size=len(x_data)) # type: ignore
-            ax.scatter(x_data, y_zeros + jitter, alpha=format_config.scatter_alpha, color=format_config.num_color, edgecolors='none') # type: ignore
+            jitter = np.random.normal(0, 0.05, size=len(x_data)) 
+            ax.scatter(x_data, y_zeros + jitter, alpha=format_config.scatter_alpha, color=format_config.num_color, edgecolors='none') 
             ax.set_xlabel(x_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_yticks([])
             ax.set_ylabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_title("Global Sample-wise Error (Numerical)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
             
         elif has_cat:
+            assert y_data is not None
+            
             # Only cat: 1D Scatter with jitter for visibility
             x_zeros = np.zeros_like(y_data)
-            jitter = np.random.normal(0, 0.05, size=len(y_data)) # type: ignore
-            ax.scatter(x_zeros + jitter, y_data, alpha=format_config.scatter_alpha, color=format_config.cat_color, edgecolors='none') # type: ignore
+            jitter = np.random.normal(0, 0.05, size=len(y_data)) 
+            ax.scatter(x_zeros + jitter, y_data, alpha=format_config.scatter_alpha, color=format_config.cat_color, edgecolors='none') 
             ax.set_ylabel(y_label, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_xticks([])
             ax.set_xlabel("Density", fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
             ax.set_title("Global Sample-wise Error (Categorical)", fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING)
-            ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+            
+            # Ensure y-axis only shows integers, and handle all-zero case
+            if np.max(y_data) == 0:
+                ax.set_ylim(-0.5, 1.5)
+                ax.set_yticks([0, 1])
+            else:
+                ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
             
         ax.grid(True, linestyle='--', alpha=0.6)
+        
+        # Apply scientific notation to the X-axis if it contains numerical errors
+        if has_num:
+            formatter = ticker.ScalarFormatter(useMathText=True)
+            formatter.set_scientific(True)
+            formatter.set_powerlimits((-2, 2))
+            ax.xaxis.set_major_formatter(formatter)
+            
+            # Force the scientific notation offset text to match the font size
+            ax.xaxis.get_offset_text().set_fontsize(format_config.xtick_size)
+        
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
         

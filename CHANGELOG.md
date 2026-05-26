@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.15.4] 2026-05-26
+
+### Fixed
+
+- ML_evaluation:
+    - `autoencoder_metrics()`, fixed plot axis and label formatting to ensure proper display of scientific notation when required.
+
+
 ## [22.15.3] 2026-05-26
 
 ### Changed
