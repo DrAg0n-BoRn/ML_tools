@@ -393,7 +393,7 @@ def plot_value_distributions_multi(
 def plot_numeric_overview_boxplot(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
-    plot_title: str = "Distribution Overview",
+    plot_title: str = "Data Distribution",
     strategy: Literal["value", "log", "scale"] = "value",
     handle_zero_variance: Literal["drop", "constant"] = "constant",
     show_means: bool = True,
@@ -497,6 +497,10 @@ def plot_numeric_overview_boxplot(
     ax.tick_params(axis='both', which='major', labelsize=tick_fs)
     
     plt.grid(True, linestyle='--', alpha=0.6, axis='x')
+    
+    # remove top and right spines for a cleaner look
+    sns.despine()
+    
     plt.tight_layout()
     
     safe_title = sanitize_filename(plot_title).replace(".", "_")
@@ -520,7 +524,7 @@ def plot_numeric_overview_boxplot(
 # macro function to plot overview boxplots using all strategies in one go
 def plot_numeric_overview_boxplot_macro(df: pd.DataFrame, 
                                         save_dir: Union[str, Path], 
-                                        plot_title: str = "Distribution Overview",
+                                        plot_title: str = "Data Distribution",
                                         handle_zero_variance: Literal["drop", "constant"] = "constant",
                                         show_means: bool = True,
                                         font_scaling: float = 1.5):
@@ -544,7 +548,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
         plot_numeric_overview_boxplot(
             df=df,
             save_dir=save_dir,
-            plot_title=f"{plot_title} ({strategy.title()})",
+            plot_title=plot_title,
             strategy=strategy,
             handle_zero_variance=handle_zero_variance,
             show_means=show_means,
@@ -556,7 +560,8 @@ def plot_continuous_vs_target(
     df_continuous: pd.DataFrame,
     df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
-    verbose: int = 1
+    verbose: int = 1,
+    font_scaling: float = 1.5
 ):
     """
     Plots each continuous feature from df_continuous against each target in df_targets.
@@ -572,6 +577,7 @@ def plot_continuous_vs_target(
         df_targets (pd.DataFrame): DataFrame containing target columns (y-axis).
         save_dir (str | Path): The base directory where plots will be saved.
         verbose (int): Verbosity level for logging warnings.
+        font_scaling (float): Multiplier for all text elements in the plots.
 
     Notes:
         - Only numeric features and numeric targets are processed.
@@ -607,78 +613,79 @@ def plot_continuous_vs_target(
     # 5. Main plotting loop
     total_plots_saved = 0
     
-    for target_name in valid_targets:
-        safe_target_name = sanitize_filename(target_name)
-        # Create a sanitized subdirectory for this target
-        safe_target_dir_name = f"{safe_target_name}_vs_Continuous"
-        target_save_dir = base_save_path / safe_target_dir_name
-        target_save_dir.mkdir(parents=True, exist_ok=True)
-        
-        if verbose > 0:
-            _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
-
-        for feature_name in valid_features:
+    with sns.plotting_context("notebook", font_scale=font_scaling):
+        for target_name in valid_targets:
+            safe_target_name = sanitize_filename(target_name)
+            # Create a sanitized subdirectory for this target
+            safe_target_dir_name = f"{safe_target_name}_vs_Continuous"
+            target_save_dir = base_save_path / safe_target_dir_name
+            target_save_dir.mkdir(parents=True, exist_ok=True)
             
-            # Align data and drop NaNs pairwise - use concat to ensure we respect the index alignment between the two DFs
-            temp_df = pd.concat([
-                df_continuous[feature_name], 
-                df_targets[target_name]
-            ], axis=1).dropna()
+            if verbose > 0:
+                _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
 
-            if temp_df.empty:
-                if verbose > 1:
-                    _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
-                continue
+            for feature_name in valid_features:
+                
+                # Align data and drop NaNs pairwise - use concat to ensure we respect the index alignment between the two DFs
+                temp_df = pd.concat([
+                    df_continuous[feature_name], 
+                    df_targets[target_name]
+                ], axis=1).dropna()
 
-            x = temp_df[feature_name]
-            y = temp_df[target_name]
+                if temp_df.empty:
+                    if verbose > 1:
+                        _LOGGER.warning(f"No non-null data for '{feature_name}' vs '{target_name}'. Skipping plot.")
+                    continue
 
-            # 6. Perform linear fit
-            try:
-                # Modern replacement for np.polyfit + np.poly1d
-                p = np.polynomial.Polynomial.fit(x, y, deg=1)
-                plot_regression_line = True
-            except (np.linalg.LinAlgError, ValueError):
-                if verbose > 0:
-                    _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
-                plot_regression_line = False
+                x = temp_df[feature_name]
+                y = temp_df[target_name]
 
-            # 7. Create the plot
-            plt.figure(figsize=(10, 6))
-            ax = plt.gca()
-            
-            # Plot the raw data points
-            ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5)
-            
-            # Plot the regression line
-            if plot_regression_line:
-                ax.plot(x, p(x), "r--", label='Linear Fit') # type: ignore
+                # 6. Perform linear fit
+                try:
+                    # Modern replacement for np.polyfit + np.poly1d
+                    p = np.polynomial.Polynomial.fit(x, y, deg=1)
+                    plot_regression_line = True
+                except (np.linalg.LinAlgError, ValueError):
+                    if verbose > 0:
+                        _LOGGER.warning(f"Linear regression failed for '{feature_name}' vs '{target_name}'. Plotting scatter only.")
+                    plot_regression_line = False
 
-            ax.set_title(f'{feature_name} vs {target_name}')
-            ax.set_xlabel(feature_name)
-            ax.set_ylabel(target_name)
-            ax.legend()
-            
-            # remove top and right spines for a cleaner look
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            
-            plt.grid(True, linestyle='--', alpha=0.6)
-            plt.tight_layout()
+                # 7. Create the plot
+                plt.figure(figsize=(10, 6))
+                ax = plt.gca()
+                
+                # Plot the raw data points
+                ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5)
+                
+                # Plot the regression line
+                if plot_regression_line:
+                    ax.plot(x, p(x), "r--", label='Linear Fit') # type: ignore
 
-            # 8. Save the plot
-            safe_feature_name = sanitize_filename(feature_name)
-            plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
-            plot_path = target_save_dir / plot_filename
-            
-            try:
-                plt.savefig(plot_path, bbox_inches="tight", format='svg')
-                total_plots_saved += 1
-            except Exception as e:
-                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
-            
-            # Close the figure to free up memory
-            plt.close()
+                ax.set_title(f'{feature_name} vs {target_name}')
+                ax.set_xlabel(feature_name)
+                ax.set_ylabel(target_name)
+                ax.legend()
+                
+                # remove top and right spines for a cleaner look
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                plt.grid(True, linestyle='--', alpha=0.6)
+                plt.tight_layout()
+
+                # 8. Save the plot
+                safe_feature_name = sanitize_filename(feature_name)
+                plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
+                plot_path = target_save_dir / plot_filename
+                
+                try:
+                    plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                    total_plots_saved += 1
+                except Exception as e:
+                    _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+                
+                # Close the figure to free up memory
+                plt.close()
     
     if verbose > 0:
         _LOGGER.info(f"Successfully saved {total_plots_saved} feature-vs-target plots to '{base_save_path}'.")
@@ -691,7 +698,8 @@ def plot_categorical_vs_target(
     max_categories: int = 50,
     fill_na_with: str = "[MISSING DATA]",
     drop_empty_targets: bool = True,
-    verbose: int = 1
+    verbose: int = 1,
+    font_scaling: float = 1.5
 ):
     """
     Plots each feature in df_categorical against each numeric target in df_targets using box plots.
@@ -707,6 +715,7 @@ def plot_categorical_vs_target(
         fill_na_with (str): String to replace NaN values in categorical columns.
         drop_empty_targets (bool): If True, drops rows where the target value is NaN before plotting.
         verbose (int): Verbosity level for logging warnings.
+        font_scaling (float): Multiplier for all text elements in the plots.
 
     Notes:
         - Assumes df_categorical and df_targets share the same index.
@@ -746,96 +755,97 @@ def plot_categorical_vs_target(
     # 4. Main plotting loop
     total_plots_saved = 0
     
-    for target_name in valid_targets:
-        safe_target_name = sanitize_filename(target_name)
-        # Create a sanitized subdirectory for this target
-        safe_target_dir_name = f"{safe_target_name}_vs_Categorical"
-        target_save_dir = base_save_path / safe_target_dir_name
-        target_save_dir.mkdir(parents=True, exist_ok=True)
-        
-        if verbose > 0:
-            _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
-        
-        for feature_name in valid_features:
+    with sns.plotting_context("notebook", font_scale=font_scaling):
+        for target_name in valid_targets:
+            safe_target_name = sanitize_filename(target_name)
+            # Create a sanitized subdirectory for this target
+            safe_target_dir_name = f"{safe_target_name}_vs_Categorical"
+            target_save_dir = base_save_path / safe_target_dir_name
+            target_save_dir.mkdir(parents=True, exist_ok=True)
             
-            # Align data using concat to respect indices
-            feature_series = df_categorical[feature_name]
-            target_series = df_targets[target_name]
+            if verbose > 0:
+                _LOGGER.info(f"Generating plots for target: '{target_name}' -> Saving to '{target_save_dir.name}'")
+            
+            for feature_name in valid_features:
+                
+                # Align data using concat to respect indices
+                feature_series = df_categorical[feature_name]
+                target_series = df_targets[target_name]
 
-            # Create a temporary DataFrame for this pair
-            temp_df = pd.concat([feature_series, target_series], axis=1)
+                # Create a temporary DataFrame for this pair
+                temp_df = pd.concat([feature_series, target_series], axis=1)
 
-            # Optional: Drop rows where the target is NaN
-            if drop_empty_targets:
-                temp_df = temp_df.dropna(subset=[target_name])
-                if temp_df.empty:
+                # Optional: Drop rows where the target is NaN
+                if drop_empty_targets:
+                    temp_df = temp_df.dropna(subset=[target_name])
+                    if temp_df.empty:
+                        if verbose > 1:
+                            _LOGGER.warning(f"No valid data left for '{feature_name}' vs '{target_name}' after dropping empty targets. Skipping.")
+                        continue
+
+                # Force feature to object if it isn't already (handling the numeric flexibility)
+                if not is_object_dtype(temp_df[feature_name]):
+                    temp_df[feature_name] = temp_df[feature_name].astype(object)
+
+                # Handle NaNs in the feature column (treat as a category)
+                if temp_df[feature_name].isnull().any():
+                    temp_df[feature_name] = temp_df[feature_name].fillna(fill_na_with)
+                
+                # Convert to string to ensure consistent plotting and cardinality check
+                temp_df[feature_name] = temp_df[feature_name].astype(str)
+                
+                # Wrap the class names for better visualization
+                temp_df[feature_name] = temp_df[feature_name].apply(lambda x: wrap_text(x))
+
+                # Check cardinality
+                n_unique = temp_df[feature_name].nunique()
+                if n_unique > max_categories:
                     if verbose > 1:
-                        _LOGGER.warning(f"No valid data left for '{feature_name}' vs '{target_name}' after dropping empty targets. Skipping.")
+                        _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique categories > {max_categories} max_categories.")
                     continue
 
-            # Force feature to object if it isn't already (handling the numeric flexibility)
-            if not is_object_dtype(temp_df[feature_name]):
-                temp_df[feature_name] = temp_df[feature_name].astype(object)
+                # 5. Create the plot
+                # Dynamic figure width based on number of categories
+                plt.figure(figsize=(max(10, n_unique * 0.8), 10))
+                
+                sns.boxplot(x=feature_name, y=target_name, data=temp_df)
 
-            # Handle NaNs in the feature column (treat as a category)
-            if temp_df[feature_name].isnull().any():
-                temp_df[feature_name] = temp_df[feature_name].fillna(fill_na_with)
-            
-            # Convert to string to ensure consistent plotting and cardinality check
-            temp_df[feature_name] = temp_df[feature_name].astype(str)
-            
-            # Wrap the class names for better visualization
-            temp_df[feature_name] = temp_df[feature_name].apply(lambda x: wrap_text(x))
+                plt.title(f'{target_name} vs {feature_name}')
+                # plt.xlabel(feature_name)
+                plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
+                plt.ylabel(target_name)
+                plt.xticks(rotation=45, ha='right')
+                plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+                
+                # remove top and right spines for a cleaner look
+                plt.gca().spines['top'].set_visible(False)
+                plt.gca().spines['right'].set_visible(False)
+                
+                plt.tight_layout()
 
-            # Check cardinality
-            n_unique = temp_df[feature_name].nunique()
-            if n_unique > max_categories:
-                if verbose > 1:
-                    _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique categories > {max_categories} max_categories.")
-                continue
-
-            # 5. Create the plot
-            # Dynamic figure width based on number of categories
-            plt.figure(figsize=(max(10, n_unique * 0.8), 10))
-            
-            sns.boxplot(x=feature_name, y=target_name, data=temp_df)
-
-            plt.title(f'{target_name} vs {feature_name}')
-            # plt.xlabel(feature_name)
-            plt.xlabel("") # Remove x-axis label for categorical plots to save space, as the category names themselves serve as labels
-            plt.ylabel(target_name)
-            plt.xticks(rotation=45, ha='right')
-            plt.grid(True, linestyle='--', alpha=0.6, axis='y')
-            
-            # remove top and right spines for a cleaner look
-            plt.gca().spines['top'].set_visible(False)
-            plt.gca().spines['right'].set_visible(False)
-            
-            plt.tight_layout()
-
-            # 6. Save the plot
-            safe_feature_name = sanitize_filename(feature_name)
-            plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
-            plot_path = target_save_dir / plot_filename
-            
-            try:
-                plt.savefig(plot_path, bbox_inches="tight", format='svg')
-                total_plots_saved += 1
-            except Exception as e:
-                _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
-            
-            plt.close()
+                # 6. Save the plot
+                safe_feature_name = sanitize_filename(feature_name)
+                plot_filename = f"{safe_feature_name}_vs_{safe_target_name}.svg"
+                plot_path = target_save_dir / plot_filename
+                
+                try:
+                    plt.savefig(plot_path, bbox_inches="tight", format='svg')
+                    total_plots_saved += 1
+                except Exception as e:
+                    _LOGGER.error(f"Failed to save plot: {plot_path}. Error: {e}")
+                
+                plt.close()
     
     if verbose > 0:
         _LOGGER.info(f"Successfully saved {total_plots_saved} categorical-vs-target plots to '{base_save_path}'.")
-
 
 
 def plot_correlation_heatmap(df: pd.DataFrame,
                              plot_title: str,
                              save_dir: Union[str, Path, None] = None, 
                              method: Literal["pearson", "kendall", "spearman"]="pearson",
-                             cmap: str = "coolwarm"):
+                             cmap: str = "coolwarm",
+                             font_scaling: float = 1.5):
     """
     Plots a heatmap of pairwise correlations between numeric features in a DataFrame.
     
@@ -848,6 +858,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
             - 'kendall': rank correlation (non-parametric),
             - 'spearman': monotonic relationship (non-parametric).
         cmap (str): Colormap to use for the heatmap. Must be a valid Matplotlib colormap name.
+        font_scaling (float): Base scaling factor for fonts to ensure readability.
 
     Notes:
         - Only numeric columns are included.
@@ -855,8 +866,10 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         - Missing values are handled via pairwise complete observations.
     """
     numeric_df = df.select_dtypes(include='number')
-    if numeric_df.shape[1] < 2:
-        _LOGGER.warning(f"Not enough numeric columns found ({numeric_df.shape[1]}). Heatmap requires at least 2.")
+    num_features = numeric_df.shape[1]
+    
+    if num_features < 2:
+        _LOGGER.warning(f"Not enough numeric columns found ({num_features}). Heatmap requires at least 2.")
         return
     if method not in ["pearson", "kendall", "spearman"]:
         _LOGGER.error(f"'method' must be pearson, kendall, or spearman.")
@@ -877,15 +890,30 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     corr = corr.iloc[1:, :-1]
     mask = mask[1:, :-1]
 
-    # Plot setup
-    size = max(10, numeric_df.shape[1])
-    plt.figure(figsize=(size, size * 0.8))
+    # Plot setup - Dynamic sizing based on feature count
+    fig_width = max(10, num_features * 0.8)
+    fig_height = fig_width * 0.8
+    plt.figure(figsize=(fig_width, fig_height))
 
-    annot_bool = numeric_df.shape[1] <= 20
-    sns.heatmap(
+    # Smart Font Scaling
+    title_fs = 18 * font_scaling
+    tick_fs = 14 * font_scaling
+    
+    # Annotation logic: Turn off if > 20 features to prevent overlap
+    annot_bool = num_features <= 20
+    
+    if annot_bool:
+        # Maximize number size: Scale inversely with features, bounded by a reasonable minimum and maximum
+        annot_size = min(16 * font_scaling, max(8.0, (150 * font_scaling) / max(1, num_features)))
+        annot_kws = {"size": annot_size}
+    else:
+        annot_kws = None
+
+    ax = sns.heatmap(
         corr,
         mask=mask,
         annot=annot_bool,
+        annot_kws=annot_kws,
         cmap=cmap,
         fmt=".2f",
         cbar_kws={"shrink": 0.8},
@@ -894,12 +922,17 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         center=0  # Ensures 0 corresponds to the neutral color (white)
     )
     
+    # Scale colorbar ticks
+    cbar = ax.collections[0].colorbar
+    if cbar is not None:
+        cbar.ax.tick_params(labelsize=tick_fs)
+    
     # add suffix to title
     full_plot_title = f"{plot_title} - {method.title()} Correlation Heatmap"
     
-    plt.title(full_plot_title)
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
+    plt.title(full_plot_title, fontsize=title_fs, pad=15 * font_scaling)
+    plt.xticks(rotation=45, ha='right', fontsize=tick_fs)
+    plt.yticks(rotation=0, fontsize=tick_fs)
 
     plt.tight_layout()
     
@@ -920,4 +953,3 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         plt.show()
     
     plt.close()
-

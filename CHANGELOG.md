@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.15.5] 2026-05-28
+
+### Changed
+
+- data_exploration:
+    - Standardized plot aesthetics by removing top and right axes spines in `plot_numeric_overview_boxplot()`, `plot_continuous_vs_target()`, and `plot_categorical_vs_target()`.
+    - Introduced a `font_scaling` parameter (default 1.5) to `plot_continuous_vs_target()`, `plot_categorical_vs_target()`, and `plot_correlation_heatmap()` to maintain text readability.
+    - Upgraded `plot_correlation_heatmap()` with dynamic figure sizing, smart text scaling for titles and axes, and adaptive annotation sizing to maximize box space efficiency.
+
+
 ## [22.15.4] 2026-05-26
 
 ### Fixed

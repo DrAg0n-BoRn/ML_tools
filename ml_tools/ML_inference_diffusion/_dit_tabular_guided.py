@@ -107,7 +107,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
     def plot_metrics(self,
                      df_generated: pd.DataFrame, 
                      target_value: float,
-                     base_plot_title: str = "Generated Data Distributions",
+                     base_plot_title: str = "Generated Data Distribution",
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
                      show_means: bool = True,
                      font_scaling: float = 1.5,
