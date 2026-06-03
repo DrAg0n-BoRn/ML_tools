@@ -916,7 +916,7 @@ class DragonDatasetSegmentation:
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
-                             crop_size: int = 224, 
+                             crop_size: Optional[int] = 224, 
                              mean: Optional[list[float]] = [0.485, 0.456, 0.406], 
                              std: Optional[list[float]] = [0.229, 0.224, 0.225]) -> 'DragonDatasetSegmentation':
         """
@@ -927,8 +927,7 @@ class DragonDatasetSegmentation:
         Args:
             resize_size (int): The size to resize the smallest edge to
                                for validation/testing.
-            crop_size (int): The target size (square) for the final
-                             cropped image.
+            crop_size (int | None): The target size (square) for the final cropped image.
             mean (List[float] | None): The mean values for image normalization.
             std (List[float] | None): The std dev values for image normalization.
 
@@ -942,6 +941,9 @@ class DragonDatasetSegmentation:
         if (mean is None and std is not None) or (mean is not None and std is None):
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
+        
+        if crop_size is None:
+            crop_size = resize_size
         
         # --- Store components for validation recipe ---
         self.val_recipe_components: dict[str,Any] = {

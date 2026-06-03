@@ -5,6 +5,10 @@ from ._core_transforms import (
     RandomHistogramEqualization,
 )
 
+from ._tiling import (
+    make_tiled_dataset,
+)
+
 from ._offline_augmentation import (
     create_offline_augmentations
 )
@@ -18,6 +22,8 @@ __all__ = [
     "LetterboxResize",
     "HistogramEqualization",
     "RandomHistogramEqualization",
+    # Tiling
+    "make_tiled_dataset",
     # Offline Augmentation
     "create_offline_augmentations",
 ]

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.16.0] 2026-06-03
+
+### Added
+
+- ML_vision_transformers:
+    - `make_tiled_dataset()`, New function to create a tiled dataset from large images and optional masks, with support for various padding strategies and the ability to skip empty tiles based on mask values.
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation`, added support for an optional `crop_size` parameter in the `configure_transforms()` method to allow for center cropping after resizing, which is a common practice in vision transformer training pipelines. If `crop_size` is not provided, it will default to the same value as `resize_size` to maintain backward compatibility.
+
+
 ## [22.15.5] 2026-05-28
 
 ### Changed
