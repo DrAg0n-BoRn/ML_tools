@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.17.0] 2026-06-10
+
+### Added
+
+- ML_vision_transformers:
+    - `inspect_folder()`, New utility function to inspect a folder of images and gather statistics on image modes, sizes, and potential issues. A JSON report log is generated with the collected information.
+    - `merge_masks()`, New utility function to parse and group individual Label Studio segmentation masks by base task, merging them into a single unified 2D array based on a provided class map.
+    - `merge_masks_with_inferred_class()`, New utility function to merge segmentation masks that initializes the base canvas with a specified default class ID and explicitly carves out background regions before applying the remaining labels.
+
+### Changed
+
+- ML_datasetmaster:
+    - Computer vision dataset classes call the `inspect_folder()` utility function under the hood for their method of the same name.
+
 ## [22.16.0] 2026-06-03
 
 ### Added

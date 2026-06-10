@@ -9,6 +9,15 @@ from ._tiling import (
     make_tiled_dataset,
 )
 
+from ._inspect_folder import (
+    inspect_folder,
+)
+
+from ._mask_annotation import (
+    merge_masks,
+    merge_masks_with_inferred_class,
+)
+
 from ._offline_augmentation import (
     create_offline_augmentations
 )
@@ -24,6 +33,11 @@ __all__ = [
     "RandomHistogramEqualization",
     # Tiling
     "make_tiled_dataset",
+    # Mask Annotation
+    "merge_masks",
+    "merge_masks_with_inferred_class",
+    # Folder image inspection
+    "inspect_folder",
     # Offline Augmentation
     "create_offline_augmentations",
 ]
