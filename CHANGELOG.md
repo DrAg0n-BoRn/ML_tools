@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.17.1] 2026-06-13
+
+### Fixed
+
+- ML_vision_transformers:
+    - `merge_masks()` and `merge_masks_with_inferred_class()`: Resolved a pathing bug where the base output directory was being continuously overwritten during loop iterations, preventing a `NotADirectoryError`.
+
+### Changed
+
+- ML_vision_transformers:
+    - `merge_masks()` and `merge_masks_with_inferred_class()`: Added logging to report if the input directory is empty, output the total number of input images found before processing, and log the final count of merged images successfully saved.
+
 ## [22.17.0] 2026-06-10
 
 ### Added

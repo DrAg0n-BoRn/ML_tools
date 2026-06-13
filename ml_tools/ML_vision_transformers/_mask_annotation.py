@@ -48,10 +48,17 @@ def merge_masks(input_dir: Union[Path, str],
     input_path = make_fullpath(input_dir, make=False, enforce="directory")
     output_path = make_fullpath(output_dir, make=True, enforce="directory")
     
+    input_files = list(input_path.glob("*.png"))
+    if not input_files:
+        _LOGGER.warning(f"Input directory is empty: {input_path}")
+        return
+        
+    _LOGGER.info(f"Found {len(input_files)} images in the input directory.")
+    
     grouped_tasks = defaultdict(lambda: defaultdict(list))
     pattern = LABEL_STUDIO_PATTERN
     
-    for file_path in input_path.glob("*.png"):
+    for file_path in input_files:
         match = pattern.match(file_path.name)
         if match:
             grouped_tasks[match.group(1)][match.group(2)].append(file_path)
@@ -72,8 +79,10 @@ def merge_masks(input_dir: Union[Path, str],
                 mask_array = np.array(Image.open(path).convert("L"))
                 merged_mask[mask_array > 127] = class_id
                 
-        output_path = output_path / f"{base_task}.png"
-        Image.fromarray(merged_mask).save(output_path)
+        current_output_path = output_path / f"{base_task}.png"
+        Image.fromarray(merged_mask).save(current_output_path)
+        
+    _LOGGER.info(f"Successfully saved {len(grouped_tasks)} merged output images.")
 
 
 def merge_masks_with_inferred_class(
@@ -112,10 +121,17 @@ def merge_masks_with_inferred_class(
     input_path = make_fullpath(input_dir, make=False, enforce="directory")
     output_path = make_fullpath(output_dir, make=True, enforce="directory")
     
+    input_files = list(input_path.glob("*.png"))
+    if not input_files:
+        _LOGGER.warning(f"Input directory is empty: {input_path}")
+        return
+        
+    _LOGGER.info(f"Found {len(input_files)} images in the input directory.")
+    
     grouped_tasks = defaultdict(lambda: defaultdict(list))
     pattern = LABEL_STUDIO_PATTERN
     
-    for file_path in input_path.glob("*.png"):
+    for file_path in input_files:
         match = pattern.match(file_path.name)
         if match:
             grouped_tasks[match.group(1)][match.group(2)].append(file_path)
@@ -148,5 +164,7 @@ def merge_masks_with_inferred_class(
                 mask_array = np.array(Image.open(path).convert("L"))
                 merged_mask[mask_array > 127] = class_id
                 
-        output_path = output_path / f"{base_task}.png"
-        Image.fromarray(merged_mask).save(output_path)
+        current_output_path = output_path / f"{base_task}.png"
+        Image.fromarray(merged_mask).save(current_output_path)
+        
+    _LOGGER.info(f"Successfully saved {len(grouped_tasks)} merged output images.")
