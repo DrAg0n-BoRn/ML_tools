@@ -139,6 +139,8 @@ class VisionKeys:
     SEGMENTATION_REPORT = "segmentation_report"
     SEGMENTATION_HEATMAP = "segmentation_metrics_heatmap"
     SEGMENTATION_CONFUSION_MATRIX = "segmentation_confusion_matrix"
+    SEGMENTATION_RADAR_PLOT = "segmentation_radar_plot"
+    SEGMENTATION_DISTRIBUTION_PLOT = "segmentation_distribution_plot"
     # Object detection
     OBJECT_DETECTION_REPORT = "object_detection_report"
 

@@ -255,7 +255,10 @@ class _BaseSegmentationFormat:
     def __init__(self,
                  heatmap_cmap: str = "BuGn",
                  cm_cmap: str = "Purples",
-                 font_size: int = 16) -> None:
+                 radar_line_color: str = "tab:blue",
+                 radar_fill_alpha: float = 0.15,
+                 boxplot_color: str = "tab:blue",
+                 font_size: int = 26) -> None:
         """
         Initializes the formatting configuration for segmentation metrics.
 
@@ -267,7 +270,16 @@ class _BaseSegmentationFormat:
             cm_cmap (str): The matplotlib colormap name for the pixel-level
                 confusion matrix.
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges'
+            radar_line_color (str): Matplotlib color for the lines in the radar plot.
+                - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
+            radar_fill_alpha (float): Alpha transparency for the filled area in the radar plot.
+            boxplot_color (str): Matplotlib color for the box/violin plots in the distribution plot.
+                - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
             font_size (int): The base font size to apply to the plots.
+        
+        <br>
+        
+        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
         
         <br>
         
@@ -276,15 +288,24 @@ class _BaseSegmentationFormat:
         # color validation
         _validate_cmap(heatmap_cmap, "heatmap_cmap")
         _validate_cmap(cm_cmap, "cm_cmap")
+        _validate_color(radar_line_color, "radar_line_color")
+        _validate_alpha(radar_fill_alpha, "radar_fill_alpha")
+        _validate_color(boxplot_color, "boxplot_color")
         
         self.heatmap_cmap = heatmap_cmap
         self.cm_cmap = cm_cmap
+        self.radar_line_color = radar_line_color
+        self.radar_fill_alpha = radar_fill_alpha
+        self.boxplot_color = boxplot_color
         self.font_size = font_size
         
     def __repr__(self) -> str:
         parts = [
             f"heatmap_cmap='{self.heatmap_cmap}'",
             f"cm_cmap='{self.cm_cmap}'",
+            f"radar_line_color='{self.radar_line_color}'",
+            f"radar_fill_alpha={self.radar_fill_alpha}",
+            f"boxplot_color='{self.boxplot_color}'",
             f"font_size={self.font_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
@@ -764,9 +785,15 @@ class FormatBinarySegmentationMetrics(_BaseSegmentationFormat):
     def __init__(self,
                  heatmap_cmap: str = "BuGn",
                  cm_cmap: str = "Purples",
-                 font_size: int = 16) -> None:
+                 radar_line_color: str = "tab:blue",
+                 radar_fill_alpha: float = 0.15,
+                 boxplot_color: str = "tab:blue",
+                 font_size: int = 26) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
+                         radar_line_color=radar_line_color,
+                         radar_fill_alpha=radar_fill_alpha,
+                         boxplot_color=boxplot_color,
                          font_size=font_size)
 
 
@@ -777,9 +804,15 @@ class FormatMultiClassSegmentationMetrics(_BaseSegmentationFormat):
     def __init__(self,
                  heatmap_cmap: str = "BuGn",
                  cm_cmap: str = "Purples",
-                 font_size: int = 16) -> None:
+                 radar_line_color: str = "tab:blue",
+                 radar_fill_alpha: float = 0.15,
+                 boxplot_color: str = "tab:blue",
+                 font_size: int = 26) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
+                         radar_line_color=radar_line_color,
+                         radar_fill_alpha=radar_fill_alpha,
+                         boxplot_color=boxplot_color,
                          font_size=font_size)
 
 
@@ -789,7 +822,7 @@ class FormatSequenceValueMetrics(_BaseSequenceValueFormat):
     Configuration for sequence-to-value prediction.
     """
     def __init__(self, 
-                 font_size: int=25,
+                 font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
                  ideal_line_color: str='k',

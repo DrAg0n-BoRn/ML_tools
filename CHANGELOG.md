@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.18.0] 2026-06-17
+
+### Added
+
+- keys:
+    - `VisionKeys`, Added `SEGMENTATION_RADAR_PLOT` and `SEGMENTATION_DISTRIBUTION_PLOT` constants to define file names for the new visual reports.
+
+- ML_configuration:
+    - `_BaseSegmentationFormat` (and subclasses), Added `radar_line_color`, `radar_fill_alpha`, and `boxplot_color` parameters to control the styling of the newly integrated Plotly and Seaborn visual outputs.
+
+- ML_evaluation:
+    - `_calculate_per_image_metrics()`, New private utility function to compute segmentation metrics on an image-by-image basis, capturing variance across the dataset.
+    - `_plot_distribution_boxplots()`, New private utility function to generate Seaborn box/strip plots visualizing the distribution and outliers of per-image metrics.
+    - `_plot_radar_charts()`, New private utility function to build interactive Plotly radar charts for comparing per-class performance (includes an automatic bypass for binary segmentation).
+
+### Changed
+
+- ML_evaluation:
+    - `segmentation_metrics()`, Refactored from a monolithic calculation into a clean orchestrator function utilizing private helpers. It now dynamically handles missing class labels per batch without triggering zero-division errors, safely supports both binary and multiclass targets, and outputs an expanded suite of graphical metrics for scientific publications.
+    - `save_radar_chart()`, Sliders will be left-aligned in the interactive plot.
+
+
 ## [22.17.1] 2026-06-13
 
 ### Fixed

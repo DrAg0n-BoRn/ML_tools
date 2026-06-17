@@ -23,9 +23,12 @@ from ._sequence import (
     sequence_to_sequence_metrics
 )
 
-from ._vision import (
-    segmentation_metrics,
+from ._object_detection import (
     object_detection_metrics
+)
+
+from ._segmentation import (
+    segmentation_metrics
 )
 
 from ._distribution import (

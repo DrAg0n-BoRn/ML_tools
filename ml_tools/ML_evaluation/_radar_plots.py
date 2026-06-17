@@ -99,7 +99,7 @@ def save_radar_chart(
             active=base_size,
             currentvalue={"prefix": f"{slider_labels[i]}: ", "font": {"size": 12}}, # Smaller title font
             pad={"t": 5, "b": 5}, # Tighter padding
-            x=0.25, y=slider_y_positions[i], len=1, # Center the sliders and make them 100% width
+            x=0.05, y=slider_y_positions[i], len=0.90, # Left-align the sliders and make them 90% width
             xanchor="left", yanchor="top",
             font=dict(size=10), # Smaller slider number font
             steps=steps
