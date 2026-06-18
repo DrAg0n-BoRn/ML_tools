@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.18.1] 2026-06-18
+
+### Added
+
+- ML_configuration:
+    - `_BaseSegmentationFormat` (and subclasses), Added `xtick_size` and `ytick_size` parameters to explicitly control the font size of axis ticks across segmentation plots.
+
+### Changed
+
+- ML_evaluation:
+    - `_plot_metrics_heatmap()`, Improved visual scaling by making figure and annotation sizes dynamic based on class count. Cleaned up the layout by removing the "Class" x-axis label and colorbar. Enforced a strict 0.0 to 1.0 color scale to prevent misleading relative scaling. Rotated all x-axis labels to a unified 45-degree anchor.
+    - `_plot_confusion_matrix()`, Converted values to display true-label percentages (normalized from 0.0 to 1.0) and formatted them to two decimal places. Locked the internal color mapping strictly from 0.0 to 1.0. Replaced the default colorbar with a downscaled, custom-fitted version. Scaled figure sizes and annotations dynamically, and applied a 45-degree rotation to x-axis labels.
+    - `_plot_distribution_boxplots()`, Modified the output to save individual SVG files for each metric (Dice, IoU) rather than a combined figure. Automatically applies the `husl` Seaborn palette for unique per-class coloring. Cleaned up the visual presentation by removing the top and right spines, deleting the x-axis "Class" label, and applying a 45-degree rotation to x-axis labels.
+
+### Fixed
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation`, fixed a bug where some transformations were not applied correctly. Added a check to ensure loaded images and masks are not corrupted and are in the correct format.
+
+### Removed
+
+- ML_configuration:
+    - `_BaseSegmentationFormat` (and subclasses), Removed the `boxplot_color` parameter, as distribution boxplots now natively utilize an automated color palette.
+
+
 ## [22.18.0] 2026-06-17
 
 ### Added

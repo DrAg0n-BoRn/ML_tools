@@ -1,4 +1,3 @@
-import random
 import numpy
 from typing import Union, Optional, Callable, Any
 from pathlib import Path
@@ -52,8 +51,8 @@ class _SegmentationDataset(Dataset):
             mask = Image.open(mask_path).convert("L")
         except Exception as e:
             _LOGGER.error(f"Error loading sample #{idx}: {img_path.name} / {mask_path.name}. Error: {e}")
-            # Return empty tensors
-            return torch.empty(3, 224, 224), torch.empty(224, 224, dtype=torch.long)
+            # Fallback to the next index to prevent DataLoader collate crashes
+            return self.__getitem__((idx + 1) % len(self))
             
         if self.transform:
             image, mask = self.transform(image, mask)
@@ -97,7 +96,6 @@ class _PairedResize:
         self.size = [size, size]
     
     def __call__(self, image: Image.Image, mask: Image.Image) -> tuple[Image.Image, Image.Image]:
-        # Use new variable names to avoid linter confusion
         resized_image = TF.resize(image, self.size, interpolation=TF.InterpolationMode.BILINEAR) # type: ignore
         # Use NEAREST for mask to avoid interpolating class IDs (e.g., 1.5)
         resized_mask = TF.resize(mask, self.size, interpolation=TF.InterpolationMode.NEAREST) # type: ignore
@@ -119,10 +117,10 @@ class _PairedRandomHorizontalFlip:
         self.p = p
     
     def __call__(self, image: Image.Image, mask: Image.Image) -> tuple[Image.Image, Image.Image]:
-        if random.random() < self.p:
-            flipped_image = TF.hflip(image) # type: ignore
-            flipped_mask = TF.hflip(mask) # type: ignore
-        return flipped_image, flipped_mask # type: ignore
+        if torch.rand(1).item() < self.p:
+            image = TF.hflip(image) # type: ignore
+            mask = TF.hflip(mask)  # type: ignore
+        return image, mask
         
 class _PairedRandomResizedCrop:
     """Applies the same random resized crop to both image and mask."""
@@ -231,10 +229,17 @@ class DragonDatasetSegmentation:
                         mask_file = mask_file_secondary
                         break
             
-            # 3. If a match is found, add the pair
+            # 3. Validate files can be opened before adding to the pair list
             if mask_file:
-                good_img_paths.append(img_file)
-                good_mask_paths.append(mask_file)
+                try:
+                    # Lightweight check: just open and verify, don't load into memory
+                    with Image.open(img_file) as img, Image.open(mask_file) as msk:
+                        img.verify()
+                        msk.verify()
+                    good_img_paths.append(img_file)
+                    good_mask_paths.append(mask_file)
+                except Exception as e:
+                    _LOGGER.warning(f"Skipping corrupted pair {img_file.name}: {e}")
             else:
                 _LOGGER.warning(f"No corresponding mask found for image: {img_file.name}")
         
@@ -272,6 +277,13 @@ class DragonDatasetSegmentation:
                 Example: {'background': 0, 'road': 1, 'car': 2}
         """
         self.class_map = class_map
+        
+        # Retroactively sync datasets if split_data was already called
+        if self._is_split:
+            if self._train_dataset: self._train_dataset.classes = self.classes
+            if self._val_dataset: self._val_dataset.classes = self.classes
+            if self._test_dataset: self._test_dataset.classes = self.classes
+        
         _LOGGER.info(f"Class map set: {class_map}")
         return self
     
@@ -348,8 +360,8 @@ class DragonDatasetSegmentation:
     def configure_transforms(self, 
                              resize_size: int = 256, 
                              crop_size: Optional[int] = 224, 
-                             mean: Optional[list[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[list[float]] = [0.229, 0.224, 0.225]) -> 'DragonDatasetSegmentation':
+                             mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
+                             std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225)) -> 'DragonDatasetSegmentation':
         """
         Configures and applies the image and mask transformations.
         
@@ -359,8 +371,8 @@ class DragonDatasetSegmentation:
             resize_size (int): The size to resize the smallest edge to
                                for validation/testing.
             crop_size (int | None): The target size (square) for the final cropped image.
-            mean (List[float] | None): The mean values for image normalization.
-            std (List[float] | None): The std dev values for image normalization.
+            mean (tuple[float] | None): The mean values for image normalization.
+            std (tuple[float] | None): The std dev values for image normalization.
 
         Returns:
             DragonDatasetSegmentation: The same instance, with transforms applied.
@@ -391,18 +403,22 @@ class DragonDatasetSegmentation:
 
         # --- Validation/Test Pipeline (Deterministic) ---
         if self._has_mean_std:
+            # Type-checker: ensure mean/std are not None before converting to list
+            assert mean is not None and std is not None
             self.val_transform = _PairedCompose([
                 _PairedResize(resize_size),
                 _PairedCenterCrop(crop_size),
                 _PairedToTensor(),
-                _PairedNormalize(mean, std) # type: ignore
+                _PairedNormalize(list(mean), list(std))
             ])
             # --- Training Pipeline (Augmentation) ---
+            # Type-checker: ensure mean/std are not None before converting to list
+            assert mean is not None and std is not None
             self.train_transform = _PairedCompose([
                 _PairedRandomResizedCrop(crop_size),
                 _PairedRandomHorizontalFlip(p=0.5),
                 _PairedToTensor(),
-                _PairedNormalize(mean, std) # type: ignore
+                _PairedNormalize(list(mean), list(std))
             ])
         else:
             self.val_transform = _PairedCompose([

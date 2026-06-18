@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.metrics import (
     accuracy_score,
@@ -90,15 +91,34 @@ def _generate_text_report(metrics: dict, per_class_df: pd.DataFrame, save_dir_pa
 def _plot_metrics_heatmap(per_class_df: pd.DataFrame, format_config, save_dir_path: Path) -> None:
     """Generates and saves a seaborn heatmap for per-class global metrics."""
     try:
-        plt.figure(figsize=(max(8, len(per_class_df) * 0.5), 6), dpi=DPI_value)
-        sns.heatmap(
+        # Increased base figure size to accommodate larger fonts
+        plt.figure(figsize=(max(10, len(per_class_df) * 1.0), 8), dpi=DPI_value)
+        
+        # Smart dynamic annotation size scaling
+        dynamic_annot_size = max(8, format_config.font_size - max(0, (len(per_class_df) // 2)))
+        
+        ax = sns.heatmap(
             per_class_df.set_index('Class').T, 
             annot=True, 
             cmap=format_config.heatmap_cmap, 
             fmt='.3f',
-            linewidths=0.5
+            linewidths=0.5,
+            annot_kws={"size": dynamic_annot_size},
+            cbar=False,
+            vmin=0.0,
+            vmax=1.0
         )
-        plt.title("Per-Class Segmentation Metrics", pad=_EvaluationConfig.LABEL_PADDING)
+        
+        xtick_size = getattr(format_config, 'xtick_size', format_config.font_size - 4)
+        ytick_size = getattr(format_config, 'ytick_size', format_config.font_size - 4)
+        
+        # Remove the "Class" x-label
+        ax.set_xlabel("")
+        
+        plt.xticks(fontsize=xtick_size, rotation=45, ha='right', rotation_mode='anchor')
+        plt.yticks(fontsize=ytick_size)
+        
+        plt.title("Per-Class Segmentation Metrics", pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
         plt.tight_layout()
         heatmap_path = save_dir_path / f"{VisionKeys.SEGMENTATION_HEATMAP}.svg"
         plt.savefig(heatmap_path, bbox_inches='tight')
@@ -112,16 +132,41 @@ def _plot_confusion_matrix(y_true_flat: np.ndarray, y_pred_flat: np.ndarray, lab
                            display_names: list[str], format_config, save_dir_path: Path) -> None:
     """Calculates and plots a pixel-level confusion matrix."""
     try:
-        cm = confusion_matrix(y_true_flat, y_pred_flat, labels=labels)
-        fig_cm, ax_cm = plt.subplots(figsize=(max(8, len(labels) * 0.8), max(8, len(labels) * 0.8)), dpi=DPI_value)
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_names)
-        disp.plot(cmap=format_config.cm_cmap, ax=ax_cm, xticks_rotation=45) 
+        # Normalize to scale values from 0.0 to 1.0 across true labels (rows)
+        cm = confusion_matrix(y_true_flat, y_pred_flat, labels=labels, normalize='true')
         
+        # Increased base figure size
+        fig_cm, ax_cm = plt.subplots(figsize=(max(10, len(labels) * 1.0), max(10, len(labels) * 1.0)), dpi=DPI_value)
+        
+        xtick_size = getattr(format_config, 'xtick_size', format_config.font_size - 4)
+        ytick_size = getattr(format_config, 'ytick_size', format_config.font_size - 4)
+        
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_names)
+        
+        # Disable the default colorbar, format the numbers, and strictly lock the color scale to 0.0 - 1.0
+        disp.plot(cmap=format_config.cm_cmap, 
+                  ax=ax_cm, 
+                  colorbar=False, 
+                  values_format='.2f', 
+                  im_kw={'vmin': 0.0, 'vmax': 1.0}) 
+        
+        # Create a smaller colorbar and scale down its ticks
+        cbar = fig_cm.colorbar(disp.im_, ax=ax_cm, shrink=0.75)
+        cbar.ax.tick_params(labelsize=xtick_size)
+        
+        # Smart dynamic annotation size for numbers inside the matrix
+        dynamic_cm_size = max(8, format_config.font_size - max(0, len(labels) // 2))
         if disp.text_ is not None:
             for text in disp.text_.flatten():
-                text.set_fontsize(format_config.font_size)
+                text.set_fontsize(dynamic_cm_size)
         
-        ax_cm.set_title("Pixel-Level Confusion Matrix", pad=_EvaluationConfig.LABEL_PADDING)
+        ax_cm.set_xlabel(ax_cm.get_xlabel(), fontsize=format_config.font_size)
+        ax_cm.set_ylabel(ax_cm.get_ylabel(), fontsize=format_config.font_size)
+        ax_cm.tick_params(axis='x', labelsize=xtick_size)
+        ax_cm.tick_params(axis='y', labelsize=ytick_size)
+        plt.setp(ax_cm.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
+        
+        ax_cm.set_title("Pixel-Level Confusion Matrix", pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
         plt.tight_layout()
         cm_path = save_dir_path / f"{VisionKeys.SEGMENTATION_CONFUSION_MATRIX}.svg"
         plt.savefig(cm_path, bbox_inches='tight')
@@ -137,24 +182,40 @@ def _plot_distribution_boxplots(image_metrics_df: pd.DataFrame, format_config, s
         return
         
     try:
-        fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=DPI_value)
+        xtick_size = getattr(format_config, 'xtick_size', format_config.font_size - 4)
+        ytick_size = getattr(format_config, 'ytick_size', format_config.font_size - 4)
         
-        for i, metric in enumerate(['Dice', 'IoU']):
-            metric_df = image_metrics_df[image_metrics_df['Metric'] == metric]
-            sns.boxplot(data=metric_df, x='Class', y='Score', ax=axes[i], color=format_config.boxplot_color, showfliers=False)
-            sns.stripplot(data=metric_df, x='Class', y='Score', ax=axes[i], color="black", alpha=0.3, size=3, jitter=True)
+        for metric in ['Dice', 'IoU']:
+            fig, ax = plt.subplots(figsize=(10, 8), dpi=DPI_value)
             
-            axes[i].set_title(f"Per-Image {metric} Distribution", pad=_EvaluationConfig.LABEL_PADDING)
-            axes[i].set_ylim([-0.05, 1.05])
-            axes[i].tick_params(axis='x', rotation=45)
-            axes[i].set_ylabel("Score")
-            axes[i].grid(True, linestyle='--', alpha=0.5, axis='y')
+            metric_df = image_metrics_df[image_metrics_df['Metric'] == metric]
+            
+            sns.boxplot(data=metric_df, x='Class', y='Score', ax=ax, hue='Class', palette='husl', legend=False, showfliers=False)
+            sns.stripplot(data=metric_df, x='Class', y='Score', ax=ax, color="black", alpha=0.3, size=3, jitter=True)
+            
+            # Remove top and right borders
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            ax.set_title(f"Per-Image {metric} Distribution", pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
+            ax.set_ylim((-0.05, 1.05))
+            
+            # Remove X-label "Class" and scale Y-label
+            ax.set_xlabel("")
+            ax.set_ylabel("Score", fontsize=format_config.font_size)
+            
+            # Apply tick sizes and 45-degree rotation
+            ax.tick_params(axis='x', labelsize=xtick_size)
+            ax.tick_params(axis='y', labelsize=ytick_size)
+            plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
+            
+            ax.grid(True, linestyle='--', alpha=0.5, axis='y')
 
-        plt.tight_layout()
-        dist_path = save_dir_path / f"{VisionKeys.SEGMENTATION_DISTRIBUTION_PLOT}.svg"
-        plt.savefig(dist_path, bbox_inches='tight')
-        _LOGGER.info(f"📈 Distribution boxplots saved as '{dist_path.name}'")
-        plt.close()
+            plt.tight_layout()
+            dist_path = save_dir_path / f"{VisionKeys.SEGMENTATION_DISTRIBUTION_PLOT}_{metric}.svg"
+            plt.savefig(dist_path, bbox_inches='tight')
+            _LOGGER.info(f"📈 {metric} distribution boxplot saved as '{dist_path.name}'")
+            plt.close(fig)
     except Exception as e:
         _LOGGER.error(f"Could not generate distribution boxplots: {e}")
 
@@ -169,6 +230,7 @@ def _plot_radar_charts(per_class_df: pd.DataFrame, display_names: list[str], for
         max_length = max([len(n) for n in display_names])
         margin_lr = calculate_smart_margin_left_right(max_length)
         fill_rgba = mpl_to_plotly_rgba(format_config.radar_line_color, format_config.radar_fill_alpha)
+        plotly_line_color = mcolors.to_hex(format_config.radar_line_color)
         
         for metric in ['Dice', 'IoU']:
             scores = per_class_df[metric].tolist()
@@ -177,7 +239,7 @@ def _plot_radar_charts(per_class_df: pd.DataFrame, display_names: list[str], for
             save_radar_chart(
                 scores=scores,
                 target_names=display_names,
-                line_color=format_config.radar_line_color,
+                line_color=plotly_line_color,
                 fill_rgba=fill_rgba,
                 title=f"Per-Class {metric} Score",
                 save_path_base=save_base,

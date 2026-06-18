@@ -257,7 +257,8 @@ class _BaseSegmentationFormat:
                  cm_cmap: str = "Purples",
                  radar_line_color: str = "tab:blue",
                  radar_fill_alpha: float = 0.15,
-                 boxplot_color: str = "tab:blue",
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
                  font_size: int = 26) -> None:
         """
         Initializes the formatting configuration for segmentation metrics.
@@ -273,10 +274,10 @@ class _BaseSegmentationFormat:
             radar_line_color (str): Matplotlib color for the lines in the radar plot.
                 - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
             radar_fill_alpha (float): Alpha transparency for the filled area in the radar plot.
-            boxplot_color (str): Matplotlib color for the box/violin plots in the distribution plot.
-                - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
             font_size (int): The base font size to apply to the plots.
-        
+            xtick_size (int): Font size for x-axis tick labels.
+            ytick_size (int): Font size for y-axis tick labels.
+
         <br>
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
@@ -290,14 +291,14 @@ class _BaseSegmentationFormat:
         _validate_cmap(cm_cmap, "cm_cmap")
         _validate_color(radar_line_color, "radar_line_color")
         _validate_alpha(radar_fill_alpha, "radar_fill_alpha")
-        _validate_color(boxplot_color, "boxplot_color")
         
         self.heatmap_cmap = heatmap_cmap
         self.cm_cmap = cm_cmap
         self.radar_line_color = radar_line_color
         self.radar_fill_alpha = radar_fill_alpha
-        self.boxplot_color = boxplot_color
         self.font_size = font_size
+        self.xtick_size = xtick_size
+        self.ytick_size = ytick_size
         
     def __repr__(self) -> str:
         parts = [
@@ -305,8 +306,9 @@ class _BaseSegmentationFormat:
             f"cm_cmap='{self.cm_cmap}'",
             f"radar_line_color='{self.radar_line_color}'",
             f"radar_fill_alpha={self.radar_fill_alpha}",
-            f"boxplot_color='{self.boxplot_color}'",
-            f"font_size={self.font_size}"
+            f"font_size={self.font_size}",
+            f"xtick_size={self.xtick_size}",
+            f"ytick_size={self.ytick_size}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -787,13 +789,15 @@ class FormatBinarySegmentationMetrics(_BaseSegmentationFormat):
                  cm_cmap: str = "Purples",
                  radar_line_color: str = "tab:blue",
                  radar_fill_alpha: float = 0.15,
-                 boxplot_color: str = "tab:blue",
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
                  font_size: int = 26) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
                          radar_line_color=radar_line_color,
                          radar_fill_alpha=radar_fill_alpha,
-                         boxplot_color=boxplot_color,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
                          font_size=font_size)
 
 
@@ -806,13 +810,15 @@ class FormatMultiClassSegmentationMetrics(_BaseSegmentationFormat):
                  cm_cmap: str = "Purples",
                  radar_line_color: str = "tab:blue",
                  radar_fill_alpha: float = 0.15,
-                 boxplot_color: str = "tab:blue",
+                 xtick_size: int = 22,
+                 ytick_size: int = 22,
                  font_size: int = 26) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
                          radar_line_color=radar_line_color,
                          radar_fill_alpha=radar_fill_alpha,
-                         boxplot_color=boxplot_color,
+                         xtick_size=xtick_size,
+                         ytick_size=ytick_size,
                          font_size=font_size)
 
 
