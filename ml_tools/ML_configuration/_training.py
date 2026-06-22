@@ -35,7 +35,6 @@ class DragonTrainingConfig(_BaseModelParams):
                  task: str,
                  device: str,
                  finalized_filename: str,
-                 random_state: int = 101,
                  # optional targets
                  targets: Optional[Union[list[str], str]] = None,
                  # optional for callbacks
@@ -54,7 +53,6 @@ class DragonTrainingConfig(_BaseModelParams):
             task (str): Type of ML task (use TaskKeys).
             device (str): Device to run training on.
             finalized_filename (str): Filename for the Dragon ML Finalized-file.
-            random_state (int): Seed for reproducibility.
             targets (List[str] | str | None): Optional list of target column names or a single target name.
             weight_decay (float | None): Optional weight decay for optimizers.
             early_stop_patience (int | None): Optional patience for early stopping.
@@ -68,8 +66,7 @@ class DragonTrainingConfig(_BaseModelParams):
         self.initial_learning_rate = initial_learning_rate
         self.batch_size = batch_size
         self.device = device
-        self.finalized_filename = finalized_filename
-        self.random_state = random_state        
+        self.finalized_filename = finalized_filename    
         self.targets = targets
         self.weight_decay = weight_decay
         self.early_stop_patience = early_stop_patience

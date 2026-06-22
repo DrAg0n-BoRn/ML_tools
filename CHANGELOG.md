@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.19.0] 2026-06-22
+
+### Added
+
+- ML_datasetmaster:
+    - `_BaseDatasetMaker`, Added `save_dataset_bundle()` method to serialize train, validation, and test datasets along with all structural metadata (scalers, class maps, feature/target names) into a single `.pth` dictionary file.
+    - `_BaseDatasetMaker`, Added the `@classmethod from_bundle()` alternative constructor to smoothly instantiate dataset objects and reconstruct their PyTorch scaler instances directly from a saved bundle.
+    - `DragonDatasetSequence`, Added `save_dataset_bundle()` and `@classmethod from_bundle()` methods to support serializing and loading sequential datasets, explicitly capturing the raw sequences, time axes, windowed tensors, and the unified scaler state.
+    - `_BaseDatasetMaker`, `DragonDataset`, `DragonDatasetMulti`. Added `validation_split` and `test_split` attributes to store the proportions of the dataset allocated for validation and testing, respectively. These values are now included in the serialized dataset bundle for reproducibility.
+
+- keys:
+    - `DatasetKeys`, Added relevant keys for the new dataset bundle format.
+
+### Changed
+
+- ML_datasetmaster:
+    - `_PytorchDataset`, Modified the `__init__` method to directly accept and process native `torch.Tensor` objects for the `features` and `labels` arguments, preventing conversion overhead and enabling seamless reconstruction from saved bundles.
+
+### Removed
+
+- ML_configuration:
+    - `DragonTrainingConfig`, Removed the `random_state` parameter, as it is not directly used in the training configuration and can be set at the dataset level if needed.
+
 ## [22.18.1] 2026-06-18
 
 ### Added

@@ -107,6 +107,9 @@ class DragonDatasetSequence:
         self._split_data(validation_size=validation_size, test_size=test_size, verbose=verbose)
         self._normalize_data(verbose=verbose)
         self._generate_windows(verbose=verbose)
+        
+        self.validation_split = validation_size
+        self.test_split = test_size
     
     def _split_data(self, validation_size: float = 0.2, test_size: float = 0.1, verbose: int = 3) -> None:
         """
@@ -414,3 +417,139 @@ class DragonDatasetSequence:
             
         return s
 
+    def save_dataset_bundle(self, directory: Union[str, Path], verbose: bool = True) -> None:
+        """
+        Saves the train, validation, and test datasets along with all sequence 
+        arrays, time axes, and scalers to a single .pth file.
+        """
+        if not self._are_windows_generated:
+            _LOGGER.error("Cannot save bundle: windows have not been generated.")
+            raise RuntimeError()
+
+        save_path = make_fullpath(directory, make=True, enforce="directory")
+        
+        safe_mode = self.prediction_mode.replace("-", "_").replace(" ", "_")
+        filename = f"{DatasetKeys.DATASET_FILENAME}_{safe_mode}_w{self.sequence_length}.pth"
+            
+        filepath = save_path / filename
+
+        scaler_state = self.scaler._get_state() if self.scaler else None
+
+        bundle = {
+            DatasetKeys.TRAIN_SUBSET: {
+                "features": self.train_dataset.features if self._train_dataset else None, # type: ignore
+                "labels": self.train_dataset.labels if self._train_dataset else None # type: ignore
+            },
+            DatasetKeys.VALIDATION_SUBSET: {
+                "features": self.validation_dataset.features if self._val_dataset else None, # type: ignore
+                "labels": self.validation_dataset.labels if self._val_dataset else None # type: ignore
+            },
+            DatasetKeys.TEST_SUBSET: {
+                "features": self.test_dataset.features if self._test_dataset else None, # type: ignore
+                "labels": self.test_dataset.labels if self._test_dataset else None # type: ignore
+            },
+            DatasetKeys.FEATURE_NAMES: self.feature_names,
+            DatasetKeys.TARGET_NAMES: self.target_names,
+            DatasetKeys.VALIDATION_SPLIT: self.validation_split,
+            DatasetKeys.TEST_SPLIT: self.test_split,
+            "prediction_mode": self.prediction_mode,
+            "sequence_length": self.sequence_length,
+            "sequence": self.sequence,
+            "time_axis": self.time_axis,
+            "train_sequence": self.train_sequence,
+            "val_sequence": self.val_sequence,
+            "test_sequence": self.test_sequence,
+            "train_time_axis": self.train_time_axis,
+            "val_time_axis": self.val_time_axis,
+            "test_time_axis": self.test_time_axis,
+            ScalerKeys.FEATURE_SCALER: scaler_state,
+            ScalerKeys.TARGET_SCALER: scaler_state,
+        }
+        
+        torch.save(bundle, filepath)
+        
+        if verbose:
+            _LOGGER.info(f"Sequence dataset bundle saved to '{filepath.name}'.")
+
+    @classmethod
+    def from_bundle(cls, filepath: Union[str, Path]) -> 'DragonDatasetSequence':
+        """
+        Alternative constructor to instantiate a sequence dataset object from a saved bundle.
+        """
+        target_filepath = make_fullpath(filepath, make=False)
+        
+        # check if path is a file
+        if not target_filepath.is_file():
+            # check if it is a directory containing a file with the expected bundle name pattern
+            if target_filepath.is_dir():
+                expected_pattern = f"{DatasetKeys.DATASET_FILENAME}_*.pth"
+                matching_files = list(target_filepath.glob(expected_pattern))
+                if not matching_files:
+                    _LOGGER.error(f"No files matching pattern '{expected_pattern}' found in directory '{target_filepath}'.")
+                    raise FileNotFoundError()
+                elif len(matching_files) > 1:
+                    _LOGGER.error(f"Multiple files matching pattern '{expected_pattern}' found in directory '{target_filepath}'. Please specify the exact file.")
+                    raise FileNotFoundError()
+                else:
+                    target_filepath = matching_files[0]
+            else:
+                _LOGGER.error(f"Provided path '{target_filepath}' is neither a file nor a directory.")
+                raise FileNotFoundError()
+            
+        bundle = torch.load(target_filepath, weights_only=False)
+        
+        instance = cls.__new__(cls)
+        
+        # 1. Restore Metadata and Flags
+        instance.prediction_mode = bundle.get("prediction_mode")
+        instance.sequence_length = bundle.get("sequence_length")
+        instance._is_split = True
+        instance._is_normalized = True
+        instance._are_windows_generated = True
+        instance.validation_split = bundle.get(DatasetKeys.VALIDATION_SPLIT, 0.0)
+        instance.test_split = bundle.get(DatasetKeys.TEST_SPLIT, 0.0)
+        
+        # 2. Restore Raw Sequences and Time Axes
+        instance.sequence = bundle.get("sequence")
+        instance.time_axis = bundle.get("time_axis")
+        instance.train_sequence = bundle.get("train_sequence")
+        instance.val_sequence = bundle.get("val_sequence")
+        instance.test_sequence = bundle.get("test_sequence")
+        instance.train_time_axis = bundle.get("train_time_axis")
+        instance.val_time_axis = bundle.get("val_time_axis")
+        instance.test_time_axis = bundle.get("test_time_axis")
+
+        # 3. Reconstruct Scaler
+        scaler_state = bundle.get(ScalerKeys.FEATURE_SCALER)
+        if scaler_state:
+            instance.scaler = DragonScaler.load(scaler_state, verbose=False)
+        else:
+            instance.scaler = None
+
+        # 4. Reconstruct Datasets
+        feature_names = bundle.get(DatasetKeys.FEATURE_NAMES, [SequenceDatasetKeys.FEATURE_NAME])
+        target_names = bundle.get(DatasetKeys.TARGET_NAMES, [SequenceDatasetKeys.TARGET_NAME])
+
+        def _build_ds(split_key: str):
+            split_data = bundle.get(split_key)
+            if split_data and split_data.get("features") is not None and split_data.get("labels") is not None:
+                features = split_data["features"]
+                labels = split_data["labels"]
+                ds = _PytorchDataset(
+                    features=features,
+                    labels=labels,
+                    labels_dtype=labels.dtype,
+                    features_dtype=features.dtype,
+                    feature_names=feature_names,
+                    target_names=target_names
+                )
+                ds._feature_scaler = instance.scaler
+                ds._target_scaler = instance.scaler
+                return ds
+            return None
+
+        instance._train_dataset = _build_ds(DatasetKeys.TRAIN_SUBSET)
+        instance._val_dataset = _build_ds(DatasetKeys.VALIDATION_SUBSET)
+        instance._test_dataset = _build_ds(DatasetKeys.TEST_SUBSET)
+
+        return instance

@@ -78,6 +78,9 @@ class DragonDataset(_BaseDatasetMaker):
             _LOGGER.error(f"Invalid validation split of {validation_size}.")
             raise ValueError()
         
+        self.validation_split = validation_size
+        self.test_split = test_size
+        
         # --- 1. Identify features (from schema) ---
         self._feature_names = list(schema.feature_names)
         
@@ -310,6 +313,9 @@ class DragonDatasetMulti(_BaseDatasetMaker):
             _LOGGER.error(f"Invalid 'kind' {kind}.")
             raise ValueError()
         self.kind = kind
+        
+        self.validation_split = validation_size
+        self.test_split = test_size
         
         # --- 1. Get features and targets from schema/args ---
         self._feature_names = list(schema.feature_names)

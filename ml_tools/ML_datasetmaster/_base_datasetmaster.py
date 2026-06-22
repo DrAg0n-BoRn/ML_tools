@@ -30,19 +30,23 @@ class _PytorchDataset(Dataset):
     Internal helper class to create a PyTorch Dataset.
     Converts numpy/pandas data into tensors for model consumption.
     """
-    def __init__(self, features: Union[numpy.ndarray, pandas.DataFrame], 
-                 labels: Union[numpy.ndarray, pandas.Series, pandas.DataFrame],
+    def __init__(self, features: Union[torch.Tensor, numpy.ndarray, pandas.DataFrame], 
+                 labels: Union[torch.Tensor, numpy.ndarray, pandas.Series, pandas.DataFrame],
                  labels_dtype: torch.dtype,
                  features_dtype: torch.dtype = torch.float32,
                  feature_names: Optional[list[str]] = None,
                  target_names: Optional[list[str]] = None):
         
-        if isinstance(features, numpy.ndarray):
+        if isinstance(features, torch.Tensor):
+            self.features = features.to(dtype=features_dtype)
+        elif isinstance(features, numpy.ndarray):
             self.features = torch.tensor(features, dtype=features_dtype)
         else: # It's a pandas.DataFrame
             self.features = torch.tensor(features.to_numpy(), dtype=features_dtype)
 
-        if isinstance(labels, numpy.ndarray):
+        if isinstance(labels, torch.Tensor):
+            self.labels = labels.to(dtype=labels_dtype)
+        elif isinstance(labels, numpy.ndarray):
             self.labels = torch.tensor(labels, dtype=labels_dtype)
         elif isinstance(labels, (pandas.Series, pandas.DataFrame)):
             self.labels = torch.tensor(labels.to_numpy(), dtype=labels_dtype)
@@ -119,7 +123,9 @@ class _BaseDatasetMaker(ABC):
         self._y_test_shape = (0,)
         self.class_map: dict[str, int] = dict()
         self.classes: list[str] = list()
-        
+        self.validation_split: float = 0.0
+        self.test_split: float = 0.0
+
     def _prepare_feature_scaler(self, 
                         X_train: pandas.DataFrame, 
                         y_train: Union[pandas.Series, pandas.DataFrame], 
@@ -401,4 +407,139 @@ class _BaseDatasetMaker(ABC):
             self.save_scaler(directory=directory, verbose=verbose)
         if self.class_map:
             self.save_class_map(directory=directory, verbose=verbose)
+            
+    def save_dataset_bundle(self, directory: Union[str, Path], verbose: bool=True) -> None:
+        """
+        Saves the train, validation, and test sets along with all metadata 
+        to a single .pth file using dictionary serialization.
+        """
+        if not self.id: 
+            _LOGGER.error("Must set the dataset `id` before saving the dataset bundle.")
+            raise ValueError()
+        
+        save_path = make_fullpath(directory, make=True, enforce="directory")
+        
+        safe_val_test_split = f"Val{self.validation_split}_Test{self.test_split}".replace(".", "_")
+        base_filename = DatasetKeys.DATASET_FILENAME
+        sanitized_id = sanitize_filename(self.id)
+        filename = f"{base_filename}_{sanitized_id}_{safe_val_test_split}.pth"
 
+        filepath = save_path / filename
+        
+        bundle = {
+            DatasetKeys.TRAIN_SUBSET: {
+                "features": self.train_dataset.features if self._train_ds else None, # type: ignore
+                "labels": self.train_dataset.labels if self._train_ds else None  # type: ignore
+            },
+            DatasetKeys.VALIDATION_SUBSET: {
+                "features": self.validation_dataset.features if self._val_ds else None,  # type: ignore
+                "labels": self.validation_dataset.labels if self._val_ds else None  # type: ignore
+            },
+            DatasetKeys.TEST_SUBSET: {
+                "features": self.test_dataset.features if self._test_ds else None,  # type: ignore
+                "labels": self.test_dataset.labels if self._test_ds else None  # type: ignore
+            },
+            DatasetKeys.FEATURE_NAMES: self.feature_names,
+            DatasetKeys.TARGET_NAMES: self.target_names,
+            DatasetKeys.CLASS_MAP: self.class_map,
+            DatasetKeys.CLASSES: self.classes,
+            DatasetKeys.ID: self.id,
+            DatasetKeys.VALIDATION_SPLIT: self.validation_split,
+            DatasetKeys.TEST_SPLIT: self.test_split,
+            ScalerKeys.FEATURE_SCALER: self.feature_scaler._get_state() if self.feature_scaler else None,
+            ScalerKeys.TARGET_SCALER: self.target_scaler._get_state() if self.target_scaler else None
+        }
+        
+        torch.save(bundle, filepath)
+        
+        if verbose:
+            _LOGGER.info(f"Dataset bundle saved to '{filepath.name}'.")
+
+    @classmethod
+    def from_bundle(cls, filepath: Union[str, Path]):
+        """
+        Alternative constructor to instantiate a dataset object from a saved bundle.
+        """
+        target_filepath = make_fullpath(filepath, make=False)
+        
+        # check if path is a file
+        if not target_filepath.is_file():
+            # check if it is a directory containing a file with the expected bundle name pattern
+            if target_filepath.is_dir():
+                expected_pattern = f"{DatasetKeys.DATASET_FILENAME}_*.pth"
+                matching_files = list(target_filepath.glob(expected_pattern))
+                if not matching_files:
+                    _LOGGER.error(f"No files matching pattern '{expected_pattern}' found in directory '{target_filepath}'.")
+                    raise FileNotFoundError()
+                elif len(matching_files) > 1:
+                    _LOGGER.error(f"Multiple files matching pattern '{expected_pattern}' found in directory '{target_filepath}'. Please specify the exact file.")
+                    raise FileNotFoundError()
+                else:
+                    target_filepath = matching_files[0]
+            else:
+                _LOGGER.error(f"Provided path '{target_filepath}' is neither a file nor a directory.")
+                raise FileNotFoundError()
+        
+        bundle = torch.load(target_filepath, weights_only=False)
+        
+        # Bypass standard __init__ which expects pandas DataFrames
+        instance = cls.__new__(cls)
+        
+        # 1. Initialize base attributes manually
+        instance._train_ds = None
+        instance._val_ds = None
+        instance._test_ds = None
+        instance.feature_scaler = None
+        instance.target_scaler = None
+        instance._X_train_shape = (0,0)
+        instance._X_val_shape = (0,0)
+        instance._X_test_shape = (0,0)
+        instance._y_train_shape = (0,)
+        instance._y_val_shape = (0,)
+        instance._y_test_shape = (0,)
+        
+        # 2. Extract Metadata
+        instance._feature_names = bundle.get(DatasetKeys.FEATURE_NAMES, [])
+        instance._target_names = bundle.get(DatasetKeys.TARGET_NAMES, [])
+        instance.class_map = bundle.get(DatasetKeys.CLASS_MAP, {})
+        instance.classes = bundle.get(DatasetKeys.CLASSES, [])
+        instance._id = bundle.get(DatasetKeys.ID, "")
+        instance.validation_split = bundle.get(DatasetKeys.VALIDATION_SPLIT, 0.0)
+        instance.test_split = bundle.get(DatasetKeys.TEST_SPLIT, 0.0)
+        
+        # 3. Reconstruct Scalers
+        f_scaler_state = bundle.get(ScalerKeys.FEATURE_SCALER, None)
+        t_scaler_state = bundle.get(ScalerKeys.TARGET_SCALER, None)
+        
+        if f_scaler_state:
+            instance.feature_scaler = DragonScaler.load(f_scaler_state, verbose=False)
+            
+        if t_scaler_state:
+            instance.target_scaler = DragonScaler.load(t_scaler_state, verbose=False)
+            
+        # 4. Reconstruct Datasets
+        def _build_ds(split_key: str):
+            split_data = bundle.get(split_key)
+            if split_data and split_data.get("features") is not None and split_data.get("labels") is not None:
+                features = split_data["features"]
+                labels = split_data["labels"]
+                ds = _PytorchDataset(
+                    features=features,
+                    labels=labels,
+                    labels_dtype=labels.dtype,
+                    features_dtype=features.dtype,
+                    feature_names=instance._feature_names,
+                    target_names=instance._target_names
+                )
+                ds._classes = instance.classes
+                ds._class_map = instance.class_map
+                ds._feature_scaler = instance.feature_scaler
+                ds._target_scaler = instance.target_scaler
+                return ds, features.shape, labels.shape
+            return None, (0,0), (0,)
+
+        instance._train_ds, instance._X_train_shape, instance._y_train_shape = _build_ds(DatasetKeys.TRAIN_SUBSET)
+        instance._val_ds, instance._X_val_shape, instance._y_val_shape = _build_ds(DatasetKeys.VALIDATION_SUBSET)
+        instance._test_ds, instance._X_test_shape, instance._y_test_shape = _build_ds(DatasetKeys.TEST_SUBSET)
+
+        return instance

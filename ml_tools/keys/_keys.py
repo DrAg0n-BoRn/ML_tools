@@ -81,10 +81,22 @@ class DatasetKeys:
     """Keys for saving dataset artifacts. Also used by FeatureSchema"""
     FEATURE_NAMES = "feature_names"
     TARGET_NAMES = "target_names"
+    CLASS_MAP = "class_map"
+    CLASSES = "classes"
+    ID = "id"
+    VALIDATION_SPLIT = "validation_split"
+    TEST_SPLIT = "test_split"
+    
     SCALER_PREFIX = "scaler_"
     # Feature Schema
     CONTINUOUS_NAMES = "continuous_feature_names"
     CATEGORICAL_NAMES = "categorical_feature_names"
+    # Dataset splits
+    TRAIN_SUBSET = "train_set"
+    VALIDATION_SUBSET = "validation_set"
+    TEST_SUBSET = "test_set"
+    # Dataset filename
+    DATASET_FILENAME = "dataset_bundle"
 
 
 class SHAPKeys:
@@ -137,10 +149,10 @@ class UtilityKeys:
 class VisionKeys:
     """For vision ML metrics"""
     SEGMENTATION_REPORT = "segmentation_report"
-    SEGMENTATION_HEATMAP = "segmentation_metrics_heatmap"
-    SEGMENTATION_CONFUSION_MATRIX = "segmentation_confusion_matrix"
-    SEGMENTATION_RADAR_PLOT = "segmentation_radar_plot"
-    SEGMENTATION_DISTRIBUTION_PLOT = "segmentation_distribution_plot"
+    SEGMENTATION_HEATMAP = "heatmap"
+    SEGMENTATION_CONFUSION_MATRIX = "confusion_matrix"
+    SEGMENTATION_RADAR_PLOT = "radar_plot"
+    SEGMENTATION_DISTRIBUTION_PLOT = "distribution_plot"
     # Object detection
     OBJECT_DETECTION_REPORT = "object_detection_report"
 
