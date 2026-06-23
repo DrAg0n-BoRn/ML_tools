@@ -35,6 +35,16 @@ class DragonDatasetVision:
     2. `from_folders()`: Loads from pre-split train/val/test directories.
     
     Uses online augmentations per epoch (image augmentation without creating new files).
+    
+    Workflow:
+    ```
+    1. maker = DragonDatasetVision.from_folder("data/") # or from_folders(train_dir, val_dir, test_dir)
+    2. maker.split_data(val_size=0.2, test_size=0.1) # Only if using from_folder()
+    3. maker.configure_transforms(resize_size=256, crop_size=224, mean=[...], std=[...], extra_train_transforms=[...])
+    4. train_ds, val_ds, test_ds = maker.get_datasets()
+    5. maker.save_transform_recipe('val_transform_recipe.json')
+    6. maker.save_class_map("data/") # Saves class_to_index mapping as JSON
+    ```
     """
     def __init__(self):
         """
@@ -216,8 +226,8 @@ class DragonDatasetVision:
     def configure_transforms(self, 
                              resize_size: int = 256, 
                              crop_size: Optional[int] = 224, 
-                             mean: Optional[list[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[list[float]] = [0.229, 0.224, 0.225],
+                             mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
+                             std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
                              pre_transforms: Optional[list[Callable]] = None,
                              extra_train_transforms: Optional[list[Callable]] = None) -> 'DragonDatasetVision':
         """
@@ -240,10 +250,10 @@ class DragonDatasetVision:
         Args:
             resize_size (int): The size to resize the smallest edge of the image.
             crop_size (int): The target size (square) for the final cropped image. If None, then it will be the same value as `resize_size`, to avoid losing information from the image borders.
-            mean (List[float] | None): The mean values for normalization (e.g., ImageNet mean).
-            std (List[float] | None): The standard deviation values for normalization (e.g., ImageNet std).
-            extra_train_transforms (List[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
-            pre_transforms (List[Callable] | None): An list of transforms to be applied at the very beginning of the transformations for all sets.
+            mean (tuple[float, ...] | None): The mean values for normalization (e.g., ImageNet mean).
+            std (tuple[float, ...] | None): The standard deviation values for normalization (e.g., ImageNet std).
+            extra_train_transforms (list[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
+            pre_transforms (list[Callable] | None): An list of transforms to be applied at the very beginning of the transformations for all sets.
 
         Returns:
             Self: The same instance, with transforms applied.
@@ -272,8 +282,8 @@ class DragonDatasetVision:
         
         if mean is not None and std is not None:
             self._val_recipe_components.update({
-                VisionTransformRecipeKeys.MEAN: mean,
-                VisionTransformRecipeKeys.STD: std
+                VisionTransformRecipeKeys.MEAN: list(mean),
+                VisionTransformRecipeKeys.STD: list(std)
             })
             self._has_mean_std = True
         
@@ -453,9 +463,12 @@ class DragonDatasetVision:
         # 3. Save the file
         _save_recipe(recipe, file_path)
         
-    def save_class_map(self, save_dir: Union[str,Path]) -> dict[str,int]:
+    def save_class_map(self, save_dir: Union[str,Path]) -> None:
         """
         Saves the class to index mapping {str: int} to a directory.
+        
+        Args:
+            save_dir (str | Path): The directory to save the class map JSON file.
         """
         if not self.class_map:
             _LOGGER.error(f"Class to index mapping is empty.")
@@ -467,8 +480,6 @@ class DragonDatasetVision:
                   verbose=False)
         
         _LOGGER.info(f"Class to index mapping saved to {save_dir}.")
-        
-        return self.class_map
     
     def images_per_dataset(self) -> str:
         """

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.19.1] 2026-06-23
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDataset`, `DragonDatasetMulti`, `DragonDatasetVision`, and `DragonDatasetSequence`, enhanced docstrings and logging messages.
+    - `DragonDatasetVision`, changed parameters `mean` and `std` in the `configure_transforms()` method to accept tuples instead of lists for immutability.
+
+### Added
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation`, added method `save_class_map()` to save the class-to-index mapping as a JSON file.
+
 ## [22.19.0] 2026-06-22
 
 ### Added

@@ -279,7 +279,7 @@ def segmentation_metrics(
     y_true_flat = y_true.ravel()
     y_pred_flat = y_pred.ravel()
 
-    _LOGGER.info("--- Calculating Segmentation Metrics ---")
+    # _LOGGER.info("--- Calculating Segmentation Metrics ---")
 
     # 1. Calculate Global Metrics
     metrics_dict = _calculate_global_metrics(y_true_flat, y_pred_flat, labels)

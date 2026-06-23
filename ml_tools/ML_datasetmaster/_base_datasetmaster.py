@@ -412,6 +412,17 @@ class _BaseDatasetMaker(ABC):
         """
         Saves the train, validation, and test sets along with all metadata 
         to a single .pth file using dictionary serialization.
+        
+        Aggregates the underlying tensor data, dataset splits, metadata 
+        (feature/target names, classes, class maps, dataset ID), and the state 
+        dictionaries of any fitted scalers into a single consolidated dictionary, 
+        saving it to disk.
+
+        Args:
+            directory (Union[str, Path]): The directory where the bundle will be saved. 
+                Parent directories will be created automatically if they do not exist.
+            verbose (bool, optional): Whether to output log messages indicating a 
+                successful save.
         """
         if not self.id: 
             _LOGGER.error("Must set the dataset `id` before saving the dataset bundle.")
@@ -459,6 +470,20 @@ class _BaseDatasetMaker(ABC):
     def from_bundle(cls, filepath: Union[str, Path]):
         """
         Alternative constructor to instantiate a dataset object from a saved bundle.
+        
+        Bypasses standard initialization to reconstruct the entire state from a `.pth` 
+        file. This includes restoring metadata, reloading `DragonScaler` states, and 
+        rebuilding the Custom Dataset instances for the train, validation, and test 
+        subsets. If a directory is provided instead of a file, it will attempt to 
+        automatically resolve the `.pth` file using the default naming pattern.
+
+        Args:
+            filepath (Union[str, Path]): The direct path to the `.pth` file, or a 
+                directory containing exactly one matching dataset bundle.
+
+        Returns:
+            DatasetMaker: An instance of the class fully populated with the loaded 
+                datasets, scalers, and metadata.
         """
         target_filepath = make_fullpath(filepath, make=False)
         
@@ -541,5 +566,7 @@ class _BaseDatasetMaker(ABC):
         instance._train_ds, instance._X_train_shape, instance._y_train_shape = _build_ds(DatasetKeys.TRAIN_SUBSET)
         instance._val_ds, instance._X_val_shape, instance._y_val_shape = _build_ds(DatasetKeys.VALIDATION_SUBSET)
         instance._test_ds, instance._X_test_shape, instance._y_test_shape = _build_ds(DatasetKeys.TEST_SUBSET)
+        
+        _LOGGER.info(f"Dataset loaded from '{target_filepath.name}' with ID '{instance.id}'.")
 
         return instance

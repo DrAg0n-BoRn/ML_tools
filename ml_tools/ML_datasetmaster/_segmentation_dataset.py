@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 
 from ..ML_vision_transformers._core_transforms import _save_recipe
 from ..ML_vision_transformers._inspect_folder import inspect_folder
+from ..IO_tools import save_json
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
@@ -155,9 +156,11 @@ class DragonDatasetSegmentation:
     Workflow:
     1. `maker = DragonDatasetSegmentation.from_folders(img_dir, mask_dir)`
     2. `maker.set_class_map({'background': 0, 'road': 1})`
-    3. `maker.split_data(val_size=0.2)`
-    4. `maker.configure_transforms(crop_size=256)`
-    5. `train_ds, val_ds = maker.get_datasets()`
+    3. `maker.split_data(val_size=0.2, test_size=0.1)`
+    4. `maker.configure_transforms(resize_size=256, crop_size=224, mean=[...], std=[...])`
+    5. `train_ds, val_ds, test_ds = maker.get_datasets()`
+    6. `maker.save_transform_recipe('segmentation_val_recipe.json')`
+    7. `maker.save_class_map('data/')`
     """
     IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
     
@@ -208,7 +211,7 @@ class DragonDatasetSegmentation:
             _LOGGER.error(f"No images with extensions {cls.IMG_EXTENSIONS} found in {image_dir}")
             raise FileNotFoundError()
 
-        _LOGGER.info(f"Found {len(image_files)} images. Searching for matching masks in {mask_dir}...")
+        _LOGGER.info(f"Found {len(image_files)} images. Searching for matching masks in '{mask_dir}'...")
         
         good_img_paths = []
         good_mask_paths = []
@@ -396,8 +399,8 @@ class DragonDatasetSegmentation:
     
         if mean is not None and std is not None:
             self.val_recipe_components.update({
-                VisionTransformRecipeKeys.MEAN: mean,
-                VisionTransformRecipeKeys.STD: std
+                VisionTransformRecipeKeys.MEAN: list(mean),
+                VisionTransformRecipeKeys.STD: list(std)
             })
             self._has_mean_std = True
 
@@ -505,6 +508,24 @@ class DragonDatasetSegmentation:
         
         # Save the file
         _save_recipe(recipe, file_path)
+        
+    def save_class_map(self, save_dir: Union[str,Path]) -> None:
+        """
+        Saves the class to index mapping {str: int} to a directory.
+        
+        Args:
+            save_dir (str | Path): The directory to save the class map JSON file.
+        """
+        if not self.class_map:
+            _LOGGER.error(f"Class to index mapping is empty.")
+            raise ValueError()
+        
+        save_json(data=self.class_map,
+                  directory=save_dir,
+                  filename="Class_to_Index",
+                  verbose=False)
+        
+        _LOGGER.info(f"Class to index mapping saved to {save_dir}.")
         
     def images_per_dataset(self) -> str:
         """
