@@ -38,6 +38,7 @@ class _SegmentationDataset(Dataset):
         
         # --- Propagate 'classes' if they exist for trainer ---
         self.classes: list[str] = []
+        self.class_map: dict[str, int] = {}
 
     def __len__(self):
         return len(self.image_paths)
@@ -283,9 +284,15 @@ class DragonDatasetSegmentation:
         
         # Retroactively sync datasets if split_data was already called
         if self._is_split:
-            if self._train_dataset: self._train_dataset.classes = self.classes
-            if self._val_dataset: self._val_dataset.classes = self.classes
-            if self._test_dataset: self._test_dataset.classes = self.classes
+            if self._train_dataset: 
+                self._train_dataset.classes = self.classes
+                self._train_dataset.class_map = self.class_map
+            if self._val_dataset: 
+                self._val_dataset.classes = self.classes
+                self._val_dataset.class_map = self.class_map
+            if self._test_dataset: 
+                self._test_dataset.classes = self.classes
+                self._test_dataset.class_map = self.class_map
         
         _LOGGER.info(f"Class map set: {class_map}")
         return self
@@ -344,7 +351,8 @@ class DragonDatasetSegmentation:
             test_imgs, test_masks = get_paths(test_indices)
             
             self._test_dataset = _SegmentationDataset(test_imgs, test_masks, transform=None)
-            self._test_dataset.classes = self.classes # type: ignore
+            self._test_dataset.classes = self.classes
+            self._test_dataset.class_map = self.class_map
             _LOGGER.info(f"Test set created with {len(self._test_dataset)} images.")
         else:
             val_imgs, val_masks = get_paths(val_test_indices)
@@ -352,9 +360,11 @@ class DragonDatasetSegmentation:
         self._train_dataset = _SegmentationDataset(train_imgs, train_masks, transform=None)
         self._val_dataset = _SegmentationDataset(val_imgs, val_masks, transform=None)
         
-        # Propagate class names to datasets for trainer
-        self._train_dataset.classes = self.classes # type: ignore
-        self._val_dataset.classes = self.classes # type: ignore
+        # Propagate class names and maps to datasets for trainer
+        self._train_dataset.classes = self.classes
+        self._val_dataset.classes = self.classes
+        self._train_dataset.class_map = self.class_map
+        self._val_dataset.class_map = self.class_map
 
         self._is_split = True
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")

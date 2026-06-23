@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [22.19.2] 2026-06-23
+
+### Fixed
+
+- ML_evaluation:
+    - `_calculate_per_image_metrics` (Segmentation): Fixed a zero-division logic error that artificially lowered distribution boxplot scores when an image tile correctly lacked a specific class.
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation`: Add propagation in `split_data()` and `set_class_map()` to ensure the `class_map` dictionary is correctly natively stored and handed down to the `_SegmentationDataset` child splits.
+
+- ML_evaluation:
+    - `segmentation_metrics`: Replaced `class_names` parameter with a single `class_map` dictionary parameter to strictly enforce label mapping and prevent dynamic inference errors.
+
+- ML_trainer:
+    - `DragonTrainer`: Updated the `_evaluate()` method for segmentation tasks to automatically extract the `class_map` attribute from the dataset and pass it to the evaluation metrics orchestrator.
+
+
 ## [22.19.1] 2026-06-23
 
 ### Changed

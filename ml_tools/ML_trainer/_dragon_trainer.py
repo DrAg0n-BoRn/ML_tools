@@ -635,26 +635,16 @@ class DragonTrainer(_BaseDragonTrainer):
         
         # Segmentation tasks
         elif self.kind in [MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
-            class_names = None
+            # get the class map if it exists
             try:
-                # Try to get 'classes' from VisionDatasetMaker
-                if hasattr(dataset_for_artifacts, 'classes'):
-                    class_names = dataset_for_artifacts.classes # type: ignore
-                # Fallback for Subset
-                elif hasattr(dataset_for_artifacts, 'dataset') and hasattr(dataset_for_artifacts.dataset, 'classes'): # type: ignore
-                     class_names = dataset_for_artifacts.dataset.classes # type: ignore
+                class_map = dataset_for_artifacts.class_map
             except AttributeError:
-                pass # class_names is still None
-
-            if class_names is None:
-                try:
-                    # Fallback to 'target_names'
-                    class_names = dataset_for_artifacts.target_names # type: ignore
-                except AttributeError:
-                    # Fallback to inferring from labels
-                    labels = np.unique(y_true)
-                    class_names = [f"Class {i}" for i in labels]
-                    _LOGGER.warning(f"Dataset has no 'classes' or 'target_names' attribute. Using generic names.")
+                _LOGGER.warning("Dataset has no 'class_map' attribute. Using generics.")
+                class_map = None
+            else:
+                if not isinstance(class_map, dict):
+                    _LOGGER.warning(f"Dataset has a 'class_map' attribute, but it is not a dictionary: '{type(class_map)}'.")
+                    class_map = None
             
             # Check configuration
             config = None
@@ -666,7 +656,7 @@ class DragonTrainer(_BaseDragonTrainer):
             segmentation_metrics(y_true=y_true,
                                  y_pred=y_pred,
                                  save_dir=save_dir,
-                                 class_names=class_names,
+                                 class_map=class_map,
                                  config=config)
     
     def explain_shap(self,

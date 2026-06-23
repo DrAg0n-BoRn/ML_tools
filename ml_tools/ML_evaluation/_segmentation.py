@@ -54,13 +54,15 @@ def _calculate_per_image_metrics(y_true: np.ndarray, y_pred: np.ndarray, labels:
         yt = y_true[i].ravel()
         yp = y_pred[i].ravel()
         
-        # Use 0 for zero_division to avoid NaNs in per-image metrics when a class is missing in either GT or predictions
+        # Identify labels present in either the ground truth or the prediction for this image
+        present_labels = np.unique(np.concatenate((yt, yp)))
+        
         dice = np.asarray(f1_score(yt, yp, average=None, labels=labels, zero_division=0))
         iou = np.asarray(jaccard_score(yt, yp, average=None, labels=labels, zero_division=0))
         
-        for j, _ in enumerate(labels):
+        for j, label_val in enumerate(labels):
             # Only record if the class was actually present in ground truth or predictions
-            if not np.isnan(dice[j]):
+            if label_val in present_labels:
                 records.append({'Image': i, 'Class': display_names[j], 'Metric': 'Dice', 'Score': dice[j]})
                 records.append({'Image': i, 'Class': display_names[j], 'Metric': 'IoU', 'Score': iou[j]})
                 
@@ -255,7 +257,7 @@ def segmentation_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     save_dir: Union[str, Path],
-    class_names: Optional[list[str]] = None,
+    class_map: Optional[dict[str, int]] = None,
     config: Optional[Union[FormatBinarySegmentationMetrics, FormatMultiClassSegmentationMetrics]] = None
 ):
     """
@@ -267,19 +269,23 @@ def segmentation_metrics(
     original_rc_params = plt.rcParams.copy()
     plt.rcParams.update({'font.size': format_config.font_size})
     
-    labels = np.unique(np.concatenate((np.unique(y_true), np.unique(y_pred)))).astype(int)
+    # Determine all unique labels currently present in the data
+    present_labels = np.unique(np.concatenate((np.unique(y_true), np.unique(y_pred)))).astype(int)
     
-    if class_names is None or len(class_names) != len(labels):
-        if class_names is not None:
-            _LOGGER.warning(f"Number of class_names ({len(class_names)}) does not match unique labels ({len(labels)}). Using default names.")
-        display_names = [f"Class {i}" for i in labels]
+    if class_map is not None:
+        # Sort by value (index) to ensure correct metric alignment
+        sorted_map = sorted(class_map.items(), key=lambda item: item[1])
+        labels = np.array([val for _, val in sorted_map])
+        display_names = [wrap_text(name) for name, _ in sorted_map]
+        
+        if len(present_labels) > 0 and not np.all(np.isin(present_labels, labels)):
+            _LOGGER.warning("Data contains label indices not present in the expected class mapping.")
     else:
-        display_names = [wrap_text(_name) for _name in class_names]
+        labels = present_labels
+        display_names = [f"Class {i}" for i in labels]
 
     y_true_flat = y_true.ravel()
     y_pred_flat = y_pred.ravel()
-
-    # _LOGGER.info("--- Calculating Segmentation Metrics ---")
 
     # 1. Calculate Global Metrics
     metrics_dict = _calculate_global_metrics(y_true_flat, y_pred_flat, labels)
