@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.0.1] 2026-06-24
+
+### Added
+
+- ML_inference:
+    - Added `_BaseVisionInferenceHandler` to centralize duplicated vision-specific code (`set_transform`, `predict_from_pil`, `predict_from_file`, and `predict_from_directory`).
+    - Implemented a static color palette generation method (`_initialize_color_map`) for vision handlers to lock distinct colors to specific labels globally.
+
+### Changed
+
+- ML_inference:
+    - Refactored `DragonObjectDetectionInference` and `DragonSegmentationInference` to inherit from the newly created `_BaseVisionInferenceHandler`.
+    - Updated `_create_overlapped_image` in both Object Detection and Segmentation handlers to utilize the initialized global color map, resolving the issue of inconsistent colors shifting across image tiles.
+    - Overrode the `set_class_map` method in vision handlers to ensure the color palette is automatically regenerated if class labels are updated dynamically.
+
 ## [23.0.0] 2026-06-24
 
 ### Changed

@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Any
 from abc import ABC, abstractmethod
 
 from ..ML_finalize_handler import FinalizedFileHandler
@@ -152,15 +152,15 @@ class _BaseInferenceHandler(ABC):
         self._class_map = class_map
         self._idx_to_class = {v: k for k, v in class_map.items()}
         self._loaded_class_map = True
-        _LOGGER.info("InferenceHandler: Class map set for label-to-name translation.")
+        _LOGGER.info("Class map set for label-to-name translation.")
 
     @abstractmethod
-    def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def predict_batch(self, inputs: Union[np.ndarray, torch.Tensor, list[torch.Tensor]]) -> dict[str, Any]:
         """Core batch prediction method. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
-    def predict(self, features: Union[np.ndarray, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def predict(self, single_input: Union[np.ndarray, torch.Tensor]) -> dict[str, Any]:
         """Core single-sample prediction method. Must be implemented by subclasses."""
         pass
 
