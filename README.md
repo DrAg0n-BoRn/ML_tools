@@ -108,6 +108,7 @@ data_exploration
 ensemble_evaluation
 ensemble_inference
 ensemble_learning
+ensemble_optimization
 ETL_cleaning
 ETL_engineering
 IO_tools
@@ -116,7 +117,6 @@ optimization_tools
 outlier_detection
 path_manager
 plot_fonts
-PSO_optimization
 resampling
 schema
 serde

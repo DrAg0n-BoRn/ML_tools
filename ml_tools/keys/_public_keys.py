@@ -1,4 +1,4 @@
-from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys
+from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, PyTorchInferenceKeys, ObjectDetectionKeys
 
 
 class CheckpointKeys:
@@ -53,3 +53,20 @@ class TaskKeys:
     SEQUENCE_VALUE = MLTaskKeys.SEQUENCE_VALUE
     DIFFUSION = MLTaskKeys.DIFFUSION
     AUTOENCODER = MLTaskKeys.AUTOENCODER
+
+class InferenceKeys:
+    # For regression tasks
+    PREDICTIONS = PyTorchInferenceKeys.PREDICTIONS
+    
+    # For distribution regression tasks
+    VARIANCE = PyTorchInferenceKeys.VARIANCE
+    
+    # For classification / vision tasks
+    LABELS = PyTorchInferenceKeys.LABELS
+    PROBABILITIES = PyTorchInferenceKeys.PROBABILITIES
+    LABEL_NAMES = PyTorchInferenceKeys.LABEL_NAMES
+    
+    #For object detection tasks
+    BOXES = ObjectDetectionKeys.BOXES
+    SCORES = ObjectDetectionKeys.SCORES
+    

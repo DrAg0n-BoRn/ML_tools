@@ -15,7 +15,7 @@ from ..keys._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys, ScalerKey
 from ._base_datasetmaster import _PytorchDataset
 
 
-_LOGGER = get_logger("DragonSequenceDataset")
+_LOGGER = get_logger("Sequence Dataset")
 
 
 __all__ = [

@@ -260,7 +260,10 @@ def _load_translation_mapping(
                 val_col = df_map.columns[1]
                 
                 # Convert to dictionary (drop NaNs to be safe)
-                raw_map = df_map.dropna(subset=[key_col, val_col]).set_index(key_col)[val_col].to_dict()
+                raw_map = {
+                    str(k): str(v)
+                    for k, v in df_map.dropna(subset=[key_col, val_col]).set_index(key_col)[val_col].to_dict().items()
+                }
                 
             except Exception as e:
                 _LOGGER.error(f"Error reading CSV mapping file: {e}")

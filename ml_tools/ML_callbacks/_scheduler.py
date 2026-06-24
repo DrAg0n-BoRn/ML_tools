@@ -7,7 +7,7 @@ from .._core import get_logger
 from ._base import _Callback
 
 
-_LOGGER = get_logger("LR Scheduler")
+_LOGGER = get_logger("Dragon LR Scheduler")
 
 
 __all__ = [

@@ -11,7 +11,7 @@ from ..keys._keys import SchemaKeys, DatasetKeys, PytorchModelArchitectureKeys
 from .._core._schema_load_ops import prepare_schema_from_json
 
 
-_LOGGER = get_logger("FeatureSchema")
+_LOGGER = get_logger("Feature Schema")
 
 
 __all__ = [

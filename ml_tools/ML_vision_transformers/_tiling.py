@@ -1,9 +1,12 @@
 from typing import Union, Literal, Optional
 from pathlib import Path
 from PIL import Image
+import re
 
+from ..keys._keys import VisionKeys
 from .._core import get_logger
 from ..path_manager import make_fullpath
+
 
 
 _LOGGER = get_logger("Vision Tiling")
@@ -11,6 +14,8 @@ _LOGGER = get_logger("Vision Tiling")
 
 __all__ = [
     "make_tiled_dataset",
+    "make_tiled_inference",
+    "reconstruct_mask_overlapped_tiles"
 ]
 
 
@@ -169,3 +174,148 @@ def make_tiled_dataset(
         _LOGGER.info(f"Total empty tiles skipped: {skipped_empty_tiles}")
     
     _LOGGER.info(f"Tiling completed. Output saved to {output_dir.name}")
+
+
+def make_tiled_inference(
+    input_dir: Union[str, Path], 
+    window_size: int = 512, 
+    ratio_strategy: Literal["pad-white", "pad-black"] = "pad-black", 
+) -> None:
+    """
+    Slices high-resolution images into smaller PNG images for inference.
+    
+    Creates a new directory named `<input_dir>_inference_tiled` at the same level 
+    as the input directory. Each processed image gets its own subdirectory containing 
+    its respective tiles to facilitate easier reconstruction.
+    
+    Args:
+        input_dir (str | Path): Path to the directory containing source images
+        window_size (int): The width and height of the square output tiles in pixels.
+        ratio_strategy (Literal["pad-white", "pad-black"]): Strategy for handling edge tiles
+            when dimensions are not perfectly divisible by the window size.
+            - "pad-white": Fills out-of-bounds areas with 255 (white).
+            - "pad-black": Fills out-of-bounds areas with 0 (black).
+    """
+    input_path = make_fullpath(input_dir, make=False, enforce="directory")
+    output_dir = input_path.parent / f"{input_path.name}_inference_tiled"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    image_files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS]
+    
+    if not image_files:
+        _LOGGER.error(f"No valid images found in {input_dir}")
+        raise FileNotFoundError()
+
+    pad_color = 255 if ratio_strategy == "pad-white" else 0
+
+    for img_file in image_files:
+        img = Image.open(img_file)
+        width, height = img.size
+        
+        if width < window_size or height < window_size:
+            _LOGGER.warning(f"Image {img_file.name} ({width}x{height}) is smaller than window_size {window_size}. Skipping.")
+            img.close()
+            continue
+        
+        # Create a specific subdirectory for this image's tiles
+        image_out_dir = output_dir / img_file.stem
+        image_out_dir.mkdir(parents=True, exist_ok=True)
+
+        for y in range(0, height, window_size):
+            for x in range(0, width, window_size):
+                
+                crop_x, crop_y = x, y
+                        
+                box = (crop_x, crop_y, min(crop_x + window_size, width), min(crop_y + window_size, height))
+                img_patch = img.crop(box)
+
+                if img_patch.size[0] < window_size or img_patch.size[1] < window_size:
+                    new_img_patch = Image.new(img.mode, (window_size, window_size), color=pad_color)
+                    new_img_patch.paste(img_patch, (0, 0))
+                    img_patch = new_img_patch
+
+                patch_name = f"{img_file.stem}_y{crop_y}_x{crop_x}"
+                img_patch.save(image_out_dir / f"{patch_name}.png", format="png")
+                
+        img.close()
+            
+    _LOGGER.info(f"Inference tiling completed. Output saved to {output_dir.name}")
+
+
+def reconstruct_mask_overlapped_tiles(
+    input_dir: Union[str, Path], 
+    output_dir: Union[str, Path],
+    verbose: int = 2
+) -> None:
+    """
+    Reconstructs a full image from smaller tiled patches that have the `*_y<y_coord>_x<x_coord>_overlapped.png` suffix.
+    
+    The resulting image will be named after the `input_dir` and saved into the provided `output_dir`.
+    
+    Args:
+        input_dir (str | Path): Path to the directory containing the overlapped tiles. 
+            - Directory should contain files named in the required format.
+            - Directory name will be used as the base name for the reconstructed image.
+        output_dir (str | Path): Path to the directory where the reconstructed image will be saved.
+        verbose (int): Verbosity level for logging.
+    """
+    input_path = make_fullpath(input_dir, make=False, enforce="directory")
+    output_path = make_fullpath(output_dir, make=True, enforce="directory")
+    
+    reconstructed_name = input_path.name
+    
+    tile_files = list(input_path.glob(f"*{VisionKeys.OVERLAPPED_SUFFIX}"))
+    
+    if not tile_files:
+        _LOGGER.error(f"No '{VisionKeys.OVERLAPPED_SUFFIX}' files found in '{input_dir}'")
+        raise FileNotFoundError()
+
+    max_x = 0
+    max_y = 0
+    tile_w = 0
+    tile_h = 0
+    img_mode = "RGB"
+    
+    tiles_info = []
+    pattern = re.compile(r"_y(\d+)_x(\d+)" + re.escape(VisionKeys.OVERLAPPED_SUFFIX) + r"$")
+    
+    for tile_file in tile_files:
+        match = pattern.search(tile_file.name)
+        if not match:
+            _LOGGER.warning(f"Filename '{tile_file.name}' does not match expected pattern '{pattern.pattern}' for overlapped tiles. Skipping.")
+            continue
+            
+        y, x = int(match.group(1)), int(match.group(2))
+        
+        with Image.open(tile_file) as img:
+            w, h = img.size
+            img_mode = img.mode
+            
+        max_x = max(max_x, x)
+        max_y = max(max_y, y)
+        tile_w = max(tile_w, w)
+        tile_h = max(tile_h, h)
+        
+        tiles_info.append((x, y, tile_file))
+        
+    if not tiles_info:
+        _LOGGER.error(f"Could not parse spatial coordinates from filenames in {input_dir}")
+        return
+
+    canvas_width = max_x + tile_w
+    canvas_height = max_y + tile_h
+    
+    if verbose >= 3:
+        _LOGGER.info(f"Canvas size determined: {canvas_width}x{canvas_height} (max_x: {max_x}, max_y: {max_y}, tile_w: {tile_w}, tile_h: {tile_h})")
+    
+    canvas = Image.new(img_mode, (canvas_width, canvas_height))
+    
+    for x, y, tile_file in tiles_info:
+        with Image.open(tile_file) as img:
+            canvas.paste(img, (x, y))
+            
+    output_file = output_path / f"{reconstructed_name}.png"
+    canvas.save(output_file, format="png")
+    
+    if verbose >= 2:
+        _LOGGER.info(f"Reconstruction completed. Image saved as '{output_file.name}'")

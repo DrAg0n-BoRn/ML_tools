@@ -10,7 +10,7 @@ from .._core import get_logger
 from ..keys._keys import VisionKeys, _EvaluationConfig
 
 
-_LOGGER = get_logger("Vision Metrics")
+_LOGGER = get_logger("Object Detection Metrics")
 
 
 __all__ = [

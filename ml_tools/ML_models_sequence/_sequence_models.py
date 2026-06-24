@@ -8,7 +8,7 @@ from ..keys._keys import MLTaskKeys
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 
 
-_LOGGER = get_logger("DragonSequenceLSTM")
+_LOGGER = get_logger("Dragon SequenceLSTM")
 
 
 __all__ = [

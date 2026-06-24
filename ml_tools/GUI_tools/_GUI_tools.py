@@ -12,7 +12,7 @@ from .._core import get_logger
 from ..keys._keys import _OneHotOtherPlaceholder, SchemaKeys
 
 
-_LOGGER = get_logger("GUI Tools")
+_LOGGER = get_logger("Dragon GUI")
 
 
 __all__ = [

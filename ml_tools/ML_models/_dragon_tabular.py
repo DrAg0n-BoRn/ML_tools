@@ -10,7 +10,7 @@ from ..keys._keys import SchemaKeys
 from ._base_save_load import _ArchitectureBuilder
 
 
-_LOGGER = get_logger("DragonTabularTransformer")
+_LOGGER = get_logger("Dragon TabularTransformer")
 
 
 __all__ = [

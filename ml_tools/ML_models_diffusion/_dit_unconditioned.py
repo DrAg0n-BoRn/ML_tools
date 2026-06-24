@@ -11,7 +11,7 @@ from .._core import get_logger
 from ._dit_parts import TimeEmbedding, DiTBlockFlash
 
 
-_LOGGER = get_logger("DragonDiT")
+_LOGGER = get_logger("Dragon DiT")
 
 
 __all__ = [

@@ -14,7 +14,7 @@ from ._models_advanced_helpers import (
 )
 
 
-_LOGGER = get_logger("DragonTabNet")
+_LOGGER = get_logger("Dragon TabNet")
 
 
 __all__ = [

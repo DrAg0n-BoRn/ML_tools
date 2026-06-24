@@ -19,7 +19,7 @@ from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger, wrap_text
 
 
-_LOGGER = get_logger("DiTMetrics")
+_LOGGER = get_logger("DiT Metrics")
 
 
 __all__ = [

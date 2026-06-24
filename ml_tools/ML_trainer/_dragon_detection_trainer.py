@@ -18,7 +18,7 @@ from .._core import get_logger
 from ._base_trainer import _BaseDragonTrainer
 
 
-_LOGGER = get_logger("DragonDetectionTrainer")
+_LOGGER = get_logger("Object Detection Trainer")
 
 
 __all__ = [

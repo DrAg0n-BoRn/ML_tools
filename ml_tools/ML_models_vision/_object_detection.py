@@ -9,7 +9,7 @@ from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 from .._core import get_logger
 
 
-_LOGGER = get_logger("DragonFastRCNN")
+_LOGGER = get_logger("Dragon FastRCNN")
 
 
 __all__ = [

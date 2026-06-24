@@ -18,7 +18,7 @@ from ._models_advanced_helpers import (
 )
 
 
-_LOGGER = get_logger("DragonNodeModel")
+_LOGGER = get_logger("Dragon NODE")
 
 
 __all__ = [

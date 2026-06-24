@@ -7,7 +7,7 @@ from .._core import get_logger
 from ._path_tools import sanitize_filename
 
 
-_LOGGER = get_logger("DragonPathManager")
+_LOGGER = get_logger("Path Manager")
 
 
 __all__ = [

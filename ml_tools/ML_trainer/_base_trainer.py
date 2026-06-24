@@ -17,7 +17,7 @@ from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
 from .._core import get_logger
 
 
-_LOGGER = get_logger("DragonTrainer")
+_LOGGER = get_logger("Dragon Trainer")
 
 
 __all__ = [

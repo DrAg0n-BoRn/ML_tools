@@ -7,6 +7,8 @@ from ._core_transforms import (
 
 from ._tiling import (
     make_tiled_dataset,
+    make_tiled_inference,
+    reconstruct_mask_overlapped_tiles
 )
 
 from ._inspect_folder import (
@@ -33,6 +35,8 @@ __all__ = [
     "RandomHistogramEqualization",
     # Tiling
     "make_tiled_dataset",
+    "make_tiled_inference",
+    "reconstruct_mask_overlapped_tiles",
     # Mask Annotation
     "merge_masks",
     "merge_masks_with_inferred_class",

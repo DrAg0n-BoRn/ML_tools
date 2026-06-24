@@ -10,7 +10,7 @@ from ..path_manager import make_fullpath, list_csv_paths, sanitize_filename
 from .._core import get_logger
 
 
-_LOGGER = get_logger("Save/Load Utilities")
+_LOGGER = get_logger("Dataframe Save/Load")
 
 
 __all__ = [

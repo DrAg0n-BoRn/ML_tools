@@ -7,7 +7,7 @@ from .._core import get_logger
 from ._base_save_load import _ArchitectureHandlerMixin
 
 
-_LOGGER = get_logger("DragonModel: MLP")
+_LOGGER = get_logger("Dragon MLP")
 
 
 __all__ = [

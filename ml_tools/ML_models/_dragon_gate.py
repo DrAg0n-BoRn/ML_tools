@@ -21,7 +21,7 @@ from ._models_advanced_helpers import (
 )
 
 
-_LOGGER = get_logger("DragonGateModel")
+_LOGGER = get_logger("Dragon GATE")
 
 
 __all__ = [

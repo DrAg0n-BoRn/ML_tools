@@ -10,7 +10,7 @@ from .._core import get_logger
 
 from ._dragon_cleaner import DragonColumnCleaner, DragonDataFrameCleaner
 
-_LOGGER = get_logger("ETL Basic Clean")
+_LOGGER = get_logger("ETL Basic Cleaner")
 
 
 __all__ = [

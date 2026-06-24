@@ -29,7 +29,7 @@ from .._core import get_logger
 from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys, ParetoOptimizationKeys
 
 
-_LOGGER = get_logger("DragonParetoOptimizer")
+_LOGGER = get_logger("Pareto Optimizer")
 
 
 __all__ = [

@@ -13,7 +13,7 @@ from ..keys._keys import ScalerKeys
 from ._dit_parts import TimeEmbedding, DiTBlockFlash
 
 
-_LOGGER = get_logger("DragonDiTGuided")
+_LOGGER = get_logger("Dragon DiTGuided")
 
 
 __all__ = [

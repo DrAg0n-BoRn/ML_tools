@@ -27,7 +27,7 @@ __all__ = [
 
 class DragonDatasetVision:
     """
-    Creates processed PyTorch datasets for computer vision tasks from an
+    Creates processed PyTorch datasets for computer vision classification tasks from an
     image folder directory.
     
     Supports two modes:

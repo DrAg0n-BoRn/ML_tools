@@ -13,7 +13,7 @@ from ._models_advanced_helpers import (
 )
 
 
-_LOGGER = get_logger("DragonAutoInt")
+_LOGGER = get_logger("Dragon AutoInt")
 
 
 __all__ = [

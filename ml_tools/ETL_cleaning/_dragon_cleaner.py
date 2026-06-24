@@ -10,7 +10,7 @@ from ..path_manager import make_fullpath
 from ._clean_tools import save_unique_values, save_category_counts, verify_continuous_range
 
 
-_LOGGER = get_logger("DragonCleaner")
+_LOGGER = get_logger("ETL Cleaner")
 
 
 __all__ = [

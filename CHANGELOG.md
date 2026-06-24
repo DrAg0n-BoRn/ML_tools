@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.0.0] 2026-06-24
+
+### Changed
+
+- ML_inference_vision:
+    - Split the `DragonVisionInferenceHandler` class into separate handlers for each vision task type (classification, object detection, segmentation) to improve modularity and maintainability. Each handler is now focused on a specific task, with tailored methods and parameters for that task's unique requirements.
+        - `DragonVisionClassificationInference`
+        - `DragonObjectDetectionInference`
+        - `DragonSegmentationInference`
+
+- keys:
+    - Updated public keys `InferenceKeys` to include new task-specific keys for object detection tasks.
+
+- Module "PSO_optimization" renamed to "ensemble_optimization" to better reflect its purpose in optimizing ensemble learning workflows.
+
+- Logger enhancements in most modules.
+
+### Added
+
+- ML_inference_vision:
+    - `DragonSegmentationInference`, and `DragonObjectDetectionInference` classes, new method `predict_from_directory()` to process a directory of images and output overlapped predictions on top of the original images.
+
+- ML_vision_transformers:
+    - `make_tiled_inference()`, Slices high-resolution images into smaller PNG images for inference.
+    - `reconstruct_mask_overlapped_tiles()`, Reconstructs a full image from smaller tiled patches that have a specific filename format.
+
+
 ## [22.19.2] 2026-06-23
 
 ### Fixed

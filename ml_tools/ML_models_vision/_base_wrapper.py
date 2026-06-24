@@ -9,7 +9,7 @@ from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 from .._core import get_logger
 
 
-_LOGGER = get_logger("DragonVisionModel")
+_LOGGER = get_logger("Dragon VisionModel")
 
 
 __all__ = [

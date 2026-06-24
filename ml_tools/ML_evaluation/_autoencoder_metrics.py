@@ -32,7 +32,7 @@ from ._radar_plots import (
 )
 
 
-_LOGGER = get_logger("AutoencoderMetrics")
+_LOGGER = get_logger("Autoencoder Metrics")
 
 
 __all__ = [

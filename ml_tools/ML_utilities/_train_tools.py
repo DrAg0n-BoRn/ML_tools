@@ -8,7 +8,7 @@ from ..serde import serialize_object_filename
 from .._core import get_logger
 
 
-_LOGGER = get_logger("Torch Utilities")
+_LOGGER = get_logger("ML Utilities")
 
 
 __all__ = [

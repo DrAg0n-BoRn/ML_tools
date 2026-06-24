@@ -10,7 +10,7 @@ from .._core import get_logger
 from ._feature_schema import FeatureSchema
 
 
-_LOGGER = get_logger("GUISchema")
+_LOGGER = get_logger("GUI Schema")
 
 
 __all__ = [

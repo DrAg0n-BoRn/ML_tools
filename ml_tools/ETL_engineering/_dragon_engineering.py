@@ -9,7 +9,7 @@ from ..path_manager import make_fullpath
 from .._core import get_logger
 
 
-_LOGGER = get_logger("DragonTransform")
+_LOGGER = get_logger("Dragon ETL")
 
 
 __all__ = [

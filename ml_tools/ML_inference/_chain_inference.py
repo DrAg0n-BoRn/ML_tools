@@ -8,7 +8,7 @@ from .._core import get_logger
 from ._dragon_inference import DragonInferenceHandler
 
 
-_LOGGER = get_logger("DragonChainInference")
+_LOGGER = get_logger("Chain Inference")
 
 
 __all__ = [

@@ -12,7 +12,7 @@ from ._chaining_tools import (
 )
 
 
-_LOGGER = get_logger("DragonChainOrchestrator")
+_LOGGER = get_logger("Chain Orchestrator")
 
 
 __all__ = [

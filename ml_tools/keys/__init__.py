@@ -1,11 +1,8 @@
-from ._keys import (
-    PyTorchInferenceKeys as InferenceKeys,
-)
-
 from ._public_keys import (
     CheckpointKeys,
     FinalizedFileKeys,
     TaskKeys,
+    InferenceKeys
 )
 
 from .._core import _imprimir_disponibles

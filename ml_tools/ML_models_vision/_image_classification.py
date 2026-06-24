@@ -17,8 +17,7 @@ class DragonResNet(_BaseVisionWrapper):
     """
     Image Classification
     
-    A customizable wrapper for the torchvision ResNet family, compatible
-    with saving/loading architecture.
+    A customizable wrapper for the torchvision ResNet family.
 
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.
@@ -67,8 +66,7 @@ class DragonEfficientNet(_BaseVisionWrapper):
     """
     Image Classification
     
-    A customizable wrapper for the torchvision EfficientNet family, compatible
-    with saving/loading architecture.
+    A customizable wrapper for the torchvision EfficientNet family.
 
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.
@@ -126,8 +124,7 @@ class DragonVGG(_BaseVisionWrapper):
     """
     Image Classification
     
-    A customizable wrapper for the torchvision VGG family, compatible
-    with saving/loading architecture.
+    A customizable wrapper for the torchvision VGG family.
 
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.

@@ -7,7 +7,7 @@ from ..constants import CHEMICAL_ELEMENT_SYMBOLS
 from .._core import get_logger
 
 
-_LOGGER = get_logger("ETL Transforms")
+_LOGGER = get_logger("ETL Transformer")
 
 
 __all__ = [

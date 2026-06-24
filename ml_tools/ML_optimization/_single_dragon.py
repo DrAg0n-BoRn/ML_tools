@@ -12,7 +12,7 @@ from ..keys._keys import MLTaskKeys
 from ._single_manual import FitnessEvaluator, create_pytorch_problem, run_optimization
 
 
-_LOGGER = get_logger("DragonOptimizer")
+_LOGGER = get_logger("Dragon Optimizer")
 
 
 __all__ = [

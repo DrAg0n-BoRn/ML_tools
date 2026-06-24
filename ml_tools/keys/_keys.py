@@ -155,6 +155,8 @@ class VisionKeys:
     SEGMENTATION_DISTRIBUTION_PLOT = "distribution_plot"
     # Object detection
     OBJECT_DETECTION_REPORT = "object_detection_report"
+    # Overlapped image suffix
+    OVERLAPPED_SUFFIX = "_overlapped.png"
 
 
 class VisionTransformRecipeKeys:
@@ -175,6 +177,7 @@ class ObjectDetectionKeys:
     """Used by the object detection dataset"""
     BOXES = "boxes"
     LABELS = "labels"
+    SCORES = "scores"
 
 
 class MLTaskKeys:

@@ -10,7 +10,7 @@ from ..keys._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
 from ._base_inference import _BaseInferenceHandler
 
 
-_LOGGER = get_logger("DragonInference")
+_LOGGER = get_logger("Inference Handler")
 
 
 __all__ = [

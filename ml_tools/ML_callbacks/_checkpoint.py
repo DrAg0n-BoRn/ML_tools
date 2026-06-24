@@ -10,7 +10,7 @@ from .._core import get_logger
 from ._base import _Callback
 
 
-_LOGGER = get_logger("Checkpoint")
+_LOGGER = get_logger("Dragon Checkpoint")
 
 
 __all__ = [

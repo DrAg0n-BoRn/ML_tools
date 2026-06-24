@@ -8,7 +8,7 @@ from .._core import get_logger
 from ._utility_save_load import load_dataframe, save_dataframe_filename
 
 
-_LOGGER = get_logger("Utility Tools")
+_LOGGER = get_logger("Dataframe Tools")
 
 
 __all__ = [

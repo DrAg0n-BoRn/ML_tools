@@ -15,7 +15,7 @@ class DragonFCN(_BaseSegmentationWrapper):
     Image Segmentation
     
     A customizable wrapper for the torchvision FCN (Fully Convolutional Network)
-    family, compatible with saving/loading architecture.
+    family.
 
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.
@@ -62,8 +62,7 @@ class DragonDeepLabv3(_BaseSegmentationWrapper):
     """
     Image Segmentation
     
-    A customizable wrapper for the torchvision DeepLabv3 family, compatible
-    with saving/loading architecture.
+    A customizable wrapper for the torchvision DeepLabv3 family.
 
     This wrapper allows for customizing the model backbone, input channels,
     and the number of output classes for transfer learning.

@@ -8,7 +8,7 @@ from .._core import get_logger
 from ._base_resampler import _DragonBaseResampler
 
 
-_LOGGER = get_logger("DragonResampler")
+_LOGGER = get_logger("Resampler")
 
 
 __all__ = [

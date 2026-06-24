@@ -14,7 +14,7 @@ from .._core import get_logger
 from ._base_generator import _BaseDiffusionGenerator
 
 
-_LOGGER = get_logger("DragonDiTGuidedGenerator")
+_LOGGER = get_logger("DiT Guided Generator")
 
 
 __all__ = [

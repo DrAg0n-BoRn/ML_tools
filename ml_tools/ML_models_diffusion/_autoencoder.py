@@ -14,7 +14,7 @@ from ..keys._keys import SchemaKeys, ScalerKeys
 from .._core import get_logger
 
 
-_LOGGER = get_logger("DragonAutoencoder")
+_LOGGER = get_logger("Dragon Autoencoder")
 
 
 __all__ = [
