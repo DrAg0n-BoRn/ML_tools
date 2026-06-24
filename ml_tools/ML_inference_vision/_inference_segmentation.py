@@ -47,40 +47,6 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
             _LOGGER.error(f"'task' recognized as '{self.task}', but this handler only supports: {valid_tasks}.")
             raise ValueError()
 
-        self._color_map: dict[int, list[int]] = {}
-        self._initialize_color_map()
-
-    def _initialize_color_map(self) -> None:
-        """Generates and saves a fixed color palette for the labels."""
-        if self._idx_to_class is not None and len(self._idx_to_class) > 0:
-            all_labels = sorted(list(self._idx_to_class.keys()))
-        else:
-            all_labels = list(range(100))
-
-        palette = [
-            [230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200],
-            [245, 130, 48], [145, 30, 180], [70, 240, 240], [240, 50, 230],
-            [210, 245, 60], [250, 190, 212], [0, 128, 128], [220, 190, 255],
-            [170, 110, 40], [255, 250, 200], [128, 0, 0], [170, 255, 195],
-            [128, 128, 0], [255, 215, 180], [0, 0, 128], [128, 128, 128]
-        ]
-        
-        np.random.seed(42)
-        for i, label in enumerate(all_labels):
-            if label == 0:
-                continue  # Keep 0 out of the color map so it remains transparent
-            if i < len(palette):
-                self._color_map[label] = palette[i] + [128]
-            else:
-                self._color_map[label] = list(np.random.randint(0, 255, 3)) + [128]
-
-    def set_class_map(self, class_map: dict[str, int], force_overwrite: bool = False) -> None:
-        """
-        Sets the class name mapping and regenerates the color palette to match the new labels.
-        """
-        super().set_class_map(class_map, force_overwrite)
-        self._initialize_color_map()
-
     def _preprocess_batch(self, inputs: Union[torch.Tensor, list[torch.Tensor]]) -> torch.Tensor:
         """
         Validates input and moves it to the correct device.
@@ -107,6 +73,11 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
     def predict_batch(self, inputs: Union[torch.Tensor, list[torch.Tensor]]) -> dict[str, Any]:
         """
         Core batch prediction method for image segmentation models.
+        
+        Args:
+            inputs (Union[torch.Tensor, list[torch.Tensor]]): A batch of images as a 4D tensor (B, C, H, W) or a list of 3D tensors (C, H, W).
+        Returns:
+            dict[str, Any]: A dictionary containing predicted labels and probabilities.
         """
         processed_inputs = self._preprocess_batch(inputs)
         
@@ -136,6 +107,11 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
     def predict(self, single_input: torch.Tensor) -> dict[str, Any]:
         """
         Core single-sample prediction method.
+        
+        Args:
+            single_input (torch.Tensor): A single image as a 3D tensor (C, H, W).
+        Returns:
+            dict[str, Any]: A dictionary containing predicted labels and probabilities for the single input.
         """
         if not isinstance(single_input, torch.Tensor) or single_input.ndim != 3:
              _LOGGER.error(f"Input for predict() must be a 3D tensor (C, H, W). Got {single_input.ndim}D.")
@@ -150,6 +126,11 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
     def predict_batch_numpy(self, inputs: Union[torch.Tensor, list[torch.Tensor]]) -> dict[str, Any]:
         """
         Convenience wrapper for predict_batch that returns NumPy arrays.
+        
+        Args:
+            inputs (Union[torch.Tensor, list[torch.Tensor]]): A batch of images as a 4D tensor (B, C, H, W) or a list of 3D tensors (C, H, W).
+        Returns:
+            dict[str, Any]: A dictionary containing predicted labels and probabilities as NumPy arrays.
         """
         tensor_results = self.predict_batch(inputs)
         return {key: value.cpu().numpy() for key, value in tensor_results.items()}
@@ -157,6 +138,11 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
     def predict_numpy(self, single_input: torch.Tensor) -> dict[str, Any]:
         """
         Convenience wrapper for predict that returns NumPy arrays.
+        
+        Args:
+            single_input (torch.Tensor): A single image as a 3D tensor (C, H, W).
+        Returns:
+            dict[str, Any]: A dictionary containing predicted labels and probabilities as NumPy arrays for the single input.
         """
         tensor_results = self.predict(single_input)
         return {
@@ -199,8 +185,9 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
                 if label == 0:
                     continue
                 
-                # Fetch color from initialized map, fallback if missing
-                color = self._color_map.get(label, list(np.random.randint(0, 255, 3)) + [128])
+                # Fetch color from centralized map, fallback if missing, and append alpha
+                base_color = self._color_map.get(label, tuple(np.random.randint(0, 255, 3).tolist()))
+                color = list(base_color) + [128]
                 overlay[mask_resized == label] = color
                 
         overlay_img = Image.fromarray(overlay, mode="RGBA")

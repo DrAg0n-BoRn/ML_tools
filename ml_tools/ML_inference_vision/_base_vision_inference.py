@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import numpy as np
 from pathlib import Path
 from typing import Union, Optional, Callable, Any
 from PIL import Image
@@ -19,6 +20,20 @@ _LOGGER = get_logger("Vision Inference")
 
 __all__ = [
     "_BaseVisionInferenceHandler"
+]
+
+
+_VISION_PALETTE_50 = [
+    (230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), (245, 130, 48),
+    (145, 30, 180), (70, 240, 240), (240, 50, 230), (210, 245, 60), (250, 190, 212),
+    (0, 128, 128), (220, 190, 255), (170, 110, 40), (255, 250, 200), (128, 0, 0),
+    (170, 255, 195), (128, 128, 0), (255, 215, 180), (0, 0, 128), (128, 128, 128),
+    (255, 100, 100), (100, 255, 100), (100, 100, 255), (255, 255, 100), (255, 100, 255),
+    (100, 255, 255), (150, 50, 50), (50, 150, 50), (50, 50, 150), (150, 150, 50),
+    (150, 50, 150), (50, 150, 150), (200, 100, 50), (50, 200, 100), (100, 50, 200),
+    (200, 50, 100), (100, 200, 50), (50, 100, 200), (255, 150, 0), (0, 255, 150),
+    (150, 0, 255), (255, 0, 150), (150, 255, 0), (0, 150, 255), (100, 0, 0),
+    (0, 100, 0), (0, 0, 100), (100, 100, 0), (100, 0, 100), (0, 100, 100)
 ]
 
 
@@ -54,6 +69,35 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
         if transform_source:
             self.set_transform(transform_source)
             self._is_transformed = True
+            
+        self._color_map: dict[int, tuple[int, int, int]] = {}
+        self._initialize_color_map()
+    
+    def _initialize_color_map(self) -> None:
+        """Generates and saves a fixed color palette for the labels."""
+        if self._idx_to_class is not None and len(self._idx_to_class) > 0:
+            all_labels = sorted(list(self._idx_to_class.keys()))
+        else:
+            # Fallback if no class map is present
+            all_labels = list(range(100))
+            
+        np.random.seed(42)
+        for i, label in enumerate(all_labels):
+            if i < len(_VISION_PALETTE_50):
+                self._color_map[label] = _VISION_PALETTE_50[i]
+            else:
+                self._color_map[label] = tuple(np.random.randint(0, 255, 3).tolist())
+
+    def set_vision_class_map(self, class_map: dict[str, int], force_overwrite: bool = False) -> None:
+        """
+        Sets the class name mapping and regenerates the color palette to match the new labels.
+        
+        Args:
+            class_map (dict[str, int]): Mapping of class names to integer labels.
+            force_overwrite (bool): If True, overwrites any existing class map.
+        """
+        super().set_class_map(class_map, force_overwrite)
+        self._initialize_color_map()
 
     def set_transform(self, transform_source: Union[str, Path, Callable]):
         """
@@ -79,6 +123,11 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
     def predict_from_pil(self, image: Image.Image) -> tuple[Image.Image, dict[str, Any]]:
         """
         Applies the stored transform to a single PIL image and returns the overlapped image and prediction results.
+        
+        Args:
+            image (Image.Image): Input PIL image.
+        Returns:
+            tuple[Image.Image, dict[str, Any]]: A tuple containing the overlapped PIL image and the prediction results as a dictionary.
         """
         if self._transform is None:
             _LOGGER.error("Cannot predict from PIL image: No transform has been set. Call .set_transform() or provide transform_source in __init__.")
@@ -114,6 +163,14 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
                           verbose: int = 2) -> dict[str, Any]:
         """
         Loads a single image from a file, applies the stored transform, and returns the prediction.
+        
+        Args:
+            image_path (Union[str, Path]): Path to the image file.
+            save_overlay (bool): If True, saves the overlapped image in the same directory with a suffix.
+            verbose (int): Verbosity level for logging.
+            
+        Returns:
+            dict[str, Any]: Dictionary containing prediction results.
         """
         full_path = make_fullpath(image_path, make=False, enforce="file")
         
@@ -154,6 +211,11 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
     ) -> None:
         """
         Scans a directory for images matching the target formats and saves overlapped predictions.
+        
+        Args:
+            directory_path (Union[str, Path]): Path to the directory containing images.
+            valid_extensions (Optional[list[str]]): List of valid image file extensions. Defaults to common formats.
+            verbose (int): Verbosity level for logging.
         """
         if valid_extensions is None:
             valid_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".tif"]
@@ -185,6 +247,37 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
                     
         if verbose >= 2:
             _LOGGER.info(f"Directory processing completed for '{dir_path}'.")
+    
+    @staticmethod
+    def clear_overlapped_images(directory_path: Union[str, Path], verbose: int = 2) -> None:
+        """
+        Deletes all files ending with the overlapped suffix in the target directory and its subdirectories.
+        
+        Args:
+            directory_path (Union[str, Path]): Path to the directory to clean (subdirectories will be searched).
+            verbose (int): Verbosity level for logging.
+        """
+        dir_path = make_fullpath(directory_path, make=False, enforce="directory")
+        pattern = f"*{VisionKeys.OVERLAPPED_SUFFIX}"
+        
+        overlapped_files = list(dir_path.rglob(pattern))
+        
+        if not overlapped_files:
+            if verbose >= 2:
+                _LOGGER.info(f"No overlapped images found in '{dir_path}' to delete.")
+            return
+            
+        deleted_count = 0
+        for file_path in overlapped_files:
+            if file_path.is_file():
+                try:
+                    file_path.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    _LOGGER.error(f"Failed to delete '{file_path}': {e}")
+                    
+        if verbose >= 2:
+            _LOGGER.info(f"Successfully deleted {deleted_count} overlapped images from '{dir_path}'.")
 
     @abstractmethod
     def predict_numpy(self, single_input: torch.Tensor) -> dict[str, Any]:
