@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.1.0] 2026-06-26
+
+### Added
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation`, added new parameters to `configure_transforms()` for controlling augmentation strategies:
+        - `random_horizontal_flip_probability`: Probability of applying horizontal flip during training.
+        - `random_resize_crop_scale`: Scale range for random resized crop during training.
+        - `random_resize_crop_ratio`: Aspect ratio range for random resized crop during training.
+    - `DragonDatasetVision`, added new parameters to `configure_transforms()` for controlling augmentation strategies:
+        - `random_horizontal_flip_probability`: Probability of applying horizontal flip during training.
+        - `random_resize_crop_scale`: Scale range for random resized crop during training.
+        - `random_resize_crop_ratio`: Aspect ratio range for random resized crop during training.
+        - `random_rotation_degrees`: Maximum degrees for random rotation during training.
+    - `DragonDatasetObjectDetection`, added new parameter to `configure_transforms()` for controlling augmentation strategies:
+        - `random_horizontal_flip_probability`: Probability of applying horizontal flip during training.
+
 ## [23.0.2] 2026-06-24
 
 ### Changed

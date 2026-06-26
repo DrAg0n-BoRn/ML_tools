@@ -342,7 +342,9 @@ class DragonDatasetObjectDetection:
 
     def configure_transforms(self, 
                              mean: Optional[list[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[list[float]] = [0.229, 0.224, 0.225]) -> 'DragonDatasetObjectDetection':
+                             std: Optional[list[float]] = [0.229, 0.224, 0.225],
+                             random_horizontal_flip_probability: float = 0.5
+                             ) -> 'DragonDatasetObjectDetection':
         """
         Configures and applies the image and target transformations.
         
@@ -355,6 +357,7 @@ class DragonDatasetObjectDetection:
         Args:
             mean (List[float] | None): The mean values for image normalization.
             std (List[float] | None): The std dev values for image normalization.
+            random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
 
         Returns:
             DragonDatasetObjectDetection: The same instance, with transforms applied.
@@ -384,7 +387,7 @@ class DragonDatasetObjectDetection:
             
             # --- Training Pipeline (Augmentation) ---
             self.train_transform = _OD_PairedCompose([
-                _OD_PairedRandomHorizontalFlip(p=0.5),
+                _OD_PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
                 _OD_PairedToTensor(),
                 _OD_PairedNormalize(mean, std) # type: ignore
             ])
@@ -396,7 +399,7 @@ class DragonDatasetObjectDetection:
             
             # --- Training Pipeline (Augmentation) ---
             self.train_transform = _OD_PairedCompose([
-                _OD_PairedRandomHorizontalFlip(p=0.5),
+                _OD_PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
                 _OD_PairedToTensor()
             ])
 

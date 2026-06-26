@@ -126,7 +126,7 @@ class _PairedRandomHorizontalFlip:
         
 class _PairedRandomResizedCrop:
     """Applies the same random resized crop to both image and mask."""
-    def __init__(self, size: int, scale: tuple[float, float]=(0.08, 1.0), ratio: tuple[float, float]=(3./4., 4./3.)):
+    def __init__(self, size: int, scale: tuple[float, float]=(0.5, 1.0), ratio: tuple[float, float]=(3./4., 4./3.)):
         self.size = [size, size]
         self.scale = scale
         self.ratio = ratio
@@ -374,7 +374,12 @@ class DragonDatasetSegmentation:
                              resize_size: int = 256, 
                              crop_size: Optional[int] = 224, 
                              mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
-                             std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225)) -> 'DragonDatasetSegmentation':
+                             std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
+                             # parameters for training transforms
+                             random_horizontal_flip_probability: float = 0.5,
+                             random_resize_crop_scale: tuple[float, float] = (0.5, 1.0),
+                             random_resize_crop_ratio: tuple[float, float] = (3/4, 4/3),
+                             ) -> 'DragonDatasetSegmentation':
         """
         Configures and applies the image and mask transformations.
         
@@ -386,6 +391,9 @@ class DragonDatasetSegmentation:
             crop_size (int | None): The target size (square) for the final cropped image.
             mean (tuple[float] | None): The mean values for image normalization.
             std (tuple[float] | None): The std dev values for image normalization.
+            random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
+            random_resize_crop_scale (tuple[float, float]): Scale range for random resized crop during training.
+            random_resize_crop_ratio (tuple[float, float]): Aspect ratio range for random resized crop during training.
 
         Returns:
             DragonDatasetSegmentation: The same instance, with transforms applied.
@@ -428,8 +436,8 @@ class DragonDatasetSegmentation:
             # Type-checker: ensure mean/std are not None before converting to list
             assert mean is not None and std is not None
             self.train_transform = _PairedCompose([
-                _PairedRandomResizedCrop(crop_size),
-                _PairedRandomHorizontalFlip(p=0.5),
+                _PairedRandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio),
+                _PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
                 _PairedToTensor(),
                 _PairedNormalize(list(mean), list(std))
             ])
@@ -441,8 +449,8 @@ class DragonDatasetSegmentation:
             ])
             # --- Training Pipeline (Augmentation) ---
             self.train_transform = _PairedCompose([
-                _PairedRandomResizedCrop(crop_size),
-                _PairedRandomHorizontalFlip(p=0.5),
+                _PairedRandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio),
+                _PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
                 _PairedToTensor()
             ])
 

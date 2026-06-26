@@ -229,7 +229,13 @@ class DragonDatasetVision:
                              mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
                              std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
                              pre_transforms: Optional[list[Callable]] = None,
-                             extra_train_transforms: Optional[list[Callable]] = None) -> 'DragonDatasetVision':
+                             extra_train_transforms: Optional[list[Callable]] = None,
+                             ## params for train transforms
+                             random_horizontal_flip_probability: float = 0.5,
+                             random_resize_crop_scale: tuple[float, float] = (0.08, 1.0),
+                             random_resize_crop_ratio: tuple[float, float] = (3/4, 4/3),
+                             random_rotation_degrees: float = 90.0
+                             ) -> 'DragonDatasetVision':
         """
         Configures and applies the image transformations and augmentations.
         
@@ -238,9 +244,9 @@ class DragonDatasetVision:
         It sets up two pipelines:
         1.  **Training Pipeline:** Includes random transforms for online augmentation:
             - `Resize(resize_size)`
-            - `RandomResizedCrop(crop_size)`
-            - `RandomHorizontalFlip(0.5)`
-            - `RandomRotation(90)` 
+            - `RandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio)`
+            - `RandomHorizontalFlip(p=random_horizontal_flip_probability)`
+            - `RandomRotation(degrees=random_rotation_degrees)` 
             - (Any `extra_train_transforms`)
             
         2.  **Validation/Test Pipeline:** A deterministic pipeline using `Resize` and `CenterCrop` for consistent evaluation.
@@ -254,6 +260,10 @@ class DragonDatasetVision:
             std (tuple[float, ...] | None): The standard deviation values for normalization (e.g., ImageNet std).
             extra_train_transforms (list[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
             pre_transforms (list[Callable] | None): An list of transforms to be applied at the very beginning of the transformations for all sets.
+            random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
+            random_resize_crop_scale (tuple[float, float]): Scale range for random resized crop during training.
+            random_resize_crop_ratio (tuple[float, float]): Aspect ratio range for random resized crop during training.
+            random_rotation_degrees (float): Maximum degrees for random rotation during training.
 
         Returns:
             Self: The same instance, with transforms applied.
@@ -294,9 +304,9 @@ class DragonDatasetVision:
         # Base augmentations for training
         base_train_transforms = [
             transforms.Resize(resize_size), # Scale down
-            transforms.RandomResizedCrop(size=crop_size), # Random crops over the image
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=90)
+            transforms.RandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio), # Random crops over the image
+            transforms.RandomHorizontalFlip(p=random_horizontal_flip_probability),
+            transforms.RandomRotation(degrees=random_rotation_degrees)
         ]
         if extra_train_transforms:
             base_train_transforms.extend(extra_train_transforms)
