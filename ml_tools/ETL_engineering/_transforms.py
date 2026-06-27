@@ -399,15 +399,19 @@ class NumberExtractor:
             pl.Series: A new Series containing the extracted numbers.
         """
         column_base_name = column.name
-        # Extract the first (and only) capturing group
-        extracted = column.str.extract(self.regex_pattern, 1)
         
-        # Cast to the desired numeric type. Non-matching strings become null.
-        casted = extracted.cast(self.polars_dtype, strict=False)
+        # Ensure the input is safely treated as a string before applying text operations
+        str_column = column.cast(pl.Utf8)
+        
+        # Extract the first (and only) capturing group
+        extracted = str_column.str.extract(self.regex_pattern, 1)
+        
+        # Cast to float first to safely parse decimals in strings, then to target dtype
+        casted = extracted.cast(pl.Float64, strict=False).cast(self.polars_dtype, strict=False)
         
         # Apply rounding only if it's a float and round_digits is set
         if self.dtype == "float" and self.round_digits is not None:
-            return casted.round(self.round_digits)
+            return casted.round(self.round_digits).alias(column_base_name)
             
         return casted.alias(column_base_name)
 
@@ -472,12 +476,18 @@ class MultiNumberExtractor:
         Executes the multi-number extraction logic. Preserves nulls from the input column.
         """
         column_base_name = column.name
+        
+        # Ensure the input is safely treated as a string before text operations
+        str_column = column.cast(pl.Utf8, strict=False)
+        
         output_expressions = []
         for i in range(self.num_outputs):
             # Define the core extraction logic for the i-th number
             extraction_expr = (
-                column.str.extract_all(self.regex_pattern)
+                str_column.str.extract_all(self.regex_pattern)
                 .list.get(i, null_on_oob=True)
+                # Two-step cast: safely handle string decimals first, then cast to target (Int or Float)
+                .cast(pl.Float64, strict=False)
                 .cast(self.polars_dtype, strict=False)
             )
 

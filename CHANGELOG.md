@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.1.1] 2026-06-27
+
+### Fixed
+
+- ETL_engineering:
+    - Fixed a subtle bug in `NumberExtractor` and `MultiNumberExtractor` where the extraction logic would fail when casting string representations of decimal numbers directly to integer types due to Polars' strict casting behavior. The extraction now safely handles string decimals by first casting to float before converting to the target integer type, ensuring accurate number extraction.
+
 ## [23.1.0] 2026-06-26
 
 ### Added
