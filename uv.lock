@@ -350,7 +350,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "23.1.1"
+version = "23.2.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -415,7 +415,6 @@ mice = [
     { name = "polars" },
     { name = "pyarrow" },
     { name = "shap" },
-    { name = "statsmodels" },
 ]
 ml = [
     { name = "captum" },
@@ -544,7 +543,6 @@ requires-dist = [
     { name = "shap", marker = "extra == 'ensemble'", specifier = ">=0.46" },
     { name = "shap", marker = "extra == 'mice'" },
     { name = "shap", marker = "extra == 'ml'" },
-    { name = "statsmodels", marker = "extra == 'mice'" },
     { name = "torch", marker = "extra == 'gui-torch'" },
     { name = "torch", marker = "extra == 'ml'" },
     { name = "torchmetrics", marker = "extra == 'ml'" },

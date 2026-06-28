@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.2.0] 2026-06-28
+
+### Added
+
+- ML_scaler:
+    - `DragonScalerHandler` class to handle the robust loading and parsing of saved `DragonScaler` artifacts. Implemented automatic directory resolution, safe CPU tensor mapping (`map_location='cpu'`) to prevent cross-device loading crashes, and a graceful fallback mechanism to support legacy standalone scalers.
+        - `status()` method to display the current status of the handler, including which scalers are loaded and their source path.
+        - `feature_scaler` and `target_scaler` properties to access the loaded scalers, with informative error logging if they are not loaded.
+        - `source_path` property to track the original source path of the loaded scaler(s).
+
+- VIF:
+    - `DragonVIF` class to handle modern multicollinearity evaluation for mixed-type datasets, replacing legacy `statsmodels` functions with a dependency-reduced matrix inversion approach (`np.linalg.inv`). Leverages `FeatureSchema` to intelligently route continuous features through standard VIF calculations and categorical features through group-level Adjusted GVIF to prevent false alarms from dummy variables.
+        - `compute_vif()` method to calculate standard VIF for continuous features and squared Adjusted GVIF for categorical features, storing the results internally for downstream use.
+        - `plot_vif()` method to generate and save a horizontal bar plot categorizing feature collinearity based on standard thresholds (green, gold, red).
+        - `drop_vif_based()` method to safely drop highly collinear features exceeding a specified threshold and return a mutually updated DataFrame and `FeatureSchema`, without mutating the original input data.
+
+### Changed
+
+- MICE:
+    - `DragonMICE` class revamped. Changes are NOT backward compatible with previous versions. The new implementation is more robust, modular, and better structured for maintainability and future extensions.
+        - Refactored architecture to bind a single instance to a single dataset upon initialization, replacing the previous batch-directory processing design to improve object-oriented modularity and in-memory flexibility.
+        - Updated `__init__` signature to accept `input_df_or_path` (supporting `pd.DataFrame`, `str`, or `Path`) and `schema`, while shifting execution parameters to the runner methods.
+        - `run_pipeline` method refactored into a single-output function that accepts `save_metrics_dir`, `impute_targets`, and `iterations`, returning the final imputed `pd.DataFrame` directly instead of writing it to disk.
+        - `run_pipeline_multi()` method to handle multi-dataset MICE generation (1 input, N outputs). Accepts `save_datasets_dir`, `save_metrics_dir`, and `resulting_datasets`, saving all generated dataframes and metrics directly to disk.
+
+- path_manager:
+    - `safe_move()`, improved robustness by preventing duplicated file extensions on the filename.
+
+- utilities:
+    - `save_dataframe_filename()`, improved robustness by handling edge cases with uppercase extensions.
+
+### Removed
+
+- VIF:
+    - Removed legacy `statsmodels`-based VIF calculation functions in favor of the new `DragonVIF` class, which provides a more robust and dependency-reduced approach to multicollinearity evaluation for mixed-type datasets:
+        - `compute_vif()`
+        - `drop_vif_based()`
+        - `compute_vif_multi()`
+
+- Package dependency `statsmodels` removed, as it is no longer required for VIF calculations.
+
+
 ## [23.1.1] 2026-06-27
 
 ### Fixed

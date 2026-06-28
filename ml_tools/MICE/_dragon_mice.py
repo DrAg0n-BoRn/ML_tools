@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 from typing import Union
-import miceforest as mf
+import miceforest as mf # type: ignore
 import matplotlib.pyplot as plt
 import numpy as np
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
@@ -10,7 +10,7 @@ from ..utilities import load_dataframe, merge_dataframes, save_dataframe_filenam
 from ..schema import FeatureSchema
 
 from ..math_utilities import discretize_categorical_values
-from ..path_manager import make_fullpath, list_csv_paths, sanitize_filename
+from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
 
@@ -31,28 +31,38 @@ class DragonMICE:
     
     Optionally supports Target Imputation.
     """
-    def __init__(self, 
-                 schema: FeatureSchema,
-                 impute_targets: bool = False,
-                 iterations: int = 30,
-                 resulting_datasets: int = 1,
-                 random_state: int = 101):
+    def __init__(
+        self,
+        input_df_or_path: Union[pd.DataFrame, str, Path],
+        schema: FeatureSchema,
+        random_state: int = 101
+    ):
+        """
+        Initializes the DragonMICE imputation pipeline with a given dataset and schema.
         
+        Args:
+            input_df_or_path (pd.DataFrame | str | Path): Input dataset as a pandas DataFrame or a path to a CSV file.
+            schema (FeatureSchema): A FeatureSchema instance that defines the features, including categorical features and their mappings.
+            random_state (int): Seed for reproducibility of the MICE imputation process.
+        """
         # Validation
         if not isinstance(schema, FeatureSchema):
-            raise TypeError(f"schema must be a FeatureSchema, got {type(schema)}")
-        if iterations < 1:
-            raise ValueError("iterations must be >= 1")
-        if resulting_datasets < 1:
-            raise ValueError("resulting_datasets must be >= 1")
-
-        # Private Attributes
-        self._schema = schema
-        self._impute_targets = impute_targets
-        self._random_state = random_state
-        self._iterations = iterations
-        self._resulting_datasets = resulting_datasets
+            _LOGGER.error(f"Expected a FeatureSchema instance for 'schema', got {type(schema)}")
+            raise TypeError()
         
+        self._schema = schema
+        self._random_state = random_state
+        
+        # --- Handle Input DataFrame or Path ---
+        if isinstance(input_df_or_path, pd.DataFrame):
+            self._df = input_df_or_path.copy()
+            self._df_name = "unnamed_dataset"
+        elif isinstance(input_df_or_path, (str, Path)):
+            self._df, self._df_name = load_dataframe(df_path=input_df_or_path, kind="pandas")
+        else:
+            _LOGGER.error("Input must be a pandas DataFrame, string, or pathlib.Path.")
+            raise TypeError()
+
         # --- Store schema info ---
         
         # 1. Categorical info
@@ -69,48 +79,54 @@ class DragonMICE:
         # 3. Names of categorical features
         self._categorical_features = list(self._schema.categorical_feature_names)
 
-        _LOGGER.info(f"DragonMICE initialized. Impute Targets: {self._impute_targets}. Found {len(self._cat_info)} categorical features to discretize.")
+        _LOGGER.info(f"DragonMICE initialized for input '{self._df_name}'. Found {len(self._cat_info)} categorical features to discretize.")
 
     @property
     def schema(self) -> FeatureSchema:
         """Exposes the used FeatureSchema as read-only for inspection/logging purposes."""
         return self._schema
+    
+    def _prepare_data(self, impute_targets: bool) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+        """Splits the dataframe based on target imputation configuration."""
+        if impute_targets:
+            df_input = self._df
+            df_targets_to_save = pd.DataFrame(index=self._df.index) 
+        else:
+            feature_cols = list(self._schema.feature_names)
+            
+            if not set(feature_cols).issubset(self._df.columns):
+                missing = set(feature_cols) - set(self._df.columns)
+                _LOGGER.error(f"Dataset '{self._df_name}' is missing schema features: {missing}")
+                raise KeyError()
+
+            df_input = self._df[feature_cols]
+            df_targets_to_save = self._df.drop(columns=feature_cols)
         
+        imputed_column_names = [col for col in df_input.columns if df_input[col].isna().any()]
+        return df_input, df_targets_to_save, imputed_column_names
+
     def _post_process(self, imputed_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Applies schema-based discretization to a completed dataframe.
-        """
-        # If no categorical features are defined, return the df as-is.
+        """Applies schema-based discretization to a completed dataframe."""
         if not self._cat_info:
             return imputed_df
 
         try:
-            # 1. Extract the features strictly defined in the schema
-            # We must respect the schema order for index-based discretization
             df_schema_features = imputed_df[self._ordered_features]
-            
-            # 2. Convert to NumPy array
             array_ordered = df_schema_features.to_numpy()
 
-            # 3. Apply discretization utility (returns int32 array usually, or floats)
             discretized_array_int32 = discretize_categorical_values(
                 array_ordered,
                 self._cat_info,
                 start_at_zero=True 
             )
 
-            # 4. Create a DataFrame for the discretized values
             df_discretized_full = pd.DataFrame(
                 discretized_array_int32,
                 columns=self._ordered_features,
                 index=df_schema_features.index 
             )
 
-            # 5. Isolate only the categorical columns that changed
             df_discretized_cats = df_discretized_full[self._categorical_features]
-
-            # 6. Update the original imputed DF
-            # This preserves Target columns if they exist in imputed_df
             final_df = imputed_df.copy()
             final_df.update(df_discretized_cats)
             
@@ -120,61 +136,40 @@ class DragonMICE:
             _LOGGER.error(f"Failed during post-processing discretization:\n\tSchema features: {len(self._ordered_features)}\n{e}")
             raise
         
-    def _run_mice(self, 
-                  df: pd.DataFrame, 
-                  df_name: str) -> tuple[mf.ImputationKernel, list[pd.DataFrame], list[str]]:
-        """
-        Runs the MICE kernel and applies schema-based post-processing.
-        
-        Parameters:
-            df (pd.DataFrame): The input dataframe. 
-        """
-        # Validation: Ensure Schema features exist in the input
-        # Note: self._ordered_features is already a list
-        missing_cols = [col for col in self._ordered_features if col not in df.columns]
-        if missing_cols:
-            _LOGGER.error(f"Input DataFrame is missing required schema columns: {missing_cols}")
-            raise ValueError(f"Missing columns: {missing_cols}")
-            
-        # If NOT imputing targets, we strictly filter to features. 
-        # If we ARE imputing targets, we use the whole DF provided (Features + Targets).
-        if not self._impute_targets:
-            data_for_mice = df[self._ordered_features]
-        else:
-            data_for_mice = df
-        
-        # 1. Initialize kernel
+    def _run_mice(
+        self, 
+        df_input: pd.DataFrame, 
+        impute_targets: bool, 
+        iterations: int, 
+        resulting_datasets: int
+    ) -> tuple[mf.ImputationKernel, list[pd.DataFrame], list[str]]:
+        """Runs the MICE kernel and applies schema-based post-processing."""
         kernel = mf.ImputationKernel(
-            data=data_for_mice,
-            num_datasets=self._resulting_datasets,
+            data=df_input,
+            num_datasets=resulting_datasets,
             random_state=self._random_state
         )
         
-        # base message
         message = "➡️ Schema-based MICE imputation running"
-        if self._impute_targets:
+        if impute_targets:
             message += " (Targets included)"
         
         _LOGGER.info(message)
         
-        # 2. Perform MICE
         try:
-            kernel.mice(self._iterations)
+            kernel.mice(iterations)
         except Exception as e:
             _LOGGER.error(f"MICE imputation failed during execution: {e}")
             raise
         
-        # 3. Retrieve, process, and collect datasets
         imputed_datasets = []
-        for i in range(self._resulting_datasets):
-            # complete_data returns a pd.DataFrame
+        for i in range(resulting_datasets):
             completed_df = kernel.complete_data(dataset=i)
             
             if completed_df is None:
                 _LOGGER.error(f"Failed to retrieve completed dataset {i}.")
                 raise ValueError()
             
-            # Apply discretization (handles extra columns gracefully)
             processed_df = self._post_process(completed_df)
             imputed_datasets.append(processed_df)
 
@@ -182,103 +177,126 @@ class DragonMICE:
             _LOGGER.error("No imputed datasets were generated.")
             raise ValueError()
 
-        # 4. Generate names
-        if self._resulting_datasets == 1:
-            imputed_dataset_names = [f"{df_name}_MICE"]
+        if resulting_datasets == 1:
+            imputed_dataset_names = [f"{self._df_name}_MICE"]
         else:
-            imputed_dataset_names = [f"{df_name}_MICE_{i+1}" for i in range(self._resulting_datasets)]
+            imputed_dataset_names = [f"{self._df_name}_MICE_{i+1}" for i in range(resulting_datasets)]
         
-        # 5. Validate indexes and Row Counts
         for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
-            if imputed_df.shape[0] != df.shape[0]:
-                 _LOGGER.error(f"Row count mismatch in dataset {subname}")
-                 raise ValueError()
-            if not all(imputed_df.index == df.index):
-                 _LOGGER.error(f"Index mismatch in dataset {subname}")
-                 raise ValueError()
+            if imputed_df.shape[0] != self._df.shape[0]:
+                _LOGGER.error(f"Row count mismatch in dataset {subname}")
+                raise ValueError()
+            if not all(imputed_df.index == self._df.index):
+                _LOGGER.error(f"Index mismatch in dataset {subname}")
+                raise ValueError()
         
         _LOGGER.info("⬅️ Schema-based MICE imputation complete.")
         
         return kernel, imputed_datasets, imputed_dataset_names
-        
-    def run_pipeline(self, 
-                     df_path_or_dir: Union[str,Path],
-                     save_datasets_dir: Union[str,Path], 
-                     save_metrics_dir: Union[str,Path],
-                     ):
+
+    def run_pipeline(
+        self,
+        save_metrics_dir: Union[str, Path],
+        impute_targets: bool = False,
+        iterations: int = 30
+    ) -> pd.DataFrame:
         """
-        Runs the complete MICE imputation pipeline.
+        Runs the MICE imputation pipeline to generate a single imputed dataframe.
+        Saves convergence and distribution metrics to the specified directory.
         
-        Parameters:
-            df_path_or_dir (str | Path): Path to a CSV file or directory containing CSV files.
-            save_datasets_dir (str | Path): Directory to save imputed datasets.
+        Args:
             save_metrics_dir (str | Path): Directory to save convergence and distribution metrics.
+            impute_targets (bool): Whether to include target columns in the imputation process.
+            iterations (int): Number of MICE iterations to perform.
+            
+        Returns:
+            pd.DataFrame: The final imputed dataframe with schema-based discretization applied.
         """
-        # Check paths
+        save_metrics_path = make_fullpath(save_metrics_dir, make=True, enforce="directory")
+        
+        df_input, df_targets_to_save, imputed_column_names = self._prepare_data(impute_targets=impute_targets)
+        
+        kernel, imputed_datasets, imputed_dataset_names = self._run_mice(
+            df_input=df_input,
+            impute_targets=impute_targets,
+            iterations=iterations,
+            resulting_datasets=1
+        )
+        
+        get_convergence_diagnostic(
+            kernel=kernel, 
+            imputed_dataset_names=imputed_dataset_names, 
+            column_names=imputed_column_names, 
+            root_dir=save_metrics_path
+        )
+        
+        get_imputed_distributions(
+            kernel=kernel, 
+            df_name=self._df_name, 
+            root_dir=save_metrics_path, 
+            column_names=imputed_column_names
+        )
+        
+        final_df = merge_dataframes(
+            imputed_datasets[0], 
+            df_targets_to_save, 
+            direction="horizontal", 
+            verbose=False
+        )
+        
+        return final_df
+
+    def run_pipeline_multi(
+        self,
+        save_datasets_dir: Union[str, Path],
+        save_metrics_dir: Union[str, Path],
+        resulting_datasets: int = 5,
+        impute_targets: bool = False,
+        iterations: int = 30
+    ) -> None:
+        """
+        Runs the MICE imputation pipeline to generate multiple imputed dataframes.
+        Saves the resulting datasets and metrics to the specified directories.
+        
+        Args:
+            save_datasets_dir (str | Path): Directory to save the resulting imputed datasets.
+            save_metrics_dir (str | Path): Directory to save convergence and distribution metrics.
+            resulting_datasets (int): Number of imputed datasets to generate.
+            impute_targets (bool): Whether to include target columns in the imputation process.
+            iterations (int): Number of MICE iterations to perform.
+        """
         save_datasets_path = make_fullpath(save_datasets_dir, make=True, enforce="directory")
         save_metrics_path = make_fullpath(save_metrics_dir, make=True, enforce="directory")
         
-        input_path = make_fullpath(df_path_or_dir)
-        if input_path.is_file():
-            all_file_paths = [input_path]
-        elif input_path.is_dir():
-            all_file_paths = list(list_csv_paths(input_path, raise_on_empty=True).values())
-        else:
-            _LOGGER.error(f"Input path '{input_path}' is neither a file nor a directory.")
-            raise FileNotFoundError()
+        df_input, df_targets_to_save, imputed_column_names = self._prepare_data(impute_targets=impute_targets)
         
-        for df_path in all_file_paths:
-            
-            df, df_name = load_dataframe(df_path=df_path, kind="pandas") # type: ignore
-            
-            # --- SPLIT LOGIC BASED ON CONFIGURATION ---
-            if self._impute_targets:
-                # If we impute targets, we pass the whole DF to MICE.
-                # We pass an empty DF as 'targets' to save_imputed_datasets to prevent duplication.
-                df_input = df
-                df_targets_to_save = pd.DataFrame(index=df.index) 
-            else:
-                # Explicitly cast tuple to list for Pandas indexing
-                feature_cols = list(self._schema.feature_names)
-                
-                # Check for column existence before slicing
-                if not set(feature_cols).issubset(df.columns):
-                    missing = set(feature_cols) - set(df.columns)
-                    _LOGGER.error(f"Dataset '{df_name}' is missing schema features: {missing}")
-                    raise KeyError(f"Missing features: {missing}")
-
-                df_input = df[feature_cols]
-                # Drop features to get targets (more robust than explicit selection if targets vary)
-                df_targets_to_save = df.drop(columns=feature_cols)
-            
-            # Monitor all columns that had NaNs
-            imputed_column_names = [col for col in df_input.columns if df_input[col].isna().any()]
-
-            # Run core logic
-            kernel, imputed_datasets, imputed_dataset_names = self._run_mice(df=df_input, df_name=df_name) # type: ignore
-            
-            # Save (merges imputed_datasets with df_targets_to_save)
-            _save_imputed_datasets(
-                save_dir=save_datasets_path, 
-                imputed_datasets=imputed_datasets, 
-                df_targets=df_targets_to_save, 
-                imputed_dataset_names=imputed_dataset_names
-            )
-            
-            # Metrics
-            get_convergence_diagnostic(
-                kernel=kernel, 
-                imputed_dataset_names=imputed_dataset_names, 
-                column_names=imputed_column_names, 
-                root_dir=save_metrics_path
-            )
-            
-            get_imputed_distributions(
-                kernel=kernel, 
-                df_name=df_name, 
-                root_dir=save_metrics_path, 
-                column_names=imputed_column_names
-            )
+        kernel, imputed_datasets, imputed_dataset_names = self._run_mice(
+            df_input=df_input,
+            impute_targets=impute_targets,
+            iterations=iterations,
+            resulting_datasets=resulting_datasets
+        )
+        
+        _save_imputed_datasets(
+            save_dir=save_datasets_path, 
+            imputed_datasets=imputed_datasets, 
+            df_targets=df_targets_to_save, 
+            imputed_dataset_names=imputed_dataset_names
+        )
+        
+        get_convergence_diagnostic(
+            kernel=kernel, 
+            imputed_dataset_names=imputed_dataset_names, 
+            column_names=imputed_column_names, 
+            root_dir=save_metrics_path
+        )
+        
+        get_imputed_distributions(
+            kernel=kernel, 
+            df_name=self._df_name, 
+            root_dir=save_metrics_path, 
+            column_names=imputed_column_names
+        )
 
 
 def _save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):
@@ -348,7 +366,7 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
             plt.savefig(save_path, bbox_inches='tight', format="svg")
             plt.close()
             
-    _LOGGER.info(f"📉 Convergence diagnostics complete.")
+    _LOGGER.info(f"📉 MICE Convergence diagnostics complete.")
 
 
 # Imputed distributions
@@ -435,5 +453,5 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             fig = kernel.plot_imputed_distributions(variables=[feature])
             _process_figure(fig, feature)
 
-    _LOGGER.info(f"📊 Imputed distributions complete.")
+    _LOGGER.info(f"📊 MICE Imputed distributions complete.")
     

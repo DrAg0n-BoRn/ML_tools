@@ -305,6 +305,10 @@ def safe_move(
 
     # 2. Determine Target Name
     if rename:
+        # Prevent double extensions if the user proactively included it
+        if src_path.is_file() and src_path.suffix and rename.lower().endswith(src_path.suffix.lower()):
+            rename = rename[:-len(src_path.suffix)]
+            
         sanitized_name = sanitize_filename(rename)
         if src_path.is_file():
             # Strict Extension Preservation

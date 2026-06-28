@@ -297,7 +297,9 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
     
     # Clean the filename
     filename = sanitize_filename(filename)
-    if not filename.endswith('.csv'):
+    
+    # Case-insensitive check to prevent '.CSV.csv'
+    if not filename.lower().endswith('.csv'):
         filename += '.csv'
         
     output_path = save_path / filename
