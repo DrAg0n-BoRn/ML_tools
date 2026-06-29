@@ -59,8 +59,9 @@ class History(_Callback):
     to a list of metric values.
     """
     def on_train_begin(self, logs=None):
-        # Clear history at the beginning of training
-        self.trainer.history = {} # type: ignore
+        # Only reset the history if we are starting from scratch
+        if self.trainer.epoch == 0: # type: ignore
+            self.trainer.history = {} # type: ignore
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}

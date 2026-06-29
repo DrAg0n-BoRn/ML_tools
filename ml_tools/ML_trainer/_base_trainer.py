@@ -221,6 +221,13 @@ class _BaseDragonTrainer(ABC):
 
             self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
             self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
+            
+            # Ensure all optimizer state tensors are moved to the correct device
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self.device)
+            
             self.epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0)
             self.start_epoch = self.epoch + 1 # Resume on the *next* epoch
             
@@ -361,9 +368,7 @@ class _BaseDragonTrainer(ABC):
         
         This is useful for running operations that require the CPU.
         """
-        self.device = torch.device('cpu')
-        self.model.to(self.device)
-        _LOGGER.info("Trainer and model moved to CPU.")
+        self.to_device('cpu')
     
     def to_device(self, device: str):
         """
@@ -374,6 +379,13 @@ class _BaseDragonTrainer(ABC):
         """
         self.device = self._validate_device(device)
         self.model.to(self.device)
+        
+        # Ensure all optimizer state tensors are moved to the specified device
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+        
         _LOGGER.info(f"Trainer and model moved to {self.device}.")
     
     def _load_model_state_wrapper(self, model_checkpoint: Union[Path, Literal['best', 'current']], verbose: int = 2):

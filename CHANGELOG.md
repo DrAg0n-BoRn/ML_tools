@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.2.2] 2026-06-29
+
+### Fixed
+
+- ML_trainer:
+    - Properly handle optimizer state tensors when moving the trainer to a different device. This ensures that all optimizer state tensors are moved to the correct device (CPU or GPU) when calling `to_device()` or loading checkpoints, preventing potential runtime errors during training or evaluation.
+
+- ML_callbacks:
+    - The History Callback now only resets the trainer's history at the beginning of training if the training is starting from scratch (i.e., epoch 0). This prevents unintended clearing of historical metrics when resuming training from a checkpoint, preserving the continuity of logged metrics across training sessions.
 
 ## [23.2.1] 2026-06-29
 
