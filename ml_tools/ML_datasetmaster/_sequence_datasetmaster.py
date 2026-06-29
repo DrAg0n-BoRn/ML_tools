@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import pandas
 import numpy
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -38,8 +38,8 @@ class DragonDatasetSequence:
                  prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
                  data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], 
                  sequence_length: int,
-                 validation_size: float = 0.2,
-                 test_size: float = 0.1,
+                 validation_size: Optional[float] = 0.2,
+                 test_size: Optional[float] = 0.1,
                  verbose: int = 2):
         """
         Initializes the dataset manager and automatically processes the data.
@@ -58,8 +58,8 @@ class DragonDatasetSequence:
                 - If pandas.Series: The index is used for the time axis.
                 - If numpy.ndarray: A simple integer range is used for the time axis.
             sequence_length (int): The number of time steps in each input window (X).
-            validation_size (float): The fraction of data to hold out for validation.
-            test_size (float): The fraction of data to hold out for testing.
+            validation_size (float | None): The fraction of data to hold out for validation.
+            test_size (float | None): The fraction of data to hold out for testing.
             verbose (int): Verbosity level for logging.
                 - 0: Errors only
                 - 1: Warnings
@@ -71,6 +71,9 @@ class DragonDatasetSequence:
         self._val_dataset = None
         self.sequence_length = sequence_length
         self.scaler = None
+        
+        validation_size = validation_size or 0.0
+        test_size = test_size or 0.0
         
         if not prediction_mode in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
             _LOGGER.error(f"Unrecognized prediction mode: '{prediction_mode}'.")
@@ -124,6 +127,9 @@ class DragonDatasetSequence:
             
         if (validation_size + test_size) >= 1.0:
             _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
+            raise ValueError()
+        elif validation_size < 0.0 or test_size < 0.0:
+            _LOGGER.error(f"Split sizes cannot be negative.")
             raise ValueError()
 
         total_size = len(self.sequence)

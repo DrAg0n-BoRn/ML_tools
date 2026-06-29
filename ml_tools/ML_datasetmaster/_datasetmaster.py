@@ -32,8 +32,8 @@ class DragonDataset(_BaseDatasetMaker):
                  kind: Literal["regression", "binary classification", "multiclass classification", "diffusion", "autoencoder"],
                  feature_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  target_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
-                 validation_size: float = 0.2,
-                 test_size: float = 0.1,
+                 validation_size: Optional[float] = 0.2,
+                 test_size: Optional[float] = 0.1,
                  class_map: Optional[dict[str,int]]=None,
                  random_state: int = 42,
                  verbose: int = 2):
@@ -50,9 +50,9 @@ class DragonDataset(_BaseDatasetMaker):
                 - "multiclass classification"
                 - "diffusion"
                 - "autoencoder"
-            validation_size (float):
+            validation_size (float | None):
                 The proportion of the *original* dataset to allocate to the validation split.
-            test_size (float): 
+            test_size (float | None): 
                 The proportion of the dataset to allocate to the test split.
             class_map (dict[str,int] | None): Optional class map for the target classes in classification tasks. Can be set later using `.set_class_map()`.
             random_state (int): 
@@ -70,12 +70,15 @@ class DragonDataset(_BaseDatasetMaker):
         """
         super().__init__()
         
+        validation_size = validation_size or 0.0
+        test_size = test_size or 0.0
+        
         # --- Validation for split sizes ---
         if (validation_size + test_size) >= 1.0:
             _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
             raise ValueError()
-        elif validation_size <= 0.0:
-            _LOGGER.error(f"Invalid validation split of {validation_size}.")
+        elif validation_size < 0.0 or test_size < 0.0:
+            _LOGGER.error(f"Split sizes cannot be negative.")
             raise ValueError()
         
         self.validation_split = validation_size
@@ -117,7 +120,7 @@ class DragonDataset(_BaseDatasetMaker):
                 features_df, target_series, test_size=test_size, random_state=random_state
             )
         else:
-            X_train_val, X_test, y_train_val, y_test = features_df, pandas.DataFrame(), target_series, pandas.Series()
+            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_series, target_series.iloc[:0]
         
         if validation_size > 0.0:
             val_split_size = validation_size / (1.0 - test_size)
@@ -125,7 +128,7 @@ class DragonDataset(_BaseDatasetMaker):
                 X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
             )
         else:
-            X_train, X_val, y_train, y_val = X_train_val, pandas.DataFrame(), y_train_val, pandas.Series()
+            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_series.iloc[:0]
         
         self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
         self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
@@ -266,8 +269,8 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                  kind: Literal["multitarget regression", "multilabel binary classification"],
                  feature_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  target_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
-                 validation_size: float = 0.2,
-                 test_size: float = 0.1,
+                 validation_size: Optional[float] = 0.2,
+                 test_size: Optional[float] = 0.1,
                  random_state: int = 42,
                  verbose: int = 2):
         """
@@ -283,9 +286,9 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 The type of multi-target ML task. Must be one of:
                 - "multitarget regression"
                 - "multilabel binary classification"
-            validation_size (float):
+            validation_size (float | None):
                 The proportion of the dataset to allocate to the validation split.
-            test_size (float): 
+            test_size (float | None): 
                 The proportion of the dataset to allocate to the test split.
             random_state (int): 
                 The seed for the random number generator for reproducibility.
@@ -302,11 +305,14 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         """
         super().__init__()
         
+        validation_size = validation_size or 0.0
+        test_size = test_size or 0.0
+        
         if (validation_size + test_size) >= 1.0:
             _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
             raise ValueError()
-        elif validation_size <= 0.0:
-            _LOGGER.error(f"Invalid validation split of {validation_size}.")
+        elif validation_size < 0.0 or test_size < 0.0:
+            _LOGGER.error(f"Split sizes cannot be negative.")
             raise ValueError()
 
         if kind not in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
@@ -350,7 +356,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 features_df, target_df, test_size=test_size, random_state=random_state
             )
         else:
-            X_train_val, X_test, y_train_val, y_test = features_df, pandas.DataFrame(), target_df, pandas.DataFrame()
+            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_df, target_df.iloc[:0]
 
         if validation_size > 0.0:
             val_split_size = validation_size / (1.0 - test_size)
@@ -358,7 +364,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
             )
         else:
-            X_train, X_val, y_train, y_val = X_train_val, pandas.DataFrame(), y_train_val, pandas.DataFrame()
+            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_df.iloc[:0]
 
         self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
         self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape

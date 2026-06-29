@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [23.2.1] 2026-06-29
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDataset`, `DragonDatasetMulti`, and `DragonDatasetSequence` classes: Updated the type hints for `validation_size` and `test_size` to `Optional[float]`, gracefully defaulting to `0.0`. 
+    - Added explicit validation across all dataset makers to prevent negative split sizes.
+
+### Fixed
+
+- ML_datasetmaster:
+    - `DragonDataset` and `DragonDatasetMulti` classes: Fixed a shape mismatch error that occurred during `DragonScaler` transformations when initializing with a `test_size` or `validation_size` of `0`. Empty splits are now explicitly sliced using `.iloc[:0]` to preserve the underlying `(0, num_features)` dimensional structure, preventing crashes.
+
 ## [23.2.0] 2026-06-28
 
 ### Added
