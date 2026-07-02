@@ -203,6 +203,26 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
 
         return results
     
+    def _iterate_directory_for_images(self, dir_path: Path, valid_extensions: Optional[list[str]] = None) -> list[Path]:
+        """
+        Private helper method to scan a directory for image files matching the specified extensions.
+        
+        Excludes files that already have the overlapped suffix to avoid reprocessing.
+        """
+        if valid_extensions is None:
+            valid_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".tif"]
+        
+        valid_extensions = [ext.lower() if ext.startswith(".") else f".{ext.lower()}" for ext in valid_extensions]
+        
+        found_images = [
+            p for p in dir_path.iterdir() 
+            if p.is_file() 
+            and p.suffix.lower() in valid_extensions
+            and not p.name.endswith(VisionKeys.OVERLAPPED_SUFFIX)
+        ]
+    
+        return found_images
+    
     def predict_from_directory(
         self, 
         directory_path: Union[str, Path], 
@@ -212,23 +232,16 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
         """
         Scans a directory for images matching the target formats and saves overlapped predictions.
         
+        Images that already have the 'overlapped' suffix will be ignored to prevent reprocessing.
+        
         Args:
             directory_path (Union[str, Path]): Path to the directory containing images.
             valid_extensions (Optional[list[str]]): List of valid image file extensions. Defaults to common formats.
             verbose (int): Verbosity level for logging.
         """
-        if valid_extensions is None:
-            valid_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".tif"]
-            
-        valid_extensions = [ext.lower() if ext.startswith(".") else f".{ext.lower()}" for ext in valid_extensions]
         dir_path = make_fullpath(directory_path, make=False, enforce="directory")
         
-        found_images = [
-            p for p in dir_path.iterdir() 
-            if p.is_file() 
-            and p.suffix.lower() in valid_extensions
-            and not p.name.endswith(VisionKeys.OVERLAPPED_SUFFIX)
-        ]
+        found_images = self._iterate_directory_for_images(dir_path, valid_extensions)
         
         if not found_images:
             if verbose >= 1:
@@ -244,7 +257,7 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
                 _ = self.predict_from_file(img_path, save_overlay=True, verbose=inner_verbose)
             except Exception as e:
                 _LOGGER.error(f"Failed to process image '{img_path.name}': {e}")
-                    
+            
         if verbose >= 2:
             _LOGGER.info(f"Directory processing completed for '{dir_path}'.")
     
@@ -288,4 +301,3 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
     def _create_overlapped_image(self, original_image: Image.Image, predictions: dict[str, Any]) -> Image.Image:
         """Helper method to create a PIL Image with the predictions overlapped."""
         pass
-

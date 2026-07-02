@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.3.0] 2026-07-02
+
+### Added
+
+- ML_inference_vision:
+    - `DragonSegmentationInference`: Added `predict_count_pixels_from_file` and `predict_count_pixels_from_tiled_directory` methods to predict and aggregate class-specific pixel counts for single images and directories of non-overlapping tiles. Included the `_count_pixels` internal helper method.
+
+
 ## [23.2.2] 2026-06-29
 
 ### Fixed

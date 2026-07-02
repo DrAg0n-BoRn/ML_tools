@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Union, Literal, Any, Optional, Callable
 from PIL import Image
 
+from ml_tools.path_manager._path_tools import make_fullpath
+
 from .._core import get_logger
 from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys
 
@@ -194,3 +196,103 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
         
         # Alpha composite and convert back to RGB
         return Image.alpha_composite(base_img, overlay_img).convert("RGB") 
+    
+    def _count_pixels(self, mask: np.ndarray) -> dict[str, int]:
+        """
+        Counts the number of pixels for each class in the segmentation mask.
+        
+        Args:
+            mask (np.ndarray): A 2D array representing the segmentation mask.
+        Returns:
+            dict[str, int]: A dictionary mapping class labels to their respective pixel counts.
+        """
+        if mask.ndim == 3 and mask.shape[0] == 1:
+            mask = mask.squeeze(0)
+            
+        if mask.ndim != 2:
+            _LOGGER.error(f"Mask must be a 2D array for pixel counting. Got {mask.ndim}D.")
+            raise ValueError()
+        
+        # pixel values per class 
+        unique, counts = np.unique(mask, return_counts=True)
+        pixel_counts: dict[str, int] = {}
+        
+        for label, count in zip(unique, counts):
+            class_name = self._idx_to_class.get(int(label), f"Class_{int(label)}") if self._idx_to_class else f"Class_{int(label)}"
+            pixel_counts[class_name] = int(count)
+            
+        return pixel_counts
+    
+    def predict_count_pixels_from_file(self, image_path: Union[str, Path], verbose: int = 2) -> dict[str, int]:
+        """
+        Predicts the segmentation mask for a single image file and counts the number of pixels for each class.
+        
+        Args:
+            image_path (Union[str, Path]): The path to the image file.
+            verbose (int): The verbosity level for logging.
+            
+        Returns:
+            dict[str, int]: A dictionary mapping class labels to their respective pixel counts in the image
+        """
+        
+        results = self.predict_from_file(image_path=image_path, 
+                                        save_overlay=False,
+                                        verbose=verbose)
+        
+        mask = results[PyTorchInferenceKeys.LABELS]
+        
+        # count pixels per class
+        pixel_counts = self._count_pixels(mask)
+        
+        if verbose >= 3:
+            _LOGGER.info(f"Pixel counts for '{image_path}': {pixel_counts}")
+            
+        return pixel_counts
+    
+    def predict_count_pixels_from_tiled_directory(self, directory_path: Union[str, Path],
+                                                  valid_extensions: Optional[list[str]] = None,
+                                                  verbose: int = 2) -> dict[str, int]:
+        """
+        Predicts pixel counts for all images in a tiled directory. 
+        Assumes that the images are tiles of a larger image and that they are non-overlapping. 
+        The method aggregates pixel counts across all tiles.
+        
+        Images that have the 'overlapped' suffix will be ignored.
+
+        Args:
+            directory_path (Union[str, Path]): The path to the directory containing tiled images.
+            valid_extensions (Optional[list[str]]): List of valid image file extensions. Defaults to common formats.
+            verbose (int): The verbosity level for logging.
+
+        Returns:
+            dict[str, int]: A dictionary mapping class labels to their respective pixel counts across all images.
+        """
+        total_pixel_counts: dict[str, int] = {}
+        
+        dir_path = make_fullpath(directory_path, make=False, enforce="directory")
+        
+        found_images = self._iterate_directory_for_images(dir_path=dir_path, valid_extensions=valid_extensions)
+        
+        if not found_images:
+            if verbose >= 1:
+                _LOGGER.warning(f"No valid images found in directory: '{dir_path}' matching extensions: {valid_extensions}.")
+            return total_pixel_counts
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Found {len(found_images)} images in directory: '{dir_path}'. Processing...")
+        
+        for img_path in found_images:
+            try:
+                inner_verbose = 3 if verbose >= 3 else (0 if verbose <= 0 else 1)
+                pixel_counts = self.predict_count_pixels_from_file(image_path=img_path, verbose=inner_verbose)
+            
+                # Aggregate counts
+                for class_name, count in pixel_counts.items():
+                    total_pixel_counts[class_name] = total_pixel_counts.get(class_name, 0) + count
+            except Exception as e:
+                _LOGGER.error(f"Error occurred while processing tile '{img_path}': {e}")
+
+        if verbose >= 3:
+            _LOGGER.info(f"Total pixel counts across all images in '{dir_path}': {total_pixel_counts}")
+
+        return total_pixel_counts
