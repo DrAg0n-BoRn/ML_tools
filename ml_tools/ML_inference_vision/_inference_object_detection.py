@@ -29,7 +29,18 @@ class DragonObjectDetectionInference(_BaseVisionInferenceHandler):
                  state_dict: Union[str, Path],
                  device: str = 'cpu',
                  transform_source: Optional[Union[str, Path, Callable]] = None):
+        """
+        Initializes the object detection inference handler.
         
+        Args:
+            model (nn.Module): The PyTorch model architecture.
+            state_dict (Union[str, Path]): Path to the model's state dictionary or a FinalizedFile format.
+            device (str): The device to run inference on ('cpu' or 'cuda').
+            transform_source (str | Path | Callable | None): 
+                - A path to a .json recipe file (str or Path).
+                - A pre-built transformation pipeline (Callable).
+                - None, in which case .set_transform() must be called explicitly to set transformations.
+        """
         super().__init__(model=model, 
                          state_dict=state_dict, 
                          device=device, 

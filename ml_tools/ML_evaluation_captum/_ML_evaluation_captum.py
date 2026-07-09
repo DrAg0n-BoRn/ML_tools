@@ -239,10 +239,14 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
 
     # --- Generate Plot ---
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
-    # wrap column names for better display
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(wrap_text)
     
-    plt.figure(figsize=_EvaluationConfig.CAPTUM_PLOT_SIZE, dpi=_EvaluationConfig.DPI)
+    # Increase wrap width to prevent multi-line breaks for most feature names
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=35))
+    
+    # Calculate a dynamic height to ensure large fonts do not overlap
+    dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
+    
+    plt.figure(figsize=(_EvaluationConfig.CAPTUM_PLOT_SIZE[0], dynamic_height), dpi=_EvaluationConfig.DPI)
     plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.PERCENT_COLUMN], color='mediumpurple')
     # plt.xlim(0, 1.05) # standardized scale # Removed to reflect actual percentages
     plt.xlim(left=0) # start at 0
@@ -253,11 +257,11 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     
     # Use the original target name if provided, otherwise fallback to suffix logic
     if target_name:
-        title += f"\n'{target_name}'"
+        title += f" '{target_name}'"
     elif file_suffix:
         # Remove the leading underscore for the title
         clean_suffix = file_suffix.lstrip("_").replace("_", " ")
-        title += f"\n'{clean_suffix}'"
+        title += f" '{clean_suffix}'"
         
     plt.title(title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
     plt.xticks(fontsize=_EvaluationConfig.CAPTUM_X_TICK_SIZE)
@@ -342,7 +346,8 @@ def captum_image_heatmap(model: nn.Module,
                 
                 attr_np = attr_tensor.permute(1, 2, 0).numpy()
                 orig_np = orig_tensor.permute(1, 2, 0).numpy()
-                orig_np = (orig_np - orig_np.min()) / (orig_np.max() - orig_np.min())
+                # Add epsilon to prevent division by zero for uniform images
+                orig_np = (orig_np - orig_np.min()) / (orig_np.max() - orig_np.min() + 1e-8)
 
                 # Create plot
                 fig, _ = viz.visualize_image_attr(
@@ -450,7 +455,8 @@ def captum_segmentation_heatmap(model: nn.Module,
                 
                 attr_np = attr_tensor.permute(1, 2, 0).numpy()
                 orig_np = orig_tensor.permute(1, 2, 0).numpy()
-                orig_np = (orig_np - orig_np.min()) / (orig_np.max() - orig_np.min())
+                # Add epsilon to prevent division by zero for uniform images
+                orig_np = (orig_np - orig_np.min()) / (orig_np.max() - orig_np.min() + 1e-8)
                 
                 fig, _ = viz.visualize_image_attr(
                     attr_np,

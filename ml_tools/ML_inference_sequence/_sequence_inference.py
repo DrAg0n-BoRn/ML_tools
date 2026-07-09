@@ -8,9 +8,10 @@ import seaborn as sns
 
 from .._core import get_logger
 from ..path_manager import make_fullpath, sanitize_filename
-from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys, PyTorchCheckpointKeys
+from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys, PyTorchCheckpointKeys, ScalerKeys
+from ..ML_scaler import DragonScaler
 
-from ..ML_inference._base_inference import _BaseInferenceHandler
+from ..ML_inference._base_inference import _CoreInferenceHandler
 
 
 _LOGGER = get_logger("Sequence Inference")
@@ -21,7 +22,7 @@ __all__ = [
 ]
 
 
-class DragonSequenceInferenceHandler(_BaseInferenceHandler):
+class DragonSequenceInferenceHandler(_CoreInferenceHandler):
     """
     Handles loading a PyTorch sequence model's state and performing inference
     for univariate sequence tasks.
@@ -39,17 +40,13 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
 
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
-            state_dict (str | Path): Path to the saved .pth model state_dict file.
+            state_dict (str | Path): Path to the saved .pth model state_dict file or a FinalizedFile format.
             task (str, optional): The type of sequence task. If None, detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path): File path to a saved DragonScaler state. This is required to correctly scale inputs and de-scale predictions.
         """
-        # Call the parent constructor to handle model loading and device
-        super().__init__(model=model, 
-                         state_dict=state_dict, 
-                         device=device, 
-                         scaler=scaler, 
-                         task=task)
+        # 1. Initialize Universal Core
+        super().__init__(model=model, state_dict=state_dict, device=device, task=task)
         
         self.sequence_length: Optional[int] = None
         self.initial_sequence: Optional[np.ndarray] = None
@@ -62,6 +59,29 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         if self.task not in valid_tasks:
             _LOGGER.error(f"'task' recognized as '{self.task}', but this handler only supports: {valid_tasks}.")
             raise ValueError()
+        
+        # --- Load Scalers ---
+        self.feature_scaler: Optional[DragonScaler] = None
+        self.target_scaler: Optional[DragonScaler] = None
+
+        if scaler is not None:
+            if isinstance(scaler, (str, Path)):
+                path_obj = make_fullpath(scaler, enforce="file")
+                loaded_scaler_data = torch.load(path_obj)
+                
+                if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
+                    if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
+                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for feature scaling.")
+                    if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
+                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for target scaling.")
+                else:
+                    _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
+                    self.feature_scaler = DragonScaler.load(loaded_scaler_data)
+            else:
+                _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
+                raise ValueError()
         
         if self.feature_scaler is None and self.target_scaler is None:
             _LOGGER.error("A scaler is required to scale inputs and de-scale predictions.")
@@ -78,7 +98,6 @@ class DragonSequenceInferenceHandler(_BaseInferenceHandler):
         if self._file_handler.initial_sequence is not None:
             self.initial_sequence = self._file_handler.initial_sequence
             _LOGGER.info(f"Default 'initial_sequence' for forecasting loaded from model file.")
-            # Optional: Validate shape
             if self.sequence_length and len(self.initial_sequence) != self.sequence_length: # type: ignore
                 _LOGGER.warning(f"Loaded 'initial_sequence' length ({len(self.initial_sequence)}) mismatches 'sequence_length' ({self.sequence_length}).") # type: ignore
         else:

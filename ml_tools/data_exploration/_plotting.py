@@ -423,7 +423,7 @@ def plot_numeric_overview_boxplot(
         return
     
     # Wrap long feature names for better visualization on the y-axis
-    numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x))
+    numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x, width=35))
 
     # Apply scaling if requested
     if strategy == "scale":
@@ -464,7 +464,7 @@ def plot_numeric_overview_boxplot(
     
     # Dynamic figure size based on the number of features
     num_features = numeric_df.shape[1]
-    fig_height = max(6, num_features * 0.5)
+    fig_height = max(6, num_features * 0.8)
     
     plt.figure(figsize=(12, fig_height))
     

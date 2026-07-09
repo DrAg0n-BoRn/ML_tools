@@ -32,7 +32,19 @@ class DragonSegmentationInference(_BaseVisionInferenceHandler):
                  task: Optional[Literal["binary segmentation", "multiclass segmentation"]] = None,
                  device: str = 'cpu',
                  transform_source: Optional[Union[str, Path, Callable]] = None):
+        """
+        Initializes the segmentation inference handler.
         
+        Args:
+            model (nn.Module): The PyTorch model architecture.
+            state_dict (str | Path): Path to the saved .pth model state_dict file or a FinalizedFile format.
+            task (str, optional): The type of classification task. If None, detected from file.
+            device (str): The device to run inference on ('cpu', 'cuda', 'mps').
+            transform_source (str | Path | Callable | None): 
+                - A path to a .json recipe file (str or Path).
+                - A pre-built transformation pipeline (Callable).
+                - None, in which case .set_transform() must be called explicitly to set transformations.
+        """
         super().__init__(model=model, 
                          state_dict=state_dict, 
                          device=device, 

@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.4.0] 2026-07-09
+
+### Added
+
+- ML_inference:
+    - `_CoreInferenceHandler`: Added an absolute universal base class strictly for domain-agnostic setup, including hardware validation, state dict loading, and evaluation state configuration.
+    - `_ClassificationMixin`: Added a mixin class to encapsulate classification metadata and threshold management (`_classification_threshold`, `_class_map`, `set_class_map`, `set_classification_threshold`).
+- ML_scaler:
+    - `DragonScaler`: Added error logging for `transform()` and `inverse_transform()` methods to provide more informative messages when transformations fail due to shape mismatches or missing features.
+
+### Changed
+
+- ML_inference:
+    - `DragonInferenceHandler`: Refactored class to inherit from `_CoreInferenceHandler` and `_ClassificationMixin`.
+- ML_inference_sequence:
+    - `DragonSequenceInferenceHandler`: Refactored class to inherit from `_CoreInferenceHandler`.
+    - `DragonSequenceInferenceHandler`: Migrated scaler instantiation (`feature_scaler` and `target_scaler`) directly into this class.
+- ML_inference_vision:
+    - `_BaseVisionInferenceHandler`: Refactored class to inherit from `_CoreInferenceHandler` and `_ClassificationMixin`.
+    - `DragonVisionClassificationInference`: Refactored class to inherit from `_BaseVisionInferenceHandler` to unify the vision API.
+    - `DragonVisionClassificationInference`: Implemented the abstract `_create_overlapped_image` method to support drawing text boxes with predicted classes, probabilities, and dynamically color-coded borders.
+
+### Removed
+
+- ML_inference:
+    - `_BaseInferenceHandler`: Completely removed and replaced by the new layered architecture.
+    - `DragonInferenceHandler`: Removed local `set_classification_threshold` method as it is now natively handled by the mixin.
+- ML_inference_vision:
+    - `_BaseVisionInferenceHandler`: Removed the forced `set_vision_class_map()` method; overriding is now seamlessly handled via `set_class_map()` from the mixin.
+    - `DragonVisionClassificationInference`: Removed redundant transformation setup, PIL processing, and file-loading methods, which are now inherited natively from the vision base class.
+
+### Fixed
+
+- ML_evaluation_captum:
+    - `captum_feature_importance()`: Resolved text overlapping issues in feature importance plots by increasing the text wrapping width and implementing dynamic figure height scaling based on the number of features.
+    - `captum_image_heatmap()`: Prevented division by zero errors for completely uniform images by adding an epsilon (`1e-8`) during min-max scaling.
+    - `captum_segmentation_heatmap()`: Prevented division by zero errors for completely uniform images by adding an epsilon (`1e-8`) during min-max scaling.
+
+- data_exploration:
+    - `plot_numeric_overview_boxplot()`: Resolved y-axis text overlapping by increasing the `wrap_text` width to 35 and increasing the dynamic figure height multiplier to `0.8` to properly accommodate larger font sizes.
+
+
 ## [23.3.0] 2026-07-02
 
 ### Added

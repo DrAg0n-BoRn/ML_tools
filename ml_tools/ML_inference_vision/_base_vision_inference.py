@@ -12,7 +12,7 @@ from .._core import get_logger
 from ..keys._keys import VisionKeys
 from ..path_manager import make_fullpath
 
-from ..ML_inference._base_inference import _BaseInferenceHandler
+from ..ML_inference._base_inference import _CoreInferenceHandler, _ClassificationMixin
 
 
 _LOGGER = get_logger("Vision Inference")
@@ -37,7 +37,7 @@ _VISION_PALETTE_50 = [
 ]
 
 
-class _BaseVisionInferenceHandler(_BaseInferenceHandler):
+class _BaseVisionInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
     """
     Abstract base class for PyTorch vision inference handlers.
     Manages image transformations, directory loading, and file predictions.
@@ -49,11 +49,12 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
                  task: Optional[str] = None,
                  transform_source: Optional[Union[str, Path, Callable]] = None):
         
-        super().__init__(model=model, 
-                         state_dict=state_dict, 
-                         device=device, 
-                         scaler=None, 
-                         task=task)
+        # 1. Initialize Universal Core
+        _CoreInferenceHandler.__init__(self, model=model, state_dict=state_dict, device=device, task=task)
+        
+        # 2. Initialize Classification Mixin and load metadata
+        _ClassificationMixin.__init__(self)
+        self._load_classification_metadata(self._file_handler)
 
         self._transform: Optional[Callable] = None
         self._is_transformed: bool = False
@@ -69,12 +70,15 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
         if transform_source:
             self.set_transform(transform_source)
             self._is_transformed = True
-            
-        self._color_map: dict[int, tuple[int, int, int]] = {}
-        self._initialize_color_map()
+        
+        # Initialize color map for visualization only if not already set
+        if not hasattr(self, '_color_map'):
+            self._initialize_color_map()
     
     def _initialize_color_map(self) -> None:
         """Generates and saves a fixed color palette for the labels."""
+        self._color_map = {} # Reset and initialize the attribute
+        
         if self._idx_to_class is not None and len(self._idx_to_class) > 0:
             all_labels = sorted(list(self._idx_to_class.keys()))
         else:
@@ -88,7 +92,7 @@ class _BaseVisionInferenceHandler(_BaseInferenceHandler):
             else:
                 self._color_map[label] = tuple(np.random.randint(0, 255, 3).tolist())
 
-    def set_vision_class_map(self, class_map: dict[str, int], force_overwrite: bool = False) -> None:
+    def set_class_map(self, class_map: dict[str, int], force_overwrite: bool = False) -> None:
         """
         Sets the class name mapping and regenerates the color palette to match the new labels.
         

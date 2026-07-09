@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Union, Literal, Any, Optional
 
 from .._core import get_logger
-from ..keys._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys
+from ..keys._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys
+from ..path_manager import make_fullpath
+from ..ML_scaler import DragonScaler
 
-from ._base_inference import _BaseInferenceHandler
+from ._base_inference import _CoreInferenceHandler, _ClassificationMixin
 
 
 _LOGGER = get_logger("Inference Handler")
@@ -18,7 +20,7 @@ __all__ = [
 ]
 
 
-class DragonInferenceHandler(_BaseInferenceHandler):
+class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
     """
     Handles loading a PyTorch model's state dictionary and performing inference for tabular data.
     """
@@ -38,21 +40,18 @@ class DragonInferenceHandler(_BaseInferenceHandler):
 
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
-            state_dict (str | Path): Path to the saved .pth model state_dict file.
+            state_dict (str | Path): Path to the saved .pth model state_dict file or a FinalizedFile format.
             task (str, optional): The type of task. If None, it will be detected from file.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path | None): A path to a saved DragonScaler state.
             distribution_mode (bool): If True, treats regression outputs as [mean + variance logits] and returns both the predicted mean and variance.
-        
-        Note: class_map (Dict[int, str]) will be loaded from the model file, to set or override it use `.set_class_map()`.
         """
-        # Call the parent constructor to handle model loading, device, and scaler
-        # The parent constructor resolves 'task'
-        super().__init__(model=model, 
-                         state_dict=state_dict, 
-                         device=device, 
-                         scaler=scaler, 
-                         task=task)
+        # 1. Initialize Universal Core
+        _CoreInferenceHandler.__init__(self, model=model, state_dict=state_dict, device=device, task=task)
+        
+        # 2. Initialize Classification Mixin and load metadata
+        _ClassificationMixin.__init__(self)
+        self._load_classification_metadata(self._file_handler)
         
         # --- Validation of resolved task ---
         valid_tasks = [
@@ -82,6 +81,29 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             self.set_target_ids([self._file_handler.target_name])
         else:
             _LOGGER.warning("No target names found in file metadata.")
+
+        # --- Load Scalers ---
+        self.feature_scaler: Optional[DragonScaler] = None
+        self.target_scaler: Optional[DragonScaler] = None
+
+        if scaler is not None:
+            if isinstance(scaler, (str, Path)):
+                path_obj = make_fullpath(scaler, enforce="file")
+                loaded_scaler_data = torch.load(path_obj)
+                
+                if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
+                    if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
+                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for feature scaling.")
+                    if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
+                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
+                        _LOGGER.info("Loaded DragonScaler state for target scaling.")
+                else:
+                    _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
+                    self.feature_scaler = DragonScaler.load(loaded_scaler_data)
+            else:
+                _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
+                raise ValueError()
 
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
@@ -350,8 +372,6 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             return {self.target_ids[0]: result}
         
         elif self.task == MLTaskKeys.MULTITARGET_REGRESSION:
-            # result = self.predict_numpy(features)[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
-            # return {key: value for key, value in zip(self.target_ids, result)}
             res_dict = self.predict_numpy(features)
             means = res_dict[PyTorchInferenceKeys.PREDICTIONS].flatten().tolist()
             out = {key: value for key, value in zip(self.target_ids, means)}
@@ -367,33 +387,6 @@ class DragonInferenceHandler(_BaseInferenceHandler):
             return {key: value for key, value in zip(self.target_ids, result)}
         
         else:
-            # should never happen
             _LOGGER.error(f"Unrecognized task '{self.task}'.")
             raise ValueError()
-        
-    def set_classification_threshold(self, threshold: float, force_overwrite: bool=False):
-        """
-        Sets the classification threshold for the current inference instance.
-        
-        If a threshold was previously loaded from a model configuration, this
-        method will log a warning and refuse to update the value. This
-        prevents accidentally overriding a setting from a loaded checkpoint.
-        
-        To bypass this safety check set `force_overwrite` to `True`.
-
-        Args:
-            threshold (float): The new classification threshold value to set.
-            force_overwrite (bool): If True, allows overwriting a threshold that was loaded from a configuration file. 
-        """
-        if self._loaded_threshold:
-            warning_message = f"The current '{PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD}={self._classification_threshold}' was loaded and set from a model configuration file."
-            if not force_overwrite:
-                warning_message += " Use 'force_overwrite' if you are sure you want to modify it. This will not affect the value from the file."
-                _LOGGER.warning(warning_message)
-                return
-            else:
-                warning_message += f" Overwriting it to {threshold}."
-                _LOGGER.warning(warning_message)
- 
-        self._classification_threshold = threshold
 

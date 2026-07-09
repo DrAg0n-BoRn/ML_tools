@@ -145,15 +145,22 @@ class DragonScaler:
         # Ensure mean and std are on the same device as the data
         mean = self.mean_.to(data.device)
         std = self.std_.to(data.device)
-        
-        # Extract the columns to be scaled
-        features_to_scale = data_clone[:, self.continuous_feature_indices]
-        
-        # Apply scaling, adding epsilon to std to prevent division by zero
-        scaled_features = (features_to_scale - mean) / (std + 1e-8)
-        
-        # Place the scaled features back into the cloned tensor
-        data_clone[:, self.continuous_feature_indices] = scaled_features
+        try:
+            # Extract the columns to be scaled
+            features_to_scale = data_clone[:, self.continuous_feature_indices]
+            
+            # Apply scaling, adding epsilon to std to prevent division by zero
+            scaled_features = (features_to_scale - mean) / (std + 1e-8)
+            
+            # Place the scaled features back into the cloned tensor
+            data_clone[:, self.continuous_feature_indices] = scaled_features
+            
+        except IndexError as e:
+            _LOGGER.error(f"IndexError during transform: Data has {data_clone.shape[1]} columns, expected {len(self.continuous_feature_indices)} columns.")
+            raise ValueError() from e
+        except RuntimeError as e:
+            _LOGGER.error(f"RuntimeError during transform: Scaler fitted on {len(self.continuous_feature_indices)} columns. Error: {str(e)}")
+            raise ValueError() from e
         
         if input_is_1d:
             return data_clone.view(-1)
@@ -178,13 +185,21 @@ class DragonScaler:
         mean = self.mean_.to(data.device)
         std = self.std_.to(data.device)
         
-        features_to_inverse = data_clone[:, self.continuous_feature_indices]
-        
-        # Apply inverse scaling
-        original_scale_features = (features_to_inverse * (std + 1e-8)) + mean
-        
-        data_clone[:, self.continuous_feature_indices] = original_scale_features
-        
+        try:
+            features_to_inverse = data_clone[:, self.continuous_feature_indices]
+            
+            # Apply inverse scaling
+            original_scale_features = (features_to_inverse * (std + 1e-8)) + mean
+            
+            data_clone[:, self.continuous_feature_indices] = original_scale_features
+            
+        except IndexError as e:
+            _LOGGER.error(f"IndexError during inverse_transform: Data has {data_clone.shape[1]} columns, expected {len(self.continuous_feature_indices)} columns.")
+            raise ValueError() from e
+        except RuntimeError as e:
+            _LOGGER.error(f"RuntimeError during inverse_transform: Scaler fitted on {len(self.continuous_feature_indices)} columns. Error: {str(e)}")
+            raise ValueError() from e
+
         if input_is_1d:
             return data_clone.view(-1)
         
