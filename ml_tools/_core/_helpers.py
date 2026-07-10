@@ -72,7 +72,7 @@ def check_and_abbreviate_name(name: str) -> str:
 def wrap_text(text: str, width: int=_EvaluationConfig.NAME_LIMIT, break_char: str = "\n") -> str:
     """
     Wraps text to a specified width while keeping trailing numbers attached to their base words.
-    Use break_char="<br>" for Plotly and break_char="\n" for Matplotlib.
+    Use break_char="\\<br>" for Plotly and break_char="\\n" for Matplotlib.
     """
     clean_text = str(text).strip()
     

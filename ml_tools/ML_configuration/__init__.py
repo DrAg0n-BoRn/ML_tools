@@ -41,7 +41,14 @@ from ._models import (
     DragonTabNetParams,
     DragonAutoIntParams,
     DragonAutoencoderParams,
-    DragonDiTParams
+    DragonDiTParams,
+    DragonSequenceLSTMParams,
+    DragonResNetParams,
+    DragonEfficientNetParams,
+    DragonVGGParams,
+    DragonFCNParams,
+    DragonDeepLabv3Params,
+    DragonFastRCNNParams,
 )
 
 from ._training import (
@@ -94,7 +101,14 @@ __all__ = [
     "DragonAutoIntParams",
     "DragonAutoencoderParams",
     "DragonDiTParams",
-    
+    "DragonSequenceLSTMParams",
+    "DragonResNetParams",
+    "DragonEfficientNetParams",
+    "DragonVGGParams",
+    "DragonFCNParams",
+    "DragonDeepLabv3Params",
+    "DragonFastRCNNParams",
+
     # --- Training Config ---
     "DragonTrainingConfig",
     "DragonParetoConfig",

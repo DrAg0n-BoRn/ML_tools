@@ -1,8 +1,8 @@
 import torch
 from torch import nn
-from torchvision.models import detection as detection_models
+from torchvision.models import detection as detection_models, get_model_weights
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 
@@ -32,7 +32,7 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: Literal["fasterrcnn_resnet50_fpn", "fasterrcnn_resnet50_fpn_v2"] = 'fasterrcnn_resnet50_fpn_v2',
+                 model_name: str = 'fasterrcnn_resnet50_fpn_v2',
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -46,6 +46,10 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
                 If True, initializes the model with weights pretrained on COCO.
                 This flag is for initialization only and is NOT saved in the
                 architecture config. Defaults to False.
+                
+        <br>
+        
+        ## <a href="https://docs.pytorch.org/vision/stable/models/faster_rcnn.html">Faster R-CNN Models</a>
         """
         super().__init__()
         
@@ -62,25 +66,26 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
         # --- 2. Instantiate the base model ---
         model_constructor = getattr(detection_models, model_name)
         
-        # Format model name to find weights enum, e.g., fasterrcnn_resnet50_fpn_v2 -> FasterRCNN_ResNet50_FPN_V2_Weights
-        weights_model_name = model_name.replace('fasterrcnn_', 'FasterRCNN_').replace('resnet', 'ResNet').replace('_fpn', '_FPN')
-        weights_enum_name = f"{weights_model_name.upper()}_Weights"
-        
-        weights_enum = getattr(detection_models, weights_enum_name, None) if weights_enum_name else None
-        weights = weights_enum.DEFAULT if weights_enum and init_with_pretrained else None
+        weights = None
+        if init_with_pretrained:
+            try:
+                weights_enum = get_model_weights(model_name)
+                weights = getattr(weights_enum, "DEFAULT", None)
+            except ValueError:
+                weights = None
         
         if weights:
             self._pretrained_default_transforms = weights.transforms()
 
         self.model = model_constructor(weights=weights, weights_backbone=weights)
         
-        # --- 4. Modify the output layer (Box Predictor) ---
+        # --- 3. Modify the output layer (Box Predictor) ---
         # Get the number of input features for the classifier
         in_features = self.model.roi_heads.box_predictor.cls_score.in_features
         # Replace the pre-trained head with a new one
         self.model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
-        # --- 3. Modify the input layer (Backbone conv1) ---
+        # --- 4. Modify the input layer (Backbone conv1) ---
         if in_channels != 3:
             original_conv1 = self.model.backbone.body.conv1
             

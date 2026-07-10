@@ -6,7 +6,7 @@ from ._base_model_config import _BaseModelParams
 
 
 __all__ = [    
-    # --- Model Parameter Configs ---
+    # Standard Models
     "DragonMLPParams",
     "DragonAttentionMLPParams",
     "DragonMultiHeadAttentionNetParams",
@@ -15,8 +15,21 @@ __all__ = [
     "DragonNodeParams",
     "DragonTabNetParams",
     "DragonAutoIntParams",
+    # Tabular Autoencoder
     "DragonAutoencoderParams",
-    "DragonDiTParams"
+    # DiT guided and standard
+    "DragonDiTParams",
+    # Sequence Models
+    "DragonSequenceLSTMParams",
+    # Image Classification Models
+    "DragonResNetParams",
+    "DragonEfficientNetParams",
+    "DragonVGGParams",
+    # Image Segmentation Models
+    "DragonFCNParams",
+    "DragonDeepLabv3Params",
+    # Object Detection Models
+    "DragonFastRCNNParams",
 ]
 
 
@@ -206,6 +219,7 @@ class DragonTabNetParams(_BaseModelParams):
         self.mask_type = mask_type
         self.batch_norm_continuous = batch_norm_continuous
 
+# Tabular Autoencoder
 
 class DragonAutoencoderParams(_BaseModelParams):
     def __init__(self, *,
@@ -216,6 +230,7 @@ class DragonAutoencoderParams(_BaseModelParams):
         self.embedding_dim = embedding_dim
         self.fourier_sigma = fourier_sigma
 
+# DiT guided and standard
 
 class DragonDiTParams(_BaseModelParams):
     def __init__(self, *,
@@ -227,4 +242,99 @@ class DragonDiTParams(_BaseModelParams):
         self.seq_len = seq_len
         self.num_heads = num_heads
         self.depth = depth
+
+
+# Sequence Models
+
+class DragonSequenceLSTMParams(_BaseModelParams):
+    def __init__(self, *,
+                 prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
+                 hidden_size: int = 100,
+                 recurrent_layers: int = 1,
+                 dropout: float = 0.1) -> None:
+        self.prediction_mode = prediction_mode
+        self.hidden_size = hidden_size
+        self.recurrent_layers = recurrent_layers
+        self.dropout = dropout
+        
+#############
+# Computer vision models
+##############
+
+# Image classification
+
+class DragonResNetParams(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = "resnet152",
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
+
+
+class DragonEfficientNetParams(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = 'efficientnet_b7',
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
+
+
+class DragonVGGParams(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = "vgg19_bn",
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
+
+
+# Image segmentation
+
+class DragonFCNParams(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = 'fcn_resnet101',
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
+
+
+class DragonDeepLabv3Params(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = 'deeplabv3_resnet101',
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
+
+
+# Object detection
+
+class DragonFastRCNNParams(_BaseModelParams):
+    def __init__(self, *,
+                 num_classes: int,
+                 in_channels: int = 3,
+                 model_name: str = 'fasterrcnn_resnet50_fpn_v2',
+                 init_with_pretrained: bool = False) -> None:
+        self.model_name = model_name
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.init_with_pretrained = init_with_pretrained
 

@@ -1,5 +1,4 @@
 from torch import nn
-from typing import Literal
 
 from ._base_wrapper import _BaseSegmentationWrapper
 
@@ -23,7 +22,7 @@ class DragonFCN(_BaseSegmentationWrapper):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: Literal["fcn_resnet50", "fcn_resnet101"] = 'fcn_resnet50',
+                 model_name: str = "fcn_resnet101",
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -37,17 +36,16 @@ class DragonFCN(_BaseSegmentationWrapper):
                 If True, initializes the model with weights pretrained on COCO.
                 This flag is for initialization only and is NOT saved in the
                 architecture config. Defaults to False.
-        """
-        # Format model name to find weights enum, e.g., fcn_resnet50 -> FCN_ResNet50_Weights
-        weights_model_name = model_name.replace('fcn_', 'FCN_').replace('resnet', 'ResNet')
-        weights_enum_name = f"{weights_model_name}_Weights"
+                
+        <br>
         
+        ## <a href="https://pytorch.org/vision/stable/models/fcn.html">FCN Models</a>
+        """
         super().__init__(
             num_classes=num_classes,
             in_channels=in_channels,
             model_name=model_name,
-            init_with_pretrained=init_with_pretrained,
-            weights_enum_name=weights_enum_name
+            init_with_pretrained=init_with_pretrained
         )
 
     def _get_input_layer(self) -> nn.Conv2d:
@@ -70,7 +68,7 @@ class DragonDeepLabv3(_BaseSegmentationWrapper):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: Literal["deeplabv3_resnet50", "deeplabv3_resnet101"] = 'deeplabv3_resnet50',
+                 model_name: str = 'deeplabv3_resnet101',
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -84,18 +82,16 @@ class DragonDeepLabv3(_BaseSegmentationWrapper):
                 If True, initializes the model with weights pretrained on COCO.
                 This flag is for initialization only and is NOT saved in the
                 architecture config. Defaults to False.
+                
+        <br>
+        
+        ## <a href="https://pytorch.org/vision/stable/models/deeplabv3.html">DeepLabv3 Models</a>
         """
-        
-        # Format model name to find weights enum, e.g., deeplabv3_resnet50 -> DeepLabV3_ResNet50_Weights
-        weights_model_name = model_name.replace('deeplabv3_', 'DeepLabV3_').replace('resnet', 'ResNet')
-        weights_enum_name = f"{weights_model_name}_Weights"
-        
         super().__init__(
             num_classes=num_classes,
             in_channels=in_channels,
             model_name=model_name,
-            init_with_pretrained=init_with_pretrained,
-            weights_enum_name=weights_enum_name
+            init_with_pretrained=init_with_pretrained
         )
 
     def _get_input_layer(self) -> nn.Conv2d:

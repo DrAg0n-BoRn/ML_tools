@@ -1,6 +1,6 @@
 from torch import nn
 import torchvision.models as vision_models
-from typing import Literal, Optional
+from typing import Optional
 
 from ._base_wrapper import _BaseVisionWrapper
 
@@ -25,7 +25,7 @@ class DragonResNet(_BaseVisionWrapper):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: Literal["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"] = 'resnet50',
+                 model_name: str = 'resnet152',
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -37,16 +37,17 @@ class DragonResNet(_BaseVisionWrapper):
                 The name of the ResNet model to use (e.g., 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'). Number is the layer count.
             init_with_pretrained (bool):
                 If True, initializes the model with weights pretrained on ImageNet. This flag is for initialization only and is NOT saved in the architecture config.
+        
+        <br>
+        
+        ## <a href="https://docs.pytorch.org/vision/stable/models/resnet.html">ResNet Models</a>
+        
         """
-        
-        weights_enum_name = getattr(vision_models, f"{model_name.upper()}_Weights", None)
-        
         super().__init__(
             num_classes=num_classes,
             in_channels=in_channels,
             model_name=model_name,
             init_with_pretrained=init_with_pretrained,
-            weights_enum_name=weights_enum_name
         )
 
     def _get_input_layer(self) -> nn.Conv2d:
@@ -74,7 +75,7 @@ class DragonEfficientNet(_BaseVisionWrapper):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: str = 'efficientnet_b0',
+                 model_name: str = 'efficientnet_b7',
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -89,16 +90,20 @@ class DragonEfficientNet(_BaseVisionWrapper):
                 If True, initializes the model with weights pretrained on
                 ImageNet. This flag is for initialization only and is
                 NOT saved in the architecture config. Defaults to False.
-        """
+                
+        <br>
+            
+        ## <a href="https://pytorch.org/vision/stable/models/efficientnet.html">EfficientNet Models</a>
         
-        weights_enum_name = getattr(vision_models, f"{model_name.upper()}_Weights", None)
-
+        <br>
+        
+        ## <a href="https://pytorch.org/vision/stable/models/efficientnetv2.html">EfficientNet V2 Models</a>
+        """
         super().__init__(
             num_classes=num_classes,
             in_channels=in_channels,
             model_name=model_name,
             init_with_pretrained=init_with_pretrained,
-            weights_enum_name=weights_enum_name
         )
 
     def _get_input_layer(self) -> nn.Conv2d:
@@ -132,7 +137,7 @@ class DragonVGG(_BaseVisionWrapper):
     def __init__(self,
                  num_classes: int,
                  in_channels: int = 3,
-                 model_name: Literal["vgg11", "vgg13", "vgg16", "vgg19", "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn"] = 'vgg16',
+                 model_name: str = "vgg19_bn",
                  init_with_pretrained: bool = False):
         """
         Args:
@@ -146,17 +151,16 @@ class DragonVGG(_BaseVisionWrapper):
                 If True, initializes the model with weights pretrained on
                 ImageNet. This flag is for initialization only and is
                 NOT saved in the architecture config. Defaults to False.
+                
+        <br>
+        
+        ## <a href="https://pytorch.org/vision/stable/models/vgg.html">VGG Models</a>
         """
-        
-        # Format model name to find weights enum, e.g., vgg16_bn -> VGG16_BN_Weights
-        weights_enum_name = f"{model_name.replace('_bn', '_BN').upper()}_Weights"
-        
         super().__init__(
             num_classes=num_classes,
             in_channels=in_channels,
             model_name=model_name,
             init_with_pretrained=init_with_pretrained,
-            weights_enum_name=weights_enum_name
         )
 
     def _get_input_layer(self) -> nn.Conv2d:

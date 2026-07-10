@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.5.0] 2026-07-10
+
+### Changed
+
+- ML_models_vision:
+    - `_BaseVisionWrapper`, `_BaseSegmentationWrapper`, `DragonFastRCNN`: Replaced manual string manipulations for weights enum retrieval with PyTorch's native `get_model_weights` utility, incorporating `getattr(weights_enum, "DEFAULT", None)` for safer pre-training initialization.
+    - `DragonResNet`, `DragonEfficientNet`, `DragonVGG`, `DragonFCN`, `DragonDeepLabv3`, `DragonFastRCNN`: Changed the `model_name` parameter type hint from `Literal` to `str` to future-proof architecture support without requiring package updates.
+    - `DragonResNet`, `DragonEfficientNet`, `DragonVGG`, `DragonFCN`, `DragonDeepLabv3`, `DragonFastRCNN`: Updated default `model_name` arguments to their latest architecture versions and appended official PyTorch documentation links to their docstrings.
+
+### Added
+
+- ML_configuration
+    - Sequence model parameter class: `DragonSequenceLSTMParams`.
+    - Image classification model parameter classes: `DragonResNetParams`, `DragonEfficientNetParams`, `DragonVGGParams`.
+    - Image segmentation model parameter classes: `DragonFCNParams`, `DragonDeepLabv3Params`.
+    - Object detection model parameter class: `DragonFastRCNNParams`.
+
 ## [23.4.0] 2026-07-09
 
 ### Added

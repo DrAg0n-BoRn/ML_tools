@@ -11,8 +11,7 @@ from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import object_detection_metrics
 from ..ML_configuration import FinalizeObjectDetection
 
-from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, MagicWords, DragonTrainerKeys
+from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, DragonTrainerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer

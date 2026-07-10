@@ -32,8 +32,7 @@ class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
                  num_classes: int,
                  in_channels: int,
                  model_name: str,
-                 init_with_pretrained: bool,
-                 weights_enum_name: Optional[str] = None):
+                 init_with_pretrained: bool):
         super().__init__()
         
         # --- 1. Validation and Configuration ---
@@ -48,8 +47,11 @@ class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
 
         # --- 2. Instantiate the base model ---
         if init_with_pretrained:
-            weights_enum = getattr(vision_models, weights_enum_name, None) if weights_enum_name else None
-            weights = weights_enum.IMAGENET1K_V1 if weights_enum else None
+            try:
+                weights_enum = vision_models.get_model_weights(model_name)
+                weights = getattr(weights_enum, "DEFAULT", None)
+            except ValueError:
+                weights = None
             
             # Save transformations for pretrained models
             if weights:
@@ -153,8 +155,7 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
                  num_classes: int,
                  in_channels: int,
                  model_name: str,
-                 init_with_pretrained: bool,
-                 weights_enum_name: Optional[str] = None):
+                 init_with_pretrained: bool):
         super().__init__()
         
         # --- 1. Validation and Configuration ---
@@ -175,8 +176,11 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
         model_constructor = getattr(vision_models.segmentation, model_name)
 
         if init_with_pretrained:
-            weights_enum = getattr(vision_models.segmentation, weights_enum_name, None) if weights_enum_name else None
-            weights = weights_enum.DEFAULT if weights_enum else None
+            try:
+                weights_enum = vision_models.get_model_weights(model_name)
+                weights = getattr(weights_enum, "DEFAULT", None)
+            except ValueError:
+                weights = None
             
             # save pretrained model transformations
             if weights:
@@ -251,4 +255,3 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
             f"in_channels={self.in_channels}, "
             f"num_classes={self.num_classes})"
         )
-
