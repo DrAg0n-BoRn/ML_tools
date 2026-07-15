@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [23.6.0] 2026-07-15
+
+### Changed
+
+- ML_trainer:
+    - `DragonTrainer`: Refactored to strictly handle tabular and general ML tasks (regression, binary/multiclass classification, multi-target regression, and multi-label binary classification). Removed all vision-specific data flow logic, tensor reshaping, Captum spatial/image explainability, and vision finalization configurations to enforce separation of concerns.
+
+### Added
+
+- ML_trainer:
+    - `DragonVisionTrainer`: Created a dedicated trainer class for computer vision tasks (binary/multiclass image classification and binary/multiclass segmentation) inheriting from `_BaseDragonTrainer`.
+
+
 ## [23.5.0] 2026-07-10
 
 ### Changed
