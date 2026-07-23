@@ -1,8 +1,15 @@
-from ._ML_evaluation_captum import (
-    captum_feature_importance, 
-    captum_image_heatmap,
+from ._feature_importance import (
+    captum_feature_importance
+)
+
+from ._image_heatmap import (
+    captum_image_heatmap
+)
+
+from ._segmentation_heatmap import (
     captum_segmentation_heatmap
 )
+
 
 from .._core import _imprimir_disponibles
 

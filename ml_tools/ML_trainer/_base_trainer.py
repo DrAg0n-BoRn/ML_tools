@@ -9,6 +9,7 @@ from ..ML_callbacks._base import _Callback, History, TqdmProgressBar
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
+from ..ML_configuration._finalize import _FinalizeModelTraining
 from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
 
@@ -125,13 +126,17 @@ class _BaseDragonTrainer(ABC):
 
     def _validate_checkpoint_arg(self, model_checkpoint: Union[Path, str]) -> Union[Path, str]:
         """Validates the model_checkpoint argument."""
+        if model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
+            return model_checkpoint
+        
+        if isinstance(model_checkpoint, str):
+            model_checkpoint = Path(model_checkpoint)
+            
         if isinstance(model_checkpoint, Path):
             return make_fullpath(model_checkpoint, enforce="file")
-        elif model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
-            return model_checkpoint
-        else:
-            _LOGGER.error(f"'model_checkpoint' must be a Path object, or the string '{MagicWords.BEST}', or the string '{MagicWords.CURRENT}'.")
-            raise ValueError()
+            
+        _LOGGER.error(f"'model_checkpoint' must be a Path object, a valid file path string, or the string '{MagicWords.BEST}' or '{MagicWords.CURRENT}'.")
+        raise ValueError()
 
     def _validate_save_dir(self, save_dir: Union[str, Path]) -> Path:
         """Validates and creates the save directory."""
@@ -186,17 +191,24 @@ class _BaseDragonTrainer(ABC):
         return eval_loader, dataset_for_artifacts
 
     def _save_finalized_artifact(self, 
-                                 finalized_data: dict, 
-                                 save_dir: Union[str, Path], 
-                                 filename: str):
+                                 finalize_config: _FinalizeModelTraining):
         """
         Handles the common logic for saving the finalized model dictionary to disk.
         """
         # handle save path
-        dir_path = self._validate_save_dir(save_dir)
-        full_path = dir_path / filename
+        dir_path = self._validate_save_dir(self.training_directory_root)
+        full_path = dir_path / finalize_config.filename
         
-        # checkpoint loading happens before dict creation. 
+        # dynamically build the dictionary with core requirements
+        finalized_data = {
+            PyTorchCheckpointKeys.EPOCH: self.epoch,
+            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict()
+        }
+        
+        # Map configuration attributes directly, ignoring None values and the filename itself
+        for key, value in vars(finalize_config).items():
+            if key != 'filename' and value is not None:
+                finalized_data[key] = value
         
         torch.save(finalized_data, full_path)
         

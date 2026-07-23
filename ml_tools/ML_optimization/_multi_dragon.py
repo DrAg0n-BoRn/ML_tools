@@ -875,4 +875,3 @@ class _ParetoFitnessEvaluator:
             
             # Slice specific indices -> (Batch, N_Selected_Targets)
             return preds[:, self.target_indices]
-

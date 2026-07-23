@@ -152,7 +152,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         return logs
 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[FormatAutoencoderMetrics] = None,
                  test_format_configuration: Optional[FormatAutoencoderMetrics] = None):
@@ -160,7 +160,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         Evaluates the autoencoder's reconstruction performance.
         
         Args:
-            model_checkpoint (Union[Path, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
+            model_checkpoint (Union[Path, str, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             test_data (Optional[Union[DataLoader, Dataset]]): Optional test dataset to evaluate on after validation. If None, only validation evaluation will be performed.
             val_format_configuration (Optional[FormatAutoencoderMetrics]): Configuration for formatting validation metrics and artifacts. If None, default formatting will be applied.
             test_format_configuration (Optional[FormatAutoencoderMetrics]): Configuration for formatting test metrics and artifacts. If None, default formatting will be applied.
@@ -301,28 +301,21 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         )
 
     def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: FinalizeAutoencoder):
         """
-        Saves a finalized, inference-ready model state to a .pth file.
+        Saves a finalized, inference-ready model state to a .pth file. 
+        
+        Uses the current model state and training metadata to create a standardized finalized artifact.
         
         Args:
-            model_checkpoint (Union[Path, Literal['best', 'current']]): Which checkpoint to load for finalization. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             finalize_config (FinalizeAutoencoder): Configuration object containing metadata about the training run and instructions for finalization.
         """
-        self._load_model_state_wrapper(model_checkpoint)
+        if not isinstance(finalize_config, FinalizeAutoencoder):
+            _LOGGER.error(f"Invalid type for 'finalize_config': '{type(finalize_config).__name__}'. Expected 'FinalizeAutoencoder'.")
+            raise TypeError()
         
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task,
-        }
+        self._save_finalized_artifact(finalize_config=finalize_config)
         
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
 
 
 

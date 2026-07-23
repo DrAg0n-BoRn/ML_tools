@@ -3,7 +3,7 @@ import numpy as np
 
 from .._core import get_logger
 from ..path_manager import sanitize_filename
-from ..keys._keys import MLTaskKeys
+from ..keys._keys import MLTaskKeys, MagicWords
 
 
 _LOGGER = get_logger("Finalized Configuration")
@@ -36,6 +36,7 @@ class _FinalizeModelTraining:
     """
     def __init__(self,
                  filename: str,
+                 **kwargs
                  ) -> None:
         self.filename = _validate_string(string=filename, attribute_name="filename", extension=".pth")
         self.target_name: Optional[str] = None
@@ -44,7 +45,11 @@ class _FinalizeModelTraining:
         self.class_map: Optional[dict[str,int]] = None
         self.initial_sequence: Optional[np.ndarray] = None
         self.sequence_length: Optional[int] = None
-        self.task: str = 'UNKNOWN'
+        self.task: str = MagicWords.UNKNOWN
+        
+        # Dynamically attach any extra arbitrary metadata
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class FinalizeRegression(_FinalizeModelTraining):
@@ -52,14 +57,16 @@ class FinalizeRegression(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  target_name: str,
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
             target_name (str): The name of the target variable.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
         self.task = MLTaskKeys.REGRESSION
     
@@ -69,14 +76,16 @@ class FinalizeMultiTargetRegression(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  target_names: list[str],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
             target_names (list[str]): A list of names for the target variables.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
         self.target_names = safe_names
         self.task = MLTaskKeys.MULTITARGET_REGRESSION
@@ -88,7 +97,8 @@ class FinalizeBinaryClassification(_FinalizeModelTraining):
                  filename: str,
                  target_name: str,
                  classification_threshold: float,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
@@ -98,8 +108,9 @@ class FinalizeBinaryClassification(_FinalizeModelTraining):
             classification_threshold (float): The cutoff threshold for classifying as the positive class.
             class_map (dict[str,int]): A dictionary mapping class names (str)
                 to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
@@ -111,7 +122,8 @@ class FinalizeMultiClassClassification(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  target_name: str,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
@@ -120,8 +132,9 @@ class FinalizeMultiClassClassification(_FinalizeModelTraining):
             target_name (str): The name of the target variable.
             class_map (dict[str,int]): A dictionary mapping class names (str)
                 to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.target_name = _validate_string(string=target_name, attribute_name="Target name")
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.MULTICLASS_CLASSIFICATION
@@ -132,7 +145,8 @@ class FinalizeBinaryImageClassification(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  classification_threshold: float,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
@@ -142,8 +156,9 @@ class FinalizeBinaryImageClassification(_FinalizeModelTraining):
                 classifying as the positive class.
             class_map (dict[str,int]): A dictionary mapping class names (str)
                 to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.BINARY_IMAGE_CLASSIFICATION
@@ -153,7 +168,8 @@ class FinalizeMultiClassImageClassification(_FinalizeModelTraining):
     """Parameters for finalizing a multi-class image classification model."""
     def __init__(self,
                  filename: str,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
@@ -161,8 +177,9 @@ class FinalizeMultiClassImageClassification(_FinalizeModelTraining):
             filename (str): The name of the file to be saved.
             class_map (dict[str,int]): A dictionary mapping class names (str)
                 to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
     
@@ -173,6 +190,7 @@ class FinalizeMultiLabelBinaryClassification(_FinalizeModelTraining):
                  filename: str,
                  target_names: list[str],
                  classification_threshold: float,
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
@@ -180,8 +198,9 @@ class FinalizeMultiLabelBinaryClassification(_FinalizeModelTraining):
             filename (str): The name of the file to be saved.
             target_names (list[str]): A list of names for the target variables.
             classification_threshold (float): The cutoff threshold for classifying as the positive class.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         safe_names = [_validate_string(string=target_name, attribute_name="All target names") for target_name in target_names]
         self.target_names = safe_names
         self.classification_threshold = _validate_threshold(classification_threshold)
@@ -194,14 +213,18 @@ class FinalizeBinarySegmentation(_FinalizeModelTraining):
                  filename: str,
                  class_map: dict[str,int],
                  classification_threshold: float,
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'background': 0, 'object': 1}).
             classification_threshold (float): The cutoff threshold for classifying as the positive class (mask).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.classification_threshold = _validate_threshold(classification_threshold)
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.BINARY_SEGMENTATION
@@ -211,14 +234,17 @@ class FinalizeMultiClassSegmentation(_FinalizeModelTraining):
     """Parameters for finalizing a multi-class segmentation model."""
     def __init__(self,
                  filename: str,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
+            class_map (dict[str, int]): A mapping of class names to their corresponding integer labels.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.MULTICLASS_SEGMENTATION
 
@@ -227,14 +253,18 @@ class FinalizeObjectDetection(_FinalizeModelTraining):
     """Parameters for finalizing an object detection model."""
     def __init__(self,
                  filename: str,
-                 class_map: dict[str,int]
+                 class_map: dict[str,int],
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
+            class_map (dict[str,int]): A dictionary mapping class names (str)
+                to their integer representations (e.g., {'cat': 0, 'dog': 1}).
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         self.class_map = _validate_class_map(class_map)
         self.task = MLTaskKeys.OBJECT_DETECTION
 
@@ -244,14 +274,16 @@ class FinalizeSequenceSequencePrediction(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  last_training_sequence: np.ndarray,
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
             last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         
         if not isinstance(last_training_sequence, np.ndarray):
             _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
@@ -284,14 +316,16 @@ class FinalizeSequenceValuePrediction(_FinalizeModelTraining):
     def __init__(self,
                  filename: str,
                  last_training_sequence: np.ndarray,
+                 **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
             last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename)
+        super().__init__(filename=filename, **kwargs)
         
         if not isinstance(last_training_sequence, np.ndarray):
             _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
@@ -322,26 +356,30 @@ class FinalizeSequenceValuePrediction(_FinalizeModelTraining):
 class FinalizeAutoencoder(_FinalizeModelTraining):
     """Parameters for finalizing an autoencoder model."""
     def __init__(self, 
-                 filename: str) -> None:
+                 filename: str,
+                 **kwargs) -> None:
         """Initializes the finalization parameters.
         
         Args:
             filename (str): The name of the file to be saved.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename)
+        super().__init__(filename, **kwargs)
         self.task = MLTaskKeys.AUTOENCODER
 
 
 class FinalizeTabularDiffusion(_FinalizeModelTraining):
     """Parameters for finalizing a tabular diffusion model."""
     def __init__(self, 
-                 filename: str) -> None:
+                 filename: str,
+                 **kwargs) -> None:
         """Initializes the finalization parameters.
         
         Args:
             filename (str): The name of the file to be saved.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename)
+        super().__init__(filename, **kwargs)
         self.task = MLTaskKeys.DIFFUSION
 
 

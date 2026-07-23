@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Union, Literal, Any, Optional
 
 from .._core import get_logger
-from ..keys._keys import PyTorchInferenceKeys, PyTorchCheckpointKeys, MLTaskKeys, ScalerKeys
+from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys, ScalerKeys
 from ..path_manager import make_fullpath
 from ..ML_scaler import DragonScaler
 
@@ -41,7 +41,7 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
             state_dict (str | Path): Path to the saved .pth model state_dict file or a FinalizedFile format.
-            task (str, optional): The type of task. If None, it will be detected from file.
+            task (str, optional): The type of task. If None, it will be detected from the FinalizedFile or an error will be raised.
             device (str): The device to run inference on ('cpu', 'cuda', 'mps').
             scaler (str | Path | None): A path to a saved DragonScaler state.
             distribution_mode (bool): If True, treats regression outputs as [mean + variance logits] and returns both the predicted mean and variance.

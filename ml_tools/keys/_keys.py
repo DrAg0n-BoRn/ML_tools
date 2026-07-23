@@ -232,6 +232,7 @@ class SequenceDatasetKeys:
 class ParetoOptimizationKeys:
     """Used by the ML optimization pareto module."""
     PARETO_PLOTS_DIR = "Pareto_Plots"
+    OPTIMIZATION_PLOTS_DIR = "Optimization_Plots"
     SQL_DATABASE_FILENAME = "OptimizationResults.db"
     HISTORY_PLOTS_DIR = "History"
     

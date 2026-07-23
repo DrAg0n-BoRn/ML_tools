@@ -265,7 +265,7 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[
@@ -284,7 +284,7 @@ class DragonVisionTrainer(_BaseDragonTrainer):
         Evaluates the vision model and generates task-specific evaluation metrics.
 
         Args:
-            model_checkpoint (Union[Path, Literal["best", "current"]]): The specific checkpoint state to load before evaluating.
+            model_checkpoint (Union[Path, str, Literal["best", "current"]]): The specific checkpoint state to load before evaluating.
             classification_threshold (Optional[float]): The threshold used for calculating binary classification/segmentation metrics.
             test_data (Optional[Union[DataLoader, Dataset]]): An optional test dataset to evaluate model performance completely separated from validation.
             val_format_configuration (Optional[object]): Formatting configuration object for validation metric outputs.
@@ -452,7 +452,7 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                        n_samples: int = 100,
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
-                       verbose: int = 0):
+                       verbose: int = 2):
         """
         Explains model predictions using Captum's Integrated Gradients.
         
@@ -510,7 +510,8 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                 save_dir=captum_save_dir,
                 target_names=target_names,
                 n_steps=n_steps,
-                device=self.device
+                device=self.device,
+                verbose=verbose
             )
         
         elif is_image_classification:
@@ -520,50 +521,34 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                 save_dir=captum_save_dir,
                 target_names=target_names,
                 n_steps=n_steps,
-                device=self.device
+                device=self.device,
+                verbose=verbose
             )
         
     def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: Union[FinalizeBinaryImageClassification,
                                                        FinalizeMultiClassImageClassification,
                                                        FinalizeBinarySegmentation,
                                                        FinalizeMultiClassSegmentation]):
         """
         Saves a finalized, inference-ready model state to a .pth file alongside relevant task metadata.
+        
+        Uses the current model state and the provided task-specific configuration to create a finalized artifact.
 
         Args:
-            model_checkpoint (Union[Path, Literal['best', 'current']]): The checkpoint to load and finalize.
-            finalize_config (Union[object]): Task-specific data class instance containing metadata required for running inference later.
+            finalize_config (object): Task-specific data class instance containing metadata required for running inference later.
         """
         if self.kind == MLTaskKeys.BINARY_IMAGE_CLASSIFICATION and not isinstance(finalize_config, FinalizeBinaryImageClassification):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryImageClassification', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryImageClassification', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiClassImageClassification):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassImageClassification', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassImageClassification', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.BINARY_SEGMENTATION and not isinstance(finalize_config, FinalizeBinarySegmentation):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinarySegmentation', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinarySegmentation', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTICLASS_SEGMENTATION and not isinstance(finalize_config, FinalizeMultiClassSegmentation):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassSegmentation', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassSegmentation', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
                 
-        self._load_model_state_wrapper(model_checkpoint)
-        
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task
-        }
-
-        if getattr(finalize_config, "classification_threshold", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = finalize_config.classification_threshold
-        if getattr(finalize_config, "class_map", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
-
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)

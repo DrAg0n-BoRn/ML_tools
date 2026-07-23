@@ -224,7 +224,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                     yield mean.cpu().numpy(), var.cpu().numpy(), target.cpu().numpy()
 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[
                         FormatRegressionMetrics, 
@@ -242,7 +242,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         and 95% MPIW) utilizing both the predicted mean and variance. 
 
         Args:
-            model_checkpoint (Path | "best" | "current"): 
+            model_checkpoint (Path | str | "best" | "current"): 
                 - Path to a valid `.pth` checkpoint file.
                 - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
                 - "current": Uses the model's in-memory state as-is.
@@ -397,6 +397,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             feature_names (list[str] | None): Feature names. Required for Tabular tasks.
             target_names (list[str] | None): Names for the model outputs.
             n_steps (int): Number of interpolation steps.
+            verbose (int): Verbosity level for logging.
         """
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
         if dataset_to_use is None:
@@ -460,47 +461,21 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             verbose=verbose
         )
     
-    def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
+    def finalize_model_training(self,
                                 finalize_config: Union[FinalizeRegression, FinalizeMultiTargetRegression]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
-        This method saves the model's `state_dict`, the final epoch number, and optional configuration for the task at hand.
+        Uses the current model state and training metadata to create a standardized finalized artifact.
 
         Args:
-            model_checkpoint (Path | "best" | "current"):
-                - Path: Loads the model state from a specific checkpoint file.
-                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is.
             finalize_config (object): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if self.kind == MLTaskKeys.REGRESSION and not isinstance(finalize_config, FinalizeRegression):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeRegression', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeRegression', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION and not isinstance(finalize_config, FinalizeMultiTargetRegression):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiTargetRegression', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiTargetRegression', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
                 
-        # Handle checkpoint
-        self._load_model_state_wrapper(model_checkpoint)
-        
-        # Create finalized data
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task
-        }
-
-        # Parse config
-        if finalize_config.target_name is not None:
-            finalized_data[PyTorchCheckpointKeys.TARGET_NAME] = finalize_config.target_name
-        if finalize_config.target_names is not None:
-            finalized_data[PyTorchCheckpointKeys.TARGET_NAMES] = finalize_config.target_names
-
-        # Save model file using base helper
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)

@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.0.0] 2026-07-23
+
+### Added
+
+- ML_optimization:
+    - Added comprehensive plotting and logging capabilities to `DragonOptimizer` controlled via a new `plots_and_log` parameter in `run()`.
+    - Integrated convergence history plots (Best, Mean, Worst fitness over generations), feature-vs-target correlation PairGrids, and optimal feature distribution visualizations.
+- ML_configuration:
+    - Added `**kwargs` support to `_FinalizeModelTraining` and all its Finalizer subclasses to allow passing and dynamically saving arbitrary, serializable metadata into the finalized file.
+
+### Changed
+
+- ML_trainer:
+    - All trainers now support the `evaluate()` method to accept a string in the `model_checkpoint` argument, which should represent a path to a valid checkpoint file, or the special strings "best" or "current".
+    - Refactored `_save_finalized_artifact` in `_BaseDragonTrainer` to dynamically build the finalized dictionary from the configuration object, significantly reducing boilerplate across all trainer subclasses.
+- ML_evaluation_captum:
+    - Split the monolithic script into three independent modules categorized by use case: feature importance, image heatmaps, and segmentation heatmaps.
+    - standardize the "verbose" parameter across all Captum evaluation functions to allow for more granular logging control.
+- ML_optimization:
+    - Updated `run_optimization()` return signature to return a tuple `(result_dict, log_df, csv_path)` for seamless passing of history logs and output file paths.
+    - Modified `_handle_pandas_log` to return the parsed `PandasLogger` DataFrame.
+- ML_configuration:
+    - Added `plot_size` and `plot_font_size` parameters to the `DragonOptimizerConfig` class to centralize control over optimization plot aesthetics.
+- ML_finalize_handler:
+    - Streamlined `FinalizedFileHandler` by replacing static boilerplate properties with a dynamic `__getattr__` implementation, allowing seamless access to any arbitrary metadata saved in the FinalizedFile.
+    - Enforced strict return typing on the `model_state_dict` property in `FinalizedFileHandler` to resolve static linter conflicts while preserving dynamic runtime flexibility.
+- ML_utilities:
+    - Refactored `DragonArtifactFinder` to effectively raise errors on "strict" mode when any expected artifact is missing, while still allowing non-strict access to available artifacts without raising exceptions.
+    - Added a `set_strict_mode()` method to `DragonArtifactFinder` to allow dynamic switching between strict and non-strict modes.
+
+
 ## [23.6.0] 2026-07-15
 
 ### Changed

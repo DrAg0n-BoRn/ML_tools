@@ -17,7 +17,6 @@ from ..ML_configuration import (FormatSequenceValueMetrics,
                             FinalizeSequenceSequencePrediction,
                             FinalizeSequenceValuePrediction)
 
-from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, MagicWords, DragonTrainerKeys, ScalerKeys
 from .._core import get_logger
 
@@ -250,7 +249,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[FormatSequenceValueMetrics, 
                                                           FormatSequenceSequenceMetrics]]=None,
@@ -260,7 +259,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         Evaluates the model, routing to the correct evaluation function.
 
         Args:
-            model_checkpoint (Path | "best" | "current"): 
+            model_checkpoint (Path | str | "best" | "current"): 
                 - Path to a valid checkpoint for the model.
                 - If 'best', the best checkpoint will be loaded.
                 - If 'current', use the current state of the trained model.
@@ -382,7 +381,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                        n_samples: int = 100,
                        feature_names: Optional[list[str]] = None,
                        target_names: Optional[list[str]] = None,
-                       n_steps: int = 50):
+                       n_steps: int = 50,
+                       verbose: int = 0):
         """
         Explains sequence model predictions using Captum's Integrated Gradients.
 
@@ -398,6 +398,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             feature_names (List[str] | None): Names of the features (signals). If None, attempts to extract them from the dataset attribute.
             target_names (List[str] | None): Names of the model outputs (e.g., for Seq2Seq or Multivariate output). If None, attempts to extract them from the dataset attribute.
             n_steps (int): Number of integral approximation steps.
+            verbose (int): Verbosity level for logging.
 
         Note:
             For univariate data (Shape: N, Seq_Len), the 'feature' is the signal itself. 
@@ -443,51 +444,26 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             save_dir=captum_save_dir,
             target_names=target_names,
             n_steps=n_steps,
-            device=self.device
+            device=self.device,
+            verbose=verbose
         )
     
     def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: Union[FinalizeSequenceSequencePrediction, FinalizeSequenceValuePrediction]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
-        This method saves the model's `state_dict` and the final epoch number.
+        Uses the current model state and training metadata to create a standardized finalized artifact.
 
         Args:
-            save_dir (Union[str, Path]): The directory to save the finalized model.
-            model_checkpoint (Union[Path, Literal["best", "current"]]):
-                - Path: Loads the model state from a specific checkpoint file.
-                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is.
-            finalize_config (FinalizeSequencePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
+            finalize_config (FinalizeSequenceSequencePrediction | FinalizeSequenceValuePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if self.kind == MLTaskKeys.SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeSequenceSequencePrediction):
-            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: {type(finalize_config).__name__}.")
+            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeSequenceValuePrediction):
-            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: {type(finalize_config).__name__}.")
+            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: '{type(finalize_config).__name__}'.")
             raise TypeError()
         
-        # handle checkpoint
-        self._load_model_state_wrapper(model_checkpoint)
-        
-        # Create finalized data
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task
-        }
-        
-        if finalize_config.sequence_length is not None:
-            finalized_data[PyTorchCheckpointKeys.SEQUENCE_LENGTH] = finalize_config.sequence_length
-        if finalize_config.initial_sequence is not None:
-            finalized_data[PyTorchCheckpointKeys.INITIAL_SEQUENCE] = finalize_config.initial_sequence
-        
-        # Save using base helper
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)
 

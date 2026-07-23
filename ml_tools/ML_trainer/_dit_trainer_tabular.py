@@ -219,7 +219,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         return {PyTorchLogKeys.VAL_LOSS: running_loss / total_samples}
 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[FormatTabularDiffusionMetrics] = None,
                  test_format_configuration: Optional[FormatTabularDiffusionMetrics] = None):
@@ -227,7 +227,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         Evaluates the diffusion model by comparing generated distributions against the real distributions.
         
         Args:
-            model_checkpoint (Union[Path, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
+            model_checkpoint (Union[Path, str, Literal["best", "current"]]): Which checkpoint to load for evaluation. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             test_data (Optional[Union[DataLoader, Dataset]]): Optional test dataset to evaluate on after validation. If None, only validation evaluation will be performed.
             val_format_configuration (Optional[FormatTabularDiffusionMetrics]): Configuration for formatting validation metrics.
             test_format_configuration (Optional[FormatTabularDiffusionMetrics]): Configuration for formatting test metrics.
@@ -405,29 +405,22 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             config=format_configuration
         )
 
-    def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
+    def finalize_model_training(self,
                                 finalize_config: FinalizeTabularDiffusion):
         """
         Saves a finalized, inference-ready DiT model state to a .pth file.
         
+        Uses the current model state and training metadata to create a standardized finalized artifact.
+        
         Args:
-            model_checkpoint (Union[Path, Literal['best', 'current']]): Which checkpoint to load for finalization. Can be a specific .pth file path or "best"/"current" to use the corresponding checkpoint from training.
             finalize_config (FinalizeTabularDiffusion): Configuration object containing metadata about the training run and instructions for finalization.
         """
-        self._load_model_state_wrapper(model_checkpoint)
+        if not isinstance(finalize_config, FinalizeTabularDiffusion):
+            _LOGGER.error(f"Invalid type for 'finalize_config': '{type(finalize_config).__name__}'. Expected 'FinalizeTabularDiffusion'.")
+            raise TypeError()
         
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task,
-        }
-        
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)
+
         
     #override device changing methods
     def to_cpu(self):

@@ -277,7 +277,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 yield y_pred_batch, y_prob_batch, y_true_batch
                 
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  classification_threshold: Optional[float] = None,
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
                  val_format_configuration: Optional[Union[
@@ -298,7 +298,7 @@ class DragonTrainer(_BaseDragonTrainer):
         Evaluates the trained model and generates task-specific evaluation metrics.
 
         Args:
-            model_checkpoint (Union[Path, Literal["best", "current"]]): The specific checkpoint state to load before evaluating.
+            model_checkpoint (Union[Path, str, Literal["best", "current"]]): The specific checkpoint state to load before evaluating.
             classification_threshold (Optional[float]): The threshold used for calculating binary classification metrics.
             test_data (Optional[Union[DataLoader, Dataset]]): An optional test dataset to evaluate model performance completely separated from validation.
             val_format_configuration (Optional[object]): Formatting configuration object for validation metric outputs.
@@ -757,8 +757,7 @@ class DragonTrainer(_BaseDragonTrainer):
         else:
             _LOGGER.error("No attention weights were collected from the model.")
         
-    def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
+    def finalize_model_training(self,
                                 finalize_config: Union[FinalizeRegression,
                                                        FinalizeMultiTargetRegression,
                                                        FinalizeBinaryClassification,
@@ -767,45 +766,25 @@ class DragonTrainer(_BaseDragonTrainer):
         """
         Saves a finalized, inference-ready model state to a .pth file alongside relevant task metadata.
 
+        Uses the current model state and the provided task-specific configuration to create a finalized artifact.
+
         Args:
-            model_checkpoint (Union[Path, Literal['best', 'current']]): The checkpoint to load and finalize.
-            finalize_config (Union[object]): Task-specific data class instance containing metadata required for running inference later.
+            finalize_config (object): Task-specific data class instance containing metadata required for running inference later.
         """
         if self.kind == MLTaskKeys.REGRESSION and not isinstance(finalize_config, FinalizeRegression):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeRegression', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeRegression', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION and not isinstance(finalize_config, FinalizeMultiTargetRegression):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiTargetRegression', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiTargetRegression', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.BINARY_CLASSIFICATION and not isinstance(finalize_config, FinalizeBinaryClassification):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryClassification', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeBinaryClassification', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiClassClassification):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassClassification', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiClassClassification', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
         elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION and not isinstance(finalize_config, FinalizeMultiLabelBinaryClassification):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiLabelBinaryClassification', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeMultiLabelBinaryClassification', but got '{type(finalize_config).__name__}'.")
             raise TypeError()
-                
-        self._load_model_state_wrapper(model_checkpoint)
         
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task
-        }
-
-        if getattr(finalize_config, "target_name", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.TARGET_NAME] = finalize_config.target_name
-        if getattr(finalize_config, "target_names", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.TARGET_NAMES] = finalize_config.target_names
-        if getattr(finalize_config, "classification_threshold", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD] = finalize_config.classification_threshold
-        if getattr(finalize_config, "class_map", None) is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
-
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)

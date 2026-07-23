@@ -170,6 +170,8 @@ class DragonOptimizerConfig(_BaseModelParams):
                  generations: int = 1000,
                  repetitions: int = 1,
                  discretize_start_at_zero: bool = True,
+                 plot_size: tuple[int, int] = (10, 7),
+                 plot_font_size: int = 16,
                  **searcher_kwargs: Any):
         """
         Args:
@@ -183,6 +185,8 @@ class DragonOptimizerConfig(_BaseModelParams):
             generations (int): Number of generations per repetition.
             repetitions (int): Number of independent optimization runs.
             discretize_start_at_zero (bool): True if discrete encoding starts at 0.
+            plot_size (tuple[int, int]): Size of the plots.
+            plot_font_size (int): Base Font size for the plots.
             **searcher_kwargs: Additional arguments for the specific search algorithm 
                                (e.g., stdev_init for SNES).
         """
@@ -203,7 +207,8 @@ class DragonOptimizerConfig(_BaseModelParams):
         self.generations = generations
         self.repetitions = repetitions
         self.discretize_start_at_zero = discretize_start_at_zero
-        
+        self.plot_size = plot_size
+        self.plot_font_size = plot_font_size
         # Store algorithm specific kwargs
         self.searcher_kwargs = searcher_kwargs
 

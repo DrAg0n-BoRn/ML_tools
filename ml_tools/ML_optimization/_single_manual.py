@@ -214,51 +214,15 @@ def run_optimization(
     discretize_start_at_zero: bool = True,
     all_target_names: Optional[list[str]] = None,
     inference_handler: Optional[DragonInferenceHandler] = None
-) -> Optional[dict]:
+) -> tuple[Optional[dict], Optional[pd.DataFrame], Path]:
     """
     Runs the evolutionary optimization process, with support for multiple repetitions.
-
-    This function serves as the main engine for the optimization task. It takes a
-    configured Problem and a Searcher from EvoTorch and executes the optimization
-    for a specified number of generations.
-
-    It has two modes of operation:
-    1.  **Single Run (repetitions=1):** Executes the optimization once, saves the
-        single best result to a CSV file, and returns it as a dictionary.
-    2.  **Iterative Analysis (repetitions > 1):** Executes the optimization
-        multiple times. Results from each run are streamed incrementally to the
-        specified file formats (CSV and/or SQLite database). In this mode,
-        the function returns None.
-
-    Args:
-        problem (evotorch.Problem): The configured problem instance, which defines
-            the objective function, solution space, and optimization sense.
-        searcher_factory (Callable): The searcher factory to generate fresh evolutionary algorithms.
-        num_generations (int): The total number of generations to run the search algorithm for in each repetition.
-        target_name (str): Target name that will also be used for the CSV filename and SQL table.
-        save_dir (str | Path): The directory where the result file(s) will be saved.
-        save_format (Literal['csv', 'sqlite', 'both'], optional): The format for
-            saving results during iterative analysis.
-        feature_names (List[str], optional): Names of the solution features for
-            labeling the output files. If None, generic names like 'feature_0',
-            'feature_1', etc., will be created.
-        repetitions (int, optional): The number of independent times to run the
-            entire optimization process.
-        verbose (bool): Add an Evotorch Pandas logger saved as a csv. Only for the first repetition.
-        categorical_index_map (Dict[int, int] | None): Used to discretize values after optimization. Maps {column_index: cardinality}.
-        categorical_mappings (Dict[str, Dict[str, int]] | None): Used to map discrete integer values back to strings (e.g., {0: 'Category_A'}) before saving.
-        discretize_start_at_zero (bool): 
-            True if the discrete encoding starts at 0 (e.g., [0, 1, 2]).
-            False if it starts at 1 (e.g., [1, 2, 3]).
-        all_target_names (List[str] | None):
-            List of all possible target names for multi-target models. Used for SQL and CSV schemas.
-        inference_handler (DragonInferenceHandler | None):
-            The inference handler used to make predictions for unoptimized targets in multi-target tasks.
-
+    
     Returns:
-        Optional[dict]: A dictionary containing the best feature values and the
-        fitness score if `repetitions` is 1. Returns `None` if `repetitions`
-        is greater than 1, as results are streamed to files instead.
+        tuple: tuple[Optional[dict], Optional[pd.DataFrame], Path]
+            - A dictionary with the best solution (if repetitions=1).
+            - A DataFrame containing the optimization logs (if verbose=True).
+            - The path to the CSV file where results are saved.
     """
     # --- 1. Setup Paths and Feature Names ---
     save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -279,6 +243,8 @@ def run_optimization(
     # Default to the single target if no list provided
     if all_target_names is None:
         all_target_names = [target_name]
+    
+    log_df = None
     
     # --- 2. Run Optimization ---
     # --- SINGLE RUN LOGIC ---
@@ -306,10 +272,10 @@ def run_optimization(
         )
         
         if pandas_logger:
-            _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)
+            log_df = _handle_pandas_log(pandas_logger, save_path=save_path, target_name=target_name)
         
         _LOGGER.info(f"Optimization complete. Best solution saved to '{csv_path.name}'")
-        return result_dict
+        return result_dict, log_df, csv_path
 
     # --- MULTIPLE REPETITIONS LOGIC ---
     else:
@@ -371,10 +337,16 @@ def run_optimization(
                     db_manager.commit()
                 
         if first_run_logger:
-            _handle_pandas_log(first_run_logger, save_path=save_path, target_name=target_name)      
+            log_df = _handle_pandas_log(first_run_logger, save_path=save_path, target_name=target_name)      
         
         _LOGGER.info(f"Optimal solution space complete. Results saved to '{save_path}'")
-        return None
+        return None, log_df, csv_path
+
+
+def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str) -> pd.DataFrame:
+    log_dataframe = logger.to_dataframe()
+    save_dataframe_filename(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name, verbose=2)
+    return log_dataframe
 
 
 def _run_single_optimization_rep(
@@ -503,8 +475,4 @@ def _save_result(
         else:
             _LOGGER.warning("SQLite saving requested but db_manager or table_name not provided.")
 
-
-def _handle_pandas_log(logger: PandasLogger, save_path: Path, target_name: str):
-    log_dataframe = logger.to_dataframe()
-    save_dataframe_filename(df=log_dataframe, save_dir=save_path / "EvolutionLogs", filename=target_name, verbose=2)
 

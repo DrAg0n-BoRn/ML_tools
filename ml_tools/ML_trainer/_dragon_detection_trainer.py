@@ -180,13 +180,13 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         return logs
     
     def evaluate(self, 
-                 model_checkpoint: Union[Path, Literal["best", "current"]],
+                 model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None):
         """
         Evaluates the model using object detection mAP metrics.
 
         Args:
-            model_checkpoint (Path | "best" | "current"): 
+            model_checkpoint (Path | str | "best" | "current"): 
                 - Path to a valid checkpoint for the model. The state of the trained model will be overwritten in place.
                 - If 'best', the best checkpoint will be loaded if a DragonModelCheckpoint was provided. The state of the trained model will be overwritten in place.
                 - If 'current', use the current state of the trained model up the latest trained epoch.
@@ -300,41 +300,18 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
         )
     
     def finalize_model_training(self, 
-                                model_checkpoint: Union[Path, Literal['best', 'current']],
                                 finalize_config: FinalizeObjectDetection
                                 ):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
-        This method saves the model's `state_dict` and the final epoch number.
+        Uses the current model state and training metadata to create a standardized finalized artifact.
 
         Args:
-            model_checkpoint (Union[Path, Literal["best", "current"]]):
-                - Path: Loads the model state from a specific checkpoint file.
-                - "best": Loads the best model state saved by the `DragonModelCheckpoint` callback.
-                - "current": Uses the model's state as it is.
             finalize_config (FinalizeObjectDetection): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
         if not isinstance(finalize_config, FinalizeObjectDetection):
-            _LOGGER.error(f"For task {self.kind}, expected finalize_config of type 'FinalizeObjectDetection', but got {type(finalize_config).__name__}.")
+            _LOGGER.error(f"Invalid type for 'finalize_config': '{type(finalize_config).__name__}'. Expected 'FinalizeObjectDetection'.")
             raise TypeError()
         
-        # handle checkpoint
-        self._load_model_state_wrapper(model_checkpoint)
-        
-        # Create finalized data
-        finalized_data = {
-            PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict(),
-            PyTorchCheckpointKeys.TASK: finalize_config.task
-        }
-        
-        if finalize_config.class_map is not None:
-            finalized_data[PyTorchCheckpointKeys.CLASS_MAP] = finalize_config.class_map
-        
-        # Save using base helper
-        self._save_finalized_artifact(
-            finalized_data=finalized_data,
-            save_dir=self.training_directory_root,
-            filename=finalize_config.filename
-        )
+        self._save_finalized_artifact(finalize_config=finalize_config)

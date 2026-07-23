@@ -27,9 +27,9 @@ class DragonArtifactFinder:
     ```
         directory
         ├── *.pth
-        ├── scaler_*.pth          (Required if `load_scaler` is True)
-        ├── feature_names.txt
-        ├── target_names.txt
+        ├── scaler_*.pth           (Required if `load_scaler` is True)
+        ├── feature_names.txt      
+        ├── target_names.txt       
         ├── architecture.json
         └── FeatureSchema.json     (Required if `load_schema` is True)
     ```
@@ -38,20 +38,25 @@ class DragonArtifactFinder:
                  directory: Union[str, Path], 
                  load_scaler: bool, 
                  load_schema: bool,
-                 strict: bool=False,
-                 verbose: bool=True) -> None:
+                 strict: bool = False,
+                 verbose: int = 2) -> None:
         """
         Args:
             directory (str | Path): The path to the directory that contains training artifacts.
             load_scaler (bool): If True, requires and searches for a scaler file `scaler_*.pth`.
             load_schema (bool): If True, requires and searches for a FeatureSchema file `FeatureSchema.json`.
-            strict (bool): If True, raises an error if any artifact is missing. If False, returns None for missing artifacts silently.
-            verbose (bool): Displays the missing artifacts in the directory or a success message.
+            strict (bool): If True, raises an error when attempting to get a missing artifact. If False, returns None for missing artifacts silently.
+            verbose (int): Displays the missing artifacts in the directory or a success message.
         """
         # validate directory
         dir_path = make_fullpath(directory, enforce="directory")
         
-        parsing_dict = _find_model_artifacts(target_directory=dir_path, load_scaler=load_scaler, verbose=False, strict=strict)
+        if verbose >= 3:
+            inner_verbose = True
+        else:
+            inner_verbose = False
+            
+        parsing_dict = _find_model_artifacts(target_directory=dir_path, load_scaler=load_scaler, verbose=inner_verbose)
         
         self._weights_path = parsing_dict[PytorchArtifactPathKeys.WEIGHTS_PATH]
         self._feature_names_path = parsing_dict[PytorchArtifactPathKeys.FEATURES_PATH]
@@ -68,55 +73,56 @@ class DragonArtifactFinder:
             try:
                 self._schema = FeatureSchema.from_json(directory=dir_path)
             except Exception:
-                if strict:
-                    # FeatureSchema logs its own error details
-                    # _LOGGER.error(f"Failed to load FeatureSchema from '{dir_path.name}': {e}")
-                    raise FileNotFoundError()
-                else:
-                    # _LOGGER.warning(f"Could not load FeatureSchema from '{dir_path.name}': {e}")
-                    self._schema = None
+                self._schema = None
 
         # Process feature names
         if self._feature_names_path is not None:
             self._feature_names = self._process_text(self._feature_names_path)
         else:
             self._feature_names = None
+            
         # Process target names
         if self._target_names_path is not None:
             self._target_names = self._process_text(self._target_names_path)
         else:
             self._target_names = None
             
-        if verbose:
-            # log missing artifacts
-            missing_artifacts = []
-            if self._feature_names is None:
-                missing_artifacts.append("Feature Names")
-            if self._target_names is None:
-                missing_artifacts.append("Target Names")
-            if self._weights_path is None:
-                missing_artifacts.append("Weights File")
-            if self._model_architecture_path is None:
-                missing_artifacts.append("Model Architecture File")
-            if load_scaler and self._scaler_path is None:
-                missing_artifacts.append("Scaler File")
-            if load_schema and self._schema is None:
-                missing_artifacts.append("FeatureSchema File")
-            
-            if missing_artifacts:
-                _LOGGER.warning(f"Missing artifacts in '{dir_path.name}': {', '.join(missing_artifacts)}.")
-            else:
+        # Centralized validation for missing artifacts
+        missing_artifacts = []
+        if self._feature_names is None:
+            missing_artifacts.append("Feature Names")
+        if self._target_names is None:
+            missing_artifacts.append("Target Names")
+        if self._weights_path is None:
+            missing_artifacts.append("Weights File")
+        if self._model_architecture_path is None:
+            missing_artifacts.append("Model Architecture File")
+        if load_scaler and self._scaler_path is None:
+            missing_artifacts.append("Scaler File")
+        if load_schema and self._schema is None:
+            missing_artifacts.append("FeatureSchema File")
+        
+        if missing_artifacts:
+            missing_str = ", ".join(missing_artifacts)
+            if verbose >= 1:
+                _LOGGER.warning(f"Missing artifacts in '{dir_path.name}': {missing_str}.")
+        else:
+            if verbose >= 2:
                 _LOGGER.info(f"All artifacts successfully loaded from '{dir_path.name}'.")
 
     def _process_text(self, text_file_path: Path):
         list_strings = load_list_strings(text_file=text_file_path, verbose=False)
         return list_strings
     
+    def set_strict_mode(self, strict: bool) -> None:
+        """Sets the strict mode for artifact access."""
+        self._strict = strict
+    
     @property
     def feature_names(self) -> Union[list[str], None]:
         """Returns the feature names as a list of strings."""
         if self._strict and not self._feature_names:
-            _LOGGER.error("No feature names loaded for Strict mode.")
+            _LOGGER.error("No feature names loaded (Strict mode).")
             raise ValueError()
         return self._feature_names
     
@@ -124,7 +130,7 @@ class DragonArtifactFinder:
     def target_names(self) -> Union[list[str], None]:
         """Returns the target names as a list of strings."""
         if self._strict and not self._target_names:
-            _LOGGER.error("No target names loaded for Strict mode.")
+            _LOGGER.error("No target names loaded (Strict mode).")
             raise ValueError()
         return self._target_names
     
@@ -132,7 +138,7 @@ class DragonArtifactFinder:
     def weights_path(self) -> Union[Path, None]:
         """Returns the path to the state dictionary or Finalized-File `.pth`."""
         if self._strict and self._weights_path is None:
-            _LOGGER.error("No weights file loaded for Strict mode.")
+            _LOGGER.error("No weights file loaded (Strict mode).")
             raise ValueError()
         return self._weights_path
     
@@ -140,7 +146,7 @@ class DragonArtifactFinder:
     def model_architecture_path(self) -> Union[Path, None]:
         """Returns the path to the model architecture json file."""
         if self._strict and self._model_architecture_path is None:
-            _LOGGER.error("No model architecture file loaded for Strict mode.")
+            _LOGGER.error("No model architecture file loaded (Strict mode).")
             raise ValueError()
         return self._model_architecture_path
     
@@ -148,7 +154,7 @@ class DragonArtifactFinder:
     def scaler_path(self) -> Union[Path, None]:
         """Returns the path to the scaler file."""
         if self._strict and self._scaler_path is None:
-            _LOGGER.error("No scaler file loaded for Strict mode.")
+            _LOGGER.error("No scaler file loaded (Strict mode).")
             raise ValueError()
         else:
             return self._scaler_path
@@ -157,7 +163,7 @@ class DragonArtifactFinder:
     def feature_schema(self) -> Union[FeatureSchema, None]:
         """Returns the FeatureSchema object."""
         if self._strict and self._schema is None:
-            _LOGGER.error("No FeatureSchema loaded for Strict mode.")
+            _LOGGER.error("No FeatureSchema loaded (Strict mode).")
             raise ValueError()
         else:
             return self._schema
@@ -181,7 +187,7 @@ class DragonArtifactFinder:
         )
 
 
-def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=True, strict:bool=True) -> dict[str, Union[Path, None]]:
+def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, verbose: bool=True) -> dict[str, Union[Path, None]]:
     """
     Scans a directory to find paths to model weights, target names, feature names, and model architecture. Optionally an scaler path if `load_scaler` is True.
     
@@ -198,9 +204,8 @@ def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, 
     
     Args:
         target_directory (str | Path): The path to the directory that contains training artifacts.
-        load_scaler (bool): If True, the function requires and searches for a scaler file `scaler_*.pth`.
+        load_scaler (bool): If True, the function searches for a scaler file `scaler_*.pth`.
         verbose (bool): If True, enables detailed logging during the search process.
-        strict (bool): If True, raises errors on missing files. If False, returns None for missing files.
     """
     # validate directory
     dir_path = make_fullpath(target_directory, enforce="directory")
@@ -209,89 +214,42 @@ def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, 
     # find files
     model_pth_dict = list_files_by_extension(directory=dir_path, extension="pth", verbose=False, raise_on_empty=False)
     
-    if not model_pth_dict:
-        pth_msg=f"No '.pth' files found in directory: {dir_name}."
-        if strict:
-            _LOGGER.error(pth_msg)
-            raise IOError()
-        else:
-            if verbose:
-                _LOGGER.warning(pth_msg)
-            model_pth_dict = None
-    
-    # restriction
-    if model_pth_dict is not None:
-        valid_count = False
-        msg = ""
-        
-        if load_scaler:
-            if len(model_pth_dict) == 2:
-                valid_count = True
-            else:
-                msg = f"Directory '{dir_name}' should contain exactly 2 '.pth' files: scaler and weights. Found {len(model_pth_dict)}."
-        else:
-            if len(model_pth_dict) == 1:
-                valid_count = True
-            else:
-                msg = f"Directory '{dir_name}' should contain exactly 1 '.pth' file for weights. Found {len(model_pth_dict)}."
-        
-        # Respect strict mode for count mismatch
-        if not valid_count:
-            if strict:
-                _LOGGER.error(msg)
-                raise IOError()
-            else:
-                if verbose:
-                    _LOGGER.warning(msg)
-                # Invalidate dictionary
-                model_pth_dict = None
-    
-    ##### Scaler and Weights #####
     scaler_path = None
     weights_path = None
     
-    # load weights and scaler if present
-    if model_pth_dict is not None:
+    if not model_pth_dict:
+        if verbose:
+            _LOGGER.warning(f"No '.pth' files found in directory: {dir_name}.")
+    else:
+        potential_weights = []
         for pth_filename, pth_path in model_pth_dict.items():
             if load_scaler and pth_filename.lower().startswith(DatasetKeys.SCALER_PREFIX):
                 scaler_path = pth_path
             else:
-                weights_path = pth_path
-    
-    # validation
-    if not weights_path and strict:
-        _LOGGER.error(f"Error parsing the model weights path from '{dir_name}'")
-        raise IOError()
-    
-    if strict and load_scaler and not scaler_path:
-        _LOGGER.error(f"Error parsing the scaler path from '{dir_name}'")
-        raise IOError()
-    
+                potential_weights.append(pth_path)
+                
+        if len(potential_weights) == 1:
+            weights_path = potential_weights[0]
+        elif len(potential_weights) > 1 and verbose:
+            _LOGGER.warning(f"Multiple potential weight files found in '{dir_name}'. Cannot resolve ambiguity without strict naming.")
+
     ##### Target and Feature names #####
     target_names_path = None
     feature_names_path = None
     
-    # load feature and target names
     model_txt_dict = list_files_by_extension(directory=dir_path, extension="txt", verbose=False, raise_on_empty=False)
     
-    # if the directory has no txt files, the loop is skipped
-    for txt_filename, txt_path in model_txt_dict.items():
-        if txt_filename == DatasetKeys.FEATURE_NAMES:
-            feature_names_path = txt_path
-        elif txt_filename == DatasetKeys.TARGET_NAMES:
-            target_names_path = txt_path
+    if model_txt_dict:
+        for txt_filename, txt_path in model_txt_dict.items():
+            if txt_filename == DatasetKeys.FEATURE_NAMES:
+                feature_names_path = txt_path
+            elif txt_filename == DatasetKeys.TARGET_NAMES:
+                target_names_path = txt_path
     
-    # validation per case
-    if strict and not target_names_path:
-        _LOGGER.error(f"Error parsing the target names path from '{dir_name}'")
-        raise IOError()
-    elif verbose and not target_names_path:
+    if verbose and not target_names_path:
         _LOGGER.warning(f"Target names file not found in '{dir_name}'.")
     
-    if strict and not feature_names_path:
-        _LOGGER.error(f"Error parsing the feature names path from '{dir_name}'")
-        raise IOError()
-    elif verbose and not feature_names_path:
+    if verbose and not feature_names_path:
         _LOGGER.warning(f"Feature names file not found in '{dir_name}'.")
 
     ##### load model architecture path #####
@@ -299,16 +257,12 @@ def _find_model_artifacts(target_directory: Union[str,Path], load_scaler: bool, 
     
     model_json_dict = list_files_by_extension(directory=dir_path, extension="json", verbose=False, raise_on_empty=False)
     
-    # if the directory has no json files, the loop is skipped
-    for json_filename, json_path in model_json_dict.items():
-        if json_filename == PytorchModelArchitectureKeys.SAVENAME:
-            architecture_path = json_path
+    if model_json_dict:
+        for json_filename, json_path in model_json_dict.items():
+            if json_filename == PytorchModelArchitectureKeys.SAVENAME:
+                architecture_path = json_path
     
-    # validation
-    if strict and not architecture_path:
-        _LOGGER.error(f"Error parsing the model architecture path from '{dir_name}'")
-        raise IOError()
-    elif verbose and not architecture_path:
+    if verbose and not architecture_path:
         _LOGGER.warning(f"Model architecture file not found in '{dir_name}'.")
     
     ##### Paths dictionary #####
@@ -372,8 +326,7 @@ def find_model_artifacts_multi(target_directory: Union[str,Path], load_scaler: b
         
         parsing_dict = _find_model_artifacts(target_directory=dir_path,
                                             load_scaler=load_scaler,
-                                            verbose=verbose,
-                                            strict=True)
+                                            verbose=verbose)
         
         # parsing_dict is guaranteed to have all required paths due to strict=True
         all_artifacts.append(parsing_dict)  # type: ignore
