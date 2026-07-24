@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union
+from typing import Union, Any
 
 from ..IO_tools import load_list_strings
 from ..schema import FeatureSchema
@@ -89,23 +89,44 @@ class DragonArtifactFinder:
             
         # Centralized validation for missing artifacts
         missing_artifacts = []
-        if self._feature_names is None:
-            missing_artifacts.append("Feature Names")
-        if self._target_names is None:
-            missing_artifacts.append("Target Names")
-        if self._weights_path is None:
-            missing_artifacts.append("Weights File")
-        if self._model_architecture_path is None:
-            missing_artifacts.append("Model Architecture File")
-        if load_scaler and self._scaler_path is None:
-            missing_artifacts.append("Scaler File")
-        if load_schema and self._schema is None:
-            missing_artifacts.append("FeatureSchema File")
+        loaded_artifacts = []
+        
+        artifact_checks: list[tuple[str, Any]] = [
+            ("Feature Names", self._feature_names),
+            ("Target Names", self._target_names),
+            ("Weights File", self._weights_path),
+            ("Model Architecture File", self._model_architecture_path)
+        ]
+        
+        for name, attribute_value in artifact_checks:
+            if attribute_value is None:
+                missing_artifacts.append(name)
+            else:
+                loaded_artifacts.append(name)
+            
+        # Required
+        if load_scaler:
+            if self._scaler_path is None:
+                _LOGGER.error("Scaler file is required but not found in the directory.")
+                raise FileNotFoundError()
+            loaded_artifacts.append("Scaler File")
+            
+        # Required
+        if load_schema:
+            if self._schema is None:
+                _LOGGER.error("FeatureSchema file is required but not found in the directory.")
+                raise FileNotFoundError()
+            loaded_artifacts.append("FeatureSchema File")
         
         if missing_artifacts:
-            missing_str = ", ".join(missing_artifacts)
-            if verbose >= 1:
+            if verbose >= 1 and self._strict:
+                missing_str = ", ".join(missing_artifacts)
                 _LOGGER.warning(f"Missing artifacts in '{dir_path.name}': {missing_str}.")
+            
+            if verbose >= 2:
+                # report artifacts that were successfully loaded
+                loaded_str = ", ".join(loaded_artifacts)
+                _LOGGER.info(f"Successfully loaded artifacts from '{dir_path.name}': {loaded_str}.")
         else:
             if verbose >= 2:
                 _LOGGER.info(f"All artifacts successfully loaded from '{dir_path.name}'.")

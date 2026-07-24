@@ -111,7 +111,7 @@ class DragonModelCheckpoint(_Callback):
         
         # 1. Update global best score (for logging/metadata)
         if self.monitor_op(current_score, self.best):
-            if self.verbose > 0:
+            if self.verbose > 2:
                  # Only log explicit "improvement" if we are beating the historical best
                  old_best_str = f"{self.best:.4f}" if not np.isinf(self.best) else "inf"
                  _LOGGER.info(f"Epoch {epoch}: {self.monitor} improved from {old_best_str} to {current_score:.4f}")
@@ -181,7 +181,7 @@ class DragonModelCheckpoint(_Callback):
         if should_save:
             filepath = self._save_checkpoint_file(epoch, current_score)
             
-            if self.verbose > 0:
+            if self.verbose > 2:
                 _LOGGER.info(f"Epoch {epoch}: {self.monitor} ({current_score:.4f}) is in top 3. Saving to {filepath.name}")
 
             self.best_checkpoints.append({'path': filepath, 'score': current_score, 'epoch': epoch})
@@ -195,7 +195,7 @@ class DragonModelCheckpoint(_Callback):
                 entry_to_delete = self.best_checkpoints.pop(-1)
 
                 if entry_to_delete['path'].exists():
-                    if self.verbose > 0:
+                    if self.verbose > 2:
                         _LOGGER.info(f"  -> Deleting checkpoint outside top 3: {entry_to_delete['path'].name}")
                     entry_to_delete['path'].unlink()
 
@@ -203,7 +203,7 @@ class DragonModelCheckpoint(_Callback):
         """Saves the latest model and keeps only the 3 most recent ones."""
         filepath = self._save_checkpoint_file(epoch, current_score)
         
-        if self.verbose > 0:
+        if self.verbose > 2:
             _LOGGER.info(f'Epoch {epoch}: saving rolling model to {filepath.name}')
 
         self.recent_checkpoints.append(filepath)
@@ -212,7 +212,7 @@ class DragonModelCheckpoint(_Callback):
         if len(self.recent_checkpoints) > 3:
             file_to_delete = self.recent_checkpoints.pop(0)
             if file_to_delete.exists():
-                if self.verbose > 0:
+                if self.verbose > 2:
                     _LOGGER.info(f"  -> Deleting old rolling checkpoint: {file_to_delete.name}")
                 file_to_delete.unlink()
 

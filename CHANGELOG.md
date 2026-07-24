@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.0.1] 2026-07-24
+
+### Changed
+
+- ML_vision_transformers:
+    - `make_tiled_inference()`: Add `shift` parameter to allow for overlapping tiles during inference, enabling better coverage of edge cases in high-resolution images.
+
+### Fixed
+
+- Minor improvements to logging and error handling in `DragonArtifactFinder` and other functions.
+
 ## [24.0.0] 2026-07-23
 
 ### Added

@@ -173,13 +173,13 @@ def make_tiled_dataset(
     if skipped_empty_tiles > 0:
         _LOGGER.info(f"Total empty tiles skipped: {skipped_empty_tiles}")
     
-    _LOGGER.info(f"Tiling completed. Output saved to {output_dir.name}")
+    _LOGGER.info(f"Tiling completed. Output saved to '{output_dir.name}'")
 
 
 def make_tiled_inference(
     input_dir: Union[str, Path], 
     window_size: int = 512, 
-    ratio_strategy: Literal["pad-white", "pad-black"] = "pad-black", 
+    ratio_strategy: Literal["pad-white", "pad-black", "shift"] = "shift", 
 ) -> None:
     """
     Slices high-resolution images into smaller PNG images for inference.
@@ -191,8 +191,9 @@ def make_tiled_inference(
     Args:
         input_dir (str | Path): Path to the directory containing source images
         window_size (int): The width and height of the square output tiles in pixels.
-        ratio_strategy (Literal["pad-white", "pad-black"]): Strategy for handling edge tiles
+        ratio_strategy (Literal["pad-white", "pad-black", "shift"]): Strategy for handling edge tiles
             when dimensions are not perfectly divisible by the window size.
+            - "shift": Pulls the final sliding window backward to perfectly align with the image boundary.
             - "pad-white": Fills out-of-bounds areas with 255 (white).
             - "pad-black": Fills out-of-bounds areas with 0 (black).
     """
@@ -226,10 +227,16 @@ def make_tiled_inference(
                 
                 crop_x, crop_y = x, y
                         
+                if ratio_strategy == "shift":
+                    if crop_x + window_size > width:
+                        crop_x = max(0, width - window_size)
+                    if crop_y + window_size > height:
+                        crop_y = max(0, height - window_size)
+                        
                 box = (crop_x, crop_y, min(crop_x + window_size, width), min(crop_y + window_size, height))
                 img_patch = img.crop(box)
 
-                if img_patch.size[0] < window_size or img_patch.size[1] < window_size:
+                if ratio_strategy in ["pad-white", "pad-black"] and (img_patch.size[0] < window_size or img_patch.size[1] < window_size):
                     new_img_patch = Image.new(img.mode, (window_size, window_size), color=pad_color)
                     new_img_patch.paste(img_patch, (0, 0))
                     img_patch = new_img_patch
@@ -237,9 +244,14 @@ def make_tiled_inference(
                 patch_name = f"{img_file.stem}_y{crop_y}_x{crop_x}"
                 img_patch.save(image_out_dir / f"{patch_name}.png", format="png")
                 
+                if ratio_strategy == "shift" and crop_x == width - window_size:
+                    break
+            if ratio_strategy == "shift" and crop_y == height - window_size:
+                break
+                
         img.close()
             
-    _LOGGER.info(f"Inference tiling completed. Output saved to {output_dir.name}")
+    _LOGGER.info(f"Inference tiling completed. Output saved to '{output_dir.name}'")
 
 
 def reconstruct_mask_overlapped_tiles(

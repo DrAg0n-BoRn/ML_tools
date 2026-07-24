@@ -103,7 +103,7 @@ class DragonPatienceEarlyStopping(_DragonEarlyStopping):
             is_improvement = self.monitor_op(current, self.best + self.min_delta)
 
         if is_improvement:
-            if self.verbose > 1:
+            if self.verbose > 2:
                 _LOGGER.info(f"EarlyStopping: {self.monitor} improved from {self.best:.4f} to {current:.4f}")
             self.best = current
             self.wait = 0
@@ -200,7 +200,7 @@ class DragonPrecheltEarlyStopping(_DragonEarlyStopping):
             
         quotient = gl / pk
         
-        if self.verbose > 1:
+        if self.verbose > 2:
             _LOGGER.info(f"Epoch {epoch}: GL={gl:.3f} | Pk={pk:.3f} | Quotient={quotient:.3f} (Threshold={self.alpha})")
 
         if quotient > self.alpha:

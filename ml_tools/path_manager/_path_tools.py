@@ -229,7 +229,7 @@ def list_subdirectories(
         count = len(directories)
         # Use pluralization for better readability
         plural = 'ies' if count != 1 else 'y'
-        print(f"Found {count} subdirector{plural} in '{root_path.name}'.")
+        _LOGGER.info(f"Found {count} subdirector{plural} in '{root_path.name}'.")
     
     # Create a dictionary where the key is the directory's name (a string)
     # and the value is the full Path object.
