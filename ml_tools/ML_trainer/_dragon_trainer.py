@@ -23,7 +23,7 @@ from ..ML_configuration import (FormatRegressionMetrics,
                             FinalizeMultiTargetRegression,
                             FinalizeRegression)
 
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
+from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer

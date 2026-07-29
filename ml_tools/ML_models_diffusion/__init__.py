@@ -2,12 +2,18 @@ from ._autoencoder import (
     DragonAutoencoder
 )
 
+from ._autoencoderV2 import (
+    DragonAutoencoderV2
+)
+
 from ._dit_unconditioned import (
-    DragonDiT
+    DragonDiT,
+    DragonDiTV2
 )
 
 from ._dit_conditioned import (
-    DragonDiTGuided
+    DragonDiTGuided,
+    DragonDiTGuidedV2
 )
 
 
@@ -16,8 +22,11 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "DragonAutoencoder",
+    "DragonAutoencoderV2",
     "DragonDiT",
-    "DragonDiTGuided"
+    "DragonDiTV2",
+    "DragonDiTGuided",
+    "DragonDiTGuidedV2"
 ]
 
 

@@ -10,7 +10,7 @@ from .._core import get_logger
 from ._base import _Callback
 
 
-_LOGGER = get_logger("Dragon Checkpoint")
+_LOGGER = get_logger("Checkpoints")
 
 
 __all__ = [
@@ -26,7 +26,7 @@ class DragonModelCheckpoint(_Callback):
                  monitor: Literal["Training Loss", "Validation Loss", "both"] = "Validation Loss",
                  save_three_best: bool = True, 
                  mode: Literal['min', 'max'] = 'min', 
-                 verbose: int = 0):
+                 verbose: int = 1):
         """
         Args:
             monitor (str): Metric to monitor. If "both", the sum of training loss and validation loss is used.

@@ -33,6 +33,11 @@ __all__ = [
 
 # --- DragonSequenceTrainer ----
 class DragonSequenceTrainer(_BaseDragonTrainer):
+    """
+    Trainer for sequence-based tasks (sequence-to-sequence and sequence-to-value) using PyTorch models.
+    
+    Built-in Callbacks: `History`, `TqdmProgressBar`
+    """
     def __init__(self, 
                  model: nn.Module, 
                  train_dataset: Dataset, 
@@ -49,8 +54,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  dataloader_workers: int = 2):
         """
         Automates the training process of a PyTorch Sequence Model.
-        
-        Built-in Callbacks: `History`, `TqdmProgressBar`
 
         Args:
             model (nn.Module): The PyTorch model to train.

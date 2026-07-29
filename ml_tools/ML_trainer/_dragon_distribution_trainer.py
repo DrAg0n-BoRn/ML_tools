@@ -28,6 +28,13 @@ __all__ = [
 
 
 class DragonDistributionTrainer(_BaseDragonTrainer):
+    """
+    Trainer for probabilistic distribution prediction tasks using PyTorch models.
+    
+    The model is expected to output a concatenated tensor of shape (batch_size, 2 * num_targets), where the first half represents the mean and the second half represents the variance logits.
+    
+    Built-in Callbacks: `History`, `TqdmProgressBar`
+    """
     def __init__(self, 
                  model: nn.Module, 
                  train_dataset: Dataset, 
@@ -44,8 +51,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                  dataloader_workers: int = 2):
         """
         Automates the training process of a PyTorch Model for probabilistic distribution prediction.
-        
-        Built-in Callbacks: `History`, `TqdmProgressBar`
         
         Args:
             model (nn.Module): The PyTorch model to train. It must output a single concatenated tensor 

@@ -1,14 +1,10 @@
 from typing import Union, Literal, Optional
 import torch
-from pathlib import Path
 import pandas as pd
 
-from ..ML_models_diffusion import DragonAutoencoder, DragonDiTGuided
+from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2, DragonDiTGuided, DragonDiTGuidedV2
 from ..math_utilities import handle_negative_values, round_float_values
-from ..data_exploration import plot_value_distributions, plot_numeric_overview_boxplot_macro
-from ..utilities import save_dataframe_filename
 
-from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 
 from ._base_generator import _BaseDiffusionGenerator
@@ -29,39 +25,44 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
     This generator takes a trained guided diffusion model and an autoencoder to generate synthetic tabular data conditioned on specific target values, and plots relevant metrics to evaluate the generated data.
     """
     def __init__(self,
-                 save_dir: Union[Path, str],
-                 diffusion_model: DragonDiTGuided,
-                 encoder: DragonAutoencoder,
+                 diffusion_model: Union[DragonDiTGuided, DragonDiTGuidedV2],
+                 encoder: Union[DragonAutoencoder, DragonAutoencoderV2],
                  device: Union[torch.device, str]):
         """
         Initializes the DragonDiTGuidedGenerator with the specified parameters.
         
         Args:
-            save_dir (Path | str): The root directory where generated data and plots will be saved.
-            diffusion_model (DragonDiTGuided): The trained guided diffusion model to use for generating synthetic data.
-            encoder (DragonAutoencoder): The autoencoder used to decode the generated embeddings back to tabular format.
+            diffusion_model (DragonDiTGuided | DragonDiTGuidedV2): The trained guided diffusion model to use for generating synthetic data.
+            encoder (DragonAutoencoder | DragonAutoencoderV2): The autoencoder used to decode the generated embeddings back to tabular format.
             device (torch.device | str): The device to run the model on (e.g., "cpu" or "cuda"). The models will be moved to this device for generation.
         """
 
-        super().__init__(save_dir, diffusion_model, encoder, device)
+        super().__init__(diffusion_model, encoder, device)
     
     def generate(self, 
                  batch_size: int,
                  target_value: float,
+                 target_name: Optional[str] = None,
                  guidance_scale: float = 3.0,
+                 cfg_rescale: float = 0.0,
                  ode_steps: int = 20,
                  positive_columns: Union[list[str], Literal["all"], Literal["none"]] = "none",
                  round_float_columns: Union[list[str], Literal["all"], Literal["none"]] = "all",
-                 float_rounding_precision: int = 3,
-                 autosave: bool = True) -> pd.DataFrame:
+                 float_rounding_precision: int = 3) -> pd.DataFrame:
         """
         Generates synthetic tabular data conditioned on a specific target value.
         
         Args:
             batch_size (int): The number of synthetic samples to generate.
             target_value (float): The specific target value to condition the generation on.
+            target_name (str | None): Optional column name to append the target value to the resulting DataFrame.
             guidance_scale (float): The strength of the guidance during generation.
+            cfg_rescale (float): The rescaling factor for classifier-free guidance. 
+                - Min: `0.0` Rescaling is completely turned off. This yields standard CFG behavior.
+                - Max: `1.0` The guided prediction's variance is strictly forced to match the original conditional variance. 
+                - Recommended 0.5 to 0.7 if guidance_scale is high (5.0 or more).
             ode_steps (int): The number of ODE steps to use during sampling. More steps might improve quality but will increase generation time.
+                - For V2 models, 5 to 10 steps are often sufficient for good quality thanks to OT-CFM.
             positive_columns (list[str] | "all" | "none"): Which columns should be forced to have only positive values or 0. 
                 - If "all", all columns will be processed to ensure positivity (identifies numeric columns automatically).
                 - If "none", no columns will be modified.
@@ -69,7 +70,6 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
                 - If "all", all columns will be processed to round float values (identifies numeric columns automatically).
                 - If "none", no columns will be modified for rounding.
             float_rounding_precision (int): The number of decimal places to round float values to if `round_float_columns` is not "none".
-            autosave (bool): Whether to automatically save the generated DataFrame to a CSV file in the provided save directory.
             
         Returns:
             pd.DataFrame: The generated synthetic tabular data as a DataFrame.
@@ -81,7 +81,8 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             batch_size=batch_size, 
             target_value=target_value,
             num_steps=ode_steps,
-            guidance_scale=guidance_scale
+            guidance_scale=guidance_scale,
+            cfg_rescale=cfg_rescale
         )
         
         # Decode embeddings back to tabular format
@@ -95,117 +96,87 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             _rounding_code = None if round_float_columns == "all" else round_float_columns
             decoded_data = round_float_values(df=decoded_data, columns=_rounding_code, n=float_rounding_precision)
             
-        if autosave:
-            batch_info = f"Generated-{batch_size}-Target-{target_value}-Guidance-{guidance_scale}".replace(".", "_")
-            save_dataframe_filename(df=decoded_data, save_dir=self.save_root_dir, filename=batch_info, verbose=1)
-            _LOGGER.info(f"Generated data saved to {self.save_root_dir} as '{batch_info}.csv'.")
-        else:
-            _LOGGER.info(f"Generated {batch_size} samples for target {target_value}.")
+        if target_name is not None:
+            decoded_data[target_name] = target_value
+            
+        _LOGGER.info(f"Generated {batch_size} samples for target {target_value}.")
         
         return decoded_data
-    
-    def plot_metrics(self,
-                     df_generated: pd.DataFrame, 
-                     target_value: float,
-                     base_plot_title: str = "Generated Data Distribution",
-                     handle_zero_variance: Literal["constant", "drop"] = "constant",
-                     show_means: bool = True,
-                     font_scaling: float = 1.5,
-                     subdirectory: Optional[str] = None) -> None:
-        """
-        Plots value distributions and numeric overview boxplots.
-        
-        Args:
-            df_generated (pd.DataFrame): The generated DataFrame for which to plot metrics.
-            target_value (float): The target value used for generation, included in plot titles for clarity.
-            base_plot_title (str): The base title for the plots.
-            handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance when plotting boxplots.
-            show_means (bool): Whether to display means on the plots.
-            font_scaling (float): The scaling factor for font sizes on the plots.
-            subdirectory (str | None): Optional subdirectory within the save directory to save the plots. If None, saves in the root save directory.
-        """
-        if df_generated.empty:
-            _LOGGER.warning("The provided DataFrame for plotting is empty. No plots will be generated.")
-            return
-            
-        target_title = f"{base_plot_title} (Target: {target_value})"
-        
-        if isinstance(subdirectory, str):
-            subdirectory = sanitize_filename(subdirectory)
-            
-            target_dir = make_fullpath(self.save_root_dir / subdirectory, make=True, enforce="directory")
-        else:
-            target_dir = self.save_root_dir
-        
-        plot_value_distributions(df=df_generated, 
-                                 save_dir=target_dir,
-                                 font_scaling=font_scaling,)
-        
-        plot_numeric_overview_boxplot_macro(
-                df=df_generated, 
-                save_dir=target_dir, 
-                plot_title=target_title,
-                handle_zero_variance=handle_zero_variance,
-                show_means=show_means,
-                font_scaling=font_scaling
-            )
 
-    def generate_plot_multi(self,
-                            targets: Union[list[float], list[int], list[Union[float, int]]],
-                            batch_size: int,
-                            guidance_scale: float = 3.0,
-                            ode_steps: int = 20,
-                            positive_columns: Union[list[str], Literal["all"], Literal["none"]] = "none",
-                            round_float_columns: Union[list[str], Literal["all"], Literal["none"]] = "all",
-                            float_rounding_precision: int = 3,
-                            handle_zero_variance: Literal["constant", "drop"] = "constant",
-                            font_scaling: float = 1.5) -> None:
+    def generate_multi(self,
+                       target_range: tuple[float, float, float],
+                       batch_per_step: int,
+                       target_name: str,
+                       guidance_scale: float = 3.0,
+                       cfg_rescale: float = 0.0,
+                       ode_steps: int = 20,
+                       positive_columns: Union[list[str], Literal["all"], Literal["none"]] = "none",
+                       round_float_columns: Union[list[str], Literal["all"], Literal["none"]] = "all",
+                       float_rounding_precision: int = 3) -> pd.DataFrame:
         """
-        Iterates over a list of targets, generating and plotting data for each, saving outputs in isolated subdirectories.
+        Iterates over a calculated range of targets, generating data for each step, and combines 
+        all results into a single DataFrame.
         
         Args:
-            targets (list[float | int]): A list of target values to condition the generation on.
-            batch_size (int): The number of synthetic samples to generate for each target.
+            target_range (tuple[float, float, float]): The range of target values to condition on, 
+                formatted as `START(Inclusive), END(Exclusive), STEP`.
+            batch_per_step (int): The number of synthetic samples to generate per step.
+            target_name (str): The name of the column to append to the DataFrame to record the conditioning target.
             guidance_scale (float): The strength of the guidance during generation.
-            ode_steps (int): The number of ODE steps to use during sampling. More steps might improve quality but will increase generation time.
-            positive_columns (list[str] | "all" | "none"): Which columns should be forced to have only positive values or 0. 
-                - If "all", all columns will be processed to ensure positivity (identifies numeric columns automatically).
-                - If "none", no columns will be modified.
-            round_float_columns (list[str] | "all" | "none"): Which columns should have their float values rounded. 
-                - If "all", all columns will be processed to round float values (identifies numeric columns automatically).
-                - If "none", no columns will be modified for rounding.
-            float_rounding_precision (int): The number of decimal places to round float values to if `round_float_columns` is not "none".
-            handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance when plotting boxplots.
-            font_scaling (float): The scaling factor for font sizes on the plots.
+            cfg_rescale (float): The rescaling factor for classifier-free guidance. 
+                - Min: `0.0` Rescaling is completely turned off. This yields standard CFG behavior.
+                - Max: `1.0` The guided prediction's variance is strictly forced to match the original conditional variance. 
+                - Recommended 0.5 to 0.7 if guidance_scale is high (5.0 or more).
+            ode_steps (int): The number of ODE steps to use during sampling.
+            positive_columns (list[str] | "all" | "none"): Which columns should be forced to have only positive values.
+            round_float_columns (list[str] | "all" | "none"): Which columns should have float values rounded.
+            float_rounding_precision (int): Decimal places to round to if `round_float_columns` is not "none".
+            
+        Returns:
+            pd.DataFrame: A single consolidated DataFrame containing all generated samples across the target range.
         """
+        start, end, step = target_range
+        
+        if step == 0:
+            _LOGGER.error("Step in target_range cannot be zero.")
+            raise ValueError()
+        elif (step > 0 and start >= end) or (step < 0 and start <= end):
+            _LOGGER.error("Invalid target_range: Ensure that the step direction aligns with the start and end values.")
+            raise ValueError()
+            
+        # 1. Calculate float-compatible targets
+        targets = []
+        current = start
+        if step > 0:
+            while current < end:
+                targets.append(round(current, 6))  # Rounding helps avoid float arithmetic issues
+                current += step
+        else:
+            while current > end:
+                targets.append(round(current, 6))
+                current += step
+
+        generated_dfs = []
+        
+        # 2. Generate samples for each target
         for target in targets:
-            # Create a dedicated directory for this specific target
-            basic_info = f"Target-{target}-Guidance-{guidance_scale}".replace(".", "_")
-            
-            target_dir = self.save_root_dir / basic_info
-            
             df_generated = self.generate(
-                batch_size=batch_size,
+                batch_size=batch_per_step,
                 target_value=target,
+                target_name=target_name,
                 guidance_scale=guidance_scale,
+                cfg_rescale=cfg_rescale,
                 ode_steps=ode_steps,
                 positive_columns=positive_columns,
                 round_float_columns=round_float_columns,
-                float_rounding_precision=float_rounding_precision,
-                autosave=False
+                float_rounding_precision=float_rounding_precision
             )
             
-            self.plot_metrics(
-                df_generated=df_generated,
-                target_value=target,
-                subdirectory=basic_info,
-                handle_zero_variance=handle_zero_variance,
-                show_means=True,
-                font_scaling=font_scaling
-            )
+            generated_dfs.append(df_generated)
             
-            # save the generated DataFrame for this target
-            save_dataframe_filename(df=df_generated, save_dir=target_dir, filename=f"Generated-{batch_size}-samples", verbose=1)
+        # 3. Consolidate into a single DataFrame
+        final_df = pd.concat(generated_dfs, ignore_index=True)
  
-        _LOGGER.info("Multi-target generation and plotting completed.")
-  
+        _LOGGER.info(f"Multi-target generation completed. {len(final_df)} total samples generated and combined.")
+        
+        return final_df

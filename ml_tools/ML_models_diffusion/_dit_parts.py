@@ -144,3 +144,146 @@ class DiTBlockFlash(nn.Module):
         
         return x
 
+
+##### V2 of the DiT Block ####
+
+# Note: Torch 2.4+ includes a native RMSNorm implementation, but we implement it here for compatibility with earlier versions of PyTorch.
+class RMSNorm(nn.Module):
+    """
+    Root Mean Square Layer Normalization.
+    Normalizes the input strictly by variance (no mean-centering) and optionally applies a learnable scale.
+    """
+    def __init__(self, dim: int, elementwise_affine: bool = True, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+        if self.elementwise_affine:
+            self.weight = nn.Parameter(torch.ones(dim))
+        else:
+            self.register_parameter('weight', None)
+
+    def forward(self, x):
+        # Calculate RMS over the last dimension
+        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        x_normed = x / rms
+        
+        if self.elementwise_affine:
+            return x_normed * self.weight
+        return x_normed
+
+
+class SwiGLU(nn.Module):
+    """
+    Swish-Gated Linear Unit (SwiGLU).
+    Replaces the standard GELU/ReLU FFN with a dual-path gated projection.
+    """
+    def __init__(self, in_features: int, hidden_features: int, out_features: int):
+        super().__init__()
+        # The gating path
+        self.W_g = nn.Linear(in_features, hidden_features)
+        # The value path
+        self.W_v = nn.Linear(in_features, hidden_features)
+        # Output projection
+        self.W_o = nn.Linear(hidden_features, out_features)
+        self.act = nn.SiLU() # SiLU is the Swish activation function
+
+    def forward(self, x):
+        # SwiGLU formula: Output = (Swish(x @ W_g) * (x @ W_v)) @ W_o
+        gate = self.act(self.W_g(x))
+        value = self.W_v(x)
+        return self.W_o(gate * value)
+    
+    
+class DiTBlockFlashV2(nn.Module):
+    def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        
+        # 1. UPGRADE: RMSNorm replaces LayerNorm
+        # elementwise_affine=False because adaLN handles the scaling and shifting
+        self.norm1 = RMSNorm(embed_dim, elementwise_affine=False)
+        
+        # Split QKV into separate layers to easily apply QK-Norm
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        
+        # 2. UPGRADE: QK-Normalization applied per attention head
+        self.q_norm = RMSNorm(self.head_dim, elementwise_affine=True)
+        self.k_norm = RMSNorm(self.head_dim, elementwise_affine=True)
+        
+        self.proj = nn.Linear(embed_dim, embed_dim)
+        
+        self.norm2 = RMSNorm(embed_dim, elementwise_affine=False)
+        
+        # 3. UPGRADE: SwiGLU replaces the sequential GELU network
+        # To maintain parameter parity with a standard 4x FFN, SwiGLU hidden_dim is usually 8/3 of embed_dim
+        hidden_dim = int(embed_dim * 8 / 3)
+        self.feed_forward = SwiGLU(
+            in_features=embed_dim, 
+            hidden_features=hidden_dim, 
+            out_features=embed_dim
+        )
+        
+        # Time-conditioning modulation remains the same
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(embed_dim, 6 * embed_dim, bias=True)
+        )
+        
+        nn.init.zeros_(self.adaLN_modulation[-1].weight)  # type: ignore
+        nn.init.zeros_(self.adaLN_modulation[-1].bias) # type: ignore
+
+    def forward(self, x, time_conditioning):
+        (
+            shift_attention, 
+            scale_attention, 
+            gate_attention, 
+            shift_feed_forward, 
+            scale_feed_forward, 
+            gate_feed_forward
+        ) = self.adaLN_modulation(time_conditioning).chunk(6, dim=1)
+        
+        # Apply adaLN modulation on top of RMSNorm
+        norm_x = self.norm1(x) * (1 + scale_attention.unsqueeze(1)) + shift_attention.unsqueeze(1)
+        
+        B, L, D = norm_x.shape
+        
+        # Project Q, K, V and reshape to [Batch, SeqLen, Heads, HeadDim]
+        q = self.q_proj(norm_x).view(B, L, self.num_heads, self.head_dim)
+        k = self.k_proj(norm_x).view(B, L, self.num_heads, self.head_dim)
+        v = self.v_proj(norm_x).view(B, L, self.num_heads, self.head_dim)
+        
+        # Apply QK-Norm over the HeadDim before calculating attention
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+        
+        # Permute for native SDPA: [Batch, Heads, SeqLen, HeadDim]
+        q = q.permute(0, 2, 1, 3)
+        k = k.permute(0, 2, 1, 3)
+        v = v.permute(0, 2, 1, 3)
+        
+        # PyTorch Native Scaled Dot-Product Attention
+        attn_out = F.scaled_dot_product_attention(
+            query=q,
+            key=k,
+            value=v,
+            dropout_p=0.0,
+            is_causal=False
+        )
+        
+        # Reshape back to [Batch, SeqLen, Dim]
+        attn_out = attn_out.transpose(1, 2).reshape(B, L, D)
+        attn_out = self.proj(attn_out)
+        
+        # Apply gate
+        x = x + gate_attention.unsqueeze(1) * attn_out
+        
+        # Feed-forward network step
+        norm_x = self.norm2(x) * (1 + scale_feed_forward.unsqueeze(1)) + shift_feed_forward.unsqueeze(1)
+        ff_out = self.feed_forward(norm_x)
+        x = x + gate_feed_forward.unsqueeze(1) * ff_out
+        
+        return x

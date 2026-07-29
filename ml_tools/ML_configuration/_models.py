@@ -17,8 +17,10 @@ __all__ = [
     "DragonAutoIntParams",
     # Tabular Autoencoder
     "DragonAutoencoderParams",
+    "DragonAutoencoderV2Params",
     # DiT guided and standard
     "DragonDiTParams",
+    "DragonDiTV2Params",
     # Sequence Models
     "DragonSequenceLSTMParams",
     # Image Classification Models
@@ -40,6 +42,7 @@ __all__ = [
 # --- Standard Models ---
 
 class DragonMLPParams(_BaseModelParams):
+    """Parameters for a standard Multi-Layer Perceptron (MLP) model."""
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
@@ -52,6 +55,7 @@ class DragonMLPParams(_BaseModelParams):
 
 
 class DragonAttentionMLPParams(_BaseModelParams):
+    """Parameters for an Attention-based Multi-Layer Perceptron (MLP) model."""
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
@@ -64,6 +68,7 @@ class DragonAttentionMLPParams(_BaseModelParams):
 
 
 class DragonMultiHeadAttentionNetParams(_BaseModelParams):
+    """Parameters for a Multi-Head Attention Network model."""
     def __init__(self, 
                  in_features: int, 
                  out_targets: int,
@@ -80,6 +85,7 @@ class DragonMultiHeadAttentionNetParams(_BaseModelParams):
 
 
 class DragonTabularTransformerParams(_BaseModelParams):
+    """Parameters for a Dragon Tabular Transformer model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
@@ -97,6 +103,7 @@ class DragonTabularTransformerParams(_BaseModelParams):
 # --- Advanced Models ---
 
 class DragonGateParams(_BaseModelParams):
+    """Parameters for a Dragon Gate model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
@@ -131,6 +138,7 @@ class DragonGateParams(_BaseModelParams):
 
 
 class DragonNodeParams(_BaseModelParams):
+    """Parameters for a Dragon Node model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
@@ -161,6 +169,7 @@ class DragonNodeParams(_BaseModelParams):
 
 
 class DragonAutoIntParams(_BaseModelParams):
+    """Parameters for a Dragon AutoInt model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
@@ -193,6 +202,7 @@ class DragonAutoIntParams(_BaseModelParams):
 
 
 class DragonTabNetParams(_BaseModelParams):
+    """Parameters for a Dragon TabNet model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  out_targets: int,
@@ -222,6 +232,7 @@ class DragonTabNetParams(_BaseModelParams):
 # Tabular Autoencoder
 
 class DragonAutoencoderParams(_BaseModelParams):
+    """Parameters for a Dragon Autoencoder model."""
     def __init__(self, *,
                  schema: FeatureSchema,
                  embedding_dim: int = 64,
@@ -230,9 +241,46 @@ class DragonAutoencoderParams(_BaseModelParams):
         self.embedding_dim = embedding_dim
         self.fourier_sigma = fourier_sigma
 
+
+class DragonAutoencoderV2Params(_BaseModelParams):
+    """Parameters for a Dragon Autoencoder V2 model."""
+    def __init__(self, *,
+                 schema: FeatureSchema,
+                 embedding_dim: int = 64,
+                 numerical_embedding_type: Literal['fourier', 'ple'] = 'ple', 
+                 fourier_sigma: float = 1.0,
+                 ple_bins: int = 100,
+                 transformer_depth: int = 2,
+                 transformer_heads: int = 4) -> None:
+        self.schema = schema
+        self.embedding_dim = embedding_dim
+        self.numerical_embedding_type = numerical_embedding_type
+        self.fourier_sigma = fourier_sigma
+        self.ple_bins = ple_bins
+        self.transformer_depth = transformer_depth
+        self.transformer_heads = transformer_heads
+        
+
 # DiT guided and standard
 
 class DragonDiTParams(_BaseModelParams):
+    """
+    Parameters for a Guided and Unguided Dragon DiT model.
+    """
+    def __init__(self, *,
+                 embed_dim: int, 
+                 seq_len: int,
+                 num_heads: int=4, 
+                 depth: int=2) -> None:
+        self.embed_dim = embed_dim
+        self.seq_len = seq_len
+        self.num_heads = num_heads
+        self.depth = depth
+        
+class DragonDiTV2Params(_BaseModelParams):
+    """
+    Parameters for a Guided and Unguided Dragon DiT V2 model with Optimal Transport Flow Matching.
+    """
     def __init__(self, *,
                  embed_dim: int, 
                  seq_len: int,
@@ -247,6 +295,7 @@ class DragonDiTParams(_BaseModelParams):
 # Sequence Models
 
 class DragonSequenceLSTMParams(_BaseModelParams):
+    """Parameters for a Dragon Sequence LSTM model."""
     def __init__(self, *,
                  prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
                  hidden_size: int = 100,
@@ -264,6 +313,7 @@ class DragonSequenceLSTMParams(_BaseModelParams):
 # Image classification
 
 class DragonResNetParams(_BaseModelParams):
+    """Parameters for a Dragon ResNet model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,
@@ -276,6 +326,7 @@ class DragonResNetParams(_BaseModelParams):
 
 
 class DragonEfficientNetParams(_BaseModelParams):
+    """Parameters for a Dragon EfficientNet model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,
@@ -288,6 +339,7 @@ class DragonEfficientNetParams(_BaseModelParams):
 
 
 class DragonVGGParams(_BaseModelParams):
+    """Parameters for a Dragon VGG model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,
@@ -302,6 +354,7 @@ class DragonVGGParams(_BaseModelParams):
 # Image segmentation
 
 class DragonFCNParams(_BaseModelParams):
+    """Parameters for a Dragon FCN model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,
@@ -314,6 +367,7 @@ class DragonFCNParams(_BaseModelParams):
 
 
 class DragonDeepLabv3Params(_BaseModelParams):
+    """Parameters for a Dragon DeepLabv3 model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,
@@ -328,6 +382,7 @@ class DragonDeepLabv3Params(_BaseModelParams):
 # Object detection
 
 class DragonFastRCNNParams(_BaseModelParams):
+    """Parameters for a Dragon Fast R-CNN model."""
     def __init__(self, *,
                  num_classes: int,
                  in_channels: int = 3,

@@ -7,7 +7,7 @@ from .._core import get_logger
 from ._base import _Callback
 
 
-_LOGGER = get_logger("Dragon LR Scheduler")
+_LOGGER = get_logger("LR Scheduler")
 
 
 __all__ = [
@@ -70,11 +70,11 @@ class DragonScheduler(_DragonLRScheduler):
     
     NOT Compatible with: ReduceLROnPlateau (Use `DragonReduceLROnPlateau` instead).
     """
-    def __init__(self, scheduler, verbose: bool=True):
+    def __init__(self, scheduler, verbose: int = 1):
         """
         Args:
             scheduler: An initialized PyTorch learning rate scheduler instance.
-            verbose (bool): If True, logs learning rate changes to console.
+            verbose (int): Level of verbosity for logging learning rate changes to console.
         """
         super().__init__()
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -89,7 +89,7 @@ class DragonScheduler(_DragonLRScheduler):
         super().set_trainer(trainer)
         # Explicitly register the scheduler again to be safe
         self.trainer.scheduler = self.scheduler # type: ignore
-        if self.verbose:
+        if self.verbose > 1:
             _LOGGER.info(f"Registered LR Scheduler: {self.scheduler.__class__.__name__}")
 
     def on_epoch_end(self, epoch, logs=None):
@@ -98,7 +98,9 @@ class DragonScheduler(_DragonLRScheduler):
         # Standard step (no metrics needed)
         self.scheduler.step()
         
-        self._check_and_log_lr(epoch, logs, self.verbose)
+        inner_verbose = True if self.verbose >= 1 else False
+        
+        self._check_and_log_lr(epoch, logs, inner_verbose)
 
 
 class DragonPlateauScheduler(_DragonLRScheduler):
@@ -117,7 +119,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
                  cooldown: int = 0, 
                  min_lr: float = 0, 
                  eps: float = 1e-8, 
-                 verbose: bool = True):
+                 verbose: int = 1):
         """
         Args:
             monitor ("Training Loss", "Validation Loss"): Metric to monitor.
@@ -129,7 +131,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
             cooldown (int): Number of epochs to wait before resuming normal operation after lr has been reduced.
             min_lr (float or list): A scalar or a list of scalars.
             eps (float): Minimal decay applied to lr.
-            verbose (bool): If True, logs learning rate changes to console.
+            verbose (int): Level of verbosity for logging learning rate changes to console.
         """
         super().__init__()
         
@@ -168,7 +170,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
             raise ValueError()
             
         # Initialize the actual scheduler with the optimizer
-        if self.verbose:
+        if self.verbose > 1:
             _LOGGER.info(f"Initializing ReduceLROnPlateau monitoring '{self.monitor}'")
         
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -184,14 +186,16 @@ class DragonPlateauScheduler(_DragonLRScheduler):
         
         metric_val = logs.get(self.monitor)
         
+        inner_verbose = True if self.verbose >= 1 else False
+        
         if metric_val is None:
             _LOGGER.warning(f"DragonReduceLROnPlateau could not find metric '{self.monitor}' in logs. Scheduler step skipped.")
             # Still log LR to keep history consistent
-            self._check_and_log_lr(epoch, logs, self.verbose)
+            self._check_and_log_lr(epoch, logs, inner_verbose)
             return
 
         # Step with metric
         self.scheduler.step(metric_val)
         
-        self._check_and_log_lr(epoch, logs, self.verbose)
+        self._check_and_log_lr(epoch, logs, inner_verbose)
 

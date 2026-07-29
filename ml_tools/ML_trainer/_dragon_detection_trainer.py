@@ -27,6 +27,11 @@ __all__ = [
 
 # Object Detection Trainer
 class DragonDetectionTrainer(_BaseDragonTrainer):
+    """
+    Trainer for object detection tasks using PyTorch models.
+    
+    Built-in Callbacks: `History`, `TqdmProgressBar`
+    """
     def __init__(self, model: nn.Module, 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
@@ -41,8 +46,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                  dataloader_workers: int = 2):
         """
         Automates the training process of an Object Detection Model (e.g., DragonFastRCNN).
-        
-        Built-in Callbacks: `History`, `TqdmProgressBar`
 
         Args:
             model (nn.Module): The PyTorch object detection model to train.

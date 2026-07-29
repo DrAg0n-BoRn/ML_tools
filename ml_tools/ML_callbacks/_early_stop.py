@@ -8,7 +8,7 @@ from .._core import get_logger
 from ._base import _Callback
 
 
-_LOGGER = get_logger("Dragon EarlyStopping")
+_LOGGER = get_logger("EarlyStopping")
 
 
 __all__ = [

@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-from ..ML_models_diffusion._autoencoder import DragonAutoencoder
+from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2
 from ..ML_configuration._finalize import FinalizeAutoencoder
 from ..ML_configuration._metrics import FormatAutoencoderMetrics
 from ..ML_evaluation import autoencoder_metrics
@@ -14,7 +14,7 @@ from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping, DragonPrecheltEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, DragonTrainerKeys
+from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -29,8 +29,13 @@ __all__ = [
 
 
 class DragonAutoencoderTrainer(_BaseDragonTrainer):
+    """
+    Trainer for unsupervised autoencoder tasks using PyTorch models, supporting both DragonAutoencoder (V1) and DragonAutoencoderV2 architectures.
+    
+    Built-in Callbacks: `History`, `TqdmProgressBar`
+    """
     def __init__(self, 
-                 model: DragonAutoencoder, 
+                 model: Union[DragonAutoencoder, DragonAutoencoderV2], 
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
@@ -45,7 +50,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         Automates the unsupervised training process of a DragonAutoencoder.
         
         Args:
-            model (DragonAutoencoder): The autoencoder model to be trained.
+            model (DragonAutoencoder | DragonAutoencoderV2): The autoencoder model to be trained.
             train_dataset (Dataset): The dataset to use for training. Should yield either (features) or (features, target) tuples, but only the features will be used for training since this is an unsupervised task.
             validation_dataset (Dataset): The dataset to use for validation during training. Should have the same format as train_dataset.
             save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
@@ -103,12 +108,32 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
 
             self.optimizer.zero_grad()
             
-            # Encode & Decode
-            tokens = self.model(features)
+            # Encode
+            encoder_out = self.model(features)
+            
+            # Handle V2 VAE outputs (z, mu, logvar) vs V1 deterministic outputs (tokens)
+            if isinstance(self.model, DragonAutoencoderV2):
+                if not (isinstance(encoder_out, tuple) and len(encoder_out) == 3):
+                    _LOGGER.error("Expected encoder output to be a tuple of (z, mu, logvar) for DragonAutoencoderV2.")
+                    raise ValueError()
+                tokens, mu, logvar = encoder_out
+            else:
+                # For DragonAutoencoder (V1), we only have tokens
+                tokens = encoder_out
+                mu, logvar = None, None
+                
+            # Decode using the latent representation (z for V2, tokens for V1)
             num_reconstructed, cat_logits = self.model._decode(tokens) # type: ignore
             
-            # Internal Loss with Uncertainty Weighting
-            loss = _compute_autoencoder_loss(features, num_reconstructed, cat_logits, self.model) # type: ignore
+            # Internal Loss with Uncertainty Weighting + KL Divergence
+            loss = _compute_autoencoder_loss(
+                x=features, 
+                num_reconstructed=num_reconstructed, 
+                cat_logits=cat_logits, 
+                embedder=self.model, # type: ignore
+                mu=mu,
+                logvar=logvar
+            ) # type: ignore
             
             loss.backward()
             self.optimizer.step()
@@ -326,10 +351,13 @@ def _compute_autoencoder_loss(
     x: torch.Tensor, 
     num_reconstructed: torch.Tensor, 
     cat_logits: list[torch.Tensor], 
-    embedder: DragonAutoencoder
+    embedder: Union[DragonAutoencoder, DragonAutoencoderV2],
+    mu: Optional[torch.Tensor] = None,
+    logvar: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     """
     Computes the reconstruction loss for the DragonAutoencoder using homoscedastic uncertainty weighting to dynamically balance multi-modal objectives.
+    Optionally computes KL Divergence if VAE parameters (mu, logvar) are provided.
     
     Source Paper: "Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics" (https://arxiv.org/abs/1705.07115)
     """
@@ -358,6 +386,17 @@ def _compute_autoencoder_loss(
         # L_cat = exp(-log_var) * CE + 0.5 * log_var
         cat_loss_weighted = torch.exp(-embedder.log_var_cat) * ce_loss + 0.5 * embedder.log_var_cat # type: ignore
         loss = loss + cat_loss_weighted[0]
+        
+    # 3. KL Divergence for VAE Regularization
+    if mu is not None and logvar is not None:
+        # Calculate the mean across the batch and all latent dimensions.
+        # Taking the mean (rather than the sum) prevents the KL penalty from exploding 
+        # and dominating the numerical/categorical reconstruction losses, which are also means.
+        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+        
+        # Add a soft beta weight (0.01) common in Tabular Beta-VAEs to prioritize reconstruction accuracy
+        beta = 0.01 
+        loss = loss + (kl_loss * beta)
     
     # Edge case safeguard (should not happen in practice)
     if not embedder.numerical_indices and not embedder.categorical_indices:

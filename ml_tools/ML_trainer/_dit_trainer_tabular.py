@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from scipy.optimize import linear_sum_assignment
 
 from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint
@@ -10,9 +11,9 @@ from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation._dit_metrics import dit_generation_metrics
 from ..ML_configuration import FormatTabularDiffusionMetrics, FinalizeTabularDiffusion
-from ..ML_models_diffusion import DragonAutoencoder, DragonDiT, DragonDiTGuided
+from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2, DragonDiT, DragonDiTV2, DragonDiTGuided, DragonDiTGuidedV2
 
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, DragonTrainerKeys
+from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -27,9 +28,14 @@ __all__ = [
 
 
 class DragonTabularDiTTrainer(_BaseDragonTrainer):
+    """
+    Trainer for Diffusion Models (DiT) on tabular data, supporting both guided and unguided training modes. It leverages a pretrained autoencoder to embed tabular features into a continuous latent space suitable for diffusion modeling.
+    
+    Built-in Callbacks: `History`, `TqdmProgressBar`
+    """
     def __init__(self, 
-                 model: Union[DragonDiT, DragonDiTGuided], 
-                 token_embedder: DragonAutoencoder,
+                 model: Union[DragonDiT, DragonDiTV2, DragonDiTGuided, DragonDiTGuidedV2], 
+                 token_embedder: Union[DragonAutoencoder, DragonAutoencoderV2],
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
@@ -40,14 +46,15 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
                  extra_callbacks: Optional[list[_Callback]] = None,
                  dataloader_workers: int = 2,
-                 cfg_dropout_rate: float = 0.15):
+                 cfg_dropout_rate: float = 0.15,
+                 use_ot_cfm: bool = True):
         """
         Trainer class specifically designed for training DiT models on tabular data. 
         It handles the unique training loop of DiT, including the preparation of noisy inputs and time steps, and supports both guided and unguided training modes.
         
         Args:
-            model (Union[DragonDiT, DragonDiTGuided]): The DiT model to be trained. Can be either the standard unguided DiT or the guided version that incorporates target information.
-            token_embedder (DragonAutoencoder): A pretrained autoencoder used to embed tabular features into a continuous latent space suitable for diffusion modeling. The embedder's weights are frozen during DiT training.
+            model (Union[DragonDiT, DragonDiTV2, DragonDiTGuided, DragonDiTGuidedV2]): The DiT model to be trained. Can be either the standard unguided DiT or the guided version that incorporates target information.
+            token_embedder (DragonAutoencoder | DragonAutoencoderV2): A pretrained autoencoder used to embed tabular features into a continuous latent space suitable for diffusion modeling. The embedder's weights are frozen during DiT training.
             train_dataset (Dataset): The training dataset containing tabular data. Each sample should be a tensor of shape (num_features,) or a tuple (features, target) if using the guided DiT.
             validation_dataset (Dataset): The validation dataset for evaluating model performance during training. Should have the same format as the training dataset.
             save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created for organization.
@@ -59,6 +66,8 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             extra_callbacks (Optional[list[_Callback]]): Optional list of additional callbacks to integrate into the training loop.
             dataloader_workers (int): Number of worker processes for data loading.
             cfg_dropout_rate (float): The dropout rate for the guided DiT model, which randomly drops the conditioning information during training to improve robustness. Recommended between 0.1 and 0.3.
+            use_ot_cfm (bool): Whether to use Optimal Transport - Continuous Flow Matching (OT-CFM) for training.
+                - ⚠️ Do not use OT-CFM when training a V1 model that was not originally trained with OT-CFM, as it will break the learned distribution.
         """
         super().__init__(
             model=model,
@@ -76,7 +85,10 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         self.validation_dataset = validation_dataset
         self.cfg_dropout_rate = cfg_dropout_rate
         
-        self.is_guided = isinstance(model, DragonDiTGuided)
+        self.is_guided = isinstance(model, (DragonDiTGuided, DragonDiTGuidedV2))
+        self.use_ot_cfm = use_ot_cfm
+        # OT-CFM Can be used globally but it will break previous V1 models that were not trained with OT-CFM. 
+        
         self.kind = MLTaskKeys.DIFFUSION
         
         # Ensure token embedder weights are frozen during DiT training
@@ -99,6 +111,24 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         batch_size, num_features, embed_dim = x_1.shape
         # 1. Sample noise x_0 from standard normal distribution with the same shape as x_1
         x_0 = torch.randn_like(x_1, device=self.device)
+        
+        # 2. Optimal Transport Flow Matching (OT-CFM)
+        if self.use_ot_cfm:
+            # Flatten spatial and embedding dimensions for pairwise distance calculation
+            x_0_flat = x_0.view(batch_size, -1)
+            x_1_flat = x_1.view(batch_size, -1)
+            
+            # Compute pairwise Euclidean distance (cost matrix)
+            cost_matrix = torch.cdist(x_0_flat, x_1_flat, p=2).cpu().numpy()
+            
+            # Solve the linear sum assignment problem (Hungarian Algorithm)
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            
+            # Optimally permute the noise (x_0) to match the data (x_1)
+            # We strictly shuffle x_0 so that x_1 stays aligned with the batch's regression targets
+            new_x_0 = torch.empty_like(x_0)
+            new_x_0[col_ind] = x_0[row_ind]
+            x_0 = new_x_0
         
         # 2. Sample time t uniformly between 0 and 1
         # Multiplying by a value slightly larger than 1 and clamping ensures that exactly 1.0 is mathematically possible and included in the training distribution.
