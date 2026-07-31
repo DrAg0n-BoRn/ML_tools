@@ -13,7 +13,7 @@ from sklearn.metrics import (
 from pathlib import Path
 from typing import Union, Optional
 
-from ..ML_configuration._metrics import FormatBinarySegmentationMetrics, FormatMultiClassSegmentationMetrics, _BaseSegmentationFormat
+from ..ML_configuration._config_metrics import FormatBinarySegmentationMetrics, FormatMultiClassSegmentationMetrics, _BaseSegmentationFormat
 
 from ..path_manager import make_fullpath
 from .._core import get_logger, wrap_text

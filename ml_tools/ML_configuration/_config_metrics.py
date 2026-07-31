@@ -1,4 +1,4 @@
-from typing import Union, Literal
+from typing import Union, Literal, Optional
 from matplotlib import colormaps as matplotcolormaps
 import matplotlib.colors as mcolors
 
@@ -315,63 +315,25 @@ class _BaseSegmentationFormat:
 
 class _BaseSequenceValueFormat:
     """
-    [PRIVATE] Base configuration for sequence to value metrics.
+    [PRIVATE] Base configuration for sequence-to-value metrics.
+    Acts as a composite router for mixed multi-head outputs.
     """
     def __init__(self, 
-                 font_size: int=26,
-                 scatter_color: str='tab:blue',
-                 scatter_alpha: float=0.6,
-                 ideal_line_color: str='k',
-                 residual_line_color: str='red',
-                 hist_bins: Union[int, str] = 'auto') -> None:
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None) -> None:
         """
-        Initializes the formatting configuration for sequence to value metrics.
-
+        Initializes the formatting configuration router for sequence-to-value metrics.
+        
         Args:
-            font_size (int): The base font size to apply to the plots.
-            scatter_color (str): Matplotlib color for the scatter plot points.
-                - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
-            scatter_alpha (float): Alpha transparency for scatter plot points.
-            ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the 
-                True vs. Predicted plot.
-                - Common color names: 'k', 'red', 'darkgrey', '#FF6347'
-            residual_line_color (str): Matplotlib color for the y=0 line in the 
-                Residual plot.
-                - Common color names: 'red', 'blue', 'k', '#4682B4'
-            hist_bins (int | str): The number of bins for the residuals histogram. 
-                Defaults to 'auto' to use seaborn's automatic bin selection.
-                - Options: 'auto', 'sqrt', 10, 20
-
-        <br>
-        
-        ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+            regression_config: Formatting configuration used for continuous targets, if continuous targets are present.
+            classification_config: Formatting configuration used for categorical targets, if categorical targets are present.
         """
-        # color validation
-        _validate_color(scatter_color, "scatter_color")
-        _validate_color(ideal_line_color, "ideal_line_color")
-        _validate_color(residual_line_color, "residual_line_color")
-        # bins validation
-        _validate_hist_bins(hist_bins, "hist_bins")
-        # alpha validation
-        _validate_alpha(scatter_alpha, "scatter_alpha")
-        
-        self.font_size = font_size
-        self.scatter_color = scatter_color
-        self.scatter_alpha = scatter_alpha
-        self.ideal_line_color = ideal_line_color
-        self.residual_line_color = residual_line_color
-        self.hist_bins = hist_bins
+        self.regression_config = regression_config
+        self.classification_config = classification_config
         
     def __repr__(self) -> str:
-        parts = [
-            f"font_size={self.font_size}",
-            f"scatter_color='{self.scatter_color}'",
-            f"scatter_alpha={self.scatter_alpha}",
-            f"ideal_line_color='{self.ideal_line_color}'",
-            f"residual_line_color='{self.residual_line_color}'",
-            f"hist_bins='{self.hist_bins}'"
-        ]
-        return f"{self.__class__.__name__}({', '.join(parts)})"
+        return f"{self.__class__.__name__}(regression_config={self.regression_config}, classification_config={self.classification_config})"
+
 
 
 class _BaseSequenceSequenceFormat:
@@ -384,7 +346,11 @@ class _BaseSequenceSequenceFormat:
                  rmse_color: str = 'tab:blue',
                  rmse_marker: str = 'o-',
                  mae_color: str = 'tab:orange',
-                 mae_marker: str = 's--'):
+                 mae_marker: str = 's--',
+                 acc_color: str = 'purple',
+                 f1_color: str = 'orange',
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None):
         """
         Initializes the formatting configuration for seq-to-seq metrics.
 
@@ -400,6 +366,10 @@ class _BaseSequenceSequenceFormat:
                 - Common color names: 'tab:orange', 'purple', 'black', '#FF6347'
             mae_marker (str): Matplotlib marker style for the MAE line.
                 - Options: 's--', 'o-', 'v:', '+' (plus marker)
+            acc_color (str): Matplotlib color for the Accuracy line in classification.
+            f1_color (str): Matplotlib color for the F1-Score line in classification.
+            regression_config: Formatting configuration for overall continuous target metrics.
+            classification_config: Formatting configuration for overall categorical target metrics.
         
         <br>
         
@@ -416,20 +386,30 @@ class _BaseSequenceSequenceFormat:
         # color validation
         _validate_color(rmse_color, "rmse_color")
         _validate_color(mae_color, "mae_color")
-
+        _validate_color(acc_color, "acc_color")
+        _validate_color(f1_color, "f1_color")
+        
         self.font_size = font_size
         self.grid_style = grid_style
         self.rmse_color = rmse_color
         self.rmse_marker = rmse_marker
         self.mae_color = mae_color
         self.mae_marker = mae_marker
+        self.acc_color = acc_color
+        self.f1_color = f1_color
+        self.regression_config = regression_config
+        self.classification_config = classification_config
 
     def __repr__(self) -> str:
         parts = [
             f"font_size={self.font_size}",
             f"grid_style='{self.grid_style}'",
             f"rmse_color='{self.rmse_color}'",
-            f"mae_color='{self.mae_color}'"
+            f"mae_color='{self.mae_color}'",
+            f"acc_color='{self.acc_color}'",
+            f"f1_color='{self.f1_color}'",
+            f"regression_config={self.regression_config}",
+            f"classification_config={self.classification_config}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -828,37 +808,36 @@ class FormatSequenceValueMetrics(_BaseSequenceValueFormat):
     Configuration for sequence-to-value prediction.
     """
     def __init__(self, 
-                 font_size: int=26,
-                 scatter_color: str='tab:blue',
-                 scatter_alpha: float=0.6,
-                 ideal_line_color: str='k',
-                 residual_line_color: str='red',
-                 hist_bins: Union[int, str] = 'auto') -> None:
-        super().__init__(font_size=font_size, 
-                         scatter_color=scatter_color, 
-                         scatter_alpha=scatter_alpha, 
-                         ideal_line_color=ideal_line_color, 
-                         residual_line_color=residual_line_color, 
-                         hist_bins=hist_bins)
-
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None) -> None:
+        super().__init__(regression_config=regression_config, 
+                         classification_config=classification_config)
 
 class FormatSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
     """
     Configuration for sequence-to-sequence prediction.
     """
     def __init__(self,
-                 font_size: int = 25,
+                 font_size: int = 26,
                  grid_style: str = '--',
                  rmse_color: str = 'tab:blue',
                  rmse_marker: str = 'o-',
                  mae_color: str = 'tab:orange',
-                 mae_marker: str = 's--'):
+                 mae_marker: str = 's--',
+                 acc_color: str = 'purple',
+                 f1_color: str = 'orange',
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None):
         super().__init__(font_size=font_size, 
                          grid_style=grid_style, 
                          rmse_color=rmse_color, 
                          rmse_marker=rmse_marker, 
                          mae_color=mae_color, 
-                         mae_marker=mae_marker)
+                         mae_marker=mae_marker,
+                         acc_color=acc_color,
+                         f1_color=f1_color,
+                         regression_config=regression_config,
+                         classification_config=classification_config)
 
 
 class FormatAutoencoderMetrics(_BaseAutoencoderFormat):

@@ -1,5 +1,9 @@
-from ._sequence_models import (
+from ._sequence_lstm import (
     DragonSequenceLSTM
+)
+
+from ._sequence_transformer import (
+    DragonSequenceTransformer
 )
 
 from .._core import _imprimir_disponibles
@@ -7,6 +11,7 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "DragonSequenceLSTM",
+    "DragonSequenceTransformer"
 ]
 
 

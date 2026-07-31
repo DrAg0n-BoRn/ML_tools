@@ -22,7 +22,7 @@ from ..ML_configuration import (
     FinalizeMultiClassSegmentation
 )
 
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys
+from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -398,15 +398,19 @@ class DragonVisionTrainer(_BaseDragonTrainer):
 
         if self.kind in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, 
                          MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
-            try:
-                class_map = dataset_for_artifacts.class_map # type: ignore
-            except AttributeError:
-                _LOGGER.warning(f"Dataset has no 'class_map' attribute. Using generics.")
+            class_map = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASS_MAP)
+            
+            # Fallback to building class_map from classes list if class_map is missing
+            if class_map is None:
+                classes = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASSES)
+                if classes and isinstance(classes, list):
+                    class_map = {name: idx for idx, name in enumerate(classes)}
+            
+            if class_map is None:
+                _LOGGER.warning(f"Dataset has no '{DatasetKeys.CLASS_MAP}' or '{DatasetKeys.CLASSES}' attribute. Using generics.")
+            elif not isinstance(class_map, dict):
+                _LOGGER.warning(f"Extracted 'class_map' is not a dictionary: '{type(class_map)}'. Using generics.")
                 class_map = None
-            else:
-                if not isinstance(class_map, dict):
-                    _LOGGER.warning(f"Dataset has a 'class_map' attribute, but it is not a dictionary: '{type(class_map)}'.")
-                    class_map = None
             
             config = None
             if format_configuration:
@@ -425,15 +429,19 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                                    config=config)
         
         elif self.kind in [MLTaskKeys.BINARY_SEGMENTATION, MLTaskKeys.MULTICLASS_SEGMENTATION]:
-            try:
-                class_map = dataset_for_artifacts.class_map
-            except AttributeError:
-                _LOGGER.warning("Dataset has no 'class_map' attribute. Using generics.")
+            class_map = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASS_MAP)
+            
+            # Fallback to building class_map from classes list if class_map is missing
+            if class_map is None:
+                classes = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASSES)
+                if classes and isinstance(classes, list):
+                    class_map = {name: idx for idx, name in enumerate(classes)}
+                    
+            if class_map is None:
+                _LOGGER.warning(f"Dataset has no '{DatasetKeys.CLASS_MAP}' or '{DatasetKeys.CLASSES}' attribute. Using generics.")
+            elif not isinstance(class_map, dict):
+                _LOGGER.warning(f"Extracted 'class_map' is not a dictionary: '{type(class_map)}'. Using generics.")
                 class_map = None
-            else:
-                if not isinstance(class_map, dict):
-                    _LOGGER.warning(f"Dataset has a 'class_map' attribute, but it is not a dictionary: '{type(class_map)}'.")
-                    class_map = None
             
             config = None
             if format_configuration and isinstance(format_configuration, (FormatBinarySegmentationMetrics, FormatMultiClassSegmentationMetrics)):
@@ -449,9 +457,9 @@ class DragonVisionTrainer(_BaseDragonTrainer):
 
     def explain_captum(self,
                        explain_dataset: Optional[Dataset] = None,
-                       n_samples: int = 100,
+                       n_samples: int = 5,
                        target_names: Optional[list[str]] = None,
-                       n_steps: int = 50,
+                       n_steps: int = 20,
                        verbose: int = 2):
         """
         Explains model predictions using Captum's Integrated Gradients.
@@ -485,14 +493,21 @@ class DragonVisionTrainer(_BaseDragonTrainer):
         is_image_classification = self.kind in [MLTaskKeys.BINARY_IMAGE_CLASSIFICATION, MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]
         
         if target_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.TARGET_NAMES):
-                target_names = dataset_to_use.target_names # type: ignore
-            elif hasattr(dataset_to_use, "classes"): 
-                 target_names = dataset_to_use.classes # type: ignore
-            elif hasattr(dataset_to_use, "class_map") and isinstance(dataset_to_use.class_map, dict): # type: ignore
-                 sorted_items = sorted(dataset_to_use.class_map.items(), key=lambda item: item[1]) # type: ignore
-                 target_names = [k for k, v in sorted_items]
+            # 1. Prioritize 'classes' or 'class_map' for vision tasks
+            classes = self._get_dataset_attr(dataset_to_use, DatasetKeys.CLASSES)
+            class_map = self._get_dataset_attr(dataset_to_use, DatasetKeys.CLASS_MAP)
+            
+            if classes:
+                target_names = classes
+            elif class_map and isinstance(class_map, dict):
+                sorted_items = sorted(class_map.items(), key=lambda item: item[1])
+                target_names = [k for k, v in sorted_items]
 
+            # 2. Check for TARGET_NAMES
+            if target_names is None:
+                target_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.TARGET_NAMES)
+
+            # 3. Absolute fallback
             if target_names is None:
                 if self.kind == MLTaskKeys.BINARY_IMAGE_CLASSIFICATION:
                     target_names = ["Output"]

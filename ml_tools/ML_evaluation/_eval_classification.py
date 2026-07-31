@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Union, Optional
 import warnings
 
-from ..ML_configuration._metrics import (_BaseMultiLabelFormat,
+from ..ML_configuration._config_metrics import (_BaseMultiLabelFormat,
                                          _BaseClassificationFormat,
                                         FormatBinaryClassificationMetrics,
                                         FormatMultiClassClassificationMetrics,

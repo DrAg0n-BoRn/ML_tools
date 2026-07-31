@@ -72,7 +72,7 @@ class _PytorchDataset(Dataset):
             return self._feature_names
         else:
             _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any feature names.")
-            raise ValueError()
+            raise AttributeError()
         
     @property
     def target_names(self):
@@ -80,7 +80,7 @@ class _PytorchDataset(Dataset):
             return self._target_names
         else:
             _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
-            raise ValueError()
+            raise AttributeError()
 
     @property
     def classes(self):
@@ -105,9 +105,9 @@ class _BaseDatasetMaker(ABC):
     Abstract base class for dataset makers. Contains shared logic.
     """
     def __init__(self):
-        self._train_ds: Optional[Dataset] = None
-        self._val_ds: Optional[Dataset] = None
-        self._test_ds: Optional[Dataset] = None
+        self._train_ds: Optional[_PytorchDataset] = None
+        self._val_ds: Optional[_PytorchDataset] = None
+        self._test_ds: Optional[_PytorchDataset] = None
         
         self.feature_scaler: Optional[DragonScaler] = None
         self.target_scaler: Optional[DragonScaler] = None

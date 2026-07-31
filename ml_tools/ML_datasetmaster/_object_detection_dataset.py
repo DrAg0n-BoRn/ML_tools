@@ -267,6 +267,15 @@ class DragonDatasetObjectDetection:
             _LOGGER.warning("Object detection class map should include 'background' mapped to 0.")
         
         self.class_map = class_map
+        
+        # Propagate to dataset subsets if they have already been created
+        if self._train_dataset is not None:
+            self._train_dataset.classes = self.classes
+        if self._val_dataset is not None:
+            self._val_dataset.classes = self.classes
+        if self._test_dataset is not None:
+            self._test_dataset.classes = self.classes
+            
         _LOGGER.info(f"Class map set: {class_map}")
         return self
     

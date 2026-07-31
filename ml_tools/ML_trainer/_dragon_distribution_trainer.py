@@ -10,10 +10,11 @@ from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_configuration import FormatRegressionMetrics, FormatMultiTargetRegressionMetrics, FinalizeRegression, FinalizeMultiTargetRegression
+from ..ML_scaler import DragonScaler
 from ..ML_evaluation import regression_metrics, multi_target_regression_metrics, distribution_metrics, multi_target_distribution_metrics
 from ..ML_evaluation_captum import captum_feature_importance
 
-from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys, PyTorchCheckpointKeys, DatasetKeys
+from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys, DatasetKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -195,11 +196,10 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         self.model.eval()
         self.model.to(self.device)
         
-        target_scaler = None
-        if hasattr(self.train_dataset, ScalerKeys.TARGET_SCALER):
-            target_scaler = getattr(self.train_dataset, ScalerKeys.TARGET_SCALER)
-            if target_scaler is not None:
-                 _LOGGER.debug("Target scaler detected. Un-scaling predictions (mean/variance) and targets.")
+        target_scaler: Optional[DragonScaler] = None
+        target_scaler = self._get_dataset_attr(self.train_dataset, ScalerKeys.TARGET_SCALER)
+        if target_scaler is not None:
+            _LOGGER.debug("Target scaler detected. Un-scaling predictions (mean/variance) and targets.")
         
         with torch.no_grad():
             for features, target in dataloader:
@@ -362,13 +362,14 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                                  config=config)
                                
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION:
-            try:
-                target_names = dataset_for_artifacts.target_names # type: ignore
-            except AttributeError:
+            
+            target_names = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.TARGET_NAMES)
+            
+            if target_names is None:
                 num_targets = y_true.shape[1]
                 target_names = [f"target_{i}" for i in range(num_targets)]
-                _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
-                
+                _LOGGER.warning(f"Dataset has no '{DatasetKeys.TARGET_NAMES}' attribute. Using generic names.")
+            
             config = format_configuration if isinstance(format_configuration, FormatMultiTargetRegressionMetrics) else None
             
             # 1. Standard Metrics
@@ -423,18 +424,17 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
         
         # Get Feature Names
         if feature_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
-                feature_names = dataset_to_use.feature_names # type: ignore
-            else:
-                _LOGGER.error(f"Could not extract `feature_names`. It must be provided if the dataset does not have it.")
+            feature_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.FEATURE_NAMES)
+            if feature_names is None:
+                _LOGGER.error("Could not extract `feature_names`. It must be provided if the dataset does not have it.")
                 raise ValueError()
 
         # Handle Target Names
         if target_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.TARGET_NAMES):
-                target_names = dataset_to_use.target_names # type: ignore
-            elif self.kind == MLTaskKeys.REGRESSION:
-                target_names = ["Output"]
+            target_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.TARGET_NAMES)
+            if target_names is None:
+                if self.kind == MLTaskKeys.REGRESSION:
+                    target_names = ["Output"]
 
         # --- Wrap the model to isolate the MEAN for Captum ---
         class _MeanWrapper(nn.Module):

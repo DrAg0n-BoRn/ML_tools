@@ -3,7 +3,7 @@ import numpy as np
 
 from .._core import get_logger
 from ..path_manager import sanitize_filename
-from ..keys._keys import MLTaskKeys, MagicWords
+from ..keys._keys import MLTaskKeys, MagicWords, DatasetKeys
 
 
 _LOGGER = get_logger("Finalized Configuration")
@@ -269,88 +269,98 @@ class FinalizeObjectDetection(_FinalizeModelTraining):
         self.task = MLTaskKeys.OBJECT_DETECTION
 
 
-class FinalizeSequenceSequencePrediction(_FinalizeModelTraining):
+
+class _FinalizeSequencePrediction(_FinalizeModelTraining):
+    """
+    Internal base class for finalizing sequence prediction models.
+    Handles strict 2D validation and target name assignment.
+    """
+    def __init__(self,
+                 filename: str,
+                 target_types: dict[str, str],
+                 last_dataset_sequence: np.ndarray,
+                 task: str,
+                 **kwargs
+                 ) -> None:
+        super().__init__(filename=filename, **kwargs)
+        
+        if not isinstance(target_types, dict) or not target_types:
+            _LOGGER.error(f"target_types must be a non-empty dictionary mapping target names to their types ('{DatasetKeys.TARGET_CONTINUOUS}' or '{DatasetKeys.TARGET_CATEGORICAL}').")
+            raise ValueError()
+        
+        target_names = target_types.keys()
+        target_literal_types = target_types.values()
+        
+        # 1. Validate Target Names
+        safe_names = [_validate_string(string=t, attribute_name="All target names") for t in target_names]
+        self.target_names = safe_names
+        
+        # 2. Validate Target Types
+        for t_type in target_literal_types:
+            if t_type not in [DatasetKeys.TARGET_CONTINUOUS, DatasetKeys.TARGET_CATEGORICAL]:
+                _LOGGER.error(f"Invalid target type '{t_type}'. Must be '{DatasetKeys.TARGET_CONTINUOUS}' or '{DatasetKeys.TARGET_CATEGORICAL}'.")
+                raise ValueError()
+        
+        self.target_types = target_types
+        
+        # 3. Validate 2D Sequence
+        if not isinstance(last_dataset_sequence, np.ndarray):
+            _LOGGER.error(f"The last dataset sequence must be a 2D numpy array, got {type(last_dataset_sequence)}.")
+            raise TypeError()
+            
+        if last_dataset_sequence.ndim != 2:
+            _LOGGER.error(f"The last dataset sequence must be a 2D numpy array (sequence_length, num_features), got shape {last_dataset_sequence.shape}.")
+            raise ValueError()
+        
+        self.initial_sequence = last_dataset_sequence
+        self.sequence_length = last_dataset_sequence.shape[0]
+        self.task = task
+
+
+class FinalizeSequenceSequencePrediction(_FinalizeSequencePrediction):
     """Parameters for finalizing a sequence-to-sequence prediction model."""
     def __init__(self,
                  filename: str,
-                 last_training_sequence: np.ndarray,
+                 target_types: dict[str, str],
+                 last_dataset_sequence: np.ndarray,
                  **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
-            last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+            target_types (dict[str, str]): A dictionary mapping target names to their types ('continuous' or 'categorical').
+            last_dataset_sequence (np.ndarray): A 2D array (sequence_length, num_features) from the dataset that will become the initial sequence for predictions.
             **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename, **kwargs)
-        
-        if not isinstance(last_training_sequence, np.ndarray):
-            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
-            raise TypeError()
-        
-        if last_training_sequence.ndim == 1:
-            # It's already 1D, (N,). This is valid.
-            self.initial_sequence = last_training_sequence
-        elif last_training_sequence.ndim == 2:
-            # Handle both (1, N) and (N, 1)
-            if last_training_sequence.shape[0] == 1:
-                self.initial_sequence = last_training_sequence.flatten()
-            elif last_training_sequence.shape[1] == 1:
-                self.initial_sequence = last_training_sequence.flatten()
-            else:
-                _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
-                raise ValueError()
-        else:
-            # It's 3D or more, which is not supported
-            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
-            raise ValueError()
-        
-        # Save the length of the validated 1D sequence
-        self.sequence_length = len(self.initial_sequence) # type: ignore
-        self.task = MLTaskKeys.SEQUENCE_SEQUENCE
+        super().__init__(filename=filename, 
+                         target_types=target_types, 
+                         last_dataset_sequence=last_dataset_sequence, 
+                         task=MLTaskKeys.SEQUENCE_SEQUENCE, 
+                         **kwargs)
 
 
-class FinalizeSequenceValuePrediction(_FinalizeModelTraining):
+class FinalizeSequenceValuePrediction(_FinalizeSequencePrediction):
     """Parameters for finalizing a sequence-to-value prediction model."""
     def __init__(self,
                  filename: str,
-                 last_training_sequence: np.ndarray,
+                 target_types: dict[str, str],
+                 last_dataset_sequence: np.ndarray,
                  **kwargs
                  ) -> None:
         """Initializes the finalization parameters.
 
         Args:
             filename (str): The name of the file to be saved.
-            last_training_sequence (np.ndarray): The last sequence from the training data, needed to start predictions.
+            target_types (dict[str, str]): A dictionary mapping target names to their types ('continuous' or 'categorical').
+            last_dataset_sequence (np.ndarray): A 2D array (sequence_length, num_features) from the dataset that will become the initial sequence for predictions.
             **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
         """
-        super().__init__(filename=filename, **kwargs)
-        
-        if not isinstance(last_training_sequence, np.ndarray):
-            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got {type(last_training_sequence)}.")
-            raise TypeError()
-        
-        if last_training_sequence.ndim == 1:
-            # It's already 1D, (N,). This is valid.
-            self.initial_sequence = last_training_sequence
-        elif last_training_sequence.ndim == 2:
-            # Handle both (1, N) and (N, 1)
-            if last_training_sequence.shape[0] == 1:
-                self.initial_sequence = last_training_sequence.flatten()
-            elif last_training_sequence.shape[1] == 1:
-                self.initial_sequence = last_training_sequence.flatten()
-            else:
-                _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
-                raise ValueError()
-        else:
-            # It's 3D or more, which is not supported
-            _LOGGER.error(f"The last training sequence must be a 1D numpy array, got shape {last_training_sequence.shape}.")
-            raise ValueError()
-        
-        # Save the length of the validated 1D sequence
-        self.sequence_length = len(self.initial_sequence) # type: ignore
-        self.task = MLTaskKeys.SEQUENCE_VALUE
+        super().__init__(filename=filename, 
+                         target_types=target_types,
+                         last_dataset_sequence=last_dataset_sequence, 
+                         task=MLTaskKeys.SEQUENCE_VALUE, 
+                         **kwargs)
 
 
 class FinalizeAutoencoder(_FinalizeModelTraining):

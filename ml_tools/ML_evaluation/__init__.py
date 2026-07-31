@@ -1,9 +1,9 @@
-from ._regression import (
+from ._eval_regression import (
     regression_metrics,
     multi_target_regression_metrics
 )
 
-from ._classification import (
+from ._eval_classification import (
     classification_metrics,
     multi_label_classification_metrics
 )
@@ -18,20 +18,20 @@ from ._feature_importance import (
     plot_attention_importance
 )
 
-from ._sequence import (
-    sequence_to_value_metrics,
-    sequence_to_sequence_metrics
+from ._eval_sequence import (
+    sequence_to_sequence_regression_metrics,
+    sequence_to_sequence_classification_metrics
 )
 
-from ._object_detection import (
+from ._eval_object_detection import (
     object_detection_metrics
 )
 
-from ._segmentation import (
+from ._eval_segmentation import (
     segmentation_metrics
 )
 
-from ._distribution import (
+from ._eval_distribution import (
     distribution_metrics,
     multi_target_distribution_metrics
 )
@@ -61,8 +61,8 @@ __all__ = [
     "multi_target_shap_summary_plot",
     "plot_attention_importance",
     # sequence
-    "sequence_to_value_metrics",
-    "sequence_to_sequence_metrics",
+    "sequence_to_sequence_regression_metrics",
+    "sequence_to_sequence_classification_metrics",
     # vision
     "segmentation_metrics",
     "object_detection_metrics",

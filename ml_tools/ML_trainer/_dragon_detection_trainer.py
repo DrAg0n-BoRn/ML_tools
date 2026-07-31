@@ -11,7 +11,7 @@ from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import object_detection_metrics
 from ..ML_configuration import FinalizeObjectDetection
 
-from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, DragonTrainerKeys
+from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys, DatasetKeys
 from .._core import get_logger
 
 from ._base_trainer import _BaseDragonTrainer
@@ -281,17 +281,9 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             return
         
         # Get class names from the dataset for the report
-        class_names = None
-        try:
-            # Try to get 'classes' from ObjectDetectionDatasetMaker
-            if hasattr(dataset_for_artifacts, 'classes'):
-                class_names = dataset_for_artifacts.classes # type: ignore
-            # Fallback for Subset
-            elif hasattr(dataset_for_artifacts, 'dataset') and hasattr(dataset_for_artifacts.dataset, 'classes'): # type: ignore
-                 class_names = dataset_for_artifacts.dataset.classes # type: ignore
-        except AttributeError:
+        class_names = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASSES)
+        if class_names is None:
             _LOGGER.warning("Could not find 'classes' attribute on dataset. Per-class metrics will not be named.")
-            pass # class_names is still None
 
         # --- Routing Logic ---
         object_detection_metrics(

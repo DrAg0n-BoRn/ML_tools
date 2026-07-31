@@ -97,6 +97,14 @@ class DatasetKeys:
     TEST_SUBSET = "test_set"
     # Dataset filename
     DATASET_FILENAME = "dataset_bundle"
+    
+    # Sequence
+    SEQUENCE_LENGTH = "sequence_length"
+    PREDICTION_MODE = "prediction_mode"
+    LAST_SEQUENCE = "last_dataset_sequence"
+    TARGET_TYPES = "target_types"
+    TARGET_CONTINUOUS = "continuous"
+    TARGET_CATEGORICAL = "categorical"
 
 
 class SHAPKeys:
@@ -135,6 +143,7 @@ class PyTorchCheckpointKeys:
     INITIAL_SEQUENCE = "initial_sequence"
     TARGET_NAME = "target_name"
     TARGET_NAMES = "target_names"
+    TARGET_TYPES = "target_types"
 
 
 class UtilityKeys:
@@ -221,12 +230,6 @@ class DragonTrainerKeys:
     CAPTUM_DIR = "Explain_Captum"
     SHAP_DIR = "Explain_SHAP"
     ATTENTION_DIR = "Explain_Attention"
-
-
-class SequenceDatasetKeys:
-    """Used by the sequence dataset module."""
-    FEATURE_NAME = "Signal_Value"
-    TARGET_NAME = "Next_Step"
     
 
 class ParetoOptimizationKeys:

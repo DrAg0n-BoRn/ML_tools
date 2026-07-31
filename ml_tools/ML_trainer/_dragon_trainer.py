@@ -9,6 +9,7 @@ from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
+from ..ML_scaler import DragonScaler
 from ..ML_evaluation import classification_metrics, regression_metrics, shap_summary_plot, plot_attention_importance
 from ..ML_evaluation import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
 from ..ML_evaluation_captum import captum_feature_importance
@@ -213,12 +214,11 @@ class DragonTrainer(_BaseDragonTrainer):
         self.model.eval()
         self.model.to(self.device)
         
-        target_scaler = None
+        target_scaler: Optional[DragonScaler] = None
         if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
-            if hasattr(self.train_dataset, ScalerKeys.TARGET_SCALER):
-                target_scaler = getattr(self.train_dataset, ScalerKeys.TARGET_SCALER)
-                if target_scaler is not None:
-                     _LOGGER.debug("Target scaler detected. Un-scaling predictions and targets for metric calculation.")
+            target_scaler = self._get_dataset_attr(self.train_dataset, ScalerKeys.TARGET_SCALER)
+            if target_scaler is not None:
+                _LOGGER.debug("Target scaler detected. Un-scaling predictions and targets for metric calculation.")
         
         with torch.no_grad():
             for features, target in dataloader:
@@ -381,7 +381,7 @@ class DragonTrainer(_BaseDragonTrainer):
                            classification_threshold=threshold_validated,
                            data=None,
                            format_configuration=val_configuration_validated)
-        
+
     def _evaluate(self, 
                  save_dir: Union[str, Path], 
                  model_checkpoint: Union[Path, Literal["best", "current"]],
@@ -427,15 +427,19 @@ class DragonTrainer(_BaseDragonTrainer):
                                config=config)
         
         elif self.kind in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
-            try:
-                class_map = dataset_for_artifacts.class_map # type: ignore
-            except AttributeError:
-                _LOGGER.warning(f"Dataset has no 'class_map' attribute. Using generics.")
+            class_map = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASS_MAP)
+            
+            # Fallback to building class_map from classes list if class_map is missing
+            if class_map is None:
+                classes = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.CLASSES)
+                if classes and isinstance(classes, list):
+                    class_map = {name: idx for idx, name in enumerate(classes)}
+            
+            if class_map is None:
+                _LOGGER.warning("Dataset has no 'class_map' or 'classes' attribute. Using generics.")
+            elif not isinstance(class_map, dict):
+                _LOGGER.warning(f"Extracted 'class_map' is not a dictionary: '{type(class_map)}'. Using generics.")
                 class_map = None
-            else:
-                if not isinstance(class_map, dict):
-                    _LOGGER.warning(f"Dataset has a 'class_map' attribute, but it is not a dictionary: '{type(class_map)}'.")
-                    class_map = None
             
             config = None
             if format_configuration:
@@ -454,13 +458,14 @@ class DragonTrainer(_BaseDragonTrainer):
                                    config=config)
         
         elif self.kind == MLTaskKeys.MULTITARGET_REGRESSION:
-            try:
-                target_names = dataset_for_artifacts.target_names # type: ignore
-            except AttributeError:
+            
+            target_names = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.TARGET_NAMES)
+            
+            if target_names is None:
                 num_targets = y_true.shape[1]
                 target_names = [f"target_{i}" for i in range(num_targets)]
-                _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
-                
+                _LOGGER.warning(f"Dataset has no '{DatasetKeys.TARGET_NAMES}' attribute. Using generic names.")
+            
             config = None
             if format_configuration and isinstance(format_configuration, FormatMultiTargetRegressionMetrics):
                 config = format_configuration
@@ -474,12 +479,13 @@ class DragonTrainer(_BaseDragonTrainer):
                                             config=config)
             
         elif self.kind == MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION:
-            try:
-                target_names = dataset_for_artifacts.target_names # type: ignore
-            except AttributeError:
+            
+            target_names = self._get_dataset_attr(dataset_for_artifacts, DatasetKeys.TARGET_NAMES)
+            
+            if target_names is None:
                 num_targets = y_true.shape[1]
                 target_names = [f"label_{i}" for i in range(num_targets)]
-                _LOGGER.warning(f"Dataset has no 'target_names' attribute. Using generic names.")
+                _LOGGER.warning(f"Dataset has no '{DatasetKeys.TARGET_NAMES}' attribute. Using generic names.")
             
             if y_prob is None:
                 _LOGGER.error("Evaluation for multi_label_classification requires probabilities (y_prob).")
@@ -579,9 +585,10 @@ class DragonTrainer(_BaseDragonTrainer):
             return
         
         if feature_names is None:
-            if hasattr(target_dataset, DatasetKeys.FEATURE_NAMES):
-                feature_names = target_dataset.feature_names # type: ignore
-            else:
+            
+            feature_names = self._get_dataset_attr(target_dataset, DatasetKeys.FEATURE_NAMES)
+            
+            if feature_names is None:
                 _LOGGER.error(f"Could not extract `feature_names` from the dataset. It must be provided if the dataset object does not have a '{DatasetKeys.FEATURE_NAMES}' attribute.")
                 raise ValueError()
             
@@ -600,14 +607,12 @@ class DragonTrainer(_BaseDragonTrainer):
             )
         elif self.kind in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
             if target_names is None:
-                target_names = []
-                if hasattr(target_dataset, DatasetKeys.TARGET_NAMES):
-                    target_names = target_dataset.target_names # type: ignore
-                else:
+                target_names = self._get_dataset_attr(target_dataset, DatasetKeys.TARGET_NAMES)
+                if target_names is None:
                     try:
                         num_targets = self.model.output_layer.out_features # type: ignore
                         target_names = [f"target_{i}" for i in range(num_targets)] # type: ignore
-                        _LOGGER.warning("Dataset has no 'target_names' attribute. Using generic names.")
+                        _LOGGER.warning(f"Dataset has no '{DatasetKeys.TARGET_NAMES}' attribute. Using generic names.")
                     except AttributeError:
                         _LOGGER.error("Cannot determine target names for multi-target SHAP plot. Skipping.")
                         return
@@ -658,21 +663,28 @@ class DragonTrainer(_BaseDragonTrainer):
         input_data, _ = _get_samples(dataset_to_use, n_samples)
         
         if feature_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
-                feature_names = dataset_to_use.feature_names # type: ignore
-            else:
-                _LOGGER.error(f"Could not extract `feature_names`. It must be provided if the dataset does not have it.")
+            feature_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.FEATURE_NAMES)
+            if feature_names is None:
+                _LOGGER.error(f"Could not extract '{DatasetKeys.FEATURE_NAMES}'. It must be provided if the dataset does not have it.")
                 raise ValueError()
 
         if target_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.TARGET_NAMES):
-                target_names = dataset_to_use.target_names # type: ignore
-            elif hasattr(dataset_to_use, "classes"): 
-                 target_names = dataset_to_use.classes # type: ignore
-            elif hasattr(dataset_to_use, "class_map") and isinstance(dataset_to_use.class_map, dict): # type: ignore
-                 sorted_items = sorted(dataset_to_use.class_map.items(), key=lambda item: item[1]) # type: ignore
-                 target_names = [k for k, v in sorted_items]
+            # 1. Prioritize 'classes' or 'class_map' for classification tasks
+            if self.kind in [MLTaskKeys.MULTICLASS_CLASSIFICATION, MLTaskKeys.BINARY_CLASSIFICATION]:
+                classes = self._get_dataset_attr(dataset_to_use, DatasetKeys.CLASSES)
+                class_map = self._get_dataset_attr(dataset_to_use, DatasetKeys.CLASS_MAP)
+                
+                if classes:
+                    target_names = classes
+                elif class_map and isinstance(class_map, dict):
+                    sorted_items = sorted(class_map.items(), key=lambda item: item[1])
+                    target_names = [k for k, v in sorted_items]
+            
+            # 2. Use target column names for Regression/Multi-target tasks, or as a fallback
+            if target_names is None:
+                target_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.TARGET_NAMES)
 
+            # 3. Absolute fallback
             if target_names is None:
                 if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION]:
                     target_names = ["Output"]
@@ -730,9 +742,8 @@ class DragonTrainer(_BaseDragonTrainer):
             return
         
         if feature_names is None:
-            if hasattr(dataset_to_use, DatasetKeys.FEATURE_NAMES):
-                feature_names = dataset_to_use.feature_names # type: ignore
-            else:
+            feature_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.FEATURE_NAMES)
+            if feature_names is None:
                 _LOGGER.error(f"Could not extract `feature_names` from the dataset for attention plot. It must be provided if the dataset object does not have a '{DatasetKeys.FEATURE_NAMES}' attribute.")
                 raise ValueError()
         

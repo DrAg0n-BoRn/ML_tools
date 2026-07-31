@@ -1,4 +1,4 @@
-from ._metrics import (
+from ._config_metrics import (
     FormatRegressionMetrics,
     FormatMultiTargetRegressionMetrics,
     FormatBinaryClassificationMetrics,
@@ -14,7 +14,7 @@ from ._metrics import (
     FormatTabularDiffusionMetrics
 )
 
-from ._finalize import (
+from ._config_finalize import (
     FinalizeBinaryClassification,
     FinalizeBinarySegmentation,
     FinalizeBinaryImageClassification,
@@ -31,7 +31,7 @@ from ._finalize import (
     FinalizeTabularDiffusion
 )
 
-from ._models import (
+from ._config_models import (
     DragonMLPParams,
     DragonAttentionMLPParams,
     DragonMultiHeadAttentionNetParams,
@@ -53,7 +53,7 @@ from ._models import (
     DragonFastRCNNParams,
 )
 
-from ._training import (
+from ._config_training import (
     DragonTrainingConfig,
     DragonParetoConfig,
     DragonOptimizerConfig

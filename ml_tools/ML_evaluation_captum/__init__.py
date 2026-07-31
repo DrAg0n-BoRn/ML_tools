@@ -10,6 +10,10 @@ from ._segmentation_heatmap import (
     captum_segmentation_heatmap
 )
 
+from ._feature_importance_sequence import (
+    captum_sequence_feature_importance
+)
+
 
 from .._core import _imprimir_disponibles
 
@@ -17,7 +21,8 @@ from .._core import _imprimir_disponibles
 __all__ = [
     "captum_feature_importance", 
     "captum_image_heatmap",
-    "captum_segmentation_heatmap"
+    "captum_segmentation_heatmap",
+    "captum_sequence_feature_importance"
 ]
 
 

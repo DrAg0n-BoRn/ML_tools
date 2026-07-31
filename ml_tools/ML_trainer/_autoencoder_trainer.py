@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2
-from ..ML_configuration._finalize import FinalizeAutoencoder
-from ..ML_configuration._metrics import FormatAutoencoderMetrics
+from ..ML_configuration._config_finalize import FinalizeAutoencoder
+from ..ML_configuration._config_metrics import FormatAutoencoderMetrics
 from ..ML_evaluation import autoencoder_metrics
 from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint

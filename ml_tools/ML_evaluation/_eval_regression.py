@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Union, Optional
 import warnings
 
-from ..ML_configuration._metrics import (_BaseRegressionFormat,
+from ..ML_configuration._config_metrics import (_BaseRegressionFormat,
                                         FormatRegressionMetrics,
                                         FormatMultiTargetRegressionMetrics)
 

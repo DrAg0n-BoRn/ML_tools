@@ -3,7 +3,7 @@ from ._datasetmaster import (
     DragonDatasetMulti,
 )
 
-from ._sequence_datasetmaster import (
+from ._sequence_datasetmaster_old import (
     DragonDatasetSequence
 )
 

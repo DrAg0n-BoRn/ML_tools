@@ -9,7 +9,7 @@ from ..ML_callbacks._base import _Callback, History, TqdmProgressBar
 from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
-from ..ML_configuration._finalize import _FinalizeModelTraining
+from ..ML_configuration._config_finalize import _FinalizeModelTraining
 from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
 
@@ -417,7 +417,24 @@ class _BaseDragonTrainer(ABC):
         else:
             _LOGGER.error(f"Unknown 'model_checkpoint' received '{model_checkpoint}'.")
             raise ValueError()
-        
+    
+    def _get_dataset_attr(self, dataset: Any, attr_name: str, default: Any = None) -> Any:
+        """Helper to extract metadata even if the dataset is wrapped in a PyTorch Subset."""
+        # 1. Check top level
+        if hasattr(dataset, attr_name):
+            try:
+                val = getattr(dataset, attr_name)
+                if val is not None:
+                    return val
+            except AttributeError:
+                pass
+                
+        # 2. Check wrapped dataset (e.g. torch.utils.data.Subset)
+        if hasattr(dataset, "dataset"):
+            return self._get_dataset_attr(dataset.dataset, attr_name, default)
+            
+        return default
+    
     # --- Abstract Methods ---
     # These must be implemented by subclasses
 

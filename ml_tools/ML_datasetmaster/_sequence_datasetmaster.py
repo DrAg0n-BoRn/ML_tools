@@ -3,17 +3,15 @@ from torch.utils.data import Dataset
 import pandas
 import numpy
 from typing import Literal, Union, Optional
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 from ..ML_scaler import DragonScaler
-
+from ..schema import FeatureSchema
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import DatasetKeys, MLTaskKeys, SequenceDatasetKeys, ScalerKeys
+from ..keys._keys import DatasetKeys, MLTaskKeys, ScalerKeys
 
-from ._base_datasetmaster import _PytorchDataset
-
+from ._base_datasetmaster import _BaseDatasetMaker
 
 _LOGGER = get_logger("Sequence Dataset")
 
@@ -23,566 +21,511 @@ __all__ = [
 ]
 
 
-# --- SequenceMaker ---
-class DragonDatasetSequence:
+class _PytorchSequenceDataset(Dataset):
     """
-    Creates windowed PyTorch datasets from a univariate (one feature) sequential data.
-    
-    Automatic Pipeline:
-    
-    1. Split Data: Separate data into training, validation, and testing portions.
-    2. Normalize Data: Normalize the data. The scaler will be fitted on the training portion.
-    3. Generate Windows: Create the windowed sequences from the normalized splits.
+    Memory-efficient sequence Dataset that mirrors the _PytorchDataset API.
+    Maintains overlapping windows as lightweight numpy strided views rather 
+    than materializing dense PyTorch tensors in memory.
     """
     def __init__(self, 
+                 features: numpy.ndarray, 
+                 labels: numpy.ndarray,
+                 labels_dtype: torch.dtype,
+                 features_dtype: torch.dtype = torch.float32,
+                 feature_names: Optional[list[str]] = None,
+                 target_names: Optional[list[str]] = None,
+                 target_types: Optional[dict[str, str]] = None):
+        
+        # 1. Store as lightweight numpy views instead of torch.tensor()
+        # This prevents the initial RAM explosion.
+        self._features_np = features
+        self._labels_np = labels
+        
+        self.features_dtype = features_dtype
+        self.labels_dtype = labels_dtype
+        
+        self._target_types = target_types
+        
+        # 2. Mirror all internal attributes from _PytorchDataset
+        self._feature_names = feature_names
+        self._target_names = target_names
+        self._classes: list[str] = []
+        self._class_map: dict[str, int] = dict()
+        self._feature_scaler: Optional[DragonScaler] = None
+        self._target_scaler: Optional[DragonScaler] = None
+        
+    def __len__(self):
+        return len(self._features_np)
+
+    def __getitem__(self, index):
+        # 3. Lazily cast to tensor only when the Dataloader fetches a batch.
+        # This guarantees we only materialize the memory required for a single batch.
+        x = torch.tensor(self._features_np[index], dtype=self.features_dtype)
+        y = torch.tensor(self._labels_np[index], dtype=self.labels_dtype)
+        return x, y
+    
+    @property
+    def features(self):
+        # 4. Intercept the `.features` call used by `save_dataset_bundle`.
+        # torch.as_tensor() creates a zero-copy PyTorch view of the numpy array.
+        # When saved, PyTorch natively preserves the strides, keeping the .pth file tiny.
+        return torch.as_tensor(self._features_np, dtype=self.features_dtype)
+    
+    @property
+    def labels(self):
+        return torch.as_tensor(self._labels_np, dtype=self.labels_dtype)
+        
+    @property
+    def feature_names(self):
+        if self._feature_names is not None:
+            return self._feature_names
+        else:
+            _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any feature names.")
+            raise AttributeError()
+        
+    @property
+    def target_names(self):
+        if self._target_names is not None:
+            return self._target_names
+        else:
+            _LOGGER.error(f"Dataset {self.__class__} has not been initialized with any target names.")
+            raise AttributeError()
+    
+    @property
+    def target_types(self) -> dict[str, str]:
+        if self._target_types is not None:
+            return self._target_types
+        else:
+            _LOGGER.error(f"Dataset {self.__class__} has not been initialized with target types.")
+            raise AttributeError()
+    
+    @property
+    def feature_scaler(self):
+        return self._feature_scaler
+    
+    @property
+    def target_scaler(self):
+        return self._target_scaler
+
+
+class DragonDatasetSequence(_BaseDatasetMaker):
+    """
+    Creates windowed PyTorch datasets from multivariate sequential data. 
+    
+    Supports univariate and multivariate targets, with options for sequence-to-sequence or sequence-to-value prediction modes.
+    
+    Targets are extracted directly from the feature columns based on the provided list,
+    allowing columns to serve simultaneously as historical inputs and future outputs.
+    """
+    def __init__(self, 
+                 pandas_df: pandas.DataFrame,
+                 targets: list[str],
+                 schema: FeatureSchema,
                  prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
-                 data: Union[pandas.DataFrame, pandas.Series, numpy.ndarray], 
                  sequence_length: int,
+                 feature_scaler: Union[Literal["fit"], Literal["none"], DragonScaler] = "fit",
                  validation_size: Optional[float] = 0.2,
                  test_size: Optional[float] = 0.1,
                  verbose: int = 2):
         """
-        Initializes the dataset manager and automatically processes the data.
+        Initializes the DragonDatasetSequence with chronological splitting, scaling, and windowing.
         
-        The constructor runs the full pipeline:
-        1. Splits the data chronologically (train, validation, test).
-        2. Fits a DragonScaler on the training split.
-        3. Normalizes all splits using the fitted scaler.
-        4. Generates windowed datasets for training, validation, and testing.
-
         Args:
-            prediction_mode: The type of sequence task.
-            data: The input univariate time-series data.
-                - If pandas.DataFrame: The index is used for the time axis
-                  and the *first column* is used as the sequence.
-                - If pandas.Series: The index is used for the time axis.
-                - If numpy.ndarray: A simple integer range is used for the time axis.
-            sequence_length (int): The number of time steps in each input window (X).
-            validation_size (float | None): The fraction of data to hold out for validation.
-            test_size (float | None): The fraction of data to hold out for testing.
-            verbose (int): Verbosity level for logging.
-                - 0: Errors only
-                - 1: Warnings
-                - 2: Info
-                - 3: Detailed process info
+            pandas_df (pandas.DataFrame): The input DataFrame containing features and targets.
+            targets (list[str]): List of column names to be used as targets.
+            schema (FeatureSchema): Schema defining the expected features and their types.
+            prediction_mode (str): Either "sequence-to-sequence" or "sequence-to-value".
+            sequence_length (int): The length of the input sequences (window size).
+            feature_scaler (str | DragonScaler): "fit" to fit a new scaler, "none" for no scaling, or an existing DragonScaler instance.
+            validation_size (float | None): Fraction of data to use for validation.
+            test_size (float | None): Fraction of data to use for testing.
+            verbose (int): Verbosity level for logging (0: silent, 1: warnings, 2: info, 3: detailed).
         """
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
-        self.sequence_length = sequence_length
-        self.scaler = None
+        
+        super().__init__()
         
         validation_size = validation_size or 0.0
         test_size = test_size or 0.0
         
-        if not prediction_mode in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
-            _LOGGER.error(f"Unrecognized prediction mode: '{prediction_mode}'.")
-            raise ValueError()
-        else:
-            self.prediction_mode = prediction_mode
-        
-        if isinstance(data, pandas.DataFrame):
-            self.time_axis = data.index.values
-            self.sequence = data.iloc[:, 0].values.astype(numpy.float32)
-        elif isinstance(data, pandas.Series):
-            self.time_axis = data.index.values
-            self.sequence = data.values.astype(numpy.float32)
-        elif isinstance(data, numpy.ndarray):
-            self.time_axis = numpy.arange(len(data))
-            self.sequence = data.astype(numpy.float32)
-        else:
-            _LOGGER.error("Data must be a pandas DataFrame/Series or a numpy array.")
-            raise TypeError()
-            
-        self.train_sequence = None
-        self.val_sequence = None
-        self.test_sequence = None
-        
-        self.train_time_axis = None
-        self.val_time_axis = None 
-        self.test_time_axis = None 
-        
-        self._is_split = False
-        self._is_normalized = False
-        self._are_windows_generated = False
-        
-        # Automation
-        self._split_data(validation_size=validation_size, test_size=test_size, verbose=verbose)
-        self._normalize_data(verbose=verbose)
-        self._generate_windows(verbose=verbose)
-        
-        self.validation_split = validation_size
-        self.test_split = test_size
-    
-    def _split_data(self, validation_size: float = 0.2, test_size: float = 0.1, verbose: int = 3) -> None:
-        """
-        Splits the sequence chronologically into training, validation, and testing portions.
-        
-        To prevent windowing errors, the validation and test sets include an overlap of `sequence_length` from the preceding data.
-        """
-        if self._is_split:
-            if verbose >= 1:
-                _LOGGER.warning("Data has already been split.")
-            return
-            
+        # --- 1. Validation ---
         if (validation_size + test_size) >= 1.0:
             _LOGGER.error(f"The sum of validation_size ({validation_size}) and test_size ({test_size}) must be less than 1.0.")
             raise ValueError()
         elif validation_size < 0.0 or test_size < 0.0:
-            _LOGGER.error(f"Split sizes cannot be negative.")
+            _LOGGER.error("Split sizes cannot be negative.")
+            raise ValueError()
+        
+        if sequence_length <= 0:
+            _LOGGER.error(f"sequence_length must be strictly greater than 0. Received: {sequence_length}")
+            raise ValueError()
+        
+        if not targets:
+            _LOGGER.error("The 'targets' list cannot be empty. You must specify at least one target column.")
             raise ValueError()
 
-        total_size = len(self.sequence)
+        if prediction_mode not in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
+            _LOGGER.error(f"Unrecognized prediction mode: '{prediction_mode}'.")
+            raise ValueError()
+
+        self.prediction_mode = prediction_mode
+        self.sequence_length = sequence_length
+        self.validation_split = validation_size
+        self.test_split = test_size
         
-        # Calculate split indices
+        self._feature_names = list(schema.feature_names)
+        self._target_names = targets
+        self._id = f"Seq_{len(self._target_names)}targets"
+
+        # Ensure all schema columns exist in the DF
+        df_cols_set = set(pandas_df.columns)
+        schema_cols_set = set(self._feature_names)
+        if not schema_cols_set.issubset(df_cols_set):
+            missing = schema_cols_set - df_cols_set
+            _LOGGER.error(f"Required FeatureSchema columns not found in DataFrame: {list(missing)}")
+            raise ValueError()
+
+        # Ensure all targets exist in schema
+        target_cols_set = set(self._target_names)
+        if not target_cols_set.issubset(schema_cols_set):
+            missing = target_cols_set - schema_cols_set
+            _LOGGER.error(f"Targets not found in FeatureSchema: {list(missing)}")
+            raise ValueError()
+
+        # Map target names to their column indices for fast slicing later
+        self._target_indices = [self._feature_names.index(t) for t in self._target_names]
+        
+        # <-- Determine target types from the schema -->
+        self._target_types = {
+            t: DatasetKeys.TARGET_CATEGORICAL if t in schema.categorical_feature_names else DatasetKeys.TARGET_CONTINUOUS
+            for t in self._target_names
+        }
+
+        # --- 2. Chronological Splitting ---
+        # Align column order with schema strictly
+        features_df = pandas_df[self._feature_names]
+        
+        if features_df.isna().any().any():
+            _LOGGER.error("Input DataFrame contains NaN values in the required feature columns. Please impute or drop missing values before generating the dataset.")
+            raise ValueError()
+        
+        # Verify that all target columns have a numeric dtype
+        for t in self._target_names:
+            if not pandas.api.types.is_numeric_dtype(features_df[t]):
+                _LOGGER.error(f"Target column '{t}' is not numeric. Ensure categorical targets are numerically encoded before dataset creation.")
+                raise TypeError()
+        
+        total_size = len(features_df)
+        
         test_split_idx = int(total_size * (1 - test_size))
         val_split_idx = int(total_size * (1 - test_size - validation_size))
         
-        # --- Create sequences ---
-        # Train sequence is from the beginning to the validation index
-        self.train_sequence = self.sequence[:val_split_idx]
-        
-        # Validation sequence starts `sequence_length` before its split index for windowing
-        self.val_sequence = self.sequence[val_split_idx - self.sequence_length : test_split_idx]
-        
-        # Test sequence starts `sequence_length` before its split index for windowing
-        self.test_sequence = self.sequence[test_split_idx - self.sequence_length:]
-        
-        # --- Create time axes ---
-        self.train_time_axis = self.time_axis[:val_split_idx]
-        # The "plottable" validation/test time axes start from their respective split indices
-        self.val_time_axis = self.time_axis[val_split_idx : test_split_idx]
-        self.test_time_axis = self.time_axis[test_split_idx:]
-
-        self._is_split = True
-        if verbose >= 2:
-            _LOGGER.info(f"Sequence split into training ({len(self.train_sequence)}), validation ({len(self.val_sequence)}), and testing ({len(self.test_sequence)}) points.")
-    
-    def _normalize_data(self, verbose: int = 3) -> None:
-        """
-        Normalizes the sequence data using DragonScaler. Must be called AFTER splitting to prevent data leakage from the test set.
-        """
-        if not self._is_split:
-            _LOGGER.error("Data must be split BEFORE normalizing.")
-            raise RuntimeError()
-
-        if self.scaler:
-            if verbose >= 1:
-                _LOGGER.warning("Data has already been normalized.")
-            return
-
-        # 1. DragonScaler requires a Dataset to fit. Create a temporary one.
-        # The scaler expects 2D data [n_samples, n_features].
-        train_features = self.train_sequence.reshape(-1, 1) # type: ignore
-
-        # _PytorchDataset needs labels, so we create dummy ones.
-        dummy_labels = numpy.zeros(len(train_features))
-        temp_train_ds = _PytorchDataset(train_features, dummy_labels, labels_dtype=torch.float32)
-
-        # 2. Fit the DragonScaler on the temporary training dataset.
-        # The sequence is a single feature, so its index is [0].
-        if verbose >= 3:
-            _LOGGER.info("Fitting DragonScaler on the training data...")
-        self.scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices=[0], verbose=verbose)
-
-        # 3. Transform sequences using the fitted scaler.
-        # The transform method requires a tensor, so we convert, transform, and convert back.
-        train_tensor = torch.tensor(self.train_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-        val_tensor = torch.tensor(self.val_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-        test_tensor = torch.tensor(self.test_sequence.reshape(-1, 1), dtype=torch.float32) # type: ignore
-
-        self.train_sequence = self.scaler.transform(train_tensor).numpy().flatten()
-        self.val_sequence = self.scaler.transform(val_tensor).numpy().flatten()
-        self.test_sequence = self.scaler.transform(test_tensor).numpy().flatten()
-
-        self._is_normalized = True
-        if verbose >= 2:
-            _LOGGER.info("Sequence data normalized using DragonScaler.")
-
-    def _generate_windows(self, verbose: int = 3) -> None:
-        """
-        Generates overlapping windows for features and labels.
-        """
-        if not self._is_split:
-            _LOGGER.error("Cannot generate windows before splitting data.")
-            raise RuntimeError()
-        
-        if not self._is_normalized:
-            _LOGGER.error("Cannot generate windows before normalizing data.")
-            raise RuntimeError()
-        
-        if self._are_windows_generated:
-            if verbose >= 1:
-                _LOGGER.warning("Windows have already been generated.")
-            return
-
-        self._train_dataset = self._create_windowed_dataset(self.train_sequence, verbose=verbose) # type: ignore
-        self._val_dataset = self._create_windowed_dataset(self.val_sequence, verbose=verbose) # type: ignore
-        self._test_dataset = self._create_windowed_dataset(self.test_sequence, verbose=verbose) # type: ignore
-        
-        # attach feature scaler and target scaler to datasets
-        if self.scaler is not None:
-            for ds in [self._train_dataset, self._val_dataset, self._test_dataset]:
-                if ds is not None:
-                    ds._feature_scaler = self.scaler # type: ignore
-                    ds._target_scaler = self.scaler # type: ignore
-        
-        self._are_windows_generated = True
-        if verbose >= 2:
-            _LOGGER.info("Feature and label windows generated for train, validation, and test sets.")
-
-    def _create_windowed_dataset(self, data: numpy.ndarray, verbose: int = 3) -> Dataset:
-        """Efficiently creates windowed features and labels using numpy."""
-        if len(data) <= self.sequence_length:
-            # Validation/Test sets of size 0 might be passed
-            if verbose >= 1:
-                _LOGGER.warning(f"Data length ({len(data)}) is not greater than sequence_length ({self.sequence_length}). Cannot create windows. Returning empty dataset.")
-            return _PytorchDataset(numpy.array([]), numpy.array([]), labels_dtype=torch.float32)
-        
-        # Define a generic name for the univariate feature
-        f_names = [SequenceDatasetKeys.FEATURE_NAME]
-        t_names = [SequenceDatasetKeys.TARGET_NAME]
-        
-        if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
-            # sequence-to-value
-            features = data[:-1]
-            labels = data[self.sequence_length:]
-            
-            n_windows = len(features) - self.sequence_length + 1
-            bytes_per_item = features.strides[0]
-            strided_features = numpy.lib.stride_tricks.as_strided(
-                features, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item)
+        # --- Early Fail-Safe for Sequence Length ---
+        if val_split_idx <= self.sequence_length:
+            _LOGGER.error(
+                f"The training split size ({val_split_idx} rows) must be strictly greater than "
+                f"the sequence length ({self.sequence_length}). Provide more data, reduce the "
+                f"sequence length, or decrease the validation/test split percentages."
             )
-            # Ensure labels align with the end of each feature window
-            aligned_labels = labels[:n_windows]
-            return _PytorchDataset(strided_features, aligned_labels, 
-                                   labels_dtype=torch.float32,
-                                   feature_names=f_names,
-                                   target_names=t_names)
+            raise ValueError()
         
+        
+        # Train sequence is from beginning to validation index
+        X_train = features_df.iloc[:val_split_idx]
+        
+        # Extract the absolute last sequence of the entire dataset
+        if total_size >= self.sequence_length:
+            self._last_dataset_sequence = features_df.iloc[-self.sequence_length:].to_numpy(dtype=numpy.float32)
         else:
-            # Sequence-to-sequence
-            x_data = data[:-1]
-            y_data = data[1:]
-            
-            n_windows = len(x_data) - self.sequence_length + 1
-            bytes_per_item = x_data.strides[0]
-            
-            strided_x = numpy.lib.stride_tricks.as_strided(x_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
-            strided_y = numpy.lib.stride_tricks.as_strided(y_data, shape=(n_windows, self.sequence_length), strides=(bytes_per_item, bytes_per_item))
-            
-            return _PytorchDataset(strided_x, strided_y, 
-                                   labels_dtype=torch.float32,
-                                   feature_names=f_names,
-                                   target_names=t_names)
+            _LOGGER.error("The total dataset size is smaller than the specified sequence length. Cannot extract a valid last sequence.")
+            raise ValueError()
+        
+        # Validation and Test sequences start `sequence_length` BEFORE their split index 
+        # to ensure the first prediction exactly matches the split boundary. 
+        # Clamp to 0 to prevent negative slicing, and skip padding if the split size is 0.
+        start_val = max(0, val_split_idx - self.sequence_length) if self.validation_split > 0 else val_split_idx
+        start_test = max(0, test_split_idx - self.sequence_length) if self.test_split > 0 else test_split_idx
+        
+        X_val = features_df.iloc[start_val : test_split_idx]
+        X_test = features_df.iloc[start_test :]
+        
+        # We pass dummy targets to the base scaler method since our targets are inside X
+        dummy_y = pandas.Series(0.0, index=X_train.index)
 
-    def plot_splits(self, save_dir: Union[str, Path], verbose: int = 3) -> None:
-        """Plots the training, validation and testing data."""
-        if not self._is_split:
-            _LOGGER.error("Cannot plot before splitting data.")
-            raise RuntimeError()
-        
-        if self.scaler is None:
-            _LOGGER.error("Cannot plot: data has not been normalized, or scaler is missing.")
-            return
-        
-        save_path = make_fullpath(save_dir, make=True, enforce="directory")
-        full_path = save_path / "SequenceSplits.svg"
-
-        plt.figure(figsize=(15, 6))
-        plt.title("Sequential Data")
-        plt.grid(True)
-        plt.xlabel("Sequence")
-        plt.ylabel("Value")
-        
-        # Plot denormalized training data
-        plt.plot(self.train_time_axis, self.scaler.inverse_transform(self.train_sequence.reshape(-1, 1)), label='Train Data') # type: ignore
-        
-        # Plot denormalized validation data
-        # We must skip the overlapping 'sequence_length' part for plotting
-        val_plot_data = self.val_sequence[self.sequence_length:] # type: ignore
-        plt.plot(self.val_time_axis, self.scaler.inverse_transform(val_plot_data.reshape(-1, 1)), label='Validation Data', c='orange') # type: ignore
-
-        # Plot denormalized test data
-        # We must skip the overlapping 'sequence_length' part for plotting
-        test_plot_data = self.test_sequence[self.sequence_length:] # type: ignore
-        plt.plot(self.test_time_axis, self.scaler.inverse_transform(test_plot_data.reshape(-1, 1)), label='Test Data', c='green') # type: ignore
-
-        plt.legend()
-        
-        plt.tight_layout()
-        plt.savefig(full_path)
-        if verbose >= 2:
-            _LOGGER.info(f"📈 Sequence data splits saved as '{full_path.name}'.")
-        plt.close()
-
-    def get_datasets(self) -> tuple[Dataset, Dataset, Dataset]:
-        """Returns the final train, validation, and test datasets."""
-        if not self._are_windows_generated:
-            _LOGGER.error("Windows have not been generated. Call .generate_windows() first.")
-            raise RuntimeError()
-        return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
-    
-    def save_scaler(self, directory: Union[str, Path], verbose: bool=True) -> None:
-        """
-        Saves the fitted DragonScaler's state to a .pth file using the Unified
-        dictionary format.
-        
-        Since this is univariate data, features and targets share the same
-        scaling statistics.
-        
-        Args:
-            directory (str | Path): The directory where the scaler will be saved.
-        """
-        if not self.scaler: 
-            _LOGGER.error("No scaler was fitted or provided.")
-            raise RuntimeError()
-
-        save_path = make_fullpath(directory, make=True, enforce="directory")
-        filename = f"{DatasetKeys.SCALER_PREFIX}{self.prediction_mode}.pth"
-        filepath = save_path / filename
-
-        # Unified Scaler Dictionary Format
-        # For univariate sequences, features and targets share the same scaling statistics.
-        scaler_state = self.scaler._get_state()
-        combined_state = {
-            ScalerKeys.FEATURE_SCALER: scaler_state,
-            ScalerKeys.TARGET_SCALER: scaler_state
-        }
-
-        torch.save(combined_state, filepath)
-        
-        if verbose:
-            _LOGGER.info(f"Unified Scaler saved as '{filepath.name}'.")
-    
-    def get_last_training_sequence(self) -> numpy.ndarray:
-        """
-        Returns the final, un-scaled sequence from the training data.
-        """
-        if not self._is_split:
-            _LOGGER.error("Data has not been split. Cannot get last training sequence.")
-            raise RuntimeError()
-        
-        # The length of train_time_axis is our validation split index
-        val_split_idx = len(self.train_time_axis) # type: ignore
-        
-        if val_split_idx < self.sequence_length:
-            _LOGGER.error(f"Training data length ({val_split_idx}) is less than sequence_length ({self.sequence_length}).")
+        # --- 3. Scale Features (and thereby Targets) ---
+        if feature_scaler == "fit":
+            self.feature_scaler = None 
+            _apply_f_scaling = True
+        elif feature_scaler == "none":
+            self.feature_scaler = None
+            _apply_f_scaling = False
+        elif isinstance(feature_scaler, DragonScaler):
+            self.feature_scaler = feature_scaler
+            _apply_f_scaling = True
+        else:
+            _LOGGER.error("Invalid feature_scaler argument.")
             raise ValueError()
 
-        # Get the slice from the *original* sequence
-        start_idx = val_split_idx - self.sequence_length
-        end_idx = val_split_idx
-        
-        return self.sequence[start_idx:end_idx] # type: ignore
-    
-    @property
-    def feature_names(self):
-        return [SequenceDatasetKeys.FEATURE_NAME]
-    
-    @property
-    def target_names(self):
-        return [SequenceDatasetKeys.TARGET_NAME]
-    
-    @property
-    def train_dataset(self) -> Dataset:
-        if self._train_dataset is None: 
-            _LOGGER.error("Train Dataset not created.")
-            raise RuntimeError()
-        return self._train_dataset
-    
-    @property
-    def validation_dataset(self) -> Dataset:
-        if self._val_dataset is None: 
-            _LOGGER.error("Validation Dataset not yet created.")
-            raise RuntimeError()
-        return self._val_dataset
-
-    @property
-    def test_dataset(self) -> Dataset:
-        if self._test_dataset is None: 
-            _LOGGER.error("Test Dataset not yet created.")
-            raise RuntimeError()
-        return self._test_dataset
-
-    def __repr__(self) -> str:
-        s = f"<{self.__class__.__name__}>:\n"
-        s += f"  Prediction Mode: {self.prediction_mode}\n"
-        s += f"  Sequence Length (Window): {self.sequence_length}\n"
-        s += f"  Total Data Points: {len(self.sequence)}\n"
-        s += "  --- Status ---\n"
-        s += f"  Split: {self._is_split}\n"
-        s += f"  Normalized: {self._is_normalized}\n"
-        s += f"  Windows Generated: {self._are_windows_generated}\n"
-        
-        if self._are_windows_generated:
-            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
-            val_len = len(self._val_dataset) if self._val_dataset else 0 # type: ignore
-            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
-            s += f"  Datasets (Train | Validation | Test): {train_len} | {val_len} | {test_len} windows\n"
+        if _apply_f_scaling:
+            X_train_np, X_val_np, X_test_np = self._prepare_feature_scaler(
+                X_train, dummy_y, X_val, X_test, label_dtype=torch.float32, schema=schema, verbose=verbose
+            )
             
-        return s
+            # Extract target scaler directly from the fitted feature scaler to maintain mathematical consistency
+            if self.feature_scaler and self.feature_scaler.mean_ is not None and self.feature_scaler.std_ is not None:
+                continuous_targets = []
+                target_means = []
+                target_stds = []
+                
+                # Map absolute feature indices to relative target indices
+                for relative_idx, abs_idx in enumerate(self._target_indices):
+                    if self.feature_scaler.continuous_feature_indices and abs_idx in self.feature_scaler.continuous_feature_indices:
+                        scaler_idx = self.feature_scaler.continuous_feature_indices.index(abs_idx)
+                        continuous_targets.append(relative_idx)
+                        target_means.append(self.feature_scaler.mean_[scaler_idx].item())
+                        target_stds.append(self.feature_scaler.std_[scaler_idx].item())
+                
+                if continuous_targets:
+                    # Create a dedicated target scaler scoped ONLY to the model's output size
+                    self.target_scaler = DragonScaler(
+                        mean=torch.tensor(target_means),
+                        std=torch.tensor(target_stds),
+                        continuous_feature_indices=continuous_targets
+                    )
+                else:
+                    self.target_scaler = None
+            else:
+                self.target_scaler = None
+        else:
+            if verbose >= 2:
+                _LOGGER.info("Features have not been scaled as specified.")
+            # Explicit dtype prevents PyTorch from copying the array to cast it later
+            X_train_np = X_train.to_numpy(dtype=numpy.float32)
+            X_val_np = X_val.to_numpy(dtype=numpy.float32)
+            X_test_np = X_test.to_numpy(dtype=numpy.float32)
+            
+            self.target_scaler = None
+
+
+        # --- 4. Generate Windows ---
+        self._train_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_train_np, verbose=verbose)
+        self._val_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_val_np, verbose=verbose)
+        self._test_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_test_np, verbose=verbose)
+
+        # Update base maker shapes
+        self._X_train_shape = self._train_ds.features.shape if self._train_ds else (0,0)
+        self._X_val_shape = self._val_ds.features.shape if self._val_ds else (0,0)
+        self._X_test_shape = self._test_ds.features.shape if self._test_ds else (0,0)
+
+        self._attach_scalers_to_datasets()
+
+        if verbose >= 2:
+            _LOGGER.info("Multivariate feature and label windows successfully generated.")
+
+    def _create_windowed_dataset(self, data: numpy.ndarray, verbose: int = 3) -> _PytorchSequenceDataset:
+        """Efficiently creates 2D windowed features and extracts targets using numpy strides."""
+        if len(data) <= self.sequence_length:
+            # Only warn if there is actually data, ignoring intentionally empty (length 0) arrays from 0.0 splits
+            if verbose >= 1 and len(data) > 0:
+                _LOGGER.warning(f"Data length ({len(data)}) not greater than sequence_length ({self.sequence_length}). Returning empty dataset.")
+            
+            # Maintain strict 3D/2D dimensional shapes even when empty to prevent downstream indexing errors
+            num_features = data.shape[1]
+            num_targets = len(self._target_indices)
+            
+            empty_features = numpy.empty((0, self.sequence_length, num_features), dtype=numpy.float32)
+            
+            if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+                empty_labels = numpy.empty((0, num_targets), dtype=numpy.float32)
+            else:
+                empty_labels = numpy.empty((0, self.sequence_length, num_targets), dtype=numpy.float32)
+                
+            return _PytorchSequenceDataset(empty_features, empty_labels, 
+                               labels_dtype=torch.float32,
+                               feature_names=self._feature_names,
+                               target_names=self._target_names,
+                               target_types=self._target_types)
+        
+        n_windows = len(data) - self.sequence_length + 1
+        row_stride, col_stride = data.strides
+        
+        # Stride 2D array (N, F) into 3D array (N_windows, Seq_len, F)
+        strided_data = numpy.lib.stride_tricks.as_strided(
+            data, 
+            shape=(n_windows, self.sequence_length, data.shape[1]), 
+            strides=(row_stride, row_stride, col_stride)
+        )
+        
+        if self.prediction_mode == MLTaskKeys.SEQUENCE_VALUE:
+            # Drop the last window for inputs because there is no "next step" to predict
+            features = strided_data[:-1]
+            # Targets are the vectors at sequence_length offset, selecting only target columns
+            labels = data[self.sequence_length:, self._target_indices]
+            
+        else: # SEQUENCE_SEQUENCE
+            # Drop the last window for inputs
+            features = strided_data[:-1]
+            # Targets are the shifted windows, selecting only target columns
+            labels = strided_data[1:, :, self._target_indices]
+            
+        return _PytorchSequenceDataset(features, labels, 
+                               labels_dtype=torch.float32,
+                               feature_names=self._feature_names,
+                               target_names=self._target_names,
+                               target_types=self._target_types)
+    
+    @property
+    def last_dataset_sequence(self) -> numpy.ndarray:
+        """
+        Returns the final unscaled window of the entire dataset.
+        
+        Ideal for forecasting the actual unknown future (initial sequence in inference).
+        """
+        return self._last_dataset_sequence
+    
+    @property
+    def target_types(self) -> dict[str, str]:
+        """
+        Returns the target types for the dataset. 
+        
+        Mapping of target names to their types, either 'continuous' or 'categorical'.
+        """
+        return self._target_types
 
     def save_dataset_bundle(self, directory: Union[str, Path], verbose: bool = True) -> None:
-        """
-        Saves the train, validation, and test sets along with all metadata 
-        to a single .pth file using dictionary serialization.
-        
-        Aggregates the underlying tensor data, dataset splits, metadata 
-        (feature/target names, classes, class maps, dataset ID), and the state 
-        dictionaries of any fitted scaler into a single consolidated dictionary, 
-        saving it to disk.
-
-        Args:
-            directory (Union[str, Path]): The directory where the bundle will be saved. 
-                Parent directories will be created automatically if they do not exist.
-            verbose (bool, optional): Whether to output log messages indicating a 
-                successful save.
-        """
-        if not self._are_windows_generated:
-            _LOGGER.error("Cannot save bundle: windows have not been generated.")
-            raise RuntimeError()
-
+        """Saves datasets and sequence metadata into a unified dictionary."""
         save_path = make_fullpath(directory, make=True, enforce="directory")
-        
         safe_mode = self.prediction_mode.replace("-", "_").replace(" ", "_")
-        filename = f"{DatasetKeys.DATASET_FILENAME}_{safe_mode}_w{self.sequence_length}.pth"
-            
+        filename = f"{DatasetKeys.DATASET_FILENAME}_{self._id}_{safe_mode}_w{self.sequence_length}.pth"
         filepath = save_path / filename
-
-        scaler_state = self.scaler._get_state() if self.scaler else None
 
         bundle = {
             DatasetKeys.TRAIN_SUBSET: {
-                "features": self.train_dataset.features if self._train_dataset else None, # type: ignore
-                "labels": self.train_dataset.labels if self._train_dataset else None # type: ignore
+                "features": self.train_dataset.features if self._train_ds else None, # type: ignore
+                "labels": self.train_dataset.labels if self._train_ds else None # type: ignore
             },
             DatasetKeys.VALIDATION_SUBSET: {
-                "features": self.validation_dataset.features if self._val_dataset else None, # type: ignore
-                "labels": self.validation_dataset.labels if self._val_dataset else None # type: ignore
+                "features": self.validation_dataset.features if self._val_ds else None, # type: ignore
+                "labels": self.validation_dataset.labels if self._val_ds else None # type: ignore
             },
             DatasetKeys.TEST_SUBSET: {
-                "features": self.test_dataset.features if self._test_dataset else None, # type: ignore
-                "labels": self.test_dataset.labels if self._test_dataset else None # type: ignore
+                "features": self.test_dataset.features if self._test_ds else None, # type: ignore
+                "labels": self.test_dataset.labels if self._test_ds else None # type: ignore
             },
             DatasetKeys.FEATURE_NAMES: self.feature_names,
             DatasetKeys.TARGET_NAMES: self.target_names,
+            DatasetKeys.TARGET_TYPES: self.target_types,
             DatasetKeys.VALIDATION_SPLIT: self.validation_split,
             DatasetKeys.TEST_SPLIT: self.test_split,
-            "prediction_mode": self.prediction_mode,
-            "sequence_length": self.sequence_length,
-            "sequence": self.sequence,
-            "time_axis": self.time_axis,
-            "train_sequence": self.train_sequence,
-            "val_sequence": self.val_sequence,
-            "test_sequence": self.test_sequence,
-            "train_time_axis": self.train_time_axis,
-            "val_time_axis": self.val_time_axis,
-            "test_time_axis": self.test_time_axis,
-            ScalerKeys.FEATURE_SCALER: scaler_state,
-            ScalerKeys.TARGET_SCALER: scaler_state,
+            DatasetKeys.PREDICTION_MODE: self.prediction_mode,
+            DatasetKeys.SEQUENCE_LENGTH: self.sequence_length,
+            DatasetKeys.ID: self.id,
+            ScalerKeys.FEATURE_SCALER: self.feature_scaler._get_state() if self.feature_scaler else None,
+            ScalerKeys.TARGET_SCALER: self.target_scaler._get_state() if self.target_scaler else None,
+            DatasetKeys.CLASS_MAP: self.class_map,
+            DatasetKeys.CLASSES: self.classes,
+            DatasetKeys.LAST_SEQUENCE: self.last_dataset_sequence
         }
         
         torch.save(bundle, filepath)
-        
         if verbose:
             _LOGGER.info(f"Sequence dataset bundle saved to '{filepath.name}'.")
 
     @classmethod
     def from_bundle(cls, filepath: Union[str, Path]) -> 'DragonDatasetSequence':
-        """
-        Alternative constructor to instantiate a dataset object from a saved bundle.
-        
-        Bypasses standard initialization to reconstruct the entire state from a `.pth` 
-        file. This includes restoring metadata, reloading `DragonScaler` states, and 
-        rebuilding the Custom Dataset instances for the train, validation, and test 
-        subsets. If a directory is provided instead of a file, it will attempt to 
-        automatically resolve the `.pth` file using the default naming pattern.
-
-        Args:
-            filepath (Union[str, Path]): The direct path to the `.pth` file, or a 
-                directory containing exactly one matching dataset bundle.
-
-        Returns:
-            DragonDatasetSequence: An instance of the class fully populated with the loaded 
-                datasets, scalers, and metadata.
-        """
+        """Restores a DragonDatasetSequenceMulti from a saved bundle."""
         target_filepath = make_fullpath(filepath, make=False)
         
-        # check if path is a file
         if not target_filepath.is_file():
-            # check if it is a directory containing a file with the expected bundle name pattern
             if target_filepath.is_dir():
-                expected_pattern = f"{DatasetKeys.DATASET_FILENAME}_*.pth"
+                expected_pattern = f"{DatasetKeys.DATASET_FILENAME}_Seq_*.pth"
                 matching_files = list(target_filepath.glob(expected_pattern))
                 if not matching_files:
-                    _LOGGER.error(f"No files matching pattern '{expected_pattern}' found in directory '{target_filepath}'.")
-                    raise FileNotFoundError()
+                    raise FileNotFoundError(f"No files matching pattern '{expected_pattern}' found.")
                 elif len(matching_files) > 1:
-                    _LOGGER.error(f"Multiple files matching pattern '{expected_pattern}' found in directory '{target_filepath}'. Please specify the exact file.")
-                    raise FileNotFoundError()
+                    raise FileNotFoundError(f"Multiple files matching pattern '{expected_pattern}' found. Specify exact file.")
                 else:
                     target_filepath = matching_files[0]
             else:
-                _LOGGER.error(f"Provided path '{target_filepath}' is neither a file nor a directory.")
-                raise FileNotFoundError()
+                raise FileNotFoundError(f"Provided path '{target_filepath}' is invalid.")
             
         bundle = torch.load(target_filepath, weights_only=False)
-        
         instance = cls.__new__(cls)
         
-        # 1. Restore Metadata and Flags
-        instance.prediction_mode = bundle.get("prediction_mode")
-        instance.sequence_length = bundle.get("sequence_length")
-        instance._is_split = True
-        instance._is_normalized = True
-        instance._are_windows_generated = True
+        # 1. Restore Base Attributes
+        instance._train_ds = None
+        instance._val_ds = None
+        instance._test_ds = None
+        instance._X_train_shape = (0,0)
+        instance._X_val_shape = (0,0)
+        instance._X_test_shape = (0,0)
+        instance._y_train_shape = (0,)
+        instance._y_val_shape = (0,)
+        instance._y_test_shape = (0,)
+
+        # 2. Restore Metadata
+        instance.prediction_mode = bundle.get(DatasetKeys.PREDICTION_MODE)
+        instance.sequence_length = bundle.get(DatasetKeys.SEQUENCE_LENGTH)
         instance.validation_split = bundle.get(DatasetKeys.VALIDATION_SPLIT, 0.0)
         instance.test_split = bundle.get(DatasetKeys.TEST_SPLIT, 0.0)
-        
-        # 2. Restore Raw Sequences and Time Axes
-        instance.sequence = bundle.get("sequence")
-        instance.time_axis = bundle.get("time_axis")
-        instance.train_sequence = bundle.get("train_sequence")
-        instance.val_sequence = bundle.get("val_sequence")
-        instance.test_sequence = bundle.get("test_sequence")
-        instance.train_time_axis = bundle.get("train_time_axis")
-        instance.val_time_axis = bundle.get("val_time_axis")
-        instance.test_time_axis = bundle.get("test_time_axis")
+        instance._feature_names = bundle.get(DatasetKeys.FEATURE_NAMES, [])
+        instance._target_names = bundle.get(DatasetKeys.TARGET_NAMES, [])
+        instance._id = bundle.get(DatasetKeys.ID, "")
+        instance.class_map = bundle.get(DatasetKeys.CLASS_MAP, {})
+        instance.classes = bundle.get(DatasetKeys.CLASSES, [])
+        instance._target_types = bundle.get(DatasetKeys.TARGET_TYPES, {})
+        instance._last_dataset_sequence = bundle.get(DatasetKeys.LAST_SEQUENCE)
 
         # 3. Reconstruct Scaler
-        scaler_state = bundle.get(ScalerKeys.FEATURE_SCALER)
-        if scaler_state:
-            instance.scaler = DragonScaler.load(scaler_state, verbose=False)
+        f_scaler_state = bundle.get(ScalerKeys.FEATURE_SCALER)
+        t_scaler_state = bundle.get(ScalerKeys.TARGET_SCALER)
+
+        if f_scaler_state:
+            instance.feature_scaler = DragonScaler.load(f_scaler_state, verbose=False)
         else:
-            instance.scaler = None
+            instance.feature_scaler = None
+
+        if t_scaler_state:
+            instance.target_scaler = DragonScaler.load(t_scaler_state, verbose=False)
+        else:
+            instance.target_scaler = None
 
         # 4. Reconstruct Datasets
-        feature_names = bundle.get(DatasetKeys.FEATURE_NAMES, [SequenceDatasetKeys.FEATURE_NAME])
-        target_names = bundle.get(DatasetKeys.TARGET_NAMES, [SequenceDatasetKeys.TARGET_NAME])
-
         def _build_ds(split_key: str):
             split_data = bundle.get(split_key)
             if split_data and split_data.get("features") is not None and split_data.get("labels") is not None:
                 features = split_data["features"]
                 labels = split_data["labels"]
-                ds = _PytorchDataset(
-                    features=features,
-                    labels=labels,
+                ds = _PytorchSequenceDataset(
+                    features=features.numpy(),
+                    labels=labels.numpy(),
                     labels_dtype=labels.dtype,
                     features_dtype=features.dtype,
-                    feature_names=feature_names,
-                    target_names=target_names
+                    feature_names=instance._feature_names,
+                    target_names=instance._target_names,
+                    target_types=instance._target_types,
                 )
-                ds._feature_scaler = instance.scaler
-                ds._target_scaler = instance.scaler
-                return ds
-            return None
+                ds._feature_scaler = instance.feature_scaler
+                ds._target_scaler = instance.target_scaler
+                return ds, features.shape, labels.shape
+            return None, (0,0), (0,)
 
-        instance._train_dataset = _build_ds(DatasetKeys.TRAIN_SUBSET)
-        instance._val_dataset = _build_ds(DatasetKeys.VALIDATION_SUBSET)
-        instance._test_dataset = _build_ds(DatasetKeys.TEST_SUBSET)
+        instance._train_ds, instance._X_train_shape, instance._y_train_shape = _build_ds(DatasetKeys.TRAIN_SUBSET)
+        instance._val_ds, instance._X_val_shape, instance._y_val_shape = _build_ds(DatasetKeys.VALIDATION_SUBSET)
+        instance._test_ds, instance._X_test_shape, instance._y_test_shape = _build_ds(DatasetKeys.TEST_SUBSET)
         
         _LOGGER.info(f"Dataset loaded from '{target_filepath.name}' with sequence length {instance.sequence_length}.")
-
         return instance
+
+    def __repr__(self) -> str:
+        s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
+        s += f"  Prediction Mode: {self.prediction_mode}\n"
+        s += f"  Sequence Length (Window): {self.sequence_length}\n"
+        s += f"  Targets: {len(self._target_names)}\n"
+        s += f"  Features: {self.number_of_features}\n"
+        s += f"  Feature-Scaler: {'Present' if self.feature_scaler else 'None'}\n"
+        s += f"  Target-Scaler: {'Present' if self.target_scaler else 'None'}\n"
+        
+        if self._train_ds: s += f"  Train Windows: {len(self._train_ds)}\n"
+        if self._val_ds: s += f"  Validation Windows: {len(self._val_ds)}\n"
+        if self._test_ds: s += f"  Test Windows: {len(self._test_ds)}\n"
+        return s

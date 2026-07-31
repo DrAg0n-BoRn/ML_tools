@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.2.0] 2026-07-31
+
+### Added
+
+- ML_models_sequence:
+    - `DragonSequenceTransformer`: Introduced a new multi-head Transformer architecture for multivariate sequence prediction tasks.
+        - Integrates natively with `FeatureSchema` to dynamically build distinct prediction heads for continuous and categorical targets.
+        - Binds the pre-computed positional encoding buffer tightly to the specified `sequence_length`, maximizing memory efficiency.
+        - Outputs a `dict[str, torch.Tensor]` mapping target names to their respective prediction tensors.
+
+- ML_evaluation_captum:
+    - `captum_sequence_feature_importance()`: New evaluation function to compute and visualize feature importance across time steps for multivariate sequence models. Supports dictionary-returning models and automatically handles 3D sequence tensors `(Batch, Sequence_Length, Features)`.
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDatasetSequence`: Completely overhauled to act as a universal multivariate and univariate sequence dataset maker. The class now integrates with `FeatureSchema` and accepts a `targets` list, allowing targets to be extracted directly from feature columns. It now natively outputs 3D PyTorch-ready tensors `(Batch, Sequence_Length, Features)` to streamline integration with recurrent and transformer models.
+
+- ML_inference_sequence:
+    - `DragonSequenceInferenceHandler`
+        - The constructor now requires a `FeatureSchema` argument to map features and dynamically resolve target indices.
+        - Updated inference logic (`predict`, `predict_batch`) to natively handle 3D tensors for multivariate sequences instead of assuming 1D/2D flattened inputs.
+        - Upgraded the `forecast` method to support multi-step autoregressive forecasting with exogenous variables via a new `future_exogenous` parameter (which expects a `pandas.DataFrame` for strict schema alignment).
+        - The `forecast` method now returns a `pandas.DataFrame` containing the predicted targets with proper column names, rather than a raw NumPy array.
+        - `plot_forecast` enhanced to automatically plot multiple target variables simultaneously by extracting data directly from the new DataFrame output.
+
+- ML_configuration:
+    - Refactored `FinalizeSequenceSequencePrediction` and `FinalizeSequenceValuePrediction` to inherit from a new unified internal `_FinalizeSequencePrediction` base class.
+        - Sequence finalization classes now require a `target_types` dictionary parameter so the inference handler can dynamically resolve target indices.
+        - Sequence finalization classes now strictly validate `last_training_sequence` as a 2D array `(sequence_length, num_features)` instead of flattening to 1D, perfectly aligning with the new multivariate dataset shapes.
+    - Refactored `FormatSequenceValueMetrics` and `FormatSequenceSequenceMetrics` into composite configuration routers. They now accept specific `regression_config` and `classification_config` objects, safely passing styling down to the underlying evaluation modules.
+    
+- ML_models_sequence:
+    - `DragonSequenceLSTM`: Completely refactored to align with the new Transformer standards and support mixed-type multivariate targets.
+        - Now inherits from `_ArchitectureBuilder` for standardized JSON serialization, automatic `FeatureSchema` reconstruction, and enhanced hyperparameter tracking.
+        - Upgraded to a dynamic multi-head architecture via `FeatureSchema`, allowing it to simultaneously predict continuous regression values and categorical logits.
+        - The forward pass now returns a `dict[str, torch.Tensor]` of target predictions, making the LSTM and Transformer 100% interchangeable in the Trainer pipeline.
+        - Added a `sequence_length` initialization parameter for explicit tracking in the architecture configuration.
+        - Added an optional `bidirectional` flag.
+
+- ML_trainer:
+    - `DragonSequenceTrainer`: Revamped for multivariate sequence prediction tasks, fully compatible with both the new `DragonSequenceTransformer` and the refactored `DragonSequenceLSTM`.
+        - Added native support for multi-head models returning dictionary outputs (`dict[str, torch.Tensor]`) across training, validation, and evaluation steps.
+        - Upgraded the `criterion="auto"` configuration to dynamically route and compute multi-task loss (applying `CrossEntropyLoss` for categorical target heads and `MSELoss` for continuous target heads).
+        - Introduced the `target_types` parameter to explicitly identify categorical vs. continuous targets, replacing the fragile dimensional shape heuristic with bulletproof loss routing.
+        - Enhanced `_predict_for_eval` to automatically concatenate multi-head prediction and target dictionaries into unified tensors, while seamlessly applying inverse scaling to continuous variables.
+        - Patched `explain_captum` with an internal wrapper (`_CaptumDictWrapper`) that supports dictionary-returning models and safely collapses 3D Sequence-to-Sequence temporal dimensions to prevent `IntegratedGradients` indexing crashes.
+        - Added strict type-checking fail-safes to prevent silent runtime errors when single-tensor model outputs are mismatched with dictionary-based targets.
+    - `DragonTrainer`: updated the `explain_captum()` method to handle 'target_names' for classification tasks (classes instead of target columns), ensuring that the Captum evaluation correctly maps feature importance to the appropriate target classes.
+    - Added method `_get_dataset_attr()` to base trainer, affecting all subclasses, to safely extract attributes from the dataset, returning `None` if the attribute is missing instead of raising an exception. This is used to retrieve `target_types`, `target_names`, `feature_names`, `classes`, and `class_map` more robustly.
+
+- ML_evaluation:
+    - Refactored the sequence evaluation pipeline to natively support mixed multi-target outputs (categorical and continuous).
+    - Removed `sequence_to_value_metrics`. The `DragonSequenceTrainer` now dynamically routes `SEQUENCE_VALUE` targets directly to standard `regression_metrics` or `classification_metrics`.
+    - Split `sequence_to_sequence_metrics` into specialized `sequence_to_sequence_regression_metrics` and `sequence_to_sequence_classification_metrics`.
+        - These functions now flatten 2D sequence arrays to calculate robust overall metrics and reports using the base evaluation modules, while also generating dedicated per-step performance plots (RMSE/MAE for regression, Accuracy/F1-Score for classification).
+
 ## [24.1.0] 2026-07-29
 
 ### Added

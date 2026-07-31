@@ -18,6 +18,7 @@ class FinalizedFileKeys:
     INITIAL_SEQUENCE = PyTorchCheckpointKeys.INITIAL_SEQUENCE
     TARGET_NAME = PyTorchCheckpointKeys.TARGET_NAME
     TARGET_NAMES = PyTorchCheckpointKeys.TARGET_NAMES
+    TARGET_TYPES = PyTorchCheckpointKeys.TARGET_TYPES
     
 
 class TaskKeys:

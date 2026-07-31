@@ -6,7 +6,7 @@ import seaborn as sns
 from pathlib import Path
 from typing import Union, Optional
 
-from ..ML_configuration._metrics import (FormatRegressionMetrics,
+from ..ML_configuration._config_metrics import (FormatRegressionMetrics,
                                          FormatMultiTargetRegressionMetrics,
                                          _BaseRegressionFormat)
 
