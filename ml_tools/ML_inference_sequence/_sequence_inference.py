@@ -10,11 +10,11 @@ from itertools import cycle
 
 from .._core import get_logger
 from ..path_manager import make_fullpath, sanitize_filename
-from ..keys._keys import MLTaskKeys, PyTorchCheckpointKeys, ScalerKeys
+from ..keys._keys import MLTaskKeys, PyTorchCheckpointKeys
 from ..ML_scaler import DragonScaler
 from ..schema import FeatureSchema
 
-from ..ML_inference._base_inference import _CoreInferenceHandler
+from ..ML_inference._base_inference import _CoreInferenceHandler, _ScalerMixin
 
 
 _LOGGER = get_logger("Sequence Inference")
@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-class DragonSequenceInferenceHandler(_CoreInferenceHandler):
+class DragonSequenceInferenceHandler(_CoreInferenceHandler, _ScalerMixin):
     """
     Handles loading a PyTorch sequence model's state and performing inference
     for univariate and multivariate sequence tasks.
@@ -53,10 +53,11 @@ class DragonSequenceInferenceHandler(_CoreInferenceHandler):
             device (str): The device to run inference on ('cpu', 'cuda', 'mps'). 
         """
         # 1. Initialize Universal Core
-        super().__init__(model=model, state_dict=state_dict, device=device, task=task)
+        _CoreInferenceHandler.__init__(self, model=model, state_dict=state_dict, device=device, task=task)
         
-        self.sequence_length: Optional[int] = None
-        self.initial_sequence: Optional[np.ndarray] = None
+        # 2. Initialize Scaler Mixin and load scalers
+        _ScalerMixin.__init__(self)
+        self._load_scalers(scaler)
         
         valid_tasks = [
             MLTaskKeys.SEQUENCE_SEQUENCE, 
@@ -82,12 +83,14 @@ class DragonSequenceInferenceHandler(_CoreInferenceHandler):
         if target_names is not None:
             self.target_names = target_names
             _LOGGER.info(f"Target names provided directly: {self.target_names}")
-        elif getattr(self._file_handler, PyTorchCheckpointKeys.TARGET_NAMES, None) is not None:
-            self.target_names = self._file_handler.target_names
-            _LOGGER.info(f"Target names loaded from model file: {self.target_names}")
         else:
-            _LOGGER.error("Target names not found in the FinalizedFile bundle. This is required for sequence reconstruction.")
-            raise ValueError()
+            parsed_targets = self._file_handler.parse_targets()
+            if parsed_targets is not None:
+                self.target_names = parsed_targets
+                _LOGGER.info(f"Target names loaded from model file: {self.target_names}")
+            else:
+                _LOGGER.error("Target names not found in the FinalizedFile bundle. This is required for sequence reconstruction.")
+                raise ValueError()
         
         try:
             # Dynamically resolve indices using the definitive FeatureSchema
@@ -96,48 +99,21 @@ class DragonSequenceInferenceHandler(_CoreInferenceHandler):
             _LOGGER.error(f"A target name from the model bundle was not found in the FeatureSchema.")
             raise ValueError() from e
         
-        # --- Load Scalers ---
-        self.feature_scaler: Optional[DragonScaler] = None
-        self.target_scaler: Optional[DragonScaler] = None
-
-        if scaler is not None:
-            if isinstance(scaler, (str, Path)):
-                path_obj = make_fullpath(scaler, enforce="file")
-                loaded_scaler_data = torch.load(path_obj)
-                
-                if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
-                    if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
-                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
-                        _LOGGER.info("Loaded DragonScaler state for feature scaling.")
-                    if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
-                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
-                        _LOGGER.info("Loaded DragonScaler state for target scaling.")
-                else:
-                    _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
-                    self.feature_scaler = DragonScaler.load(loaded_scaler_data)
-            else:
-                _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
-                raise ValueError()
-        
+        # Verify scalers were successfully loaded via the Mixin
         if self.feature_scaler is None and self.target_scaler is None:
             _LOGGER.error("A scaler is required to scale inputs and de-scale predictions.")
             raise ValueError()
         
-        # Load sequence length from the FinalizedFileHandler
-        if self._file_handler.sequence_length is not None:
-            self.sequence_length = self._file_handler.sequence_length
+        # --- Load Sequence Metadata via Typed Parser ---
+        seq_meta = self._file_handler.parse_sequence_metadata()
+        self.sequence_length = seq_meta.sequence_length
+        self.initial_sequence = seq_meta.initial_sequence
+        
+        if self.sequence_length is not None:
             _LOGGER.info(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' found and set to {self.sequence_length}")
-        else:
-            _LOGGER.warning(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' not found in model file. Forecasting validation will be skipped.")
             
-        # Load initial sequence from FinalizedFileHandler
-        if self._file_handler.initial_sequence is not None:
-            self.initial_sequence = self._file_handler.initial_sequence
+        if self.initial_sequence is not None:
             _LOGGER.info(f"Default 'initial_sequence' for forecasting loaded from model file.")
-            if self.sequence_length and len(self.initial_sequence) != self.sequence_length: # type: ignore
-                _LOGGER.warning(f"Loaded 'initial_sequence' length ({len(self.initial_sequence)}) mismatches 'sequence_length' ({self.sequence_length}).") # type: ignore
-        else:
-            _LOGGER.info("No default 'initial_sequence' found in model file. Must be provided for forecasting.")
 
     def _preprocess_input(self, features: torch.Tensor) -> torch.Tensor:
         """
@@ -160,9 +136,7 @@ class DragonSequenceInferenceHandler(_CoreInferenceHandler):
         return scaled_features.to(self.device)
 
     def predict_batch(self, features: Union[np.ndarray, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """
-        Core batch prediction method for sequences.
-        """
+        """Core batch prediction method for sequences."""
         if features.ndim != 3:
             _LOGGER.error("Input for batch prediction must be a 3D array/tensor (batch_size, sequence_length, num_features).")
             raise ValueError()

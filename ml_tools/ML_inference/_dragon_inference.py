@@ -5,11 +5,10 @@ from pathlib import Path
 from typing import Union, Literal, Any, Optional
 
 from .._core import get_logger
-from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys, ScalerKeys
-from ..path_manager import make_fullpath
+from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys
 from ..ML_scaler import DragonScaler
 
-from ._base_inference import _CoreInferenceHandler, _ClassificationMixin
+from ._base_inference import _CoreInferenceHandler, _ClassificationMixin, _ScalerMixin
 
 
 _LOGGER = get_logger("Inference Handler")
@@ -20,7 +19,7 @@ __all__ = [
 ]
 
 
-class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
+class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin, _ScalerMixin):
     """
     Handles loading a PyTorch model's state dictionary and performing inference for tabular data.
     """
@@ -36,7 +35,7 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
                  scaler: Optional[Union[str, Path]] = None,
                  distribution_mode: bool = False):
         """
-        Initializes the handler for single-target tasks.
+        Initializes the handler for single-target and multi-target tabular tasks.
 
         Args:
             model (nn.Module): An instantiated PyTorch model architecture.
@@ -49,9 +48,12 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
         # 1. Initialize Universal Core
         _CoreInferenceHandler.__init__(self, model=model, state_dict=state_dict, device=device, task=task)
         
-        # 2. Initialize Classification Mixin and load metadata
+        # 2. Initialize Mixins and load metadata
         _ClassificationMixin.__init__(self)
-        self._load_classification_metadata(self._file_handler)
+        _ScalerMixin.__init__(self)
+        
+        self._load_classification_metadata(self._file_handler.parse_classification_metadata())
+        self._load_scalers(scaler)
         
         # --- Validation of resolved task ---
         valid_tasks = [
@@ -74,36 +76,10 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
         self.target_ids: Optional[list[str]] = None
         self._target_ids_set: bool = False
         
-        # --- Attempt to load target names from FinalizedFileHandler ---
-        if self._file_handler.target_names is not None:
-            self.set_target_ids(self._file_handler.target_names)
-        elif self._file_handler.target_name is not None:
-            self.set_target_ids([self._file_handler.target_name])
-        else:
-            _LOGGER.warning("No target names found in file metadata.")
-
-        # --- Load Scalers ---
-        self.feature_scaler: Optional[DragonScaler] = None
-        self.target_scaler: Optional[DragonScaler] = None
-
-        if scaler is not None:
-            if isinstance(scaler, (str, Path)):
-                path_obj = make_fullpath(scaler, enforce="file")
-                loaded_scaler_data = torch.load(path_obj)
-                
-                if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
-                    if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
-                        self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
-                        _LOGGER.info("Loaded DragonScaler state for feature scaling.")
-                    if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
-                        self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
-                        _LOGGER.info("Loaded DragonScaler state for target scaling.")
-                else:
-                    _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
-                    self.feature_scaler = DragonScaler.load(loaded_scaler_data)
-            else:
-                _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
-                raise ValueError()
+        # --- Clean Target Names Loading ---
+        parsed_targets = self._file_handler.parse_targets()
+        if parsed_targets is not None:
+            self.set_target_ids(parsed_targets)
 
     def _preprocess_input(self, features: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
@@ -389,4 +365,3 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
         else:
             _LOGGER.error(f"Unrecognized task '{self.task}'.")
             raise ValueError()
-

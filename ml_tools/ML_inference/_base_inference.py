@@ -5,17 +5,19 @@ from pathlib import Path
 from typing import Union, Optional, Any
 from abc import ABC, abstractmethod
 
-from ..ML_finalize_handler import FinalizedFileHandler
+from ..ML_finalize_handler._ML_finalize_handler import FinalizedFileHandler, ClassificationMetadata
+from ..ML_scaler import DragonScaler
 from .._core import get_logger
 from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchCheckpointKeys, MagicWords
+from ..keys._keys import PyTorchCheckpointKeys, MagicWords, ScalerKeys
 
 _LOGGER = get_logger("Inference Handler")
 
 
 __all__ = [
     "_CoreInferenceHandler",
-    "_ClassificationMixin"
+    "_ClassificationMixin",
+    "_ScalerMixin"
 ]
 
 
@@ -60,14 +62,47 @@ class _ClassificationMixin:
  
         self._classification_threshold = threshold
 
-    def _load_classification_metadata(self, file_handler: FinalizedFileHandler) -> None:
-        """Helper to extract classification specific metadata from the file handler."""
-        if file_handler.classification_threshold is not None:
-            self.set_classification_threshold(file_handler.classification_threshold, force_overwrite=True)
+    def _load_classification_metadata(self, meta: ClassificationMetadata) -> None:
+        """Helper to safely unpack standard classification metadata from a configuration object."""
+        if meta.classification_threshold is not None:
+            self.set_classification_threshold(meta.classification_threshold, force_overwrite=True)
             self._loaded_threshold = True
             
-        if file_handler.class_map is not None:
-            self.set_class_map(file_handler.class_map, force_overwrite=True)
+        if meta.class_map is not None:
+            self.set_class_map(meta.class_map, force_overwrite=True)
+
+
+class _ScalerMixin:
+    """
+    Mixin class to centralize the loading and validation of DragonScalers
+    for feature and target transformations.
+    """
+    def __init__(self):
+        self.feature_scaler: Optional[DragonScaler] = None
+        self.target_scaler: Optional[DragonScaler] = None
+        
+    def _load_scalers(self, scaler_path: Optional[Union[str, Path]]) -> None:
+        """Helper to load single or unified scalers directly from a file path."""
+        if scaler_path is None:
+            return
+            
+        if isinstance(scaler_path, (str, Path)):
+            path_obj = make_fullpath(scaler_path, enforce="file")
+            loaded_scaler_data = torch.load(path_obj)
+            
+            if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
+                if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:
+                    self.feature_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.FEATURE_SCALER], verbose=False)
+                    _LOGGER.info("Loaded DragonScaler state for feature scaling.")
+                if ScalerKeys.TARGET_SCALER in loaded_scaler_data:
+                    self.target_scaler = DragonScaler.load(loaded_scaler_data[ScalerKeys.TARGET_SCALER], verbose=False)
+                    _LOGGER.info("Loaded DragonScaler state for target scaling.")
+            else:
+                _LOGGER.warning("Loaded scaler file does not contain separate feature/target scalers. Assuming it is a feature scaler (legacy format).")
+                self.feature_scaler = DragonScaler.load(loaded_scaler_data)
+        else:
+            _LOGGER.error("Scaler must be a file path (str or Path) to a saved DragonScaler state file.")
+            raise ValueError()
 
 
 class _CoreInferenceHandler(ABC):

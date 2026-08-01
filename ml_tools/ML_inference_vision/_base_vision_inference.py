@@ -52,9 +52,9 @@ class _BaseVisionInferenceHandler(_CoreInferenceHandler, _ClassificationMixin):
         # 1. Initialize Universal Core
         _CoreInferenceHandler.__init__(self, model=model, state_dict=state_dict, device=device, task=task)
         
-        # 2. Initialize Classification Mixin and load metadata
+        # 2. Initialize Classification Mixin and load cleanly typed metadata
         _ClassificationMixin.__init__(self)
-        self._load_classification_metadata(self._file_handler)
+        self._load_classification_metadata(self._file_handler.parse_classification_metadata())
 
         self._transform: Optional[Callable] = None
         self._is_transformed: bool = False

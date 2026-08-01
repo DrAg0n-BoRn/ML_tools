@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.3.0] 2026-08-01
+
+### Changed
+
+- ML_finalize_handler:
+    - Replaced dynamic `__getattr__` metadata attribute retrieval with explicitly typed `dataclasses` (`ClassificationMetadata`, `SequenceMetadata`) and dedicated domain-parsing methods.
+    - Centralized task-specific validation logic (such as checking `initial_sequence` length against `sequence_length` and standardizing target names) directly into the file handler to reduce downstream boilerplate.
+
+- ML_inference:
+    - Introduced a new `_ScalerMixin` in `_base_inference.py` to centralize the loading and validation of feature and target scalers.
+    - Updated `_ClassificationMixin` to accept the strictly-typed `ClassificationMetadata` object instead of a raw file handler.
+    - Refactored `DragonInferenceHandler` (tabular) to utilize the new mixins and the `parse_targets()` method, eliminating redundant scaler loading blocks and messy target resolution logic.
+
+- ML_inference_sequence:
+    - Updated `DragonSequenceInferenceHandler` to inherit from `_ScalerMixin`, stripping out repetitive scaler initialization code.
+    - Replaced raw dictionary metadata access with `parse_sequence_metadata()` and `parse_targets()` to safely extract sequence forecasting parameters.
+
+- ML_inference_vision:
+    - Updated `_BaseVisionInferenceHandler` to supply the parsed `ClassificationMetadata` object directly to the `_ClassificationMixin` upon initialization.
+    - Maintained full backward compatibility for all vision subclasses (classification, object detection, segmentation), allowing them to automatically inherit the robust parsing without requiring any internal code changes.
+
+### Added
+
+- ML_finalize_handler:
+    - `FinalizedFileHandler`:
+        - `custom_metadata` property to safely retrieve arbitrary metadata from the finalized file.
+        - `print_available_keys()` method to display all available metadata keys.
+
 ## [24.2.0] 2026-07-31
 
 ### Added
