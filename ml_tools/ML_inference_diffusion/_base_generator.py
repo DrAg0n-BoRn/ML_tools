@@ -56,7 +56,8 @@ class _BaseDiffusionGenerator(ABC):
                      plot_title: str = "Generated Data Distributions",
                      handle_zero_variance: Literal["constant", "drop"] = "constant",
                      show_means: bool = True,
-                     font_scaling: float = 1.5) -> None:
+                     font_scaling: float = 1.5,
+                     palette: str = "husl") -> None:
         """
         Plots value distributions and numeric overview boxplots for the generated DataFrame.
         
@@ -67,6 +68,7 @@ class _BaseDiffusionGenerator(ABC):
             handle_zero_variance (Literal["constant", "drop"]): How to handle columns with zero variance.
             show_means (bool): Whether to display means on the plots.
             font_scaling (float): The scaling factor for font sizes on the plots.
+            palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
         """
         # check if df_generated is empty
         if df_generated.empty:
@@ -78,7 +80,8 @@ class _BaseDiffusionGenerator(ABC):
         
         plot_value_distributions(df=df_generated, 
                                  save_dir=save_path,
-                                 font_scaling=font_scaling,)
+                                 font_scaling=font_scaling,
+                                 palette=palette)
 
         plot_numeric_overview_boxplot_macro(df=df_generated, 
                                             save_dir=save_path, 

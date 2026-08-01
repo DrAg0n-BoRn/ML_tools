@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.3.1] 2026-08-01
+
+### Changed
+
+- data_exploration:
+    - Added a `palette` parameter to allow users to specify the color palette for categorical and numerical plots, enhancing visual differentiation between categories on the following functions:
+        - `plot_value_distributions()`
+        - `plot_value_distributions_multi()`
+        - `plot_numeric_overview_boxplot()`
+        - `plot_numeric_overview_boxplot_macro()`
+        - `plot_continuous_vs_target()`
+        - `plot_categorical_vs_target()`
+
+- ML_inference_diffusion:
+    - `_BaseDiffusionGenerator.plot_metrics()`: Added a `palette` parameter to allow users to specify the color palette for distribution plots.
+
+
 ## [24.3.0] 2026-08-01
 
 ### Changed

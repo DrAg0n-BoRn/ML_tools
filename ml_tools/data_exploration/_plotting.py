@@ -30,10 +30,11 @@ def plot_value_distributions(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
     categorical_columns: Optional[list[str]] = None,
-    max_categories: int = 50,
+    max_categories: int = 20,
     fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
-    mode: Literal["count", "percentage"] = "count"
+    mode: Literal["count", "percentage"] = "count",
+    palette: str = "husl"
 ):
     """
     Plots and saves the value distributions for all columns in a DataFrame,
@@ -51,10 +52,15 @@ def plot_value_distributions(
         fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category.
         font_scaling (float): Scaling factor for all fonts in the generated plots.
         mode (Literal["count", "percentage"]): Whether to plot absolute counts or relative percentages.
+        palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
 
     Notes:
         - `seaborn.histplot` with KDE is used for continuous features.
         - `seaborn.countplot` is used for categorical features.
+        
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -71,6 +77,9 @@ def plot_value_distributions(
 
     numeric_plots_saved = 0
     categorical_plots_saved = 0
+    
+    # Extract the first color from the validated palette for continuous plots
+    continuous_color = _get_consistent_palette(keys=["_base_color"], palette_name=palette)["_base_color"]
 
     with sns.plotting_context("notebook", font_scale=font_scaling):
         for col_name in columns_to_plot:
@@ -97,7 +106,8 @@ def plot_value_distributions(
                         x=df[col_name].dropna(), 
                         kde=True, 
                         bins=30,
-                        stat="percent" if mode == "percentage" else "count"
+                        stat="percent" if mode == "percentage" else "count",
+                        color=continuous_color
                     )
                     
                     # Set y axis limit to 100% if in percentage mode and the max is above 100
@@ -145,6 +155,9 @@ def plot_value_distributions(
                     # Get category order by frequency
                     order = temp_series.value_counts().index
                     
+                    # Generate a consistent palette based on the category names
+                    cat_palette = _get_consistent_palette(order.tolist(), palette_name=palette)
+                    
                     if mode == "percentage":
                         prop_series = temp_series.value_counts(normalize=True).rename('percent').reset_index()
                         prop_series['percent'] *= 100
@@ -153,14 +166,16 @@ def plot_value_distributions(
                             x=col_name,
                             y='percent',
                             order=order,
-                            palette="Oranges"
+                            hue=col_name,
+                            palette=cat_palette,
+                            legend=False
                         )
                         plt.ylabel("Percentage (%)")
                     else:
                         sns.countplot(
                             x=temp_series, 
                             order=order, 
-                            palette="Oranges", 
+                            palette=cat_palette, 
                             hue=temp_series, 
                             legend=False
                         )
@@ -203,10 +218,11 @@ def plot_value_distributions(
 def plot_value_distributions_multi(
     named_dataframes: dict[str, pd.DataFrame],
     save_dir: Union[str, Path],
-    max_categories: int = 50,
+    max_categories: int = 20,
     fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
-    mode: Literal["count", "percentage"] = "percentage"
+    mode: Literal["count", "percentage"] = "percentage",
+    palette: str = "husl"
 ):
     """
     Plots and saves the value distributions for all columns across multiple DataFrames.
@@ -226,6 +242,11 @@ def plot_value_distributions_multi(
         fill_na_with (str): A string to replace NaN values in categorical columns.
         font_scaling (float): Scaling factor for all fonts in the generated plots.
         mode (Literal["count", "percentage"]): Whether to plot absolute counts or relative percentages.
+        palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
+    
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -266,6 +287,10 @@ def plot_value_distributions_multi(
     
     # Filter columns to plot (excluding the temporary label column)
     columns_to_plot = [col for col in plot_df.columns if col != SECRET_COLUMN_NAME]
+    
+    # Add the palette generation:
+    dataset_names = list(named_dataframes.keys())
+    target_palette = _get_consistent_palette(dataset_names, palette_name=palette)
 
     numeric_plots_saved = 0
     categorical_plots_saved = 0
@@ -287,7 +312,8 @@ def plot_value_distributions_multi(
                     ax = sns.histplot(
                         data=plot_data, 
                         x=col_name, 
-                        hue=SECRET_COLUMN_NAME, 
+                        hue=SECRET_COLUMN_NAME,
+                        palette=target_palette,
                         kde=True, 
                         common_norm=False, 
                         bins=30, 
@@ -345,6 +371,7 @@ def plot_value_distributions_multi(
                             x=col_name,
                             y='percent',
                             hue=SECRET_COLUMN_NAME,
+                            palette=target_palette,
                             order=order,
                             ax=ax
                         )
@@ -354,6 +381,7 @@ def plot_value_distributions_multi(
                             data=plot_data, 
                             x=col_name, 
                             hue=SECRET_COLUMN_NAME, 
+                            palette=target_palette,
                             order=order,
                             ax=ax
                         )
@@ -397,7 +425,8 @@ def plot_numeric_overview_boxplot(
     strategy: Literal["value", "log", "scale"] = "value",
     handle_zero_variance: Literal["drop", "constant"] = "constant",
     show_means: bool = True,
-    font_scaling: float = 1.5
+    font_scaling: float = 1.5,
+    palette: str = "husl"
 ):
     """
     Creates a single boxplot showing the distribution and range of all numeric columns.
@@ -415,6 +444,11 @@ def plot_numeric_overview_boxplot(
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
         font_scaling (float): Multiplier for all text elements in the plot.
+        palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
+        
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     numeric_df = df.select_dtypes(include='number')
     
@@ -466,12 +500,15 @@ def plot_numeric_overview_boxplot(
     num_features = numeric_df.shape[1]
     fig_height = max(6, num_features * 0.8)
     
+    # Generate palette based on the columns currently present in numeric_df 
+    feature_palette = _get_consistent_palette(keys=numeric_df.columns.tolist(), palette_name=palette)
+    
     plt.figure(figsize=(12, fig_height))
     
     # Using orient='h' for better label readability with many features
     ax = sns.boxplot(data=numeric_df, 
                      orient='h', 
-                     palette="Set2", 
+                     palette=feature_palette, 
                      showmeans=show_means, 
                      meanprops={"marker":"D", "markerfacecolor":"white", "markeredgecolor":"black", "markersize":6})
     
@@ -527,7 +564,8 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
                                         plot_title: str = "Data Distribution",
                                         handle_zero_variance: Literal["drop", "constant"] = "constant",
                                         show_means: bool = True,
-                                        font_scaling: float = 1.5):
+                                        font_scaling: float = 1.5,
+                                        palette: str = "husl"):
     """
     Plots numeric overview boxplots using all strategies ("value", "log", "scale") in one go, saving each plot with a strategy-specific suffix.
     
@@ -540,6 +578,11 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
             - "constant": Set zero-variance columns to a constant value (0.0) after scaling, allowing them to be plotted.
         show_means (bool): If True, shows the mean value as a distinct marker on the boxplot.
         font_scaling (float): Multiplier for all text elements in the plot.
+        palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
+        
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     
     strategies: tuple[Literal["value", "log", "scale"], ...] = ("value", "log", "scale")
@@ -552,7 +595,8 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
             strategy=strategy,
             handle_zero_variance=handle_zero_variance,
             show_means=show_means,
-            font_scaling=font_scaling
+            font_scaling=font_scaling,
+            palette=palette
         )
 
 
@@ -561,7 +605,8 @@ def plot_continuous_vs_target(
     df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
     verbose: int = 1,
-    font_scaling: float = 1.5
+    font_scaling: float = 1.5,
+    palette: str = "husl"
 ):
     """
     Plots each continuous feature from df_continuous against each target in df_targets.
@@ -578,11 +623,16 @@ def plot_continuous_vs_target(
         save_dir (str | Path): The base directory where plots will be saved.
         verbose (int): Verbosity level for logging warnings.
         font_scaling (float): Multiplier for all text elements in the plots.
-
+        palette (str): The name of the matplotlib/seaborn color palette to use.
+        
     Notes:
         - Only numeric features and numeric targets are processed.
         - Rows with NaN in either the feature or the target are dropped pairwise.
         - Assumes df_continuous and df_targets share the same index.
+        
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -612,6 +662,9 @@ def plot_continuous_vs_target(
 
     # 5. Main plotting loop
     total_plots_saved = 0
+    
+    # Extract the base color once
+    continuous_color = _get_consistent_palette(keys=["_base_color"], palette_name=palette)["_base_color"]
     
     with sns.plotting_context("notebook", font_scale=font_scaling):
         for target_name in valid_targets:
@@ -655,7 +708,7 @@ def plot_continuous_vs_target(
                 ax = plt.gca()
                 
                 # Plot the raw data points
-                ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5)
+                ax.plot(x, y, 'o', alpha=0.5, label='Data points', markersize=5, color=continuous_color)
                 
                 # Plot the regression line
                 if plot_regression_line:
@@ -695,11 +748,12 @@ def plot_categorical_vs_target(
     df_categorical: pd.DataFrame,
     df_targets: pd.DataFrame,
     save_dir: Union[str, Path],
-    max_categories: int = 50,
+    max_categories: int = 20,
     fill_na_with: str = "[MISSING DATA]",
     drop_empty_targets: bool = True,
     verbose: int = 1,
-    font_scaling: float = 1.5
+    font_scaling: float = 1.5,
+    palette: str = "husl"
 ):
     """
     Plots each feature in df_categorical against each numeric target in df_targets using box plots.
@@ -716,9 +770,14 @@ def plot_categorical_vs_target(
         drop_empty_targets (bool): If True, drops rows where the target value is NaN before plotting.
         verbose (int): Verbosity level for logging warnings.
         font_scaling (float): Multiplier for all text elements in the plots.
+        palette (str): The name of the matplotlib/seaborn color palette to use for differentiating categories.
 
     Notes:
         - Assumes df_categorical and df_targets share the same index.
+    
+    <br>
+    
+    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
     """
     # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -803,12 +862,26 @@ def plot_categorical_vs_target(
                     if verbose > 1:
                         _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique categories > {max_categories} max_categories.")
                     continue
+                
+                # Get category order
+                order = temp_df[feature_name].value_counts().index.tolist()
 
+                # Generate the consistent palette
+                cat_palette = _get_consistent_palette(keys=order, palette_name=palette)
+                
                 # 5. Create the plot
                 # Dynamic figure width based on number of categories
                 plt.figure(figsize=(max(10, n_unique * 0.8), 10))
                 
-                sns.boxplot(x=feature_name, y=target_name, data=temp_df)
+                sns.boxplot(
+                            x=feature_name, 
+                            y=target_name, 
+                            data=temp_df,
+                            order=order,
+                            hue=feature_name,      
+                            palette=cat_palette, 
+                            legend=False      
+                        )
 
                 plt.title(f'{target_name} vs {feature_name}')
                 # plt.xlabel(feature_name)
@@ -953,3 +1026,43 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         plt.show()
     
     plt.close()
+
+
+def _get_consistent_palette(
+    keys: list[str], 
+    palette_name: str = "tab10"
+) -> dict[str, tuple]:
+    """
+    Generates a consistent color palette mapping for a list of unique keys.
+    Validates the requested palette and falls back to a default if invalid.
+    
+    This guarantees that the same target (e.g., dataset name) or category 
+    always receives the exact same color across different plots.
+    
+    Args:
+        keys (list[str]): A list of unique identifiers (e.g., dataset names, column categories).
+        palette_name (str): The name of the matplotlib/seaborn color palette to use.
+        
+    Returns:
+        dict[str, tuple]: A dictionary mapping each key to an RGB color tuple.
+    """
+    # Ensure keys are unique while preserving their original order
+    unique_keys = list(dict.fromkeys(keys))
+    n_colors = len(unique_keys)
+    
+    DEFAULT_PALETTE = "tab10"  # Fallback palette that should always be valid in Seaborn/Matplotlib
+    
+    try:
+        # Try to generate the requested palette
+        colors = sns.color_palette(palette_name, n_colors=n_colors)
+    except ValueError:
+        # Catch the exception raised by an invalid palette string
+        _LOGGER.warning(
+            f"Palette '{palette_name}' is not valid. Defaulting to '{DEFAULT_PALETTE}'."
+        )
+        # Generate the fallback palette
+        colors = sns.color_palette(DEFAULT_PALETTE, n_colors=n_colors)
+        
+    # Create and return the mapping dictionary
+    return dict(zip(unique_keys, colors))
+
