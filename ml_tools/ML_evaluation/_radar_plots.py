@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Optional, List, Union
 
 from ..keys._keys import _EvaluationConfig
-from .._core import get_logger, wrap_text
+from .._core import get_logger
+from .._helpers import wrap_text
 
 
 _LOGGER = get_logger("Radar Plot")

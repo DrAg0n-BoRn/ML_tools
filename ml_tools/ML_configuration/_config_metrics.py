@@ -189,9 +189,10 @@ class _BaseRegressionFormat:
                  font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
-                 ideal_line_color: str='k',
+                 ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
+                 boxplot_palette: str = "PRGn",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         """
@@ -202,8 +203,7 @@ class _BaseRegressionFormat:
             scatter_color (str): Matplotlib color for the scatter plot points.
                 - Common color names: 'tab:blue', 'crimson', 'forestgreen', '#4682B4'
             scatter_alpha (float): Alpha transparency for scatter plot points.
-            ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the 
-                True vs. Predicted plot.
+            ideal_line_color (str): Matplotlib color for the 'ideal' y=x line in the plots.
                 - Common color names: 'k', 'red', 'darkgrey', '#FF6347'
             residual_line_color (str): Matplotlib color for the y=0 line in the 
                 Residual plot.
@@ -211,12 +211,18 @@ class _BaseRegressionFormat:
             hist_bins (int | str): The number of bins for the residuals histogram. 
                 Defaults to 'auto' to use seaborn's automatic bin selection.
                 - Options: 'auto', 'sqrt', 10, 20
+            boxplot_palette (str): The Seaborn color palette for the boxplot.
+                - Options: 'deep', 'muted', 'bright', 'pastel', 'dark', 'colorblind', 'husl', 'Set1', 'Set2'
             xtick_size (int): Font size for x-axis tick labels.
             ytick_size (int): Font size for y-axis tick labels.
         
         <br>
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
+        
+        <br>
+        
+        ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
         """
         # color validation
         _validate_color(scatter_color, "scatter_color")
@@ -231,6 +237,7 @@ class _BaseRegressionFormat:
         self.ideal_line_color = ideal_line_color
         self.residual_line_color = residual_line_color
         self.hist_bins = hist_bins
+        self.boxplot_palette = boxplot_palette
         self.xtick_size = xtick_size
         self.ytick_size = ytick_size
         
@@ -242,6 +249,7 @@ class _BaseRegressionFormat:
             f"ideal_line_color='{self.ideal_line_color}'",
             f"residual_line_color='{self.residual_line_color}'",
             f"hist_bins='{self.hist_bins}'",
+            f"boxplot_palette='{self.boxplot_palette}'",
             f"xtick_size={self.xtick_size}",
             f"ytick_size={self.ytick_size}"
         ]
@@ -598,9 +606,10 @@ class FormatRegressionMetrics(_BaseRegressionFormat):
                  font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
-                 ideal_line_color: str='k',
+                 ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
+                 boxplot_palette: str = "PRGn",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 
@@ -609,6 +618,7 @@ class FormatRegressionMetrics(_BaseRegressionFormat):
                          ideal_line_color=ideal_line_color, 
                          residual_line_color=residual_line_color, 
                          hist_bins=hist_bins,
+                         boxplot_palette=boxplot_palette,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size)
 
@@ -622,9 +632,10 @@ class FormatMultiTargetRegressionMetrics(_BaseRegressionFormat):
                  font_size: int=26,
                  scatter_color: str='tab:blue',
                  scatter_alpha: float=0.6,
-                 ideal_line_color: str='k',
+                 ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
+                 boxplot_palette: str = "PRGn",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 
@@ -633,6 +644,7 @@ class FormatMultiTargetRegressionMetrics(_BaseRegressionFormat):
                          ideal_line_color=ideal_line_color, 
                          residual_line_color=residual_line_color, 
                          hist_bins=hist_bins,
+                         boxplot_palette=boxplot_palette,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size)
 

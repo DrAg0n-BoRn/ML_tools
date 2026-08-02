@@ -16,7 +16,8 @@ from ..ML_configuration import FormatTabularDiffusionMetrics
 
 from ..keys._keys import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger, wrap_text
+from .._core import get_logger
+from .._helpers import wrap_text
 
 
 _LOGGER = get_logger("DiT Metrics")

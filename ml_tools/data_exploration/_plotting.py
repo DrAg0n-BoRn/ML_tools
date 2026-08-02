@@ -9,7 +9,10 @@ import seaborn as sns
 from pandas.api.types import is_numeric_dtype, is_object_dtype
 
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger, wrap_text
+from .._core import get_logger
+from .._helpers import wrap_text
+
+from .._helpers import _get_consistent_palette
 
 
 _LOGGER = get_logger("Data Exploration: Visualization")
@@ -60,7 +63,7 @@ def plot_value_distributions(
         
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -246,7 +249,7 @@ def plot_value_distributions_multi(
     
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     # 1. Setup save directories
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -448,7 +451,7 @@ def plot_numeric_overview_boxplot(
         
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     numeric_df = df.select_dtypes(include='number')
     
@@ -582,7 +585,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
         
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     
     strategies: tuple[Literal["value", "log", "scale"], ...] = ("value", "log", "scale")
@@ -632,7 +635,7 @@ def plot_continuous_vs_target(
         
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -777,7 +780,7 @@ def plot_categorical_vs_target(
     
     <br>
     
-    ### [Seaborn Palettes](https://seaborn.pydata.org/tutorial/color_palettes.html#tools-for-choosing-color-palettes)
+    ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
     # 1. Validate the base save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
@@ -1026,43 +1029,3 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         plt.show()
     
     plt.close()
-
-
-def _get_consistent_palette(
-    keys: list[str], 
-    palette_name: str = "tab10"
-) -> dict[str, tuple]:
-    """
-    Generates a consistent color palette mapping for a list of unique keys.
-    Validates the requested palette and falls back to a default if invalid.
-    
-    This guarantees that the same target (e.g., dataset name) or category 
-    always receives the exact same color across different plots.
-    
-    Args:
-        keys (list[str]): A list of unique identifiers (e.g., dataset names, column categories).
-        palette_name (str): The name of the matplotlib/seaborn color palette to use.
-        
-    Returns:
-        dict[str, tuple]: A dictionary mapping each key to an RGB color tuple.
-    """
-    # Ensure keys are unique while preserving their original order
-    unique_keys = list(dict.fromkeys(keys))
-    n_colors = len(unique_keys)
-    
-    DEFAULT_PALETTE = "tab10"  # Fallback palette that should always be valid in Seaborn/Matplotlib
-    
-    try:
-        # Try to generate the requested palette
-        colors = sns.color_palette(palette_name, n_colors=n_colors)
-    except ValueError:
-        # Catch the exception raised by an invalid palette string
-        _LOGGER.warning(
-            f"Palette '{palette_name}' is not valid. Defaulting to '{DEFAULT_PALETTE}'."
-        )
-        # Generate the fallback palette
-        colors = sns.color_palette(DEFAULT_PALETTE, n_colors=n_colors)
-        
-    # Create and return the mapping dictionary
-    return dict(zip(unique_keys, colors))
-

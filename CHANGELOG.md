@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.4.0] 2026-08-02
+
+### Added
+
+- ML_evaluation:
+    - `_eval_regression.py`: Added new numeric metrics (Mean Absolute Percentage Error (MAPE), Max Error, and Explained Variance) to the regression reports.
+    - `_eval_regression.py`: Added new visual diagnostics, including Q-Q Plots of Residuals, eCDF of Absolute Errors, and Absolute Error by Target Bin (Boxplots).
+    - `_eval_regression.py`: Added Hexbin Density plot logic for True vs. Predicted visualizations to better handle overplotting in large datasets.
+
+- ML_configuration:
+    - `_config_metrics.py`: Added `boxplot_palette` to `_BaseRegressionFormat` and its children for perfect configuration consistency with the segmentation and autoencoder modules.
+
+### Changed
+
+- ML_evaluation:
+    - `_eval_regression.py`: Refactored `regression_metrics` and `multi_target_regression_metrics` to use a shared engine of private helper functions, adhering to the DRY principle.
+    - `_eval_regression.py`: Removed Y-axis tick values from the Residuals Histogram to focus the viewer's attention purely on the distribution shape.
+    - `_eval_regression.py`: Universally removed line borders (`edgecolors='none'`) from all scatter-based plots (Residuals, True vs. Predicted, and Q-Q plots) to reduce visual clutter and improve the data-to-ink ratio.
+    - `_eval_regression.py`: Integrated the `_get_consistent_palette` helper into the Error Boxplot to ensure stable, correctly ordered gradient mapping across categorical target bins.
+    - `_eval_classification.py`: Refactored `classification_metrics` and `multi_label_classification_metrics` to share unified private helper functions for generating the Classification Heatmap, Confusion Matrix, ROC curve, PR curve, and Calibration plots.
+    - `_eval_classification.py`: Standardized plot titles across all classification configurations to a consistent two-row format.
+
+- Logging improvements and minor modular refactoring in the package.
+
+### Fixed
+
+- ML_evaluation:
+    - `_eval_classification.py`: Fixed `UndefinedMetricWarning`s in edge cases by explicitly setting `zero_division=0` in metric and report calculations.
+
+
 ## [24.3.2] 2026-08-01
 
 ### Fixed

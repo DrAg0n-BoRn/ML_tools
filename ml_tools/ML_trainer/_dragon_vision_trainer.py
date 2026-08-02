@@ -326,7 +326,7 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                 
             test_metrics_path = save_path / DragonTrainerKeys.TEST_METRICS_DIR
             
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{DragonTrainerKeys.VALIDATION_METRICS_DIR}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            classification_threshold=threshold_validated,
@@ -351,14 +351,14 @@ class DragonVisionTrainer(_BaseDragonTrainer):
             else: 
                 test_configuration_validated = None
             
-            _LOGGER.info(f"Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
+            _LOGGER.info(f"🔎 Evaluating on test dataset. Metrics will be saved to '{DragonTrainerKeys.TEST_METRICS_DIR}'")
             self._evaluate(save_dir=test_metrics_path,
                            model_checkpoint="current",
                            classification_threshold=threshold_validated,
                            data=test_data_validated,
                            format_configuration=test_configuration_validated)
         else:
-            _LOGGER.info(f"Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
+            _LOGGER.info(f"🔎 Evaluating on validation dataset. Metrics will be saved to '{validation_metrics_path.name}'")
             self._evaluate(save_dir=validation_metrics_path,
                            model_checkpoint=checkpoint_validated, # type: ignore
                            classification_threshold=threshold_validated,

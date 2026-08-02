@@ -8,7 +8,8 @@ from torch import nn
 from captum.attr import IntegratedGradients
 
 from ..path_manager import make_fullpath, sanitize_filename
-from .._core import get_logger, wrap_text
+from .._core import get_logger
+from .._helpers import wrap_text
 from ..keys._keys import CaptumKeys, _EvaluationConfig
 
 _LOGGER = get_logger("Captum")
@@ -99,7 +100,7 @@ def captum_feature_importance(model: nn.Module,
         raise ValueError()
 
     # --- 2. Iterate and Explain ---
-    _LOGGER.info(f"売 Calculating Captum importance for {len(target_names)} target(s)")
+    _LOGGER.info(f"⏳ Calculating Captum importance for {len(target_names)} target(s)")
     
     for i, name in enumerate(target_names):
         # Sanitize name for file saving

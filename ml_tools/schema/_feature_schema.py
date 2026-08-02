@@ -8,7 +8,7 @@ from .._core import get_logger
 from ..path_manager import make_fullpath
 from ..keys._keys import SchemaKeys, DatasetKeys, PytorchModelArchitectureKeys
 
-from .._core._schema_load_ops import prepare_schema_from_json
+from ._schema_load_ops import prepare_schema_from_json
 
 
 _LOGGER = get_logger("Feature Schema")
