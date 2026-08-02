@@ -1,42 +1,52 @@
 from typing import Union, Optional, Any, Literal
 from pathlib import Path
 
+from ..schema import FeatureSchema
+
 from .._core import get_logger
-from ..path_manager import make_fullpath
 from ..keys._keys import MLTaskKeys
 
-from ._base_model_config import _BaseModelParams
 
-
-_LOGGER = get_logger("ML Configuration")
+_LOGGER = get_logger("Training Configuration")
 
 
 __all__ = [    
-    # --- Training Config ---
     "DragonTrainingConfig",
-    "DragonParetoConfig",
-    "DragonOptimizerConfig",
 ]
 
 
-class DragonTrainingConfig(_BaseModelParams):
+class DragonTrainingConfig:
     """
     Configuration object for the training process.
     
-    Can be unpacked as a dictionary for logging or accessed as an object.
-    
     Accepts arbitrary keyword arguments which are set as instance attributes.
+    
+    Fully compatible with custom training loggers via `to_log()`.
     """
-    def __init__(self, *, #enforce keyword args for core params
-                 validation_size: float,
-                 test_size: float,
+    def __init__(self, *, #enforce keyword args
+                 finalized_filename: str,
                  initial_learning_rate: float,
                  batch_size: int,
-                 task: str,
                  device: str,
-                 finalized_filename: str,
-                 # optional targets
+                 task: Literal["regression",
+                               "multitarget regression",
+                               "binary classification",
+                               "multiclass classification",
+                               "multilabel binary classification",
+                               "binary image classification",
+                               "multiclass image classification",
+                               "binary segmentation",
+                               "multiclass segmentation",
+                               "object detection",
+                               "sequence-to-sequence",
+                               "sequence-to-value",
+                               "diffusion",
+                               "autoencoder"],
+                 # Optional for data splitting
+                 validation_size: Optional[float] = None,
+                 test_size: Optional[float] = None,
                  targets: Optional[Union[list[str], str]] = None,
+                 random_state: Optional[int] = None,
                  # optional for callbacks
                  weight_decay: Optional[float] = None,
                  early_stop_patience: Optional[int] = None,
@@ -46,14 +56,15 @@ class DragonTrainingConfig(_BaseModelParams):
                  **kwargs: Any) -> None:
         """
         Args:
-            validation_size (float): Proportion of data for validation set.
-            test_size (float): Proportion of data for test set.
-            initial_learning_rate (float): Starting learning rate.
-            batch_size (int): Number of samples per training batch.
-            task (str): Type of ML task (use TaskKeys).
-            device (str): Device to run training on.
-            finalized_filename (str): Filename for the Dragon ML Finalized-file.
+            finalized_filename (str): Name of the Finalized-file.
+            initial_learning_rate (float): Initial learning rate for the optimizer.
+            batch_size (int): Batch size for training.
+            device (str): Device to use for training (e.g., "cpu", "cuda:0").
+            task (str): Task type for training. Must be one of the predefined tasks in MLTaskKeys.ALL_TASKS.
+            validation_size (float | None): Optional fraction of data to use for validation (between 0 and 1).
+            test_size (float | None): Optional fraction of data to use for testing (between 0 and 1).
             targets (List[str] | str | None): Optional list of target column names or a single target name.
+            random_state (int | None): Optional random seed for reproducibility.
             weight_decay (float | None): Optional weight decay for optimizers.
             early_stop_patience (int | None): Optional patience for early stopping.
             scheduler_patience (int | None): Optional patience for learning rate scheduler.
@@ -61,23 +72,27 @@ class DragonTrainingConfig(_BaseModelParams):
             monitor_metric (str | None): Optional metric to monitor for callbacks (e.g., "Validation Loss").
             **kwargs: Additional training parameters as key-value pairs.
         """
-        self.validation_size = validation_size
-        self.test_size = test_size
+        self.finalized_filename = finalized_filename
         self.initial_learning_rate = initial_learning_rate
         self.batch_size = batch_size
         self.device = device
-        self.finalized_filename = finalized_filename    
-        self.targets = targets
-        self.weight_decay = weight_decay
-        self.early_stop_patience = early_stop_patience
-        self.scheduler_patience = scheduler_patience
-        self.scheduler_lr_factor = scheduler_lr_factor
-        self.monitor_metric = monitor_metric
+        
         # validate task
         if task not in MLTaskKeys.ALL_TASKS:
             _LOGGER.error(f"Invalid task '{task}'. Must be one of: {MLTaskKeys.ALL_TASKS}")
             raise ValueError()
         self.task = task
+        
+        # Optional parameters to be obtained through getter properties
+        self._validation_size = validation_size
+        self._test_size = test_size
+        self._targets = targets
+        self._random_state = random_state
+        self._weight_decay = weight_decay
+        self._early_stop_patience = early_stop_patience
+        self._scheduler_patience = scheduler_patience
+        self._scheduler_lr_factor = scheduler_lr_factor
+        self._monitor_metric = monitor_metric
         
         # Process kwargs with validation
         for key, value in kwargs.items():
@@ -98,127 +113,121 @@ class DragonTrainingConfig(_BaseModelParams):
                 raise TypeError()
             
             setattr(self, key, value)
-
-
-class DragonParetoConfig(_BaseModelParams):
-    """
-    Configuration object for the Pareto Optimization process.
-    """
-    def __init__(self,
-                 save_directory: Union[str, Path],
-                 target_objectives: dict[str, Literal["min", "max"]],
-                 continuous_bounds_map: Union[dict[str, tuple[float, float]], dict[str, list[float]], str, Path],
-                 columns_to_round: Optional[list[str]] = None,
-                 population_size: int = 500,
-                 generations: int = 1000,
-                 solutions_filename: str = "NonDominatedSolutions",
-                 float_precision: int = 4,
-                 log_interval: int = 10,
-                 plot_size: tuple[int, int] = (10, 7),
-                 plot_font_size: int = 16,
-                 discretize_start_at_zero: bool = True):
-        """  
-        Configure the Pareto Optimizer.
-
-        Args:
-            save_directory (str | Path): Directory to save artifacts.
-            target_objectives (Dict[str, "min"|"max"]): Dictionary mapping target names to optimization direction.
-                Example: {"price": "max", "error": "min"}
-            continuous_bounds_map (Dict): Bounds for continuous features {name: (min, max)}. Or a path/str to a directory containing the "optimization_bounds.json" file.
-            columns_to_round (List[str] | None): List of continuous column names that should be rounded to the nearest integer.
-            population_size (int): Size of the genetic population.
-            generations (int): Number of generations to run.
-            solutions_filename (str): Filename for saving Pareto solutions.
-            float_precision (int): Number of decimal places to round standard float columns.
-            log_interval (int): Interval for logging progress.
-            plot_size (Tuple[int, int]): Size of the 2D plots.
-            plot_font_size (int): Font size for plot text.
-            discretize_start_at_zero (bool): Categorical encoding start index. True=0, False=1.
-        """
-        # Validate string or Path
-        valid_save_dir = make_fullpath(save_directory, make=True, enforce="directory")
-        
-        if isinstance(continuous_bounds_map, (str, Path)):
-            continuous_bounds_map = make_fullpath(continuous_bounds_map, make=False, enforce="directory")
-        
-        self.save_directory = valid_save_dir
-        self.target_objectives = target_objectives
-        self.continuous_bounds_map = continuous_bounds_map
-        self.columns_to_round = columns_to_round
-        self.population_size = population_size
-        self.generations = generations
-        self.solutions_filename = solutions_filename
-        self.float_precision = float_precision
-        self.log_interval = log_interval
-        self.plot_size = plot_size
-        self.plot_font_size = plot_font_size
-        self.discretize_start_at_zero = discretize_start_at_zero
-
-
-class DragonOptimizerConfig(_BaseModelParams):
-    """
-    Configuration object for the Single-Objective DragonOptimizer.
-    """
-    def __init__(self,
-                 target_name: str,
-                 task: Literal["min", "max"],
-                 continuous_bounds_map: Union[dict[str, tuple[float, float]], str, Path],
-                 save_directory: Union[str, Path],
-                 save_format: Literal['csv', 'sqlite', 'both'] = 'csv',
-                 algorithm: Literal["SNES", "CEM", "Genetic"] = "Genetic",
-                 population_size: int = 500,
-                 generations: int = 1000,
-                 repetitions: int = 1,
-                 discretize_start_at_zero: bool = True,
-                 plot_size: tuple[int, int] = (10, 7),
-                 plot_font_size: int = 16,
-                 **searcher_kwargs: Any):
-        """
-        Args:
-            target_name (str): The name of the target variable to optimize.
-            task (str): The optimization goal, either "min" or "max".
-            continuous_bounds_map (Dict | str | Path): Dictionary {feature_name: (min, max)} or path to "optimization_bounds.json".
-            save_directory (str | Path): Directory to save results.
-            save_format (str): Format for saving results ('csv', 'sqlite', 'both').
-            algorithm (str): Search algorithm ("SNES", "CEM", "Genetic").
-            population_size (int): Population size for CEM and GeneticAlgorithm.
-            generations (int): Number of generations per repetition.
-            repetitions (int): Number of independent optimization runs.
-            discretize_start_at_zero (bool): True if discrete encoding starts at 0.
-            plot_size (tuple[int, int]): Size of the plots.
-            plot_font_size (int): Base Font size for the plots.
-            **searcher_kwargs: Additional arguments for the specific search algorithm 
-                               (e.g., stdev_init for SNES).
-        """
-        # Validate paths
-        self.save_directory = make_fullpath(save_directory, make=True, enforce="directory")
-        
-        if isinstance(continuous_bounds_map, (str, Path)):
-            self.continuous_bounds_map = make_fullpath(continuous_bounds_map, make=False, enforce="directory")
-        else:
-            self.continuous_bounds_map = continuous_bounds_map
-
-        # Core params
-        self.target_name = target_name
-        self.task = task
-        self.save_format = save_format
-        self.algorithm = algorithm
-        self.population_size = population_size
-        self.generations = generations
-        self.repetitions = repetitions
-        self.discretize_start_at_zero = discretize_start_at_zero
-        self.plot_size = plot_size
-        self.plot_font_size = plot_font_size
-        # Store algorithm specific kwargs
-        self.searcher_kwargs = searcher_kwargs
-
-        # Basic Validation
-        if self.task not in ["min", "max"]:
-             _LOGGER.error(f"Invalid task '{self.task}'. Must be 'min' or 'max'.")
-             raise ValueError()
-             
-        valid_algos = ["SNES", "CEM", "Genetic"]
-        if self.algorithm not in valid_algos:
-            _LOGGER.error(f"Invalid algorithm '{self.algorithm}'. Must be one of {valid_algos}.")
+    
+    ### Getter properties for optional parameters with validation ###
+    @property
+    def validation_size(self) -> float:
+        if self._validation_size is None:
+            _LOGGER.error("Validation size is not set.")
             raise ValueError()
+        return self._validation_size
+    
+    @property
+    def test_size(self) -> float:
+        if self._test_size is None:
+            _LOGGER.error("Test size is not set.")
+            raise ValueError()
+        return self._test_size
+    
+    @property
+    def targets(self) -> Union[list[str], str]:
+        if self._targets is None:
+            _LOGGER.error("Targets are not set.")
+            raise ValueError()
+        return self._targets
+    
+    @property
+    def random_state(self) -> int:
+        if self._random_state is None:
+            _LOGGER.error("Random state is not set.")
+            raise ValueError()
+        return self._random_state
+    
+    @property
+    def weight_decay(self) -> float:
+        if self._weight_decay is None:
+            _LOGGER.error("Weight decay is not set.")
+            raise ValueError()
+        return self._weight_decay
+    
+    @property
+    def early_stop_patience(self) -> int:
+        if self._early_stop_patience is None:
+            _LOGGER.error("Early stop patience is not set.")
+            raise ValueError()
+        return self._early_stop_patience
+    
+    @property
+    def scheduler_patience(self) -> int:
+        if self._scheduler_patience is None:
+            _LOGGER.error("Scheduler patience is not set.")
+            raise ValueError()
+        return self._scheduler_patience
+    
+    @property
+    def scheduler_lr_factor(self) -> float:
+        if self._scheduler_lr_factor is None:
+            _LOGGER.error("Scheduler learning rate factor is not set.")
+            raise ValueError()
+        return self._scheduler_lr_factor
+    
+    @property
+    def monitor_metric(self) -> Union[Literal["Validation Loss"], Literal["Training Loss"], str]:
+        if self._monitor_metric is None:
+            _LOGGER.error("Monitor metric is not set.")
+            raise ValueError()
+        return self._monitor_metric
+    
+    ### Logging and representation methods ###
+    def _get_public_state(self) -> dict[str, Any]:
+        """Safely extracts all public attributes, kwargs, and valid properties."""
+        state = {}
+        # 1. Capture direct attributes and dynamic kwargs
+        for k, v in self.__dict__.items():
+            if not k.startswith('_'):
+                state[k] = v
+                
+        # 2. Capture properties
+        properties = [
+            'validation_size', 
+            'test_size', 
+            'targets', 
+            'random_state',
+            'weight_decay', 
+            'early_stop_patience', 
+            'scheduler_patience',
+            'scheduler_lr_factor', 
+            'monitor_metric'
+        ]
+        
+        for prop in properties:
+            if getattr(self, f"_{prop}", None) is not None:
+                state[prop] = getattr(self, prop)
 
+        return state
+    
+    def to_log(self) -> dict[str, Any]:
+        """        
+        Returns a dictionary for JSON logging.
+        
+        Converts Path and FeatureSchema to strings if detected.
+        """
+        clean_dict = {}
+        for k, v in self._get_public_state().items():
+            if isinstance(v, FeatureSchema):
+                clean_dict[k] = repr(v)
+            elif isinstance(v, Path):
+                clean_dict[k] = str(v)
+            else:
+                clean_dict[k] = v
+        return clean_dict
+    
+    def __repr__(self) -> str:
+        """Returns a formatted multi-line string representation of the public state."""
+        class_name = self.__class__.__name__
+        params = []
+        for k, v in self._get_public_state().items():
+            params.append(f"  {k}={repr(v)}")
+            
+        params_str = ",\n".join(params)
+        return f"{class_name}(\n{params_str}\n)"

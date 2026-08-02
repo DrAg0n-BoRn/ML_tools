@@ -25,7 +25,7 @@ from ..ML_configuration._config_metrics import (_BaseRegressionFormat,
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from .._helpers import _get_consistent_palette
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
 
 from ._radar_plots import (
     mpl_to_plotly_rgba,

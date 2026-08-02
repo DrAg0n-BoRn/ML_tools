@@ -9,7 +9,7 @@ from ._eval_regression import regression_metrics
 from ._eval_classification import classification_metrics
 
 from ..path_manager import make_fullpath
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
 from .._core import get_logger
 
 _LOGGER = get_logger("Sequence Metrics")

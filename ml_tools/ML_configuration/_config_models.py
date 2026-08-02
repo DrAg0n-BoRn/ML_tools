@@ -23,6 +23,7 @@ __all__ = [
     "DragonDiTV2Params",
     # Sequence Models
     "DragonSequenceLSTMParams",
+    "DragonSequenceTransformerParams",
     # Image Classification Models
     "DragonResNetParams",
     "DragonEfficientNetParams",
@@ -297,14 +298,45 @@ class DragonDiTV2Params(_BaseModelParams):
 class DragonSequenceLSTMParams(_BaseModelParams):
     """Parameters for a Dragon Sequence LSTM model."""
     def __init__(self, *,
-                 prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
-                 hidden_size: int = 100,
-                 recurrent_layers: int = 1,
-                 dropout: float = 0.1) -> None:
+                schema: FeatureSchema,
+                targets: list[str],
+                prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
+                sequence_length: int,
+                hidden_size: int = 100,
+                recurrent_layers: int = 2,
+                dropout: float = 0.1,
+                bidirectional: bool = False):
+        self.schema = schema
+        self.targets = targets
         self.prediction_mode = prediction_mode
+        self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.recurrent_layers = recurrent_layers
         self.dropout = dropout
+        self.bidirectional = bidirectional
+        
+class DragonSequenceTransformerParams(_BaseModelParams):
+    """Parameters for a Dragon Sequence Transformer model."""
+    def __init__(self, *,
+                schema: FeatureSchema,
+                targets: list[str],
+                prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
+                sequence_length: int,
+                d_model: int = 128,
+                nhead: int = 4,
+                num_layers: int = 3,
+                dim_feedforward: int = 512,
+                dropout: float = 0.1):
+        self.schema = schema
+        self.targets = targets
+        self.prediction_mode = prediction_mode
+        self.sequence_length = sequence_length
+        self.d_model = d_model
+        self.nhead = nhead
+        self.num_layers = num_layers
+        self.dim_feedforward = dim_feedforward
+        self.dropout = dropout
+
         
 #############
 # Computer vision models

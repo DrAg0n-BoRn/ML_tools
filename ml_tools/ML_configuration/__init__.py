@@ -45,6 +45,7 @@ from ._config_models import (
     DragonDiTParams,
     DragonDiTV2Params,
     DragonSequenceLSTMParams,
+    DragonSequenceTransformerParams,
     DragonResNetParams,
     DragonEfficientNetParams,
     DragonVGGParams,
@@ -55,6 +56,9 @@ from ._config_models import (
 
 from ._config_training import (
     DragonTrainingConfig,
+)
+
+from ._config_optimization import (
     DragonParetoConfig,
     DragonOptimizerConfig
 )
@@ -106,15 +110,16 @@ __all__ = [
     "DragonDiTParams",
     "DragonDiTV2Params",
     "DragonSequenceLSTMParams",
+    "DragonSequenceTransformerParams",
     "DragonResNetParams",
     "DragonEfficientNetParams",
     "DragonVGGParams",
     "DragonFCNParams",
     "DragonDeepLabv3Params",
     "DragonFastRCNNParams",
-
     # --- Training Config ---
     "DragonTrainingConfig",
+    # --- Optimization Config ---
     "DragonParetoConfig",
     "DragonOptimizerConfig",
 ]

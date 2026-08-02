@@ -1,7 +1,8 @@
 import re
 import textwrap
 
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
+
 
 __all__ = [
     "check_and_abbreviate_name",

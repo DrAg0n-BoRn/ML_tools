@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.4.1] 2026-08-02
+
+### Changed
+
+- ML_configuration:
+    - Decoupled `DragonTrainingConfig` from `_BaseModelParams` to function as an independent class.
+        - Implemented a custom `to_log()` method in `DragonTrainingConfig` to ensure compatibility with `train_logger` and safe JSON serialization (string `Path` and `FeatureSchema` objects).
+        - Added a custom `__repr__()` method to `DragonTrainingConfig` to maintain formatted, readable multi-line string representations.
+        - Introduced the `_get_public_state()` private helper method to safely extract attributes, `**kwargs`, and initialized properties without triggering `ValueError` exceptions on unset optional parameters.
+
+- keys:
+    - Internal reorganization of `_keys.py` and `_config.py` to separate keys from internal configuration.
+
+- ML_configuration:
+    - `DragonSequenceLSTMParams`, updated to match the latest implementation of `DragonSequenceLSTM` model.
+
+### Added
+
+- ML_configuration:
+    - Added `DragonSequenceTransformerParams` to the public API for sequence model configuration.
+
 ## [24.4.0] 2026-08-02
 
 ### Added

@@ -9,7 +9,8 @@ import json
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import _OneHotOtherPlaceholder, SchemaKeys
+from ..keys._keys import SchemaKeys
+from ..keys._config import _OneHotOtherPlaceholder
 
 
 _LOGGER = get_logger("Dragon GUI")

@@ -18,7 +18,8 @@ from ..ML_configuration._config_metrics import FormatBinarySegmentationMetrics, 
 from ..path_manager import make_fullpath
 from .._core import get_logger
 from .._helpers import wrap_text
-from ..keys._keys import VisionKeys, _EvaluationConfig
+from ..keys._keys import VisionKeys
+from ..keys._config import _EvaluationConfig
 
 from ._radar_plots import save_radar_chart, mpl_to_plotly_rgba, calculate_smart_margin_left_right
 

@@ -6,7 +6,8 @@ from typing import Union
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import PyTorchLogKeys, _EvaluationConfig
+from ..keys._keys import PyTorchLogKeys
+from ..keys._config import _EvaluationConfig
 
 
 _LOGGER = get_logger("Loss Plot")

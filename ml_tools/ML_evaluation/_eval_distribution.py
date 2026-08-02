@@ -12,7 +12,7 @@ from ..ML_configuration._config_metrics import (FormatRegressionMetrics,
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
 
 
 _LOGGER = get_logger("Distribution Metrics")

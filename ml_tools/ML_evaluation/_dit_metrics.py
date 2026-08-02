@@ -14,7 +14,7 @@ from sklearn.metrics import roc_curve, roc_auc_score
 
 from ..ML_configuration import FormatTabularDiffusionMetrics
 
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from .._helpers import wrap_text

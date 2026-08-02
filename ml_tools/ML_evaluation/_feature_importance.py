@@ -10,7 +10,8 @@ import warnings
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
-from ..keys._keys import SHAPKeys, _EvaluationConfig
+from ..keys._keys import SHAPKeys
+from ..keys._config import _EvaluationConfig
 
 
 _LOGGER = get_logger("Feature Importance")

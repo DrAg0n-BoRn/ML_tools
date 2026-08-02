@@ -7,7 +7,8 @@ from torchmetrics.detection import MeanAveragePrecision
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionKeys, _EvaluationConfig
+from ..keys._keys import VisionKeys
+from ..keys._config import _EvaluationConfig
 
 
 _LOGGER = get_logger("Object Detection Metrics")

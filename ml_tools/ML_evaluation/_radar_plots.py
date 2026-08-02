@@ -3,7 +3,7 @@ import matplotlib.colors as mcolors
 from pathlib import Path
 from typing import Optional, List, Union
 
-from ..keys._keys import _EvaluationConfig
+from ..keys._config import _EvaluationConfig
 from .._core import get_logger
 from .._helpers import wrap_text
 
