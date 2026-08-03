@@ -102,19 +102,10 @@ def _save_residual_plot(y_pred: np.ndarray, residuals: np.ndarray, format_config
 def _save_true_vs_pred_plot(y_true: np.ndarray, y_pred: np.ndarray, format_config: _BaseRegressionFormat, save_path: Path, title: str):
     fig, ax = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
     
-    # Smart Density Plotting: Hexbin for large data, Scatter for small data
-    if len(y_true) > 2000:
-        # Create a custom colormap based on the user's chosen scatter color
-        custom_cmap = sns.light_palette(format_config.scatter_color, as_cmap=True)
-        hb = ax.hexbin(y_true, y_pred, gridsize=50, cmap=custom_cmap, mincnt=1)
-        cb = fig.colorbar(hb, ax=ax)
-        cb.set_label('Count', fontsize=format_config.font_size - 2)
-        cb.ax.tick_params(labelsize=format_config.ytick_size - 2)
-    else:
-        # Remove edge colors for data points
-        edge_color = 'none'
-        ax.scatter(y_true, y_pred, alpha=format_config.scatter_alpha, 
-                   color=format_config.scatter_color, edgecolors=edge_color, s=50 if len(y_true) < 1000 else 20)
+    # Remove edge colors for data points
+    edge_color = 'none'
+    ax.scatter(y_true, y_pred, alpha=format_config.scatter_alpha, 
+                color=format_config.scatter_color, edgecolors=edge_color, s=50 if len(y_true) < 1000 else 20)
         
     min_val = min(y_true.min(), y_pred.min())
     max_val = max(y_true.max(), y_pred.max())
@@ -204,8 +195,7 @@ def _save_ecdf_plot(abs_errors: np.ndarray, format_config: _BaseRegressionFormat
 
 def _save_error_boxplot(y_true: np.ndarray, abs_errors: np.ndarray, format_config: _BaseRegressionFormat, save_path: Path, title: str):
     """Boxplot of absolute errors binned by true target values."""
-    fig, ax = plt.subplots(figsize=(max(10, REGRESSION_PLOT_SIZE[0]), REGRESSION_PLOT_SIZE[1]), dpi=DPI_value)
-    
+        
     df = pd.DataFrame({'True': y_true, 'AbsError': abs_errors})
     # Safely bin targets into deciles (or fallback to fewer bins if low variance)
     try:
@@ -217,7 +207,13 @@ def _save_error_boxplot(y_true: np.ndarray, abs_errors: np.ndarray, format_confi
     ordered_bins = df['Bin'].cat.categories.tolist()
     
     palette_dict = _get_consistent_palette(ordered_bins, palette_name=format_config.boxplot_palette)
-        
+    
+    # Dynamically adjust figure width based on the number of bins
+    num_bins = len(ordered_bins)
+    dynamic_width = max(REGRESSION_PLOT_SIZE[0], num_bins * 1.5)
+    
+    fig, ax = plt.subplots(figsize=(dynamic_width, 9), dpi=DPI_value) # HARDCODED HEIGHT TO 9 FOR BETTER VISIBILITY OF BOXES
+    
     sns.boxplot(data=df, x='Bin', y='AbsError', ax=ax, palette=palette_dict, hue='Bin', legend=False, showfliers=False)
     
     ax.set_xlabel("Target Value Bins", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size)

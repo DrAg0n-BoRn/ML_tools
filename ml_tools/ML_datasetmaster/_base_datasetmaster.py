@@ -405,7 +405,7 @@ class _BaseDatasetMaker(ABC):
         self.save_target_names(directory=directory, verbose=verbose)
         if self.feature_scaler is not None or self.target_scaler is not None:
             self.save_scaler(directory=directory, verbose=verbose)
-        if self.class_map:
+        if self.class_map and len(self.class_map) > 0:
             self.save_class_map(directory=directory, verbose=verbose)
             
     def save_dataset_bundle(self, directory: Union[str, Path], verbose: bool=True) -> None:
@@ -421,8 +421,7 @@ class _BaseDatasetMaker(ABC):
         Args:
             directory (Union[str, Path]): The directory where the bundle will be saved. 
                 Parent directories will be created automatically if they do not exist.
-            verbose (bool, optional): Whether to output log messages indicating a 
-                successful save.
+            verbose (bool): Whether to output log messages indicating a successful save.
         """
         if not self.id: 
             _LOGGER.error("Must set the dataset `id` before saving the dataset bundle.")
@@ -430,11 +429,10 @@ class _BaseDatasetMaker(ABC):
         
         save_path = make_fullpath(directory, make=True, enforce="directory")
         
-        safe_val_test_split = f"Val{self.validation_split}_Test{self.test_split}".replace(".", "_")
         base_filename = DatasetKeys.DATASET_FILENAME
         sanitized_id = sanitize_filename(self.id)
-        filename = f"{base_filename}_{sanitized_id}_{safe_val_test_split}.pth"
-
+        
+        filename = f"{base_filename}_{sanitized_id}.pth"
         filepath = save_path / filename
         
         bundle = {
@@ -465,9 +463,45 @@ class _BaseDatasetMaker(ABC):
         
         if verbose:
             _LOGGER.info(f"Dataset bundle saved to '{filepath.name}'.")
+            
+        ### Save JSON report
+        report_filename = f"{DatasetKeys.JSON_REPORT_PREFIX}_{sanitized_id}.json"
+        train_split = round(1.0 - self.validation_split - self.test_split, 2)
+        
+        report_data = {
+            "dataset_id": self.id,
+            "number_of_features": self.number_of_features,
+            "number_of_targets": self.number_of_targets,
+            "feature_names": self.feature_names,
+            "target_names": self.target_names,
+            "split_sizes": {
+                "train": train_split,
+                "validation": self.validation_split,
+                "test": self.test_split
+            },
+            "number_of_samples": {
+                "train": self._X_train_shape[0],
+                "validation": self._X_val_shape[0],
+                "test": self._X_test_shape[0]
+            },
+            "classes": self.classes,
+            "class_map": self.class_map,
+            "scalers": {
+                "feature_scaler": self.feature_scaler is not None,
+                "target_scaler": self.target_scaler is not None
+            }
+        }
+        
+        save_json(
+            data=report_data,
+            directory=save_path,
+            filename=report_filename,
+            verbose=verbose
+        )
+
 
     @classmethod
-    def from_bundle(cls, filepath: Union[str, Path]):
+    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = False):
         """
         Alternative constructor to instantiate a dataset object from a saved bundle.
         
@@ -480,9 +514,10 @@ class _BaseDatasetMaker(ABC):
         Args:
             filepath (Union[str, Path]): The direct path to the `.pth` file, or a 
                 directory containing exactly one matching dataset bundle.
+            verbose (bool): Whether to log the loading process.
 
         Returns:
-            DatasetMaker: An instance of the class fully populated with the loaded 
+            DragonDataset: An instance of the class fully populated with the loaded 
                 datasets, scalers, and metadata.
         """
         target_filepath = make_fullpath(filepath, make=False)
@@ -567,6 +602,10 @@ class _BaseDatasetMaker(ABC):
         instance._val_ds, instance._X_val_shape, instance._y_val_shape = _build_ds(DatasetKeys.VALIDATION_SUBSET)
         instance._test_ds, instance._X_test_shape, instance._y_test_shape = _build_ds(DatasetKeys.TEST_SUBSET)
         
-        _LOGGER.info(f"Dataset loaded from '{target_filepath.name}' with ID '{instance.id}'.")
+        if verbose:
+            _LOGGER.info(
+                f"Dataset loaded from '{target_filepath.name}' with ID '{instance.id}'.\n"
+                f"{repr(instance)}"
+            )
 
         return instance

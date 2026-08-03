@@ -1,17 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from typing import Optional
 from pathlib import Path
 
-from ..optimization_tools import (
-    create_optimization_bounds, 
-    load_continuous_bounds_template,
-    plot_optimal_feature_distributions_from_dataframe
-)
+from ..optimization_tools import create_optimization_bounds, load_continuous_bounds_template
 from ..ML_inference import DragonInferenceHandler
 from ..schema import FeatureSchema
 from ..ML_configuration import DragonOptimizerConfig
+from ..data_exploration import plot_value_distributions, plot_pairgrid_continuous_vs_target
+
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from ..keys._keys import MLTaskKeys, ParetoOptimizationKeys
@@ -212,36 +209,60 @@ class DragonOptimizer:
                 # PairGrid and Distribution plots are most useful when we have a surface of solutions
                 if len(df_results) > 1:
                     # 2. Input Feature Distributions (Histograms/KDEs)
-                    plot_optimal_feature_distributions_from_dataframe(
-                        dataframe=df_results,
+                    plot_value_distributions(
+                        df=df_results,
                         save_dir=plot_dir,
-                        verbose=False,
-                        target_columns=[self.target_name] # Exclude target from being plotted as a feature
+                        categorical_columns=list(self.schema.categorical_feature_names)
                     )
                     
                     # 3. PairGrid: Top Continuous Features vs Target
-                    self._plot_feature_vs_target(df_results, plot_dir)
+                    continuous_cols = [c for c in self.schema.continuous_feature_names if c in df_results.columns]
+                    
+                    if continuous_cols and self.target_name in df_results.columns:
+                        df_continuous = df_results[continuous_cols]
+                        # Double brackets to keep it as a DataFrame rather than a Series
+                        df_targets = df_results[[self.target_name]] 
+                        
+                        plot_pairgrid_continuous_vs_target(
+                            df_continuous=df_continuous,
+                            df_targets=df_targets,
+                            save_dir=plot_dir,
+                            verbose=2
+                        )
+                    else:
+                        _LOGGER.debug("Skipping PairGrid plot: No continuous features found in results.")
                 else:
                     _LOGGER.debug("Skipping distribution/correlation plots: Requires repetitions > 1.")
 
             except Exception as e:
                 _LOGGER.error(f"Failed to load or plot result distributions from CSV: {e}")
-                
+    
     def _plot_optimization_history(self, log_df: pd.DataFrame, save_dir: Path):
-        """Generates convergence plots (Best/Mean/Worst) over generations."""
+        """Generates convergence plots (Best/Mean/Median/Worst) over generations."""
         fig, ax = plt.subplots(figsize=self.config.plot_size, dpi=ParetoOptimizationKeys.DPI)
         
-        # EvoTorch PandasLogger standard columns: 'iter', 'best_eval', 'mean_eval', 'worst_eval'
-        x_col = 'iter' if 'iter' in log_df.columns else log_df.index
+        # Extract the 1D data directly rather than using it as a column key
+        x_data = log_df['iter'] if 'iter' in log_df.columns else log_df.index
             
-        if 'best_eval' in log_df.columns:
-            ax.plot(log_df[x_col], log_df['best_eval'], label='Best Fitness', color='#55a868', linewidth=2)
+        # 1. Best Fitness (EvoTorch uses 'pop_best_eval' or 'best_eval')
+        if 'pop_best_eval' in log_df.columns:
+            ax.plot(x_data, log_df['pop_best_eval'], label='Best Fitness', color='#55a868', linewidth=2)
+        elif 'best_eval' in log_df.columns:
+            ax.plot(x_data, log_df['best_eval'], label='Best Fitness', color='#55a868', linewidth=2)
             
+        # 2. Mean Fitness
         if 'mean_eval' in log_df.columns:
-            ax.plot(log_df[x_col], log_df['mean_eval'], label='Mean Fitness', color='#4c72b0', linewidth=2)
+            ax.plot(x_data, log_df['mean_eval'], label='Mean Fitness', color='#4c72b0', linewidth=2)
             
+        # 3. Median Fitness (Great for identifying skewed populations)
+        if 'median_eval' in log_df.columns:
+            ax.plot(x_data, log_df['median_eval'], label='Median Fitness', color='#e28743', linestyle='-.', linewidth=1.5)
+            
+        # 4. Worst Fitness
         if 'worst_eval' in log_df.columns:
-            ax.plot(log_df[x_col], log_df['worst_eval'], label='Worst Fitness', color='#c44e52', linestyle='--', alpha=0.7)
+            ax.plot(x_data, log_df['worst_eval'], label='Worst Fitness', color='#c44e52', linestyle='--', alpha=0.7)
+        elif 'pop_worst_eval' in log_df.columns:
+            ax.plot(x_data, log_df['pop_worst_eval'], label='Worst Fitness', color='#c44e52', linestyle='--', alpha=0.7)
             
         # Scientific Formatting
         base_font = self.config.plot_font_size
@@ -264,51 +285,5 @@ class DragonOptimizer:
         plt.savefig(save_path, bbox_inches='tight')
         plt.close()
         
-        _LOGGER.info(f"📈 Convergence history plot saved to: '{save_path}'")
+        _LOGGER.info(f"📈 Convergence history plot saved to: '{save_path}'")            
 
-    def _plot_feature_vs_target(self, df: pd.DataFrame, save_dir: Path):
-        """Plots a PairGrid of the top continuous features vs the single target."""
-        continuous_features = self.schema.continuous_feature_names
-        if not continuous_features:
-            _LOGGER.info("No continuous features found in schema; skipping PairGrid plot.")
-            return
-            
-        plot_cols = [c for c in continuous_features if c in df.columns]
-        if not plot_cols:
-            _LOGGER.info("No continuous features from schema are present in the results DataFrame; skipping PairGrid plot.")
-            return
-            
-        target = self.target_name
-        if target not in df.columns:
-            _LOGGER.warning(f"Target '{target}' not found in results DataFrame; skipping PairGrid plot.")
-            return
-            
-        if len(plot_cols) > 4:
-            corrs = df[plot_cols + [target]].corr(numeric_only=True)[target].abs().drop(target)
-            plot_cols = corrs.nlargest(4).index.tolist()
-            
-        vars_to_plot = plot_cols + [target]
-        
-        # PairGrid handles sizes differently (using height per facet), scale it relative to the config
-        facet_height = self.config.plot_size[1] / 2.3
-        
-        g = sns.PairGrid(df[vars_to_plot], height=facet_height)
-        g.map_upper(sns.scatterplot, alpha=0.6, color="#4c72b0", edgecolor="w")
-        g.map_lower(sns.kdeplot, fill=True, cmap="Blues", alpha=0.6)
-        g.map_diag(sns.histplot, kde=True, color="#4c72b0")
-        
-        # Scientific Formatting
-        base_font = self.config.plot_font_size
-        g.figure.suptitle(f"Feature vs Target Trade-offs ({target})", y=1.02, fontsize=base_font + 2)
-        
-        for ax in g.axes.flatten():
-            ax.xaxis.label.set_size(base_font)
-            ax.yaxis.label.set_size(base_font)
-            ax.tick_params(axis='both', labelsize=base_font - 2)
-            ax.grid(True, linestyle='--', alpha=0.3)
-            
-        save_path = save_dir / f"PairGrid_{sanitize_filename(target)}.svg"
-        plt.savefig(save_path, bbox_inches='tight')
-        plt.close()
-        
-        _LOGGER.info(f"📊 PairGrid plot saved to: '{save_path}'")

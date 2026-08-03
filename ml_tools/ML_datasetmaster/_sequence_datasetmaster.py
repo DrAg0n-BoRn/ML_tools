@@ -6,6 +6,7 @@ from typing import Literal, Union, Optional
 from pathlib import Path
 
 from ..ML_scaler import DragonScaler
+from ..IO_tools import save_json
 from ..schema import FeatureSchema
 from ..path_manager import make_fullpath
 from .._core import get_logger
@@ -46,11 +47,10 @@ class _PytorchSequenceDataset(Dataset):
         
         self._target_types = target_types
         
-        # 2. Mirror all internal attributes from _PytorchDataset
+        # 2. Mirror all internal attributes from _PytorchDataset except 'classes'
         self._feature_names = feature_names
         self._target_names = target_names
-        self._classes: list[str] = []
-        self._class_map: dict[str, int] = dict()
+        self._class_map: dict[str, dict[str, int]] = dict() # adapted to multivariate categorical targets
         self._feature_scaler: Optional[DragonScaler] = None
         self._target_scaler: Optional[DragonScaler] = None
         
@@ -199,6 +199,18 @@ class DragonDatasetSequence(_BaseDatasetMaker):
             t: DatasetKeys.TARGET_CATEGORICAL if t in schema.categorical_feature_names else DatasetKeys.TARGET_CONTINUOUS
             for t in self._target_names
         }
+        
+        # Populate class_map for categorical targets
+        self.class_map: dict[str, dict[str, int]] = {}
+        self.classes = list()  # vestige from base class, not used in sequence datasets
+
+        if schema.categorical_mappings:
+            for target_col in self._target_names:
+                if self._target_types[target_col] == DatasetKeys.TARGET_CATEGORICAL:
+                    if target_col in schema.categorical_mappings:
+                        self.class_map[target_col] = schema.categorical_mappings[target_col]
+                    elif verbose >= 1:
+                        _LOGGER.warning(f"Categorical target '{target_col}' lacks a mapping in FeatureSchema.categorical_mappings.")
 
         # --- 2. Chronological Splitting ---
         # Align column order with schema strictly
@@ -366,12 +378,17 @@ class DragonDatasetSequence(_BaseDatasetMaker):
             features = strided_data[:-1]
             # Targets are the shifted windows, selecting only target columns
             labels = strided_data[1:, :, self._target_indices]
-            
-        return _PytorchSequenceDataset(features, labels, 
+        
+        # propagate class_map for categorical targets to the dataset instance
+        subset_dataset = _PytorchSequenceDataset(features, labels,
                                labels_dtype=torch.float32,
                                feature_names=self._feature_names,
                                target_names=self._target_names,
                                target_types=self._target_types)
+        
+        subset_dataset._class_map = self.class_map
+        
+        return subset_dataset
     
     @property
     def last_dataset_sequence(self) -> numpy.ndarray:
@@ -392,10 +409,20 @@ class DragonDatasetSequence(_BaseDatasetMaker):
         return self._target_types
 
     def save_dataset_bundle(self, directory: Union[str, Path], verbose: bool = True) -> None:
-        """Saves datasets and sequence metadata into a unified dictionary."""
+        """
+        Saves the train, validation, and test sets along with all metadata 
+        to a single .pth file using dictionary serialization.
+        
+        Args:
+            directory (Union[str, Path]): The directory where the bundle will be saved. 
+                Parent directories will be created automatically if they do not exist.
+            verbose (bool): Whether to output log messages indicating a successful save.
+        """
         save_path = make_fullpath(directory, make=True, enforce="directory")
         safe_mode = self.prediction_mode.replace("-", "_").replace(" ", "_")
-        filename = f"{DatasetKeys.DATASET_FILENAME}_{self._id}_{safe_mode}_w{self.sequence_length}.pth"
+        
+        dataset_name_suffix = f"{self._id}_{safe_mode}"
+        filename = f"{DatasetKeys.DATASET_FILENAME}_{dataset_name_suffix}.pth"
         filepath = save_path / filename
 
         bundle = {
@@ -422,17 +449,71 @@ class DragonDatasetSequence(_BaseDatasetMaker):
             ScalerKeys.FEATURE_SCALER: self.feature_scaler._get_state() if self.feature_scaler else None,
             ScalerKeys.TARGET_SCALER: self.target_scaler._get_state() if self.target_scaler else None,
             DatasetKeys.CLASS_MAP: self.class_map,
-            DatasetKeys.CLASSES: self.classes,
+            DatasetKeys.CLASSES: list(), # vestige from base class, not used in sequence datasets
             DatasetKeys.LAST_SEQUENCE: self.last_dataset_sequence
         }
         
         torch.save(bundle, filepath)
         if verbose:
             _LOGGER.info(f"Sequence dataset bundle saved to '{filepath.name}'.")
+            
+        ### Save JSON report
+        report_filename = f"{DatasetKeys.JSON_REPORT_PREFIX}_{dataset_name_suffix}.json"
+        train_split = round(1.0 - self.validation_split - self.test_split, 2)
+
+        report_data = {
+            "dataset_id": self.id,
+            "prediction_mode": self.prediction_mode,
+            "sequence_length": self.sequence_length,
+            "number_of_features": self.number_of_features,
+            "number_of_targets": self.number_of_targets,
+            "feature_names": self.feature_names,
+            "target_names": self.target_names,
+            "target_types": self.target_types,
+            "split_sizes": {
+                "train": train_split,
+                "validation": self.validation_split,
+                "test": self.test_split
+            },
+            "number_of_windows": {
+                "train": self._X_train_shape[0],
+                "validation": self._X_val_shape[0],
+                "test": self._X_test_shape[0]
+            },
+            "class_map": self.class_map,
+            "scalers": {
+                "feature_scaler": self.feature_scaler is not None,
+                "target_scaler": self.target_scaler is not None
+            }
+        }
+
+        save_json(
+            data=report_data,
+            directory=save_path,
+            filename=report_filename,
+            verbose=verbose
+        )
+        
 
     @classmethod
-    def from_bundle(cls, filepath: Union[str, Path]) -> 'DragonDatasetSequence':
-        """Restores a DragonDatasetSequenceMulti from a saved bundle."""
+    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = False) -> 'DragonDatasetSequence':
+        """
+        Alternative constructor to instantiate a dataset object from a saved bundle.
+        
+        Bypasses standard initialization to reconstruct the entire state from a `.pth` 
+        file. This includes restoring metadata, reloading `DragonScaler` states, and 
+        rebuilding the Custom Dataset instances for the train, validation, and test 
+        subsets. If a directory is provided instead of a file, it will attempt to 
+        automatically resolve the `.pth` file using the default naming pattern.
+        
+        Args:
+            filepath (Union[str, Path]): The direct path to the `.pth` file, or a 
+                directory containing exactly one matching dataset bundle.
+            verbose (bool): Whether to log the loading process.
+        
+        Returns:
+            DragonDatasetSequence: An instance of the class fully populated with the loaded datasets, scalers, and metadata.
+        """
         target_filepath = make_fullpath(filepath, make=False)
         
         if not target_filepath.is_file():
@@ -471,7 +552,7 @@ class DragonDatasetSequence(_BaseDatasetMaker):
         instance._target_names = bundle.get(DatasetKeys.TARGET_NAMES, [])
         instance._id = bundle.get(DatasetKeys.ID, "")
         instance.class_map = bundle.get(DatasetKeys.CLASS_MAP, {})
-        instance.classes = bundle.get(DatasetKeys.CLASSES, [])
+        instance.classes = list()  # vestige from base class, not used in sequence datasets
         instance._target_types = bundle.get(DatasetKeys.TARGET_TYPES, {})
         instance._last_dataset_sequence = bundle.get(DatasetKeys.LAST_SEQUENCE)
 
@@ -513,7 +594,12 @@ class DragonDatasetSequence(_BaseDatasetMaker):
         instance._val_ds, instance._X_val_shape, instance._y_val_shape = _build_ds(DatasetKeys.VALIDATION_SUBSET)
         instance._test_ds, instance._X_test_shape, instance._y_test_shape = _build_ds(DatasetKeys.TEST_SUBSET)
         
-        _LOGGER.info(f"Dataset loaded from '{target_filepath.name}' with sequence length {instance.sequence_length}.")
+        if verbose:
+            _LOGGER.info(
+                f"Dataset loaded from '{target_filepath.name}' with ID '{instance.id}'.\n"
+                f"{repr(instance)}"
+            )
+        
         return instance
 
     def __repr__(self) -> str:

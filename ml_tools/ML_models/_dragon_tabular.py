@@ -110,36 +110,6 @@ class DragonTabularTransformer(_ArchitectureBuilder):
         # Added a LayerNorm to stabilize the pooled representations
         self.head_norm = nn.LayerNorm(embedding_dim)
         self.output_layer = nn.Linear(embedding_dim, out_targets)
-
-    # Used with CLS token (removed in favor of average pooling)
-    # def forward(self, x: torch.Tensor) -> torch.Tensor:
-    #     """Defines the forward pass of the model."""
-    #     # Get the batch size for later use
-    #     batch_size = x.shape[0]
-        
-    #     # 1. Get feature tokens from the tokenizer
-    #     # -> tokens shape: (batch_size, num_features, embedding_dim)
-    #     tokens = self.tokenizer(x)
-        
-    #     # 2. Prepend the [CLS] token to the sequence
-    #     # -> cls_tokens shape: (batch_size, 1, embedding_dim)
-    #     cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-    #     # -> full_sequence shape: (batch_size, num_features + 1, embedding_dim)
-    #     full_sequence = torch.cat([cls_tokens, tokens], dim=1)
-
-    #     # 3. Pass the full sequence through the Transformer Encoder
-    #     # -> transformer_out shape: (batch_size, num_features + 1, embedding_dim)
-    #     transformer_out = self.transformer_encoder(full_sequence)
-        
-    #     # 4. Isolate the output of the [CLS] token (it's the first one)
-    #     # -> cls_output shape: (batch_size, embedding_dim)
-    #     cls_output = transformer_out[:, 0]
-        
-    #     # 5. Pass the [CLS] token's output through the prediction head
-    #     # -> logits shape: (batch_size, out_targets)
-    #     logits = self.output_layer(cls_output)
-        
-    #     return logits
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -179,16 +149,6 @@ class DragonTabularTransformer(_ArchitectureBuilder):
         
     def __repr__(self) -> str:
         """Returns the developer-friendly string representation of the model."""
-        # parts = [
-        #     f"Tokenizer(features={len(self.schema.feature_names)}, dim={self.embedding_dim})",
-        #     "[CLS]",
-        #     f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads})",
-        #     f"PredictionHead(outputs={self.out_targets})"
-        # ]
-        
-        # arch_str = " -> ".join(parts)
-        
-        # return f"DragonTabularTransformer(arch: {arch_str})"
         parts = [
             f"Tokenizer(features={len(self.schema.feature_names)}, dim={self.embedding_dim})",
             f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads})",
@@ -268,83 +228,9 @@ class _FeatureTokenizer(nn.Module):
         all_tokens = self.layer_norm(all_tokens)
         
         return all_tokens
-
-
-
-# The original version of the Feature Tokenizer used simple learnable embeddings for numerical features, which may not capture complex non-linear relationships. 
-# The updated version uses Gaussian Fourier Features to transform numerical inputs into a richer representation, allowing the model to learn more complex patterns in the data.
-
-# class _FeatureTokenizer(nn.Module):
-#     """
-#     Transforms raw numerical and categorical features from any column order 
-#     into a sequence of embeddings.
-#     """
-#     def __init__(self,
-#                  schema: FeatureSchema,
-#                  embedding_dim: int):
-#         """
-#         Args:
-#             schema (FeatureSchema): 
-#                 The definitive schema object from data_exploration.
-#             embedding_dim (int): 
-#                 The dimension for all feature embeddings.
-#         """
-#         super().__init__()
-        
-#         # --- Get info from schema ---
-#         categorical_map = schema.categorical_index_map
-        
-#         if categorical_map:
-#             # Unpack the dictionary into separate lists
-#             self.categorical_indices = list(categorical_map.keys())
-#             cardinalities = list(categorical_map.values())
-#         else:
-#             self.categorical_indices = []
-#             cardinalities = []
-        
-#         # Derive numerical indices by finding what's not categorical
-#         all_indices = set(range(len(schema.feature_names)))
-#         categorical_indices_set = set(self.categorical_indices)
-#         self.numerical_indices = sorted(list(all_indices - categorical_indices_set))
-        
-#         self.embedding_dim = embedding_dim
-        
-#         # A learnable embedding for each numerical feature
-#         self.numerical_embeddings = nn.Parameter(torch.randn(len(self.numerical_indices), embedding_dim))
-        
-#         # A standard embedding layer for each categorical feature
-#         self.categorical_embeddings = nn.ModuleList(
-#             [nn.Embedding(num_embeddings=c, embedding_dim=embedding_dim) for c in cardinalities]
-#         )
-
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         """
-#         Processes features from a single input tensor and concatenates them
-#         into a sequence of tokens.
-#         """
-#         # Select the correct columns for each type using the stored indices
-#         x_numerical = x[:, self.numerical_indices].float()
-#         x_categorical = x[:, self.categorical_indices].long()
-
-#         # Process numerical features
-#         numerical_tokens = x_numerical.unsqueeze(-1) * self.numerical_embeddings
-        
-#         # Process categorical features
-#         categorical_tokens = []
-#         for i, embed_layer in enumerate(self.categorical_embeddings):
-#             # x_categorical[:, i] selects the i-th categorical column
-#             # (e.g., all values for the 'color' feature)
-#             token = embed_layer(x_categorical[:, i]).unsqueeze(1)
-#             categorical_tokens.append(token)
-        
-#         # Concatenate all tokens into a single sequence
-#         if not self.categorical_indices:
-#              all_tokens = numerical_tokens
-#         elif not self.numerical_indices:
-#              all_tokens = torch.cat(categorical_tokens, dim=1)
-#         else:
-#              all_categorical_tokens = torch.cat(categorical_tokens, dim=1)
-#              all_tokens = torch.cat([numerical_tokens, all_categorical_tokens], dim=1)
-        
-#         return all_tokens
-
+    
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes Gaussian Fourier Feature frequencies from weight decay.
+        """
+        return {"numerical_frequencies"}

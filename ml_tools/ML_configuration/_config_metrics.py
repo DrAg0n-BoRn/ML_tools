@@ -192,7 +192,7 @@ class _BaseRegressionFormat:
                  ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
-                 boxplot_palette: str = "PRGn",
+                 boxplot_palette: str = "Set2",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         """
@@ -609,7 +609,7 @@ class FormatRegressionMetrics(_BaseRegressionFormat):
                  ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
-                 boxplot_palette: str = "PRGn",
+                 boxplot_palette: str = "Set2",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 
@@ -635,7 +635,7 @@ class FormatMultiTargetRegressionMetrics(_BaseRegressionFormat):
                  ideal_line_color: str='red',
                  residual_line_color: str='red',
                  hist_bins: Union[int, str] = 'auto',
-                 boxplot_palette: str = "PRGn",
+                 boxplot_palette: str = "Set2",
                  xtick_size: int=22,
                  ytick_size: int=22) -> None:
         super().__init__(font_size=font_size, 

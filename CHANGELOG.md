@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [24.5.0] 2026-08-03
+
+### Changed
+
+- ML_datasetmaster:
+    - Updated the `from_bundle()` class methods in both `_BaseDatasetMaker` and `DragonDatasetSequence` to include a `verbose` parameter that neatly logs the dataset's formatted `__repr__` upon successful loading.
+    - ML_datasetmaster: Modified the `DragonDatasetSequence` initialization to automatically construct a nested `class_map` (`dict[str, dict[str, int]]`) for categorical targets by extracting mappings directly from the `FeatureSchema`, while deliberately keeping `classes` as an empty list to prevent multi-target ambiguity. Subset inherit the mapping.
+
+- ML_utilities:
+    - `DragonArtifactFinder`: Dropped the `strict` parameter and its corresponding method `set_strict_mode()`. The getter methods do not return 'None', instead they now raise an `AttributeError` if the requested artifact is missing, ensuring that users are immediately aware of any absent artifacts.
+    - `build_optimizer_params()`: Revamped to get non-decaying parameters directly from the model's `_get_non_decaying_parameters()` method, allowing for more flexible and model-specific weight decay configurations.
+
+- ML_models and ML_models_diffusion:
+    - `_get_non_decaying_parameters()` implemented in all models directly or indirectly inheriting from `_ArchitectureHandlerMixin`. Case-by-case override has been applied for:
+        - `DragonGateModel`
+        - `DragonNodeModel`
+        - `DragonTabularTransformer`
+        - `DragonAutoencoder`
+        - `DragonAutoencoderV2`
+        - `DragonDiT`
+        - `DragonDiTV2`
+        - `DragonDiTGuided`
+        - `DragonDiTGuidedV2`
+    
+- ML_optimization:
+    - `DragonOptimizer`: Removed the internal `_plot_feature_vs_target()` method, fully delegating its visualization logic to the new `plot_pairgrid_continuous_vs_target()` from the `data_exploration` module.
+    - `DragonOptimizer` and `DragonParetoOptimizer`: Upgraded feature distribution plotting by replacing `plot_optimal_feature_distributions_from_dataframe()` with `plot_value_distributions()`, leveraging the schema to neatly handle both continuous (Histogram + KDE) and categorical (Bar) variables.
+
+- data_exploration:
+    - `plot_continuous_vs_target()`: Changed the `palette` parameter to `color`.
+
+### Added
+
+- ML_datasetmaster:
+    - Added automatic JSON report generation to the `save_dataset_bundle()` methods in `_BaseDatasetMaker` and `DragonDatasetSequence`. Dataset bundles will now be accompanied by a comprehensive JSON file detailing crucial metadata, including split sizes, feature/target counts, sequence lengths, dataset shapes, scaler presence, and class maps.
+
+- data_exploration:
+    - Added `plot_pairgrid_continuous_vs_target()` which automatically identifies the top 4 most correlated numeric features for each target and plots them in a mixed PairGrid (scatter plots, 2D KDE density plots, and histograms).
+
+### Fixed
+
+- ML_evaluation:
+    - "True vs Predicted" scatter plot in regression will no longer use a hexbin density plot for large datasets, standardizing the output format.
+    - "Error Boxplot" in regression will now dynamically adjust the figure width based on the number of bins, ensuring that all boxes are clearly visible and not cramped together.
+
+### Removed
+
+- optimization_tools:
+    - Removed `_optimization_plots.py` entirely. Its core functions (`plot_optimal_feature_distributions` and `plot_optimal_feature_distributions_from_dataframe`) have been successfully superseded by the more robust visualization tools in the `data_exploration` module.
+
 ## [24.4.1] 2026-08-02
 
 ### Changed

@@ -242,3 +242,12 @@ class _BaseDragonDiTGuided(_ArchitectureHandlerMixin, nn.Module, ABC):
             "num_heads": self.num_heads,
             "depth": self.depth
         }
+    
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes positional embeddings and the CFG null token from weight decay.
+        """
+        return {
+            "pos_embed", 
+            "null_embedding"
+        }

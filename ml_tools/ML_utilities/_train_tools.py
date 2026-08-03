@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union, Any, Iterable
+from typing import Union, Iterable
 from torch import nn
 import torch
 
@@ -12,73 +12,10 @@ _LOGGER = get_logger("ML Utilities")
 
 
 __all__ = [
-    "build_optimizer_params",
     "set_parameter_requires_grad",
     "save_pretrained_transforms",
     "validate_torch_device"
 ]
-
-
-def build_optimizer_params(model: nn.Module, weight_decay: float = 0.01) -> list[dict[str, Any]]:
-    """
-    Groups model parameters to apply weight decay only to weights (matrices/embeddings),
-    while excluding biases and normalization parameters (scales/shifts).
-
-    This function uses a robust hybrid strategy:
-    1. It excludes parameters matching standard names (e.g., "bias", "norm").
-    2. It excludes any parameter with < 2 dimensions (vector parameters), which 
-       automatically catches unnamed BatchNorm/LayerNorm weights in Sequential containers.
-
-    Args:
-        model (nn.Module): 
-            The PyTorch model.
-        weight_decay (float): 
-            The L2 regularization coefficient for the weights. 
-            (Default: 0.01)
-
-    Returns:
-        List (List[Dict[str, Any]]): A list of parameter groups formatted for PyTorch optimizers.
-            - Group 0: 'params' = Weights (decay applied)
-            - Group 1: 'params' = Biases/Norms (decay = 0.0)
-    """
-    # 1. Hard-coded strings for explicit safety
-    no_decay_strings = {"bias", "LayerNorm", "BatchNorm", "GroupNorm", "norm.weight"}
-    
-    decay_params = []
-    no_decay_params = []
-    
-    # 2. Iterate only over trainable parameters
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-            
-        # Check 1: Name match
-        is_blacklisted_name = any(nd in name for nd in no_decay_strings)
-        
-        # Check 2: Dimensionality (Robust fallback)
-        # Weights/Embeddings are 2D+, Biases/Norm Scales are 1D
-        is_1d = param.ndim < 2
-
-        if is_blacklisted_name or is_1d:
-            no_decay_params.append(param)
-        else:
-            decay_params.append(param)
-    
-    if weight_decay == 0.0:
-        _LOGGER.info(f"Weight decay set to 0.0, all parameters will be treated as non-decaying (total: {len(decay_params) + len(no_decay_params)}).")
-    else:
-        _LOGGER.info(f"Weight decay {weight_decay}:\n    Decaying parameters: {len(decay_params)}\n    Non-decaying parameters: {len(no_decay_params)}")
-
-    return [
-        {
-            'params': decay_params,
-            'weight_decay': weight_decay,
-        },
-        {
-            'params': no_decay_params,
-            'weight_decay': 0.0,
-        }
-    ]
 
 
 def set_parameter_requires_grad(

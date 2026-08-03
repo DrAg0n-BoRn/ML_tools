@@ -56,9 +56,9 @@ class DragonNodeModel(_ArchitectureBuilder):
                  schema: FeatureSchema,
                  out_targets: int,
                  embedding_dim: int = 24,
-                 num_trees: int = 1024,
-                 num_layers: int = 2,
-                 tree_depth: int = 6,
+                 num_trees: int = 256,
+                 num_layers: int = 1,
+                 tree_depth: int = 4,
                  additional_tree_output_dim: int = 3,
                  max_features: Optional[int] = None,
                  input_dropout: float = 0.0,
@@ -78,11 +78,11 @@ class DragonNodeModel(_ArchitectureBuilder):
             num_trees (int, optional): 
                 Number of Oblivious Decision Trees per layer. NODE relies on a large number 
                 of trees (wider layers) compared to standard forests.
-                Suggested: 512 to 2048.
+                Suggested: 256 to 2048.
             num_layers (int, optional): 
                 Number of DenseODST layers. Since layers are densely connected, deeper 
                 networks increase memory usage significantly.
-                Suggested: 2 to 5.
+                Suggested: 1 to 3.
             tree_depth (int, optional): 
                 Depth of the oblivious trees. Oblivious trees are symmetric, so 
                 parameters scale with 2^depth.
@@ -258,3 +258,13 @@ class DragonNodeModel(_ArchitectureBuilder):
         }
         return config
 
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes NODE's oblivious tree routing and threshold parameters from weight decay.
+        """
+        return {
+            "response",                 # Leaf responses
+            "feature_selection_logits", # Routing probabilities
+            "feature_thresholds",       # Tree boundaries
+            "log_temperatures"          # Softmax temperatures
+        }

@@ -141,3 +141,9 @@ class _BaseDragonDiT(_ArchitectureHandlerMixin, nn.Module, ABC):
             "num_heads": self.num_heads,
             "depth": self.depth
         }
+        
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes the 3D positional embeddings from weight decay.
+        """
+        return {"pos_embed"}

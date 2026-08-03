@@ -191,3 +191,12 @@ class DragonAutoencoderV2(_BaseAutoencoder):
             "transformer_depth": self.transformer_depth,
             "transformer_heads": self.transformer_heads
         }
+        
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes Fourier frequencies and 3D feature identity (positional) embeddings from weight decay.
+        """
+        return {
+            "numerical_frequencies",
+            "feature_identity_embeddings"
+        }

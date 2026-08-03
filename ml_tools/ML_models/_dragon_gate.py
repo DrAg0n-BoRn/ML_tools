@@ -348,3 +348,12 @@ class DragonGateModel(_ArchitectureBuilder):
         }
         return config
     
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes GATE's tree structural parameters and feature masks from weight decay.
+        """
+        return {
+            "feature_masks", # GFLU and Decision Stump masks
+            "cut_points",    # Decision Stump boundaries
+            "leaf_responses" # Decision Stump leaf values
+        }

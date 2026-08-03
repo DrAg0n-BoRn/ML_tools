@@ -131,3 +131,12 @@ class DragonAutoencoder(_BaseAutoencoder):
             "embedding_dim": self.embedding_dim,
             "fourier_sigma": self.fourier_sigma
         }
+        
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Excludes Fourier frequencies and 3D feature identity (positional) embeddings from weight decay.
+        """
+        return {
+            "numerical_frequencies",
+            "feature_identity_embeddings"
+        }

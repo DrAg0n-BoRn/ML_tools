@@ -96,7 +96,8 @@ class DatasetKeys:
     VALIDATION_SUBSET = "validation_set"
     TEST_SUBSET = "test_set"
     # Dataset filename
-    DATASET_FILENAME = "dataset_bundle"
+    DATASET_FILENAME = "dragon-dataset_bundle"
+    JSON_REPORT_PREFIX = "dragon-dataset_report"
     
     # Sequence
     SEQUENCE_LENGTH = "sequence_length"

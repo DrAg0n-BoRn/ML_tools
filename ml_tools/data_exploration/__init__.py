@@ -22,6 +22,7 @@ from ._plotting import (
     plot_continuous_vs_target,
     plot_categorical_vs_target,
     plot_correlation_heatmap,
+    plot_pairgrid_continuous_vs_target
 )
 
 from ._features import (
@@ -63,6 +64,7 @@ __all__ = [
     "plot_continuous_vs_target",
     "plot_categorical_vs_target",
     "plot_correlation_heatmap",
+    "plot_pairgrid_continuous_vs_target",
     "encode_categorical_features",
     "encode_classification_target",
     "finalize_feature_schema",

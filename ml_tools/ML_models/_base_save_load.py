@@ -96,6 +96,14 @@ class _ArchitectureHandlerMixin:
         Base implementation simply returns the config as-is.
         """
         return config
+    
+    # For weight decay grouping, child classes can override this method to specify custom non-decaying parameters.
+    def _get_non_decaying_parameters(self) -> set[str]:
+        """
+        Returns a set of parameter names that should be excluded from weight decay.
+        Should be overridden by child classes for custom behavior.
+        """
+        return set()
 
 
 ##################################

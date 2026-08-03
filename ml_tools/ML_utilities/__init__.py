@@ -11,10 +11,13 @@ from ._inspection import (
 )
 
 from ._train_tools import (
-    build_optimizer_params,
     set_parameter_requires_grad,
     save_pretrained_transforms,
     validate_torch_device
+)
+
+from ._weight_decay_builder import (
+    build_optimizer_params
 )
 
 from .._core import _imprimir_disponibles

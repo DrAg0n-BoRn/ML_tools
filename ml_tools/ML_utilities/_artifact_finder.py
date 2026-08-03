@@ -38,14 +38,12 @@ class DragonArtifactFinder:
                  directory: Union[str, Path], 
                  load_scaler: bool, 
                  load_schema: bool,
-                 strict: bool = False,
                  verbose: int = 2) -> None:
         """
         Args:
             directory (str | Path): The path to the directory that contains training artifacts.
             load_scaler (bool): If True, requires and searches for a scaler file `scaler_*.pth`.
             load_schema (bool): If True, requires and searches for a FeatureSchema file `FeatureSchema.json`.
-            strict (bool): If True, raises an error when attempting to get a missing artifact. If False, returns None for missing artifacts silently.
             verbose (int): Displays the missing artifacts in the directory or a success message.
         """
         # validate directory
@@ -58,13 +56,13 @@ class DragonArtifactFinder:
             
         parsing_dict = _find_model_artifacts(target_directory=dir_path, load_scaler=load_scaler, verbose=inner_verbose)
         
+        self._dir_path = dir_path
         self._weights_path = parsing_dict[PytorchArtifactPathKeys.WEIGHTS_PATH]
         self._feature_names_path = parsing_dict[PytorchArtifactPathKeys.FEATURES_PATH]
         self._target_names_path = parsing_dict[PytorchArtifactPathKeys.TARGETS_PATH]
         self._model_architecture_path = parsing_dict[PytorchArtifactPathKeys.ARCHITECTURE_PATH]
         self._scaler_path = None
         self._schema = None
-        self._strict = strict
         
         if load_scaler:
             self._scaler_path = parsing_dict[PytorchArtifactPathKeys.SCALER_PATH]
@@ -119,7 +117,7 @@ class DragonArtifactFinder:
             loaded_artifacts.append("FeatureSchema File")
         
         if missing_artifacts:
-            if verbose >= 1 and self._strict:
+            if verbose >= 3:
                 missing_str = ", ".join(missing_artifacts)
                 _LOGGER.warning(f"Missing artifacts in '{dir_path.name}': {missing_str}.")
             
@@ -135,62 +133,56 @@ class DragonArtifactFinder:
         list_strings = load_list_strings(text_file=text_file_path, verbose=False)
         return list_strings
     
-    def set_strict_mode(self, strict: bool) -> None:
-        """Sets the strict mode for artifact access."""
-        self._strict = strict
-    
     @property
-    def feature_names(self) -> Union[list[str], None]:
+    def feature_names(self) -> list[str]:
         """Returns the feature names as a list of strings."""
-        if self._strict and not self._feature_names:
-            _LOGGER.error("No feature names loaded (Strict mode).")
-            raise ValueError()
+        if not self._feature_names:
+            _LOGGER.error("No feature names loaded.")
+            raise AttributeError()
         return self._feature_names
     
     @property
-    def target_names(self) -> Union[list[str], None]:
+    def target_names(self) -> list[str]:
         """Returns the target names as a list of strings."""
-        if self._strict and not self._target_names:
-            _LOGGER.error("No target names loaded (Strict mode).")
-            raise ValueError()
+        if not self._target_names:
+            _LOGGER.error("No target names loaded.")
+            raise AttributeError()
         return self._target_names
     
     @property
-    def weights_path(self) -> Union[Path, None]:
+    def weights_path(self) -> Path:
         """Returns the path to the state dictionary or Finalized-File `.pth`."""
-        if self._strict and self._weights_path is None:
-            _LOGGER.error("No weights file loaded (Strict mode).")
-            raise ValueError()
+        if self._weights_path is None:
+            _LOGGER.error("No weights file loaded.")
+            raise AttributeError()
         return self._weights_path
     
     @property
-    def model_architecture_path(self) -> Union[Path, None]:
+    def model_architecture_path(self) -> Path:
         """Returns the path to the model architecture json file."""
-        if self._strict and self._model_architecture_path is None:
-            _LOGGER.error("No model architecture file loaded (Strict mode).")
-            raise ValueError()
+        if self._model_architecture_path is None:
+            _LOGGER.error("No model architecture file loaded.")
+            raise AttributeError()
         return self._model_architecture_path
     
     @property
-    def scaler_path(self) -> Union[Path, None]:
+    def scaler_path(self) -> Path:
         """Returns the path to the scaler file."""
-        if self._strict and self._scaler_path is None:
-            _LOGGER.error("No scaler file loaded (Strict mode).")
-            raise ValueError()
-        else:
-            return self._scaler_path
+        if self._scaler_path is None:
+            _LOGGER.error("No scaler file loaded.")
+            raise AttributeError()
+        return self._scaler_path
         
     @property
-    def feature_schema(self) -> Union[FeatureSchema, None]:
+    def feature_schema(self) -> FeatureSchema:
         """Returns the FeatureSchema object."""
-        if self._strict and self._schema is None:
-            _LOGGER.error("No FeatureSchema loaded (Strict mode).")
-            raise ValueError()
-        else:
-            return self._schema
+        if self._schema is None:
+            _LOGGER.error("No FeatureSchema loaded.")
+            raise AttributeError()
+        return self._schema
         
     def __repr__(self) -> str:
-        dir_name = self._weights_path.parent.name if self._weights_path else "Unknown"
+        dir_name = str(self._dir_path)
         n_features = len(self._feature_names) if self._feature_names else "None"
         n_targets = len(self._target_names) if self._target_names else "None"
         scaler_status = self._scaler_path.name if self._scaler_path else "None"

@@ -18,7 +18,8 @@ from ..SQL import DragonSQL
 from ..ML_inference import DragonInferenceHandler
 from ..ML_inference._chain_inference import DragonChainInference
 from ..ML_configuration import DragonParetoConfig
-from ..optimization_tools import create_optimization_bounds, plot_optimal_feature_distributions_from_dataframe, load_continuous_bounds_template
+from ..data_exploration import plot_value_distributions
+from ..optimization_tools import create_optimization_bounds, load_continuous_bounds_template
 from ..utilities import save_dataframe_filename
 from ..IO_tools import save_json
 from ..schema import FeatureSchema
@@ -471,12 +472,13 @@ class DragonParetoOptimizer:
         # 4. Input Feature Distributions
         # This utilizes the existing tool to plot histograms/KDEs of the INPUTS that resulted in these Pareto optimal solutions.
         _LOGGER.debug("Generating input feature distribution plots...")
-        plot_optimal_feature_distributions_from_dataframe(
-            dataframe=df,
+
+        plot_value_distributions(
+            df=df,
             save_dir=save_dir,
-            verbose=False,
-            target_columns=self.ordered_target_names # Exclude targets from being plotted as features
+            categorical_columns=list(self.schema.categorical_feature_names)
         )
+        
 
     def _plot_parallel_coordinates(self, df: pd.DataFrame, save_dir: Path):
         """Creates a normalized parallel coordinates plot of the targets."""
