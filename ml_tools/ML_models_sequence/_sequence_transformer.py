@@ -188,3 +188,25 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
     def get_architecture_config(self) -> dict:
         """Returns the configuration of the model for serialization."""
         return self.model_hparams
+    
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"prediction_mode='{self.prediction_mode}', "
+            f"targets={len(self.targets)}, "
+            f"sequence_length={self.sequence_length}, "
+            f"in_features={self.in_features}, "
+            f"d_model={self.model_hparams['d_model']}, "
+            f"nhead={self.model_hparams['nhead']}, "
+            f"num_layers={self.model_hparams['num_layers']}, "
+            f"dim_feedforward={self.model_hparams['dim_feedforward']}, "
+            f"dropout={self.model_hparams['dropout']}"
+        )
+
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Transformer sequence model layers for the DragonFinetuner."""
+        return {
+            "embeddings": nn.ModuleList([self.input_projection, self.pos_encoder]),
+            "encoder": self.transformer_encoder,
+            "heads": self.target_heads
+        }

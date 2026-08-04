@@ -6,12 +6,11 @@ from torch import nn
 import numpy as np
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_scaler import DragonScaler
-from ..ML_evaluation import classification_metrics, regression_metrics, shap_summary_plot, plot_attention_importance
-from ..ML_evaluation import multi_target_regression_metrics, multi_label_classification_metrics, multi_target_shap_summary_plot
+from ..ML_evaluation import classification_metrics, regression_metrics, shap_summary_plot
+from ..ML_evaluation import multi_target_regression_metrics, multi_label_classification_metrics
 from ..ML_evaluation_captum import captum_feature_importance
 from ..ML_configuration import (FormatRegressionMetrics, 
                             FormatMultiTargetRegressionMetrics,
@@ -22,7 +21,8 @@ from ..ML_configuration import (FormatRegressionMetrics,
                             FinalizeMultiClassClassification,
                             FinalizeMultiLabelBinaryClassification,
                             FinalizeMultiTargetRegression,
-                            FinalizeRegression)
+                            FinalizeRegression,
+                            DragonCheckpointConfig)
 
 from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
 from .._core import get_logger
@@ -53,18 +53,18 @@ class DragonTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
-                 kind: Literal["regression", 
+                 kind: Union[Literal["regression", 
                                "binary classification", 
                                "multiclass classification", 
                                "multitarget regression", 
-                               "multilabel binary classification"],
+                               "multilabel binary classification"], str],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[list[_Callback]] = None,
                  criterion: Union[nn.Module,Literal["auto"]] = "auto", 
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         Initializes the DragonTrainer.
@@ -77,11 +77,14 @@ class DragonTrainer(_BaseDragonTrainer):
             kind (str): The specific general ML task to perform. Must be one of the supported task string literals.
             optimizer (torch.optim.Optimizer): The optimizer for training.
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device to run training on.
-            checkpoint_callback (Optional[DragonModelCheckpoint]): Callback to handle saving model checkpoints.
             early_stopping_callback (Optional[_DragonEarlyStopping]): Callback to stop training early if metric stops improving.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): Callback for learning rate scheduling.
             extra_callbacks (Optional[list[_Callback]]): Additional custom callbacks to apply during training.
             criterion (Union[nn.Module, Literal["auto"]]): The loss function. If "auto", it is inferred from the `kind` parameter.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Number of subprocesses to use for data loading.
             
         <br>
@@ -101,7 +104,7 @@ class DragonTrainer(_BaseDragonTrainer):
             device=device,
             save_dir=save_dir,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks
@@ -595,38 +598,16 @@ class DragonTrainer(_BaseDragonTrainer):
         self.model.to(self.device)
         shap_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.SHAP_DIR)
 
-        if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
-            shap_summary_plot(
-                model=self.model,
-                background_data=background_data,
-                instances_to_explain=instances_to_explain,
-                feature_names=feature_names,
-                save_dir=shap_save_dir,
-                explainer_type=explainer_type,
-                device=self.device
-            )
-        elif self.kind in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
-            if target_names is None:
-                target_names = self._get_dataset_attr(target_dataset, DatasetKeys.TARGET_NAMES)
-                if target_names is None:
-                    try:
-                        num_targets = self.model.output_layer.out_features # type: ignore
-                        target_names = [f"target_{i}" for i in range(num_targets)] # type: ignore
-                        _LOGGER.warning(f"Dataset has no '{DatasetKeys.TARGET_NAMES}' attribute. Using generic names.")
-                    except AttributeError:
-                        _LOGGER.error("Cannot determine target names for multi-target SHAP plot. Skipping.")
-                        return
+        shap_summary_plot(
+            model=self.model,
+            background_data=background_data,
+            instances_to_explain=instances_to_explain,
+            feature_names=feature_names,
+            save_dir=shap_save_dir,
+            explainer_type=explainer_type,
+            device=self.device
+        )
 
-            multi_target_shap_summary_plot(
-                model=self.model,
-                background_data=background_data,
-                instances_to_explain=instances_to_explain,
-                feature_names=feature_names, # type: ignore
-                target_names=target_names, # type: ignore
-                save_dir=shap_save_dir,
-                explainer_type=explainer_type,
-                device=self.device
-            )
 
     def explain_captum(self,
                        explain_dataset: Optional[Dataset] = None,
@@ -699,74 +680,6 @@ class DragonTrainer(_BaseDragonTrainer):
             device=self.device,
             verbose=verbose
         )
-
-    def _attention_helper(self, dataloader: DataLoader):
-        self.model.eval()
-        self.model.to(self.device)
-        
-        with torch.no_grad():
-            for features, target in dataloader:
-                features = features.to(self.device)
-                attention_weights = None
-                
-                _output, attention_weights = self.model.forward_attention(features) # type: ignore
-                
-                if attention_weights is not None:
-                    attention_weights = attention_weights.cpu()
-
-                yield attention_weights
-    
-    def explain_attention(self,
-                          feature_names: Optional[list[str]] = None, 
-                          explain_dataset: Optional[Dataset] = None,
-                          plot_n_features: int = 10):
-        """
-        Generates and saves a feature importance plot based on attention weights.
-
-        This method requires the model to support interpretable attention (having the `has_interpretable_attention` attribute).
-
-        Args:
-            feature_names (Optional[list[str]]): Names for the features for plot labeling. If None, it will be extracted from the Dataset.
-            explain_dataset (Optional[Dataset]): A specific dataset to explain. Defaults to the internal validation set if None.
-            plot_n_features (int): Number of top features to plot.
-        """
-        attention_save_dir = self._validate_save_dir(self.training_directory_root / DragonTrainerKeys.ATTENTION_DIR)
-        
-        if not getattr(self.model, 'has_interpretable_attention', False):
-            _LOGGER.warning("Model is not compatible with interpretable attention analysis. Skipping.")
-            return
-
-        dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
-        if not isinstance(dataset_to_use, Dataset):
-            _LOGGER.error("The explanation dataset is empty or invalid. Skipping attention analysis.")
-            return
-        
-        if feature_names is None:
-            feature_names = self._get_dataset_attr(dataset_to_use, DatasetKeys.FEATURE_NAMES)
-            if feature_names is None:
-                _LOGGER.error(f"Could not extract `feature_names` from the dataset for attention plot. It must be provided if the dataset object does not have a '{DatasetKeys.FEATURE_NAMES}' attribute.")
-                raise ValueError()
-        
-        explain_loader = DataLoader(
-            dataset=dataset_to_use, batch_size=32, shuffle=False,
-            num_workers=0 if self.device.type == 'mps' else self.dataloader_workers,
-            pin_memory=("cuda" in self.device.type)
-        )
-        
-        all_weights = []
-        for att_weights_b in self._attention_helper(explain_loader):
-            if att_weights_b is not None:
-                all_weights.append(att_weights_b)
-
-        if all_weights:
-            plot_attention_importance(
-                weights=all_weights,
-                feature_names=feature_names,
-                save_dir=attention_save_dir,
-                top_n=plot_n_features
-            )
-        else:
-            _LOGGER.error("No attention weights were collected from the model.")
         
     def finalize_model_training(self,
                                 finalize_config: Union[FinalizeRegression,

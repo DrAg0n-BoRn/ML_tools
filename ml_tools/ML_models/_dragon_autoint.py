@@ -228,12 +228,12 @@ class DragonAutoInt(_ArchitectureBuilder):
         
         return self.head(cross_term)
     
-    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 3):
+    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 2):
         """
         Performs data-aware initialization for the final head bias.
         """
         # 1. Prepare Data
-        if verbose >= 2:
+        if verbose >= 3:
             _LOGGER.info(f"Performing AutoInt data-aware initialization on up to {num_samples} samples...")
         device = next(self.parameters()).device
 
@@ -275,12 +275,12 @@ class DragonAutoInt(_ArchitectureBuilder):
                 if self.head.bias.shape == mean_target.shape:
                     self.head.bias.data = mean_target
                     if verbose >= 2:
-                        _LOGGER.info("AutoInt Initialization Complete. Ready to train.")
+                        _LOGGER.info("AutoInt data-aware initialization complete. Ready to train.")
                     _LOGGER.debug(f"Initialized AutoInt head bias to {mean_target.cpu().numpy()}")
                 elif self.head.bias.numel() == 1 and mean_target.numel() == 1:
                     self.head.bias.data = mean_target.view(self.head.bias.shape)
                     if verbose >= 2:
-                        _LOGGER.info("AutoInt Initialization Complete. Ready to train.")
+                        _LOGGER.info("AutoInt data-aware initialization complete. Ready to train.")
                     _LOGGER.debug(f"Initialized AutoInt head bias to {mean_target.item()}")
             else:
                 if verbose >= 1:
@@ -294,4 +294,37 @@ class DragonAutoInt(_ArchitectureBuilder):
             **self.model_hparams
         }
         return config
-
+    
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        s = (
+            f"out_targets={self.out_targets}, "
+            f"embedding_dim={self.model_hparams['embedding_dim']}, "
+            f"attn_embed_dim={self.model_hparams['attn_embed_dim']}, "
+            f"num_heads={self.model_hparams['num_heads']}, "
+            f"num_attn_blocks={self.model_hparams['num_attn_blocks']}, "
+            f"has_residuals={self.model_hparams['has_residuals']}, "
+            f"attention_pooling={self.model_hparams['attention_pooling']}"
+        )
+        if self.model_hparams['deep_layers']:
+            s += f", deep_layers_config='{self.model_hparams['layers']}'"
+            s += f", activation='{self.model_hparams['activation']}'"
+            
+        return s
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps AutoInt layers for the DragonFinetuner."""
+        components: dict[str, nn.Module] = {"embeddings": self.embedding_layer}
+        
+        if self.deep_layers_mod is not None:
+            components["deep_layers"] = self.deep_layers_mod
+            
+        # Group attention projections, multi-head attention blocks, and residuals
+        attn_modules = [self.attn_proj, self.self_attns]
+        if self.has_residuals:
+            attn_modules.append(self.V_res_embedding)
+            
+        components["attention_backbone"] = nn.ModuleList(attn_modules)
+        components["head"] = self.head
+        
+        return components

@@ -6,7 +6,6 @@ from torch import nn
 import numpy as np
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import classification_metrics, segmentation_metrics
@@ -19,7 +18,8 @@ from ..ML_configuration import (
     FinalizeBinaryImageClassification,
     FinalizeMultiClassImageClassification,
     FinalizeBinarySegmentation,
-    FinalizeMultiClassSegmentation
+    FinalizeMultiClassSegmentation,
+    DragonCheckpointConfig
 )
 
 from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys
@@ -47,17 +47,17 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
-                 kind: Literal["binary segmentation", 
+                 kind: Union[Literal["binary segmentation", 
                                "multiclass segmentation", 
                                "binary image classification", 
-                               "multiclass image classification"],
+                               "multiclass image classification"], str],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'], str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[list[_Callback]] = None,
                  criterion: Union[nn.Module, Literal["auto"]] = "auto", 
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         A trainer class for automating the training of PyTorch models on computer vision tasks.
@@ -70,11 +70,14 @@ class DragonVisionTrainer(_BaseDragonTrainer):
             kind (str): The specific vision task to perform. Must be one of the supported vision task string literals.
             optimizer (torch.optim.Optimizer): The optimizer for training.
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device to run training on.
-            checkpoint_callback (Optional[DragonModelCheckpoint]): Callback to handle saving model checkpoints.
             early_stopping_callback (Optional[_DragonEarlyStopping]): Callback to stop training early if metric stops improving.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): Callback for learning rate scheduling.
             extra_callbacks (Optional[list[_Callback]]): Additional custom callbacks to apply during training.
             criterion (Union[nn.Module, Literal["auto"]]): The loss function. If "auto", it is inferred from the `kind` parameter.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Number of subprocesses to use for data loading.
             
         <br>
@@ -93,7 +96,7 @@ class DragonVisionTrainer(_BaseDragonTrainer):
             device=device,
             save_dir=save_dir,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks

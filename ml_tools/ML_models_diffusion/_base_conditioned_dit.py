@@ -251,3 +251,22 @@ class _BaseDragonDiTGuided(_ArchitectureHandlerMixin, nn.Module, ABC):
             "pos_embed", 
             "null_embedding"
         }
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"embed_dim={self.embed_dim}, "
+            f"seq_len={self.seq_len}, "
+            f"num_heads={self.num_heads}, "
+            f"depth={self.depth}"
+        )
+        
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Guided DiT layers for the DragonFinetuner."""
+        return {
+            "time_mlp": self.time_mlp,
+            "target_mlp": self.target_mlp,
+            "blocks": self.blocks,
+            "head": self.final_layer,
+            "embeddings": nn.ParameterList([self.pos_embed, self.null_embedding])
+        }

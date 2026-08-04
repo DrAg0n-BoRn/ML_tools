@@ -1,9 +1,8 @@
 import numpy as np
 import torch
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 from pathlib import Path
 
-from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchLogKeys, PyTorchCheckpointKeys
 from .._core import get_logger
 
@@ -17,13 +16,13 @@ __all__ = [
     "DragonModelCheckpoint",
 ]
 
-
+# Not public anymore, used with DragonCheckpointConfig to create a callback internally in DragonTrainer.
 class DragonModelCheckpoint(_Callback):
     """
     Saves the model weights, optimizer state, LR scheduler state (if any), and epoch number to a directory with automated filename generation and rotation. 
     """
     def __init__(self, 
-                 monitor: Literal["Training Loss", "Validation Loss", "both"] = "Validation Loss",
+                 monitor: Union[Literal["Training Loss", "Validation Loss", "both"], str] = "Validation Loss",
                  save_three_best: bool = True, 
                  mode: Literal['min', 'max'] = 'min', 
                  verbose: int = 1):

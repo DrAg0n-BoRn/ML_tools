@@ -189,6 +189,8 @@ def shap_summary_plot(model,
 
 def plot_attention_importance(weights: list[torch.Tensor], feature_names: Optional[list[str]], save_dir: Union[str, Path], top_n: int = 10):
     """
+    DEPRECATED
+    
     Aggregates attention weights and plots global feature importance.
 
     The plot shows the mean attention for each feature as a bar, with the

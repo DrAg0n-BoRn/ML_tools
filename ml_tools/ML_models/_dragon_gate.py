@@ -273,13 +273,13 @@ class DragonGateModel(_ArchitectureBuilder):
             # No trees, just linear on top of GFLU
             return self.head(x)
 
-    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 3):
+    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 2):
         """
         Performs data-aware initialization for the global bias T0.
         This often speeds up convergence significantly.
         """
         # 1. Prepare Data
-        if verbose >= 2:
+        if verbose >= 3:
             _LOGGER.info(f"Performing GATE data-aware initialization on up to {num_samples} samples...")
         device = next(self.parameters()).device
             
@@ -328,12 +328,12 @@ class DragonGateModel(_ArchitectureBuilder):
                 if self.head.T0.shape == mean_target.shape:
                     self.head.T0.data = mean_target
                     if verbose >= 2:
-                        _LOGGER.info(f"GATE Initialization Complete. Ready to train.")
+                        _LOGGER.info(f"GATE data-aware initialization complete. Ready to train.")
                 elif self.head.T0.numel() == 1 and mean_target.numel() == 1: # type: ignore
                     # scalar case
                     self.head.T0.data = mean_target.view(self.head.T0.shape) # type: ignore
                     if verbose >= 2:
-                        _LOGGER.info("GATE Initialization Complete. Ready to train.")
+                        _LOGGER.info("GATE data-aware initialization complete. Ready to train.")
                 else:
                     _LOGGER.debug(f"Target shape mismatch for T0 init. Model: {self.head.T0.shape}, Data: {mean_target.shape}")
                     if verbose >= 1:
@@ -357,3 +357,33 @@ class DragonGateModel(_ArchitectureBuilder):
             "cut_points",    # Decision Stump boundaries
             "leaf_responses" # Decision Stump leaf values
         }
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"out_targets={self.out_targets}, "
+            f"embedding_dim={self.model_hparams['embedding_dim']}, "
+            f"gflu_stages={self.model_hparams['gflu_stages']}, "
+            f"num_trees={self.model_hparams['num_trees']}, "
+            f"tree_depth={self.model_hparams['tree_depth']}, "
+            f"chain_trees={self.model_hparams['chain_trees']}, "
+            f"tree_wise_attention={self.model_hparams['tree_wise_attention']}, "
+            f"binning_activation='{self.model_hparams['binning_activation']}', "
+            f"feature_mask_function='{self.model_hparams['feature_mask_function']}'"
+        )
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps GATE layers for the DragonFinetuner."""
+        components: dict[str, nn.Module] = {"embeddings": self.embedding_layer}
+        
+        if self.gflu_stages > 0:
+            components["gflu_backbone"] = self.gflus
+            
+        if self.num_trees > 0:
+            tree_modules: list[nn.Module] = [self.trees]
+            if self.tree_wise_attention:
+                tree_modules.append(self.tree_attention)
+            components["tree_backbone"] = nn.ModuleList(tree_modules)
+            
+        components["head"] = self.head
+        return components

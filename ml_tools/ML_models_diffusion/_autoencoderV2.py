@@ -200,3 +200,55 @@ class DragonAutoencoderV2(_BaseAutoencoder):
             "numerical_frequencies",
             "feature_identity_embeddings"
         }
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        s = (
+            f"embedding_dim={self.model_hparams['embedding_dim']}, "
+            f"numerical_embedding_type='{self.model_hparams['numerical_embedding_type']}', "
+            f"transformer_depth={self.model_hparams['transformer_depth']}, "
+            f"transformer_heads={self.model_hparams['transformer_heads']}"
+        )
+        
+        if self.model_hparams['numerical_embedding_type'] == 'fourier':
+            s += f", fourier_sigma={self.model_hparams['fourier_sigma']}"
+        elif self.model_hparams['numerical_embedding_type'] == 'ple':
+            s += f", ple_bins={self.model_hparams['ple_bins']}"
+            
+        return s
+
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps V2 Autoencoder layers and parameters for the DragonFinetuner."""
+        components = {}
+        
+        embeddings = nn.ModuleList([self.categorical_embeddings])
+        extra_params = nn.ParameterDict({
+            "feature_identity": self.feature_identity_embeddings
+        })
+        
+        # Handle conditional numerical embedding types
+        if self.numerical_indices:
+            if self.numerical_embedding_type == 'fourier':
+                embeddings.append(self.numerical_projection)
+                extra_params["numerical_frequencies"] = self.numerical_frequencies
+            elif self.numerical_embedding_type == 'ple':
+                extra_params["ple_embeddings"] = self.ple_embeddings
+                
+            if self.log_var_num is not None:
+                extra_params["log_var_num"] = self.log_var_num
+                
+        if self.categorical_indices and self.log_var_cat is not None:
+            extra_params["log_var_cat"] = self.log_var_cat
+            
+        components["embeddings"] = embeddings
+        components["encoder"] = self.transformer_encoder
+        components["vae_projections"] = nn.ModuleList([self.to_mu, self.to_logvar])
+        components["decoder_backbone"] = self.transformer_decoder
+        
+        decoder_heads = nn.ModuleList([self.categorical_decoders])
+        if self.numerical_indices:
+            decoder_heads.append(self.numerical_decoders)
+        components["decoder_heads"] = decoder_heads
+        
+        components["parameters"] = extra_params
+        return components

@@ -6,10 +6,9 @@ from torch import nn
 import numpy as np
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
-from ..ML_configuration import FormatRegressionMetrics, FormatMultiTargetRegressionMetrics, FinalizeRegression, FinalizeMultiTargetRegression
+from ..ML_configuration import FormatRegressionMetrics, FormatMultiTargetRegressionMetrics, FinalizeRegression, FinalizeMultiTargetRegression, DragonCheckpointConfig
 from ..ML_scaler import DragonScaler
 from ..ML_evaluation import regression_metrics, multi_target_regression_metrics, distribution_metrics, multi_target_distribution_metrics
 from ..ML_evaluation_captum import captum_feature_importance
@@ -41,14 +40,14 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
-                 kind: Literal["regression", "multitarget regression"],
+                 kind: Union[Literal["regression", "multitarget regression"], str],
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'], str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint] = None,
+                 device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
                  extra_callbacks: Optional[list[_Callback]] = None,
                  criterion: Union[nn.Module, Literal["auto"]] = "auto", 
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         Automates the training process of a PyTorch Model for probabilistic distribution prediction.
@@ -63,11 +62,14 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             kind (str): Used to redirect to the correct process. Must be either 'regression' or 'multitarget regression'.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
-            checkpoint_callback (DragonModelCheckpoint | None): Callback for saving model checkpoints.
             early_stopping_callback (DragonEarlyStopping | None): Callback to halt training based on validation.
             lr_scheduler_callback (DragonLRScheduler | None): Callback to adjust the learning rate.
             extra_callbacks (list[Callback] | None): A list of extra callbacks to use during training.
             criterion (nn.Module | "auto"): The loss function to use. If "auto", it will default to `nn.GaussianNLLLoss()`. Must be compatible with `(mean, target, variance)` inputs.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Subprocesses for data loading.
             
         Note:
@@ -81,7 +83,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             optimizer=optimizer,
             device=device,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks,

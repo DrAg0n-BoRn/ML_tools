@@ -129,12 +129,19 @@ class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
             'in_channels': self.in_channels,
             'model_name': self.model_name
         }
-
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
         return (
-            f"{self.__class__.__name__}(model='{self.model_name}', "
+            f"model_name='{self.model_name}', "
             f"in_channels={self.in_channels}, "
-            f"num_classes={self.num_classes})"
+            f"num_classes={self.num_classes}"
         )
-
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Faster R-CNN components for the DragonFinetuner."""
+        return {
+            "backbone": self.model.backbone,
+            "rpn": self.model.rpn,
+            "roi_heads": self.model.roi_heads,
+        }

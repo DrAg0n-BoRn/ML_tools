@@ -11,7 +11,7 @@ from pandas.api.types import is_numeric_dtype, is_object_dtype
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
 from .._helpers import wrap_text
-from .._helpers import _get_consistent_palette, get_valid_matplotlib_color, get_valid_seaborn_color
+from .._helpers import _get_consistent_palette, get_valid_matplotlib_color
 
 
 _LOGGER = get_logger("Data Exploration: Visualization")
@@ -24,8 +24,7 @@ __all__ = [
     "plot_numeric_overview_boxplot_macro",
     "plot_continuous_vs_target",
     "plot_categorical_vs_target",
-    "plot_correlation_heatmap",
-    "plot_pairgrid_continuous_vs_target",
+    "plot_correlation_heatmap"
 ]
 
 
@@ -236,7 +235,7 @@ def plot_value_distributions_multi(
     fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
     mode: Literal["count", "percentage"] = "percentage",
-    palette: str = "husl"
+    palette: str = "tab10"
 ):
     """
     Plots and saves the value distributions for all columns across multiple DataFrames.
@@ -440,7 +439,7 @@ def plot_numeric_overview_boxplot(
     handle_zero_variance: Literal["drop", "constant"] = "constant",
     show_means: bool = True,
     font_scaling: float = 1.5,
-    palette: str = "husl"
+    palette: str = "Set2"
 ):
     """
     Creates a single boxplot showing the distribution and range of all numeric columns.
@@ -579,7 +578,7 @@ def plot_numeric_overview_boxplot_macro(df: pd.DataFrame,
                                         handle_zero_variance: Literal["drop", "constant"] = "constant",
                                         show_means: bool = True,
                                         font_scaling: float = 1.5,
-                                        palette: str = "husl"):
+                                        palette: str = "Set2"):
     """
     Plots numeric overview boxplots using all strategies ("value", "log", "scale") in one go, saving each plot with a strategy-specific suffix.
     
@@ -1040,136 +1039,3 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         plt.show()
     
     plt.close()
-
-
-def plot_pairgrid_continuous_vs_target(
-    df_continuous: pd.DataFrame,
-    df_targets: pd.DataFrame,
-    save_dir: Union[str, Path],
-    verbose: int = 2,
-    font_scaling: float = 1.5,
-    color: str = "tab:purple"
-):
-    """
-    Plots a PairGrid of the top 4 most correlated continuous features against each target.
-
-    Automatically identifies the top 4 numeric features for each target based on 
-    absolute correlation. Generates a matrix with scatter plots on the upper triangle, 
-    2D density (KDE) plots on the lower triangle, and histograms on the diagonal.
-
-    If multiple targets are provided, plots are grouped inside a 'PairPlots' subdirectory.
-
-    Args:
-        df_continuous (pd.DataFrame): DataFrame containing continuous feature columns.
-        df_targets (pd.DataFrame): DataFrame containing numeric target columns.
-        save_dir (str | Path): Base directory for saving plots.
-        verbose (int): Verbosity level for logging.
-        font_scaling (float): Multiplier for all text elements in the plots.
-        color (str): A valid Seaborn color string for the plots.
-    
-    <br>
-    
-    ## [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
-    """
-    # 1. Validate numeric columns
-    valid_targets = [col for col in df_targets.columns if is_numeric_dtype(df_targets[col])]
-    if not valid_targets:
-        _LOGGER.error("No valid numeric target columns provided in df_targets.")
-        return
-
-    valid_features = [col for col in df_continuous.columns if is_numeric_dtype(df_continuous[col])]
-    if not valid_features:
-        _LOGGER.error("No valid numeric feature columns provided in df_continuous.")
-        return
-
-    # 2. Directory Management
-    base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
-    if len(valid_targets) > 1:
-        save_path = base_save_path / "PairPlots"
-        save_path.mkdir(parents=True, exist_ok=True)
-    else:
-        save_path = base_save_path
-
-    # Validate the requested base color
-    validated_color = get_valid_seaborn_color(color)
-    
-    # Generate a matching colormap for the 2D KDE (lower triangle) based on the palette color
-    custom_cmap = sns.light_palette(validated_color, as_cmap=True)
-
-    total_plots = 0
-
-    with sns.plotting_context("notebook", font_scale=font_scaling):
-        for target in valid_targets:
-            # Align data using concat to respect indices
-            temp_df = pd.concat([df_continuous[valid_features], df_targets[target]], axis=1)
-
-            # Drop NaNs to ensure accurate correlation calculations
-            temp_df = temp_df.dropna()
-            
-            if temp_df.empty:
-                if verbose >= 1:
-                    _LOGGER.warning(f"No valid data left for '{target}' after dropping NaNs. Skipping.")
-                continue
-
-            # 3. Autodetect Top 4 Features via Correlation
-            # Calculate absolute correlation with the target and drop the target's self-correlation
-            corrs = temp_df.corr(numeric_only=True)[target].abs().drop(target)
-            
-            # Select up to 4 of the highest correlated features
-            top_features = corrs.nlargest(4).index.tolist()
-            
-            if not top_features:
-                if verbose >= 1:
-                    _LOGGER.warning(f"Could not isolate correlated features for '{target}'.")
-                continue
-                
-            if verbose >= 3:
-                _LOGGER.info(f"Plotting PairGrid for '{target}'. Top features: {top_features}")
-
-            vars_to_plot = top_features + [target]
-
-            # --- Apply wrap_text to the columns ---
-            plot_df = temp_df[vars_to_plot].rename(columns=lambda x: wrap_text(x))
-
-            # 4. Create the Plot
-            # Adjust physical facet height relative to the requested font scaling
-            facet_height = max(4.0, 2.5 * font_scaling)
-            
-            g = sns.PairGrid(plot_df, height=facet_height)
-            
-            # Upper: Scatterplot
-            g.map_upper(sns.scatterplot, alpha=0.6, color=validated_color, edgecolor="w")
-            
-            # Lower: 2D Density Plot (Filled KDE)
-            g.map_lower(sns.kdeplot, fill=True, cmap=custom_cmap, alpha=0.6)
-            
-            # Diagonal: Histogram with KDE overlay
-            g.map_diag(sns.histplot, kde=True, color=validated_color)
-
-            # 5. Aesthetic Formatting
-            base_font = 12 * font_scaling
-            g.figure.suptitle(f"Feature vs Target Trade-offs - {target}", y=1.02, fontsize=base_font + 2)
-            
-            for ax in g.axes.flatten():
-                if ax is not None:
-                    ax.xaxis.label.set_size(base_font)
-                    ax.yaxis.label.set_size(base_font)
-                    ax.tick_params(axis='both', labelsize=base_font - 2)
-                    ax.grid(True, linestyle='--', alpha=0.3)
-            
-            # 6. Save Plot
-            safe_target = sanitize_filename(target)
-            plot_filename = f"PairGrid_{safe_target}.svg"
-            plot_path = save_path / plot_filename
-            
-            try:
-                g.savefig(plot_path, bbox_inches='tight')
-                total_plots += 1
-            except Exception as e:
-                _LOGGER.error(f"Failed to save PairGrid for '{target}'. Error: {e}")
-                
-            plt.close()
-
-    if verbose >= 2:
-        _LOGGER.info(f"Successfully saved {total_plots} PairGrid plot(s) to '{save_path.name}'.")
-        

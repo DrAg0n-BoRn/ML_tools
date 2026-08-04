@@ -5,11 +5,10 @@ import torch
 from torch import nn
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import object_detection_metrics
-from ..ML_configuration import FinalizeObjectDetection
+from ..ML_configuration import FinalizeObjectDetection, DragonCheckpointConfig
 
 from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys, DatasetKeys
 from .._core import get_logger
@@ -38,11 +37,11 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                  collate_fn: Callable, 
                  save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[list[_Callback]] = None,
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         Automates the training process of an Object Detection Model (e.g., DragonFastRCNN).
@@ -55,11 +54,14 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             save_dir (str | Path): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             optimizer (torch.optim.Optimizer): The optimizer.
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
-            dataloader_workers (int): Subprocesses for data loading.
-            checkpoint_callback (DragonModelCheckpoint | None): Callback to save the model.
             early_stopping_callback (DragonEarlyStopping | None): Callback to stop training early.
             lr_scheduler_callback (DragonLRScheduler | None): Callback to manage the LR scheduler.
             extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
+            dataloader_workers (int): Subprocesses for data loading.
             
         ## Note:
             This trainer is specialized. It does not take a `criterion` because object detection models like Faster R-CNN return a dictionary of losses directly from their forward pass during training.
@@ -70,7 +72,7 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             optimizer=optimizer,
             device=device,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks,

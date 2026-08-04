@@ -1,6 +1,5 @@
 from typing import Any
 from torch import nn
-import torch
 
 from .._core import get_logger
 

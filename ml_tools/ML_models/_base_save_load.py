@@ -5,6 +5,7 @@ import json
 from abc import ABC, abstractmethod
 
 from ..schema import FeatureSchema
+from ..ML_utilities import inspect_model_architecture
 
 from .._core import get_logger
 from ..path_manager import make_fullpath
@@ -32,7 +33,13 @@ class _ArchitectureHandlerMixin:
         pass
     
     def save_architecture(self: nn.Module, directory: Union[str, Path], verbose: bool = True): # type: ignore
-        """Saves the model's architecture to an "architecture.json" file."""
+        """
+        Saves the model's architecture to an "architecture.json" file.
+        
+        Args:
+            directory (Union[str, Path]): The directory where the architecture JSON will be saved.
+            verbose (bool): If True, logs the save operation.
+        """
         if not hasattr(self, 'get_architecture_config'):
             _LOGGER.error(f"Model '{self.__class__.__name__}' must have a 'get_architecture_config()' method to use this functionality.")
             raise AttributeError()
@@ -51,6 +58,10 @@ class _ArchitectureHandlerMixin:
         with open(full_path, 'w') as f:
             json.dump(config, f, indent=4)
         
+        # Save architecture summary txt
+        inspection_verbosity = 2 if verbose else 1
+        inspect_model_architecture(self, path_dir, verbose=inspection_verbosity)
+        
         if verbose:
             _LOGGER.info(f"Architecture for '{self.__class__.__name__}' saved as '{full_path.name}'")
 
@@ -58,7 +69,12 @@ class _ArchitectureHandlerMixin:
     def load_architecture(cls: type, file_or_dir: Union[str, Path], verbose: bool = True) -> nn.Module:
         """
         Loads a model architecture from a JSON file. 
+        
         If a directory is provided, the function will attempt to load the JSON file "architecture.json" inside.
+        
+        Args:
+            file_or_dir (Union[str, Path]): The path to the JSON file or directory containing the architecture JSON.
+            verbose (bool): If True, logs the load operation.
         """
         user_path = make_fullpath(file_or_dir)
         
@@ -104,6 +120,21 @@ class _ArchitectureHandlerMixin:
         Should be overridden by child classes for custom behavior.
         """
         return set()
+    
+    # for FineTuning, child classes can override this method to specify semantic components of the model.
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """
+        Returns a dictionary mapping logical component names to nn.Modules 
+        for the DragonFinetuner. 
+        
+        Base implementation returns named children. Child models can override 
+        this to group specific layers (e.g., embeddings, backbones, heads).
+        """
+        try:
+            return dict(self.named_children()) # type: ignore
+        except Exception as e:
+            _LOGGER.error(f"Error retrieving model named children: {e}")
+            raise e
 
 
 ##################################
@@ -138,22 +169,3 @@ class _ArchitectureBuilder(_ArchitectureHandlerMixin, nn.Module, ABC):
         
         config['schema'] = schema
         return config
-
-    def __repr__(self):
-        # 1. Format hyperparameters
-        hparams_str = ",\n  ".join([f"{k}={v}" for k, v in self.model_hparams.items()])
-        
-        # 2. Format child modules
-        child_lines = []
-        for name, module in self._modules.items():
-            mod_str = repr(module)
-            mod_str = nn.modules.module._addindent(mod_str, 2)
-            child_lines.append(f"  ({name}): {mod_str}")
-
-        # 3. Combine
-        main_str = f"{self.__class__.__name__}(\n  {hparams_str}\n"
-        if child_lines:
-            main_str += "\n".join(child_lines) + "\n"
-        main_str += ")"
-        return main_str
-

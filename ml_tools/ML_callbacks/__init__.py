@@ -3,9 +3,9 @@ from ._early_stop import (
     DragonPrecheltEarlyStopping,
 )
 
-from ._checkpoint import (
-    DragonModelCheckpoint,
-)
+# from ._checkpoint import (
+#     DragonModelCheckpoint,
+# )
 
 from ._scheduler import (
     DragonScheduler,
@@ -18,7 +18,6 @@ from .._core import _imprimir_disponibles
 __all__ = [
     "DragonPatienceEarlyStopping",
     "DragonPrecheltEarlyStopping",
-    "DragonModelCheckpoint",
     "DragonScheduler",
     "DragonPlateauScheduler",
 ]

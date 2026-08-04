@@ -67,7 +67,7 @@ class _PytorchDataset(Dataset):
         return self.features[index], self.labels[index]
     
     @property
-    def feature_names(self):
+    def feature_names(self) -> list[str]:
         if self._feature_names is not None:
             return self._feature_names
         else:
@@ -75,7 +75,7 @@ class _PytorchDataset(Dataset):
             raise AttributeError()
         
     @property
-    def target_names(self):
+    def target_names(self) -> list[str]:
         if self._target_names is not None:
             return self._target_names
         else:
@@ -83,19 +83,19 @@ class _PytorchDataset(Dataset):
             raise AttributeError()
 
     @property
-    def classes(self):
+    def classes(self) -> list[str]:
         return self._classes
     
     @property
-    def class_map(self):
+    def class_map(self) -> dict[str, int]:
         return self._class_map
     
     @property
-    def feature_scaler(self):
+    def feature_scaler(self) -> Optional[DragonScaler]:
         return self._feature_scaler
     
     @property
-    def target_scaler(self):
+    def target_scaler(self) -> Optional[DragonScaler]:
         return self._target_scaler
 
 

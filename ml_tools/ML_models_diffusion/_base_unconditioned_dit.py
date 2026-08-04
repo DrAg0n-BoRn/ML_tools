@@ -147,3 +147,21 @@ class _BaseDragonDiT(_ArchitectureHandlerMixin, nn.Module, ABC):
         Excludes the 3D positional embeddings from weight decay.
         """
         return {"pos_embed"}
+    
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"embed_dim={self.embed_dim}, "
+            f"seq_len={self.seq_len}, "
+            f"num_heads={self.num_heads}, "
+            f"depth={self.depth}"
+        )
+
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Unconditioned DiT layers for the DragonFinetuner."""
+        return {
+            "time_mlp": self.time_mlp,
+            "blocks": self.blocks,
+            "head": self.final_layer,
+            "positional_embeddings": nn.ParameterList([self.pos_embed])
+        }

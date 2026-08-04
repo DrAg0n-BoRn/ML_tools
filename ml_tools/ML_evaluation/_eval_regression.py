@@ -221,7 +221,7 @@ def _save_error_boxplot(y_true: np.ndarray, abs_errors: np.ndarray, format_confi
     ax.set_title(title, pad=_EvaluationConfig.LABEL_PADDING, fontsize=format_config.font_size + 2)
     
     ax.tick_params(axis='y', labelsize=format_config.ytick_size)
-    ax.tick_params(axis='x', labelsize=max(8, format_config.xtick_size - 2))
+    ax.tick_params(axis='x', labelsize=max(8, format_config.xtick_size - 6)) # Adjust x-tick size for better readability with many bins
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
     
     ax.spines['top'].set_visible(False)

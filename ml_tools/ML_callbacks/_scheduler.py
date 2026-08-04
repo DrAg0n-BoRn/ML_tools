@@ -1,5 +1,5 @@
 import torch
-from typing import Literal
+from typing import Literal, Union
 
 from ..keys._keys import PyTorchLogKeys
 from .._core import get_logger
@@ -110,7 +110,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
     This wrapper initializes the scheduler internally using the Trainer's optimizer, simplifying the setup process.
     """
     def __init__(self, 
-                 monitor: Literal["Training Loss", "Validation Loss"] = "Validation Loss",
+                 monitor: Union[Literal["Training Loss", "Validation Loss"], str] = "Validation Loss",
                  mode: Literal['min', 'max'] = 'min', 
                  factor: float = 0.1, 
                  patience: int = 5, 
@@ -122,7 +122,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
                  verbose: int = 1):
         """
         Args:
-            monitor ("Training Loss", "Validation Loss"): Metric to monitor.
+            monitor (Union[Literal["Training Loss", "Validation Loss"], str]): Metric to monitor.
             mode ('min', 'max'): One of 'min', 'max'.
             factor (float): Factor by which the learning rate will be reduced. new_lr = lr * factor.
             patience (int): Number of epochs with no improvement after which learning rate will be reduced.

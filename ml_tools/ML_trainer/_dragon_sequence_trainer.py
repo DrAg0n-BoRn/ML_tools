@@ -6,7 +6,6 @@ from torch import nn
 import numpy as np
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation._eval_sequence import (
@@ -20,7 +19,8 @@ from ..ML_scaler import DragonScaler
 from ..ML_configuration import (FormatSequenceValueMetrics,
                             FormatSequenceSequenceMetrics,
                             FinalizeSequenceSequencePrediction,
-                            FinalizeSequenceValuePrediction)
+                            FinalizeSequenceValuePrediction,
+                            DragonCheckpointConfig)
 
 from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
 from .._core import get_logger
@@ -51,15 +51,15 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
-                 kind: Literal["sequence-to-sequence", "sequence-to-value"],
+                 kind: Union[Literal["sequence-to-sequence", "sequence-to-value"], str],
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'], str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[list[_Callback]] = None,
                  target_types: Optional[dict[str, str]] = None,
                  criterion: Union[nn.Module, dict[str, nn.Module], Literal["auto"]] = "auto", 
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         Automates the training process of a PyTorch Sequence Model.
@@ -72,12 +72,15 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             kind (str): Task type ('sequence-to-sequence' or 'sequence-to-value'). 
             optimizer (torch.optim.Optimizer): PyTorch optimizer.
             device (str): Computing device ('cpu', 'cuda', 'mps').
-            checkpoint_callback: Callback for model checkpointing.
             early_stopping_callback: Callback for early stopping.
             lr_scheduler_callback: Callback for learning rate scheduling.
             extra_callbacks (List[Callback] | None): Additional custom callbacks.
             target_types (dict[str, str] | None): Optional mapping of target names to their types ('continuous' or 'categorical').
             criterion (nn.Module | dict | "auto"): Loss function. If "auto", infers MSE or CrossEntropy per target.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Subprocesses for data loading.
         """
         super().__init__(
@@ -86,7 +89,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             device=device,
             save_dir=save_dir,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks

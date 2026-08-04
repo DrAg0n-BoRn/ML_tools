@@ -147,18 +147,29 @@ class DragonTabularTransformer(_ArchitectureBuilder):
             'dropout': self.dropout
         }
         
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
-        parts = [
-            f"Tokenizer(features={len(self.schema.feature_names)}, dim={self.embedding_dim})",
-            f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads})",
-            "[MeanPool]",
-            f"PredictionHead(outputs={self.out_targets})"
-        ]
-        
-        arch_str = " -> ".join(parts)
-        
-        return f"DragonTabularTransformer(arch: {arch_str})"
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        pipeline = (
+            f"Tokenizer(features={len(self.schema.feature_names)}, dim={self.embedding_dim}) -> "
+            f"TransformerEncoder(layers={self.num_layers}, heads={self.num_heads}) -> "
+            f"[MeanPool] -> PredictionHead(outputs={self.out_targets})"
+        )
+        return (
+            f"out_targets={self.out_targets}, "
+            f"embedding_dim={self.embedding_dim}, "
+            f"num_heads={self.num_heads}, "
+            f"num_layers={self.num_layers}, "
+            f"dropout={self.dropout}\n"
+            f"Pipeline: {pipeline}"
+        )
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Transformer layers for the DragonFinetuner."""
+        return {
+            "tokenizer": self.tokenizer,
+            "encoder": self.transformer_encoder,
+            "head": nn.ModuleList([self.head_norm, self.output_layer])
+        }
 
 
 class _FeatureTokenizer(nn.Module):

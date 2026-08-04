@@ -5,6 +5,11 @@ from ._core_transforms import (
     RandomHistogramEqualization,
 )
 
+from ._pretrained_transforms import (
+    save_pretrained_transforms
+)
+
+
 from ._tiling import (
     make_tiled_dataset,
     make_tiled_inference,
@@ -44,6 +49,8 @@ __all__ = [
     "inspect_folder",
     # Offline Augmentation
     "create_offline_augmentations",
+    # Pretrained Transforms
+    "save_pretrained_transforms"
 ]
 
 

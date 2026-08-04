@@ -63,6 +63,10 @@ from ._config_optimization import (
     DragonOptimizerConfig
 )
 
+from ._config_checkpoint import (
+    DragonCheckpointConfig
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -122,6 +126,8 @@ __all__ = [
     # --- Optimization Config ---
     "DragonParetoConfig",
     "DragonOptimizerConfig",
+    # --- Checkpoint Config ---
+    "DragonCheckpointConfig"
 ]
 
 

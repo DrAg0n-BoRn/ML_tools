@@ -1,6 +1,6 @@
 import numpy as np
 from collections import deque
-from typing import Literal
+from typing import Literal, Union
 
 from ..keys._keys import PyTorchLogKeys
 from .._core import get_logger
@@ -43,7 +43,7 @@ class DragonPatienceEarlyStopping(_DragonEarlyStopping):
     Standard early stopping: Tracks minimum validation loss (or other metric) with a patience counter.
     """
     def __init__(self, 
-                 monitor: Literal["Training Loss", "Validation Loss"] = "Validation Loss", 
+                 monitor: Union[Literal["Training Loss", "Validation Loss"], str] = "Validation Loss", 
                  min_delta: float = 0.0, 
                  patience: int = 10, 
                  mode: Literal['min', 'max'] = 'min', 

@@ -7,12 +7,9 @@ from ._inspection import (
     get_model_parameters,
     inspect_model_architecture,
     inspect_pth_file,
-    select_features_by_shap
 )
 
 from ._train_tools import (
-    set_parameter_requires_grad,
-    save_pretrained_transforms,
     validate_torch_device
 )
 
@@ -30,9 +27,6 @@ __all__ = [
     "get_model_parameters",
     "inspect_model_architecture",
     "inspect_pth_file",
-    "set_parameter_requires_grad",
-    "save_pretrained_transforms",
-    "select_features_by_shap",
     "validate_torch_device"
 ]
 

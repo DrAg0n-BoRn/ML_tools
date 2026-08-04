@@ -8,9 +8,9 @@ from torch.utils.data import Dataset, DataLoader
 from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2
 from ..ML_configuration._config_finalize import FinalizeAutoencoder
 from ..ML_configuration._config_metrics import FormatAutoencoderMetrics
+from ..ML_configuration import DragonCheckpointConfig
 from ..ML_evaluation import autoencoder_metrics
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping, DragonPrecheltEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 
@@ -40,11 +40,11 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'],str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint],
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
                  extra_callbacks: Optional[list[_Callback]] = None,
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
         Automates the unsupervised training process of a DragonAutoencoder.
@@ -56,10 +56,13 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created.
             optimizer (torch.optim.Optimizer): The optimizer to use for training the model.
             device (Union[Literal['cuda', 'mps', 'cpu'],str]): The device to train on.
-            checkpoint_callback (Optional[DragonModelCheckpoint]): A callback to save model checkpoints during training. Can be None to disable checkpointing.
             early_stopping_callback (Optional[_DragonEarlyStopping]): A callback to perform early stopping based on a chosen metric. Can be None to disable early stopping. Must work with the uncertainty weighting loss technique, loss values can drop below zero.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): A callback to adjust the learning rate during training. Can be None to disable learning rate scheduling.
             extra_callbacks (Optional[list[_Callback]]): A list of any additional callbacks to use during training.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): The number of worker processes to use for data loading.
         """
         # Block incompatible params
@@ -72,7 +75,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             optimizer=optimizer,
             device=device,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks,

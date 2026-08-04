@@ -41,12 +41,18 @@ class DragonMLP(_BaseMLP):
         logits = self.output_layer(x)
         return logits
     
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
-        # Extracts the number of neurons from each nn.Linear layer
-        layer_sizes = [str(layer.in_features) for layer in self.mlp if isinstance(layer, nn.Linear)]
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        arch = [str(self.in_features)] + [str(h) for h in self.hidden_layers] + [str(self.out_targets)]
+        pipeline = " -> ".join(arch)
         
-        return self._repr_helper(name="DragonMLP", mlp_layers=layer_sizes)
+        return (
+            f"in_features={self.in_features}, "
+            f"out_targets={self.out_targets}, "
+            f"hidden_layers={self.hidden_layers}, "
+            f"drop_out={self.drop_out}\n"
+            f"Pipeline: {pipeline}"
+        )
 
 
 class DragonAttentionMLP(_BaseAttention):
@@ -70,19 +76,20 @@ class DragonAttentionMLP(_BaseAttention):
         super().__init__(in_features, out_targets, hidden_layers, drop_out)
         # Attention
         self.attention = _AttentionLayer(in_features)
-        self.has_interpretable_attention = True
+        self.has_interpretable_attention = True # Deprecated
     
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
-        # Start with the input features and the attention marker
-        arch = [str(self.in_features), "[Attention]"]
-
-        # Find all other linear layers in the MLP 
-        for layer in self.mlp[1:]: # type: ignore
-            if isinstance(layer, nn.Linear):
-                arch.append(str(layer.in_features))
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        arch = [str(self.in_features), "[Attention]"] + [str(h) for h in self.hidden_layers] + [str(self.out_targets)]
+        pipeline = " -> ".join(arch)
         
-        return self._repr_helper(name="DragonAttentionMLP", mlp_layers=arch)
+        return (
+            f"in_features={self.in_features}, "
+            f"out_targets={self.out_targets}, "
+            f"hidden_layers={self.hidden_layers}, "
+            f"drop_out={self.drop_out}\n"
+            f"Pipeline: {pipeline}"
+        )
 
 
 class DragonMultiHeadAttentionNet(_BaseAttention):
@@ -121,14 +128,17 @@ class DragonMultiHeadAttentionNet(_BaseAttention):
         config['attention_dropout'] = self.attention_dropout
         return config
     
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
-        mlp_part = " -> ".join(
-            [str(self.in_features)] + 
-            [str(h) for h in self.hidden_layers] + 
-            [str(self.out_targets)]
-        )
-        arch_str = f"{self.in_features} -> [MultiHead(h={self.num_heads})] -> {mlp_part}"
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        arch = [str(self.in_features), f"[MultiHead(h={self.num_heads})]"] + [str(h) for h in self.hidden_layers] + [str(self.out_targets)]
+        pipeline = " -> ".join(arch)
         
-        return f"DragonMultiHeadAttentionNet(arch: {arch_str})"
-
+        return (
+            f"in_features={self.in_features}, "
+            f"out_targets={self.out_targets}, "
+            f"hidden_layers={self.hidden_layers}, "
+            f"drop_out={self.drop_out}, "
+            f"num_heads={self.num_heads}, "
+            f"attention_dropout={self.attention_dropout}\n"
+            f"Pipeline: {pipeline}"
+        )

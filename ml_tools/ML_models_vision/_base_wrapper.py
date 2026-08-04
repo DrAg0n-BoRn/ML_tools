@@ -130,14 +130,42 @@ class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
             'in_channels': self.in_channels,
             'model_name': self.model_name
         }
-
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
+    
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
         return (
-            f"{self.__class__.__name__}(model='{self.model_name}', "
+            f"model_name='{self.model_name}', "
             f"in_channels={self.in_channels}, "
-            f"num_classes={self.num_classes})"
+            f"num_classes={self.num_classes}"
         )
+        
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """
+        Maps vision classification components for the DragonFinetuner.
+        
+        Dynamically splits the torchvision model into a 'backbone' and a 'head'.
+        """
+        # Determine the head layer container
+        if hasattr(self.model, "classifier"):
+            head = self.model.classifier
+            head_name = "classifier"
+        elif hasattr(self.model, "fc"):
+            head = self.model.fc
+            head_name = "fc"
+        else:
+            # Fallback using abstract output layer getter
+            head = self._get_output_layer()
+            head_name = None
+
+        if head_name is not None and head is not None:
+            # Group all non-head child modules into the backbone
+            backbone_modules = [m for name, m in self.model.named_children() if name != head_name]
+            return {
+                "backbone": nn.ModuleList(backbone_modules),
+                "head": head
+            }
+
+        return {"entire_model": self.model}
 
 
 # Image segmentation
@@ -247,11 +275,24 @@ class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
             'in_channels': self.in_channels,
             'model_name': self.model_name
         }
-
-    def __repr__(self) -> str:
-        """Returns the developer-friendly string representation of the model."""
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
         return (
-            f"{self.__class__.__name__}(model='{self.model_name}', "
+            f"model_name='{self.model_name}', "
             f"in_channels={self.in_channels}, "
-            f"num_classes={self.num_classes})"
+            f"num_classes={self.num_classes}"
         )
+        
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps segmentation model components for the DragonFinetuner."""
+        components = {
+            "backbone": self.model.backbone,
+            "classifier": self.model.classifier,
+        }
+        
+        # Capture auxiliary classifier head if present (used during training/pretrained initialization)
+        if hasattr(self.model, "aux_classifier") and self.model.aux_classifier is not None:
+            components["aux_classifier"] = self.model.aux_classifier
+            
+        return components

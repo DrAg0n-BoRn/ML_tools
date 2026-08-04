@@ -191,13 +191,13 @@ class DragonNodeModel(_ArchitectureBuilder):
         # mean: .mean(dim=-2) -> average over Total_Trees dimension
         return x[..., :self.out_targets].mean(dim=-2)
 
-    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 3):
+    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 2):
         """
         Performs data-aware initialization for the ODST trees using a dataset.
         Crucial for NODE convergence.
         """
         # 1. Prepare Data
-        if verbose >= 2:
+        if verbose >= 3:
             _LOGGER.info(f"Performing NODE data-aware initialization on up to {num_samples} samples...")
         device = next(self.parameters()).device
             
@@ -244,10 +244,10 @@ class DragonNodeModel(_ArchitectureBuilder):
             if hasattr(self.backbone, 'initialize'):
                 self.backbone.initialize(x_embedded)
                 if verbose >= 2:
-                    _LOGGER.info("NODE Initialization Complete. Ready to train.")
+                    _LOGGER.info("NODE data-aware initialization complete. Ready to train.")
             else:
                 if verbose >= 1:
-                    _LOGGER.warning("NODE Backbone does not have an 'initialize' method. Skipping.")
+                    _LOGGER.warning("NODE Backbone does not have an 'initialize' method. Skipping initialization.")
             
     def get_architecture_config(self) -> dict[str, Any]:
         """Returns the full configuration of the model."""        
@@ -267,4 +267,28 @@ class DragonNodeModel(_ArchitectureBuilder):
             "feature_selection_logits", # Routing probabilities
             "feature_thresholds",       # Tree boundaries
             "log_temperatures"          # Softmax temperatures
+        }
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        s = (
+            f"out_targets={self.out_targets}, "
+            f"embedding_dim={self.model_hparams['embedding_dim']}, "
+            f"num_layers={self.model_hparams['num_layers']}, "
+            f"num_trees_per_layer={self.model_hparams['num_trees']}, "
+            f"tree_depth={self.model_hparams['tree_depth']}, "
+            f"tree_output_dim={self.tree_dim}, "
+            f"choice_function='{self.model_hparams['choice_function']}', "
+            f"bin_function='{self.model_hparams['bin_function']}'"
+        )
+        if self.model_hparams['max_features'] is not None:
+            s += f", max_features={self.model_hparams['max_features']}"
+            
+        return s
+
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps NODE layers for the DragonFinetuner."""
+        return {
+            "embeddings": self.embedding_layer,
+            "backbone": self.backbone,
         }

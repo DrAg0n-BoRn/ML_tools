@@ -229,12 +229,12 @@ class DragonTabNet(_ArchitectureBuilder):
         self.regularization_loss /= self.n_steps
         return self.final_mapping(out_accumulated)
     
-    def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 3):
+    def data_aware_initialization(self, train_dataset: Any = None, num_samples: Any = None, verbose: int = 2):
         """  
         TabNet does not require data-aware initialization. Method Implemented for compatibility.
         """
         if verbose >= 2:
-            _LOGGER.info("TabNet does not require data-aware initialization. Skipping.")
+            _LOGGER.info("TabNet does not require data-aware initialization. Ready to train.")
 
     def get_architecture_config(self) -> dict[str, Any]:
         """Returns the full configuration of the model."""        
@@ -244,4 +244,37 @@ class DragonTabNet(_ArchitectureBuilder):
             **self.model_hparams
         }
         return config
-
+    
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"out_targets={self.out_targets}, "
+            f"n_d (decision_dim)={self.model_hparams['n_d']}, "
+            f"n_a (attention_dim)={self.model_hparams['n_a']}, "
+            f"n_steps={self.model_hparams['n_steps']}, "
+            f"n_independent_glus={self.model_hparams['n_independent']}, "
+            f"n_shared_glus={self.model_hparams['n_shared']}, "
+            f"gamma={self.model_hparams['gamma']}, "
+            f"mask_type='{self.model_hparams['mask_type']}'"
+        )
+        
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps TabNet layers for the DragonFinetuner."""
+        components = {
+            # Group initial BN and categorical embeddings
+            "embeddings": nn.ModuleList([self.initial_bn, self.cat_embeddings]),
+            "initial_splitter": self.initial_splitter,
+        }
+        
+        # Group shared layers with the step transformers
+        backbone_modules = []
+        if self.shared_feat_transform is not None:
+            backbone_modules.append(self.shared_feat_transform)
+        backbone_modules.extend([self.feat_transformers, self.att_transformers])
+        
+        components["backbone"] = nn.ModuleList(backbone_modules)
+        
+        # Standardize the output layer name
+        components["head"] = self.final_mapping 
+        
+        return components

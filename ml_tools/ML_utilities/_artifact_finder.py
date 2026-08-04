@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Union, Any
 
-from ..IO_tools import load_list_strings
 from ..schema import FeatureSchema
 
+from ..IO_tools import load_list_strings
 from ..path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from .._core import get_logger
 from ..keys._keys import DatasetKeys, PytorchModelArchitectureKeys, PytorchArtifactPathKeys

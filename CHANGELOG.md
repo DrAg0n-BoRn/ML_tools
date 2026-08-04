@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.0.0] 2026-08-04
+
+### Changed
+
+- data_exploration:
+    - `plot_pairgrid_continuous_vs_target()`: Enhanced function to use parallel processing and optional lower triangle hexbin plots for large datasets.
+
+- ML_utilities -> ML_evaluation:
+    - Moved helper function `select_features_by_shap()` from `_inspection.py` to `_shap_helper.py` for better modularity and separation of concerns.
+
+- ML_utilities -> ML_vision_transformers:
+    - Moved `save_pretrained_transforms()` from `_core.py` to `_pretrained_transforms.py` for better modularity and separation of concerns.
+    - `save_pretrained_transforms()`: Added `file_identifier` parameter to uniquely identify the model in the output filename, ensuring that multiple models can be saved without overwriting each other's transform files.
+
+- ML_trainer:
+    - Removed the `checkpoint_callback` parameter from all trainer constructors. Checkpointing is now managed via the `checkpoint_config` parameter, which accepts a `DragonCheckpointConfig` object or the special strings "default" or "No-Checkpoints". This change simplifies the API and standardizes checkpointing behavior across all trainers.
+
+- ML_callbacks:
+    - Refactored `DragonModelCheckpoint` to be an internal class, now managed via `DragonCheckpointConfig` in the public API. This change allows for more flexible and standardized checkpointing behavior across different trainers.
+
+- Minor default parameter adjustments and logging improvements across the package.
+
+### Added
+
+- ML_models, ML_models_diffusion, ML_models_sequence, ML_models_vision:
+    - Added `extra_repr()` method to all models to provide high-level architecture details for print() and PyTorch inspection.
+    - All custom `__repr__()` methods have been removed in favor of the standardized `extra_repr()` method, ensuring consistent and informative model representations.
+    - The `save_architecture()` method will automatically include a call to `ML_utilities.inspect_model_architecture()` to generate an additional detailed architecture report in the same directory.
+    - Added `_get_finetune_components()` method to all models to return a list of semantic component names for fine-tuning, enabling users to easily identify and manipulate specific parts of the model during training.
+
+- New module: "ML_finetune" for structured fine-tuning of model components.
+    - Added `DragonFinetuner` class to provide a unified interface for freezing and unfreezing model components, including methods for freezing all parameters, unfreezing all parameters, and selectively freezing/unfreezing specific components by name. It works seamlessly with models having the `_get_finetune_components()` method.
+
+- ML_configuration:
+    - Added `DragonCheckpointConfig` to the public API, allowing users to configure checkpointing behavior in a structured and standardized manner.
+
+### Removed
+
+- ML_trainer:
+    - `DragonTrainer.explain_attention()`: Removed the deprecated attention explanation method. Users are now encouraged to use `DragonTrainer.explain_captum()` for feature importance and attention visualization.
+    - `DragonTrainer.explain_shap()`: Removed the deprecated SHAP explanation routing for multivariate models. This method only supports single-output models.
+
+- ML_utilities:
+    - `set_parameter_requires_grad()`: Removed the deprecated function for freezing model parameters. Users are now encouraged to use the new `DragonFinetuner` class for structured fine-tuning.
+
 ## [24.5.0] 2026-08-03
 
 ### Changed

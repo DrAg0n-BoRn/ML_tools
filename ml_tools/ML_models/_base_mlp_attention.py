@@ -76,18 +76,13 @@ class _BaseMLP(nn.Module, _ArchitectureHandlerMixin):
             'hidden_layers': self.hidden_layers,
             'drop_out': self.drop_out
         }
-        
-    def _repr_helper(self, name: str, mlp_layers: list[str]):
-        last_layer = self.output_layer
-        if isinstance(last_layer, nn.Linear):
-            mlp_layers.append(str(last_layer.out_features))
-        else:
-            mlp_layers.append("Custom Prediction Head")
-        
-        # Creates a string like: 10 -> 40 -> 80 -> 40 -> 2
-        arch_str = ' -> '.join(mlp_layers)
-        
-        return f"{name}(arch: {arch_str})"
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps MLP layers for the DragonFinetuner."""
+        return {
+            "backbone": self.mlp,
+            "head": self.output_layer
+        }
 
 
 class _BaseAttention(_BaseMLP):
@@ -113,6 +108,18 @@ class _BaseAttention(_BaseMLP):
         x = self.mlp(x)
         logits = self.output_layer(x)
         return logits, attention_weights
+    
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Attention MLP layers for the DragonFinetuner."""
+        components = {}
+        
+        if self.attention is not None:
+            components["attention"] = self.attention
+            
+        components["backbone"] = self.mlp
+        components["head"] = self.output_layer
+        
+        return components
 
 
 class _AttentionLayer(nn.Module):

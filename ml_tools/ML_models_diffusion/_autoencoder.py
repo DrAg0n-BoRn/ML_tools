@@ -140,3 +140,41 @@ class DragonAutoencoder(_BaseAutoencoder):
             "numerical_frequencies",
             "feature_identity_embeddings"
         }
+        
+    def extra_repr(self) -> str:
+        """Provides high-level architecture details for print() and PyTorch inspection."""
+        return (
+            f"embedding_dim={self.model_hparams['embedding_dim']}, "
+            f"fourier_sigma={self.model_hparams['fourier_sigma']}"
+        )
+        
+    def _get_finetune_components(self) -> dict[str, nn.Module]:
+        """Maps Autoencoder layers and parameters for the DragonFinetuner."""
+        components = {}
+        
+        # 1. Encoders
+        encoder_modules = nn.ModuleList([self.categorical_embeddings])
+        if self.numerical_indices:
+            encoder_modules.append(self.numerical_projection)
+        components["encoder"] = encoder_modules
+        
+        # 2. Decoders
+        decoder_modules = nn.ModuleList([self.categorical_decoders])
+        if self.numerical_indices:
+            decoder_modules.append(self.numerical_decoders)
+        components["decoder"] = decoder_modules
+        
+        # 3. Standalone Parameters
+        params = nn.ParameterDict({
+            "feature_identity": self.feature_identity_embeddings
+        })
+        if self.numerical_indices:
+            params["numerical_frequencies"] = self.numerical_frequencies
+            if self.log_var_num is not None:
+                params["log_var_num"] = self.log_var_num
+        if self.categorical_indices and self.log_var_cat is not None:
+            params["log_var_cat"] = self.log_var_cat
+            
+        components["parameters"] = params
+        
+        return components

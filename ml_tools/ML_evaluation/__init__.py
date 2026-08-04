@@ -44,6 +44,10 @@ from ._dit_metrics import (
     dit_generation_metrics
 )
 
+from ._shap_helper import (
+    select_features_by_shap
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -72,7 +76,10 @@ __all__ = [
     # autoencoder
     "autoencoder_metrics",
     # dit
-    "dit_generation_metrics"
+    "dit_generation_metrics",
+    
+    # others
+    "select_features_by_shap"
 ]
 
 

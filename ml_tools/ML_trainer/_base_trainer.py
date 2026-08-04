@@ -10,11 +10,12 @@ from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_configuration._config_finalize import _FinalizeModelTraining
+from ..ML_configuration import DragonCheckpointConfig
 from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
 
 from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
+from ..keys._keys import PyTorchCheckpointKeys, MagicWords
 from .._core import get_logger
 
 
@@ -40,7 +41,7 @@ class _BaseDragonTrainer(ABC):
                  device: Union[Literal['cuda', 'mps', 'cpu'],str],
                  save_dir: Union[str, Path],
                  dataloader_workers: int = 2,
-                 checkpoint_callback: Optional[DragonModelCheckpoint] = None,
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
                  extra_callbacks: Optional[list[_Callback]] = None):
@@ -56,12 +57,19 @@ class _BaseDragonTrainer(ABC):
         default_callbacks = [History(), TqdmProgressBar()]
         
         self._checkpoint_callback = None
-        if checkpoint_callback:
-            default_callbacks.append(checkpoint_callback)
-            self._checkpoint_callback = checkpoint_callback
-            # attach save_dir to checkpoint callback for artifact organization
-            _checkpoints_directory = make_fullpath(self.training_directory_root / DragonTrainerKeys.CHECKPOINT_DIR, make=True, enforce="directory")
-            self._checkpoint_callback.save_dir = _checkpoints_directory
+        
+        if checkpoint_config == "default":
+            checkpoint_config = DragonCheckpointConfig()
+            
+        if isinstance(checkpoint_config, DragonCheckpointConfig):
+            self._checkpoint_callback = DragonModelCheckpoint(**checkpoint_config)
+            default_callbacks.append(self._checkpoint_callback)
+        elif checkpoint_config == "No-Checkpoints":
+            pass
+        else:
+            _LOGGER.error(f"Invalid 'checkpoint_config' provided: {checkpoint_config}. Must be a DragonCheckpointConfig instance, 'default', or 'No-Checkpoints'.")
+            raise ValueError()
+        
         if early_stopping_callback:
             default_callbacks.append(early_stopping_callback)
         if lr_scheduler_callback:

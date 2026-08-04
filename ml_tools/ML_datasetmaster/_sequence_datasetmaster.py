@@ -65,18 +65,18 @@ class _PytorchSequenceDataset(Dataset):
         return x, y
     
     @property
-    def features(self):
+    def features(self) -> torch.Tensor:
         # 4. Intercept the `.features` call used by `save_dataset_bundle`.
         # torch.as_tensor() creates a zero-copy PyTorch view of the numpy array.
         # When saved, PyTorch natively preserves the strides, keeping the .pth file tiny.
         return torch.as_tensor(self._features_np, dtype=self.features_dtype)
     
     @property
-    def labels(self):
+    def labels(self) -> torch.Tensor:
         return torch.as_tensor(self._labels_np, dtype=self.labels_dtype)
         
     @property
-    def feature_names(self):
+    def feature_names(self) -> list[str]:
         if self._feature_names is not None:
             return self._feature_names
         else:
@@ -84,7 +84,7 @@ class _PytorchSequenceDataset(Dataset):
             raise AttributeError()
         
     @property
-    def target_names(self):
+    def target_names(self) -> list[str]:
         if self._target_names is not None:
             return self._target_names
         else:
@@ -100,12 +100,16 @@ class _PytorchSequenceDataset(Dataset):
             raise AttributeError()
     
     @property
-    def feature_scaler(self):
+    def feature_scaler(self) -> Optional[DragonScaler]:
         return self._feature_scaler
     
     @property
-    def target_scaler(self):
+    def target_scaler(self) -> Optional[DragonScaler]:
         return self._target_scaler
+    
+    @property
+    def class_map(self) -> dict[str, dict[str, int]]:
+        return self._class_map
 
 
 class DragonDatasetSequence(_BaseDatasetMaker):

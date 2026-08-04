@@ -1,5 +1,4 @@
 from torch import nn
-import torchvision.models as vision_models
 from typing import Optional
 
 from ._base_wrapper import _BaseVisionWrapper

@@ -6,11 +6,10 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.optimize import linear_sum_assignment
 
 from ..ML_callbacks._base import _Callback
-from ..ML_callbacks._checkpoint import DragonModelCheckpoint
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation._dit_metrics import dit_generation_metrics
-from ..ML_configuration import FormatTabularDiffusionMetrics, FinalizeTabularDiffusion
+from ..ML_configuration import FormatTabularDiffusionMetrics, FinalizeTabularDiffusion, DragonCheckpointConfig
 from ..ML_models_diffusion import DragonAutoencoder, DragonAutoencoderV2, DragonDiT, DragonDiTV2, DragonDiTGuided, DragonDiTGuidedV2
 
 from ..keys._keys import PyTorchLogKeys, MLTaskKeys, DragonTrainerKeys
@@ -40,11 +39,11 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
                  optimizer: torch.optim.Optimizer, 
-                 device: Union[Literal['cuda', 'mps', 'cpu'], str], 
-                 checkpoint_callback: Optional[DragonModelCheckpoint] = None,
+                 device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
                  extra_callbacks: Optional[list[_Callback]] = None,
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2,
                  cfg_dropout_rate: float = 0.15,
                  use_ot_cfm: bool = True):
@@ -60,10 +59,13 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             save_dir (Union[str, Path]): The root directory where all training artifacts (checkpoints, metrics, plots) will be saved. Subdirectories will be automatically created for organization.
             optimizer (torch.optim.Optimizer): The optimizer used for training the DiT model.
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device on which to train the model.
-            checkpoint_callback (Optional[DragonModelCheckpoint]): Optional callback for saving model checkpoints during training.
             early_stopping_callback (Optional[_DragonEarlyStopping]): Optional callback for early stopping based on chosen metric performance.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): Optional callback for learning rate scheduling during training.
             extra_callbacks (Optional[list[_Callback]]): Optional list of additional callbacks to integrate into the training loop.
+            checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
+                - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
+                - "No-Checkpoints": No checkpoints will be saved.
+                - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Number of worker processes for data loading.
             cfg_dropout_rate (float): The dropout rate for the guided DiT model, which randomly drops the conditioning information during training to improve robustness. Recommended between 0.1 and 0.3.
             use_ot_cfm (bool): Whether to use Optimal Transport - Continuous Flow Matching (OT-CFM) for training.
@@ -74,7 +76,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             optimizer=optimizer,
             device=device,
             dataloader_workers=dataloader_workers,
-            checkpoint_callback=checkpoint_callback,
+            checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
             extra_callbacks=extra_callbacks,

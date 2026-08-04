@@ -22,6 +22,9 @@ from ._plotting import (
     plot_continuous_vs_target,
     plot_categorical_vs_target,
     plot_correlation_heatmap,
+)
+
+from ._plotting_b import (
     plot_pairgrid_continuous_vs_target
 )
 
