@@ -500,7 +500,7 @@ class DragonDatasetSequence(_BaseDatasetMaker):
         
 
     @classmethod
-    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = False) -> 'DragonDatasetSequence':
+    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = True) -> 'DragonDatasetSequence':
         """
         Alternative constructor to instantiate a dataset object from a saved bundle.
         

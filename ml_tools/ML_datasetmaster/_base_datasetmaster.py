@@ -501,7 +501,7 @@ class _BaseDatasetMaker(ABC):
 
 
     @classmethod
-    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = False):
+    def from_bundle(cls, filepath: Union[str, Path], verbose: bool = True):
         """
         Alternative constructor to instantiate a dataset object from a saved bundle.
         

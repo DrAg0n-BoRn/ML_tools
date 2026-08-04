@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.0.1] 2026-08-04
+
+### Fixed
+
+- ML_trainer:
+    - Fixed a bug in `DragonTrainer` where the checkpoint callback's save directory was not being set correctly, leading to potential issues with artifact organization. The save directory is now properly attached to the checkpoint callback during initialization.
+
+
 ## [25.0.0] 2026-08-04
 
 ### Changed

@@ -15,7 +15,7 @@ from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
 
 from ..path_manager import make_fullpath
-from ..keys._keys import PyTorchCheckpointKeys, MagicWords
+from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
 from .._core import get_logger
 
 
@@ -64,6 +64,9 @@ class _BaseDragonTrainer(ABC):
         if isinstance(checkpoint_config, DragonCheckpointConfig):
             self._checkpoint_callback = DragonModelCheckpoint(**checkpoint_config)
             default_callbacks.append(self._checkpoint_callback)
+            # attach save_dir to checkpoint callback for artifact organization
+            _checkpoints_directory = make_fullpath(self.training_directory_root / DragonTrainerKeys.CHECKPOINT_DIR, make=True, enforce="directory")
+            self._checkpoint_callback.save_dir = _checkpoints_directory
         elif checkpoint_config == "No-Checkpoints":
             pass
         else:
