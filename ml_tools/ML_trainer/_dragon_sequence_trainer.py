@@ -44,6 +44,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     
     Supports models returning single Tensors or dictionaries of output heads (dict[str, Tensor]).
     
+    Targets are automatically cast to `float` for continuous regression and `long` for categorical classification.
+    
     Built-in Callbacks: `History`, `TqdmProgressBar`
     """
     def __init__(self, 
@@ -76,12 +78,18 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             lr_scheduler_callback: Callback for learning rate scheduling.
             extra_callbacks (List[Callback] | None): Additional custom callbacks.
             target_types (dict[str, str] | None): Optional mapping of target names to their types ('continuous' or 'categorical').
-            criterion (nn.Module | dict | "auto"): Loss function. If "auto", infers MSE or CrossEntropy per target.
+            criterion (nn.Module | dict[str, nn.Module] | "auto"): Loss function.
+                - If "auto", infers MSE or CrossEntropy per target.
+                - If `nn.Module`, applies the same loss to all targets.
+                - If `dict[str, nn.Module]`, applies specified loss per target name.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
                 - "No-Checkpoints": No checkpoints will be saved.
                 - `DragonCheckpointConfig`: Custom configuration.
             dataloader_workers (int): Subprocesses for data loading.
+            
+        ### Note:
+            - When using custom Loss modules, ensure that they are compatible with the target data types. Targets are automatically cast to `float` for continuous regression and `long` for categorical classification.
         """
         super().__init__(
             model=model,
@@ -170,18 +178,18 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 else:
                     raise TypeError(f"Unsupported target type: {type(targets)}")
 
+                # Determine if target is categorical based on target_types
+                is_categorical = False
+                if self.target_types and target_name in self.target_types:
+                    is_categorical = (self.target_types[target_name] == DatasetKeys.TARGET_CATEGORICAL)
+                else:
+                    # Fallback heuristic: If prediction tensor has more dimensions than target or target is integer type, treat as categorical
+                    is_categorical = (pred_t.ndim > target_t.ndim or target_t.dtype in [torch.int64, torch.long, torch.int32])
+
                 # Determine criterion for target head
                 if isinstance(self.criterion, dict):
                     loss_fn = self.criterion.get(target_name, nn.MSELoss())
                 elif self.criterion == "auto":
-                    # <-- Use exact target_types if available, else fallback -->
-                    is_categorical = False
-                    if self.target_types and target_name in self.target_types:
-                        is_categorical = (self.target_types[target_name] == DatasetKeys.TARGET_CATEGORICAL)
-                    else:
-                        # Fallback heuristic: If prediction tensor has more dimensions than target or target is integer type, treat as categorical
-                        is_categorical = (pred_t.ndim > target_t.ndim or target_t.dtype in [torch.int64, torch.long, torch.int32])
-
                     if is_categorical:
                         loss_fn = nn.CrossEntropyLoss()
                     else:
@@ -192,8 +200,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                     _LOGGER.error(f"Invalid criterion type: {type(self.criterion)}")
                     raise TypeError()
 
-                # Compute loss with shape alignment
-                if isinstance(loss_fn, nn.CrossEntropyLoss):
+                # Compute loss with shape alignment based on data type
+                if is_categorical:
                     pred_flat = pred_t.reshape(-1, pred_t.shape[-1])
                     target_flat = target_t.reshape(-1).long()
                     loss_t = loss_fn(pred_flat, target_flat)

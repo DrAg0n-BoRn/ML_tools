@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.1.1] 2026-08-06
+
+### Fixed
+
+- ML_trainer
+    - `DragonSequenceTrainer`: Fixed `._compute_loss()` to properly support custom continuous and categorical loss modules. Tensor formatting (flattening and casting targets to `long`) is now correctly driven by the target's data type.
+
+
 ## [25.1.0] 2026-08-06
 
 ### Added
