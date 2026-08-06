@@ -2,30 +2,64 @@ import inspect
 from typing import Union, Optional, Callable, Any
 from pathlib import Path
 
-import torch
 from torch.utils.data import Dataset, Subset
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 from sklearn.model_selection import train_test_split
 
-from ..ML_vision_transformers._core_transforms import TRANSFORM_REGISTRY, _save_recipe
-from ..ML_vision_transformers._inspect_folder import inspect_folder
-from ..IO_tools import save_json
+from ..ML_vision_transformers._core_transforms import TRANSFORM_REGISTRY
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys
+from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys
+
+from ._base_vision_dataset import _BaseVisionDataset
 
 
-_LOGGER = get_logger("Vision Dataset")
+_LOGGER = get_logger("Image Classification Dataset")
 
 
 __all__ = [
-    "DragonDatasetVision"
+    "DragonDatasetImageClassification"
 ]
 
 
-class DragonDatasetVision:
+class _DatasetTransformer(Dataset):
+    """
+    Internal wrapper class to apply a specific transform pipeline to any
+    dataset (e.g., a full ImageFolder or a Subset).
+    """
+    def __init__(self, dataset: Dataset, transform: Optional[transforms.Compose] = None, class_map: dict[str,int]=dict()):
+        self.dataset = dataset
+        self.transform = transform
+        self.class_map = class_map
+        self.classes = list(class_map.keys())
+        
+        # --- Propagate attributes for inspection ---
+        # For ImageFolder
+        if hasattr(dataset, 'class_to_idx'):
+            self.class_to_idx = getattr(dataset, 'class_to_idx')
+        # For Subset
+        if hasattr(dataset, 'indices'):
+            self.indices = getattr(dataset, 'indices')
+        if hasattr(dataset, 'dataset'):
+            # This allows access to the *original* full dataset
+            self.original_dataset = getattr(dataset, 'dataset')
+
+    def __getitem__(self, index):
+        # Get the original data (e.g., PIL Image, label)
+        x, y = self.dataset[index] 
+        
+        # Apply the specific transform for this dataset
+        if self.transform:
+            x = self.transform(x)
+        return x, y
+        
+    def __len__(self):
+        return len(self.dataset) # type: ignore
+
+
+class DragonDatasetImageClassification(_BaseVisionDataset):
     """
     Creates processed PyTorch datasets for computer vision classification tasks from an
     image folder directory.
@@ -34,50 +68,45 @@ class DragonDatasetVision:
     1. `from_folder()`: Loads from one directory and splits into train/val/test.
     2. `from_folders()`: Loads from pre-split train/val/test directories.
     
-    Uses online augmentations per epoch (image augmentation without creating new files).
+    Uses online augmentations per epoch.
     
     Workflow:
     ```
-    1. maker = DragonDatasetVision.from_folder("data/") # or from_folders(train_dir, val_dir, test_dir)
-    2. maker.split_data(val_size=0.2, test_size=0.1) # Only if using from_folder()
+    1. maker = DragonDatasetImageClassification.from_folder("data/", ...) # or from_folders(train_dir, val_dir, test_dir)
     3. maker.configure_transforms(resize_size=256, crop_size=224, mean=[...], std=[...], extra_train_transforms=[...])
-    4. train_ds, val_ds, test_ds = maker.get_datasets()
-    5. maker.save_transform_recipe('val_transform_recipe.json')
-    6. maker.save_class_map("data/") # Saves class_to_index mapping as JSON
+    4. maker.save_transform_recipe('val_transform_recipe.json')
+    5. maker.save_class_map("data/") # Saves class_to_index mapping as JSON
     ```
     """
     def __init__(self):
-        """
-        Typically not called directly. Use the class methods `from_folder()` or `from_folders()` to create an instance.
-        """
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
+        super().__init__()
         self._full_dataset: Optional[ImageFolder] = None
         self.labels: Optional[list[int]] = None
-        self.class_map: dict[str,int] = dict()
-        
-        self._is_split = False
-        self._are_transforms_configured = False
-        self._val_recipe_components = None
-        self._has_mean_std: bool = False
 
     @classmethod
-    def from_folder(cls, root_dir: Union[str,Path]) -> 'DragonDatasetVision':
+    def from_folder(cls, 
+                    root_dir: Union[str,Path],
+                    val_size: float = 0.2, 
+                    test_size: float = 0.0, 
+                    stratify: bool = True, 
+                    random_state: Optional[int] = None) -> 'DragonDatasetImageClassification':
         """
         Creates a maker instance from a single root directory of images.
         
         This method assumes a single directory (e.g., 'data/') that
         contains class subfolders (e.g., 'data/cat/', 'data/dog/').
         
-        The dataset will be loaded in its entirety, and you MUST call
-        `.split_data()` afterward to create train/validation/test sets.
+        The dataset will be loaded and split to create train, validation, and optional test sets.
 
         Args:
             root_dir (str | Path): The path to the root directory containing class subfolders.
+            val_size (float): Proportion of the dataset to reserve for validation (e.g., 0.2 for 20%).
+            test_size (float): Proportion of the dataset to reserve for testing.
+            stratify (bool): If True, splits are performed in a stratified fashion, preserving the class distribution.
+            random_state (int | None): Seed for the random number generator for reproducible splits.
 
         Returns:
-            Instance: A new instance with the full dataset loaded.
+            Instance: A new instance with the dataset loaded and split.
         """
         root_path = make_fullpath(root_dir, enforce="directory")
         # Load with NO transform. We get PIL Images.
@@ -88,13 +117,18 @@ class DragonDatasetVision:
         maker._full_dataset = full_dataset
         maker.labels = [s[1] for s in full_dataset.samples]
         maker.class_map = full_dataset.class_to_idx
+        maker.classes = list(maker.class_map.keys())
+        
+        # Automatically split the dataset
+        maker._split_data(val_size=val_size, test_size=test_size, stratify=stratify, random_state=random_state)
+        
         return maker
     
     @classmethod
     def from_folders(cls, 
                      train_dir: Union[str,Path], 
                      val_dir: Union[str,Path], 
-                     test_dir: Optional[Union[str,Path]] = None) -> 'DragonDatasetVision':
+                     test_dir: Optional[Union[str,Path]] = None) -> 'DragonDatasetImageClassification':
         """
         Creates a maker instance from separate, pre-split directories.
         
@@ -130,6 +164,7 @@ class DragonDatasetVision:
         maker._train_dataset = train_ds
         maker._val_dataset = val_ds
         maker.class_map = train_ds.class_to_idx
+        maker.classes = list(maker.class_map.keys())
         
         if test_dir:
             test_path = make_fullpath(test_dir, enforce="directory")
@@ -143,28 +178,20 @@ class DragonDatasetVision:
             _LOGGER.info(f"Loaded: {len(train_ds)} train, {len(val_ds)} val images.")
 
         maker._is_split = True # Mark as "split" since data is pre-split
+        
         return maker
-        
-    @staticmethod
-    def inspect_folder(path: Union[str, Path]):
-        """
-        Logs a report of the types, sizes, and channels of image files
-        found in the directory and its subdirectories.
-        
-        This is a utility method to help diagnose potential dataset
-        issues (e.g., mixed image modes, corrupted files) before loading.
 
-        Args:
-            path (str, Path): The directory path to inspect.
+    def _split_data(self, 
+                   val_size: float = 0.2, 
+                   test_size: float = 0.0, 
+                   stratify: bool = True, 
+                   random_state: Optional[int] = None) -> 'DragonDatasetImageClassification':
         """
-        inspect_folder(path)
-
-    def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
-                   stratify: bool = True, random_state: Optional[int] = None) -> 'DragonDatasetVision':
-        """
+        PRIVATE METHOD: No need to call this, both `from_folder()` and `from_folders()` handle splitting automatically.
+        
         Splits the dataset into train, validation, and optional test sets.
         
-        This method MUST be called if you used `from_folder()`. It has no effect if you used `from_folders()`.
+        This method MUST be called if `from_folder()` was used. It has no effect if `from_folders()` was used.
 
         Args:
             val_size (float): Proportion of the dataset to reserve for
@@ -225,7 +252,6 @@ class DragonDatasetVision:
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
-                             crop_size: Optional[int] = 224, 
                              mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
                              std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
                              pre_transforms: Optional[list[Callable]] = None,
@@ -235,7 +261,7 @@ class DragonDatasetVision:
                              random_resize_crop_scale: tuple[float, float] = (0.08, 1.0),
                              random_resize_crop_ratio: tuple[float, float] = (3/4, 4/3),
                              random_rotation_degrees: float = 90.0
-                             ) -> 'DragonDatasetVision':
+                             ) -> 'DragonDatasetImageClassification':
         """
         Configures and applies the image transformations and augmentations.
         
@@ -243,19 +269,17 @@ class DragonDatasetVision:
         
         It sets up two pipelines:
         1.  **Training Pipeline:** Includes random transforms for online augmentation:
-            - `Resize(resize_size)`
-            - `RandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio)`
+            - `RandomResizedCrop(size=resize_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio)`
             - `RandomHorizontalFlip(p=random_horizontal_flip_probability)`
             - `RandomRotation(degrees=random_rotation_degrees)` 
             - (Any `extra_train_transforms`)
             
-        2.  **Validation/Test Pipeline:** A deterministic pipeline using `Resize` and `CenterCrop` for consistent evaluation.
+        2.  **Validation/Test Pipeline:** A deterministic pipeline using `Resize` for consistent evaluation.
             
         Both pipelines finish with `ToTensor` and `Normalize`.
 
         Args:
-            resize_size (int): The size to resize the smallest edge of the image.
-            crop_size (int): The target size (square) for the final cropped image. If None, then it will be the same value as `resize_size`, to avoid losing information from the image borders.
+            resize_size (int): The target size for `RandomResizedCrop` (training) and the size to resize the smallest edge of the image (validation/test).
             mean (tuple[float, ...] | None): The mean values for normalization (e.g., ImageNet mean).
             std (tuple[float, ...] | None): The standard deviation values for normalization (e.g., ImageNet std).
             extra_train_transforms (list[Callable] | None): A list of additional torchvision transforms to add to the end of the training transformations.
@@ -268,8 +292,10 @@ class DragonDatasetVision:
         Returns:
             Self: The same instance, with transforms applied.
             
-        Raises:
-            RuntimeError: If called before data is split.
+        ⚠️ WARNING: PyTorch DataLoaders require all images in a batch to have the same dimensions. 
+        Since `Resize` with a single integer scales the shortest edge and maintains the aspect ratio, 
+        datasets with varying aspect ratios will crash the DataLoader. If your images are of varying aspect ratios, 
+        you MUST include `ResizeAspectFill` or `LetterboxResize` in the `pre_transforms` list, or handle aspect ratio preprocessing before creating the dataset.
         """
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data (or using `from_folders`). Call .split_data() first if using `from_folder`.")
@@ -278,16 +304,12 @@ class DragonDatasetVision:
         if (mean is None and std is not None) or (mean is not None and std is None):
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
-
-        # --- Define Transform Pipelines ---
-        if crop_size is None:
-            crop_size = resize_size
         
         # --- Store components for validation recipe ---
         self._val_recipe_components = {
             VisionTransformRecipeKeys.PRE_TRANSFORMS: pre_transforms or [],
             VisionTransformRecipeKeys.RESIZE_SIZE: resize_size,
-            VisionTransformRecipeKeys.CROP_SIZE: crop_size,
+            # VisionTransformRecipeKeys.CROP_SIZE: crop_size,
         }
         
         if mean is not None and std is not None:
@@ -303,8 +325,7 @@ class DragonDatasetVision:
 
         # Base augmentations for training
         base_train_transforms = [
-            transforms.Resize(resize_size), # Scale down
-            transforms.RandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio), # Random crops over the image
+            transforms.RandomResizedCrop(size=resize_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio), # Random crops over the image replace Resize
             transforms.RandomHorizontalFlip(p=random_horizontal_flip_probability),
             transforms.RandomRotation(degrees=random_rotation_degrees)
         ]
@@ -323,7 +344,7 @@ class DragonDatasetVision:
         val_transform_list = [
             *base_pipeline, # Apply pre_transforms first
             transforms.Resize(resize_size), 
-            transforms.CenterCrop(crop_size), 
+            # transforms.CenterCrop(crop_size), 
             *final_transforms
         ]
         
@@ -348,84 +369,37 @@ class DragonDatasetVision:
         self._are_transforms_configured = True
         _LOGGER.info("Image transforms configured and applied.")
         return self
-
-    def get_datasets(self) -> tuple[Dataset, ...]:
+    
+    def _get_task_name(self) -> str:
         """
-        Returns the final train, validation, and optional test datasets.
-        
-        This is the final step, used to retrieve the datasets for use in
-        a `MLTrainer` or `DataLoader`.
-
-        Returns:
-            (Tuple[Dataset, ...]): A tuple containing the (train, val)
-                                 or (train, val, test) datasets.
-                                 
-        Raises:
-            RuntimeError: If called before data is split.
-            UserWarning: If called before transforms are configured.
+        Returns the task name for the transform recipe.
         """
-        if not self._is_split:
-            _LOGGER.error("Data has not been split. Call .split_data() first.")
-            raise RuntimeError()
-        if not self._are_transforms_configured:
-            _LOGGER.warning("Transforms have not been configured.")
-
-        if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
-        return self._train_dataset, self._val_dataset # type: ignore
-
-    def save_transform_recipe(self, filepath: Union[str, Path]) -> None:
-        """
-        Saves the validation transform pipeline as a JSON recipe file.
-        
-        This recipe can be loaded by the PyTorchVisionInferenceHandler
-        to ensure identical preprocessing.
-
-        Args:
-            filepath (str | Path): The path to save the .json recipe file.
-        """
-        if not self._are_transforms_configured:
-            _LOGGER.error("Transforms are not configured. Call .configure_transforms() first.")
-            raise RuntimeError()
-
-        recipe: dict[str, Any] = {
-            VisionTransformRecipeKeys.TASK: "classification",
-            VisionTransformRecipeKeys.PIPELINE: []
-        }
-        
+        return MLTaskKeys.BINARY_IMAGE_CLASSIFICATION if len(self.class_map) == 2 else MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION
+    
+    def _build_recipe_pipeline(self) -> list[dict[str, Any]]:
         components = self._val_recipe_components
-        
         if not components:
-            _LOGGER.error(f"Error getting the transformers recipe for validation set.")
-            raise ValueError()
-        
-        # validate path
-        file_path = make_fullpath(filepath, make=True, enforce="file")
+            return []
 
-        # Handle pre_transforms
+        pipeline = []
+        
         for t in components[VisionTransformRecipeKeys.PRE_TRANSFORMS]:
             t_name = t.__class__.__name__
             t_class = t.__class__
             kwargs = {}
             
-            # 1. Check custom registry first
             if t_name in TRANSFORM_REGISTRY:
                 _LOGGER.debug(f"Found '{t_name}' in TRANSFORM_REGISTRY.")
                 kwargs = getattr(t, VisionTransformRecipeKeys.KWARGS, {})
-
-            # 2. Else, try to introspect for standard torchvision transforms
             else:
                 _LOGGER.debug(f"'{t_name}' not in registry. Attempting introspection...")
                 try:
-                    # Get the __init__ signature of the transform's class
                     sig = inspect.signature(t_class.__init__)
                     
-                    # Iterate over its __init__ parameters (e.g., 'num_output_channels')
                     for param in sig.parameters.values():
                         if param.name == 'self':
                             continue
                         
-                        # Check if the *instance* 't' has that parameter as an attribute
                         attr_name_public = param.name
                         attr_name_private = '_' + param.name
                         
@@ -436,147 +410,54 @@ class DragonDatasetVision:
                         elif hasattr(t, attr_name_private):
                             attr_to_get = attr_name_private
                         else:
-                            # Parameter in __init__ has no matching attribute
                             continue 
                         
-                        # Store the value under the __init__ parameter's name
                         kwargs[param.name] = getattr(t, attr_to_get)
                             
                     _LOGGER.debug(f"Introspection for '{t_name}' found kwargs: {kwargs}")
 
                 except (ValueError, TypeError):
-                    # Fails on some built-ins or C-implemented __init__
                     _LOGGER.warning(f"Could not introspect parameters for '{t_name}'. If this transform has parameters, they will not be saved.")
                     kwargs = {}
 
-            # 3. Add to pipeline
-            recipe[VisionTransformRecipeKeys.PIPELINE].append({
+            pipeline.append({
                 VisionTransformRecipeKeys.NAME: t_name,
                 VisionTransformRecipeKeys.KWARGS: kwargs
             })
                 
-        # 2. Add standard transforms
-        recipe[VisionTransformRecipeKeys.PIPELINE].extend([
+        pipeline.extend([
             {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}},
-            {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components[VisionTransformRecipeKeys.CROP_SIZE]}},
+            # {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components[VisionTransformRecipeKeys.CROP_SIZE]}},
             {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}}
         ])
         
         if self._has_mean_std:
-            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+            pipeline.append(
                 {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
                 "mean": components[VisionTransformRecipeKeys.MEAN],
                 "std": components[VisionTransformRecipeKeys.STD]
                 }}
             )
-        
-        # 3. Save the file
-        _save_recipe(recipe, file_path)
-        
-    def save_class_map(self, save_dir: Union[str,Path]) -> None:
-        """
-        Saves the class to index mapping {str: int} to a directory.
-        
-        Args:
-            save_dir (str | Path): The directory to save the class map JSON file.
-        """
-        if not self.class_map:
-            _LOGGER.error(f"Class to index mapping is empty.")
-            raise ValueError()
-        
-        save_json(data=self.class_map,
-                  directory=save_dir,
-                  filename="Class_to_Index",
-                  verbose=False)
-        
-        _LOGGER.info(f"Class to index mapping saved to {save_dir}.")
-    
-    def images_per_dataset(self) -> str:
-        """
-        Get the number of images per dataset as a string.
-        """
-        if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
-        elif self._full_dataset:
-            return f"Full Dataset: {len(self._full_dataset)} images"
-        else:
-            _LOGGER.warning("No datasets found.")
-            return "No datasets found"
-    
-    @property
-    def train_dataset(self) -> Dataset:
-        if self._train_dataset is None: 
-            _LOGGER.error("Train Dataset not created.")
-            raise RuntimeError()
-        return self._train_dataset
-    
-    @property
-    def validation_dataset(self) -> Dataset:
-        if self._val_dataset is None: 
-            _LOGGER.error("Validation Dataset not yet created.")
-            raise RuntimeError()
-        return self._val_dataset
-
-    @property
-    def test_dataset(self) -> Dataset:
-        if self._test_dataset is None: 
-            _LOGGER.error("Test Dataset not yet created.")
-            raise RuntimeError()
-        return self._test_dataset
+        return pipeline
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
-        s += f"  Split: {self._is_split}\n"
         s += f"  Transforms Configured: {self._are_transforms_configured}\n"
         
         if self.class_map:
-            s += f"  Classes: {len(self.class_map)}\n"
+            classes = list(self.class_map.keys())
+            if len(classes) > 4:
+                class_str = f"[{', '.join(f'{repr(c)}' for c in classes[:4])}, ...]"
+            else:
+                class_str = str(classes)
+            s += f"  Classes ({len(self.class_map)}): {class_str}\n"
 
         if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
+            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
+            val_len = len(self._val_dataset) if self._val_dataset else 0 # type: ignore
+            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
             s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
         elif self._full_dataset:
             s += f"  Full Dataset Size: {len(self._full_dataset)} images\n"
-            
+
         return s
-    
-
-class _DatasetTransformer(Dataset):
-    """
-    Internal wrapper class to apply a specific transform pipeline to any
-    dataset (e.g., a full ImageFolder or a Subset).
-    """
-    def __init__(self, dataset: Dataset, transform: Optional[transforms.Compose] = None, class_map: dict[str,int]=dict()):
-        self.dataset = dataset
-        self.transform = transform
-        self.class_map = class_map
-        
-        # --- Propagate attributes for inspection ---
-        # For ImageFolder
-        if hasattr(dataset, 'class_to_idx'):
-            self.class_to_idx = getattr(dataset, 'class_to_idx')
-        if hasattr(dataset, 'classes'):
-            self.classes = getattr(dataset, 'classes')
-        # For Subset
-        if hasattr(dataset, 'indices'):
-            self.indices = getattr(dataset, 'indices')
-        if hasattr(dataset, 'dataset'):
-            # This allows access to the *original* full dataset
-            self.original_dataset = getattr(dataset, 'dataset')
-
-    def __getitem__(self, index):
-        # Get the original data (e.g., PIL Image, label)
-        x, y = self.dataset[index] 
-        
-        # Apply the specific transform for this dataset
-        if self.transform:
-            x = self.transform(x)
-        return x, y
-        
-    def __len__(self):
-        return len(self.dataset) # type: ignore

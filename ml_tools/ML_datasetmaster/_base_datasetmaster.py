@@ -5,6 +5,7 @@ import numpy
 from typing import Union, Optional
 from abc import ABC
 from pathlib import Path
+from sklearn.model_selection import train_test_split
 
 from ..IO_tools import save_list_strings, save_json
 from ..ML_scaler import DragonScaler
@@ -213,6 +214,85 @@ class _BaseDatasetMaker(ABC):
             _LOGGER.info("Target scaling transformation complete.")
 
         return y_train_arr, y_val_arr, y_test_arr
+    
+    def _perform_random_splits(self, features_df: pandas.DataFrame, 
+                               target_data: Union[pandas.Series, pandas.DataFrame], 
+                               test_size: float, 
+                               validation_size: float, 
+                               random_state: int) -> tuple:
+        if test_size > 0.0:
+            X_train_val, X_test, y_train_val, y_test = train_test_split(
+                features_df, target_data, test_size=test_size, random_state=random_state
+            )
+        else:
+            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_data, target_data.iloc[:0]
+        
+        if validation_size > 0.0:
+            val_split_size = validation_size / (1.0 - test_size)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
+            )
+        else:
+            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_data.iloc[:0]
+            
+        self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
+        self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
+        
+        return X_train, X_val, X_test, y_train, y_val, y_test
+
+    def _apply_feature_scaling_logic(self, feature_scaler_arg: Union[str, DragonScaler],
+                                     X_train: pandas.DataFrame, 
+                                     y_train: Union[pandas.Series, pandas.DataFrame],
+                                     X_val: pandas.DataFrame, 
+                                     X_test: pandas.DataFrame,
+                                     label_dtype: torch.dtype, 
+                                     schema: FeatureSchema, 
+                                     verbose: int) -> tuple:
+        if feature_scaler_arg == "fit":
+            self.feature_scaler = None
+            _apply_scaling = True
+        elif feature_scaler_arg == "none":
+            self.feature_scaler = None
+            _apply_scaling = False
+        elif isinstance(feature_scaler_arg, DragonScaler):
+            self.feature_scaler = feature_scaler_arg
+            _apply_scaling = True
+        else:
+            _LOGGER.error("Invalid feature_scaler argument.")
+            raise ValueError()
+
+        if _apply_scaling:
+            return self._prepare_feature_scaler(X_train, y_train, X_val, X_test, label_dtype, schema, verbose)
+        else:
+            if verbose >= 2:
+                _LOGGER.info("Features have not been scaled as specified.")
+            return X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
+
+    def _apply_target_scaling_logic(self, target_scaler_arg: Union[str, DragonScaler],
+                                    y_train: Union[pandas.Series, pandas.DataFrame],
+                                    y_val: Union[pandas.Series, pandas.DataFrame],
+                                    y_test: Union[pandas.Series, pandas.DataFrame],
+                                    verbose: int) -> tuple:
+        if target_scaler_arg == "fit":
+            self.target_scaler = None
+            _apply_scaling = True
+        elif target_scaler_arg == "none":
+            self.target_scaler = None
+            _apply_scaling = False
+        elif isinstance(target_scaler_arg, DragonScaler):
+            self.target_scaler = target_scaler_arg
+            _apply_scaling = True
+        else:
+            _LOGGER.error("Invalid target_scaler argument.")
+            raise ValueError()
+
+        if _apply_scaling:
+            return self._prepare_target_scaler(y_train, y_val, y_test, verbose)
+        else:
+            y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
+            y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
+            y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
+            return y_train_final, y_val_final, y_test_final
     
     def _attach_scalers_to_datasets(self):
         """Helper to attach the master scalers to the child datasets."""

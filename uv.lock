@@ -350,7 +350,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "25.0.1"
+version = "25.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]

@@ -10,12 +10,11 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 from sklearn.model_selection import train_test_split
 
-from ..ML_vision_transformers._core_transforms import _save_recipe
-from ..ML_vision_transformers._inspect_folder import inspect_folder
-
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys, ObjectDetectionKeys
+from ..keys._keys import VisionTransformRecipeKeys, ObjectDetectionKeys, MLTaskKeys
+
+from ._base_vision_dataset import _BaseVisionDataset
 
 
 _LOGGER = get_logger("Object Detection Dataset")
@@ -49,8 +48,9 @@ class _ObjectDetectionDataset(Dataset):
         self.annotation_paths = annotation_paths
         self.transform = transform
         
-        # --- Propagate 'classes' if they exist ---
+        # --- Propagate 'classes' and 'class_map' if they exist ---
         self.classes: list[str] = []
+        self.class_map: dict[str, int] = {}
 
     def __len__(self):
         return len(self.image_paths)
@@ -60,8 +60,9 @@ class _ObjectDetectionDataset(Dataset):
         ann_path = self.annotation_paths[idx]
         
         try:
-            # Open image
-            image = Image.open(img_path).convert("RGB")
+            # Open image safely to prevent file descriptor leaks
+            with open(img_path, 'rb') as f_img:
+                image = Image.open(f_img).convert("RGB")
             
             # Load and parse annotation
             with open(ann_path, 'r') as f:
@@ -73,13 +74,18 @@ class _ObjectDetectionDataset(Dataset):
             
             # Convert to tensors
             target: dict[str, Any] = {}
-            target[ObjectDetectionKeys.BOXES] = torch.as_tensor(boxes, dtype=torch.float32)
+            
+            if len(boxes) == 0:
+                target[ObjectDetectionKeys.BOXES] = torch.empty((0, 4), dtype=torch.float32)
+            else:
+                target[ObjectDetectionKeys.BOXES] = torch.as_tensor(boxes, dtype=torch.float32)
+            
             target[ObjectDetectionKeys.LABELS] = torch.as_tensor(labels, dtype=torch.int64)
             
         except Exception as e:
             _LOGGER.error(f"Error loading sample #{idx}: {img_path.name} / {ann_path.name}. Error: {e}")
-            # Return empty/dummy data
-            return torch.empty(3, 224, 224), {ObjectDetectionKeys.BOXES: torch.empty((0, 4)), ObjectDetectionKeys.LABELS: torch.empty(0, dtype=torch.long)}
+            # Fallback to the next index to prevent DataLoader collate crashes
+            return self.__getitem__((idx + 1) % len(self))
 
         if self.transform:
             image, target = self.transform(image, target)
@@ -136,7 +142,7 @@ class _OD_PairedRandomHorizontalFlip:
         return image, target
 
 
-class DragonDatasetObjectDetection:
+class DragonDatasetObjectDetection(_BaseVisionDataset):
     """
     Creates processed PyTorch datasets for object detection from image
     and JSON annotation folders.
@@ -153,29 +159,17 @@ class DragonDatasetObjectDetection:
     2. `maker.set_class_map({'background': 0, 'person': 1, 'car': 2})`
     3. `maker.split_data(val_size=0.2)`
     4. `maker.configure_transforms()`
-    5. `train_ds, val_ds = maker.get_datasets()`
-    6. `collate_fn = maker.collate_fn`
-    7. `train_loader = DataLoader(train_ds, ..., collate_fn=collate_fn)`
+    5. `collate_fn = maker.collate_fn`
     """
     IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
     
     def __init__(self):
-        """
-        Typically not called directly. Use the class method `from_folders()` to create an instance.
-        """
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
+        super().__init__()
         self.image_paths: list[Path] = []
         self.annotation_paths: list[Path] = []
-        self.class_map: dict[str, int] = {}
         
-        self._is_split = False
-        self._are_transforms_configured = False
         self.train_transform: Optional[Callable] = None
         self.val_transform: Optional[Callable] = None
-        self._val_recipe_components: Optional[dict[str, Any]] = None
-        self._has_mean_std: bool = False
 
     @classmethod
     def from_folders(cls, image_dir: Union[str, Path], annotation_dir: Union[str, Path]) -> 'DragonDatasetObjectDetection':
@@ -236,20 +230,6 @@ class DragonDatasetObjectDetection:
         
         return maker
 
-    @staticmethod
-    def inspect_folder(path: Union[str, Path]):
-        """
-        Logs a report of the types, sizes, and channels of image files
-        found in the directory and its subdirectories.
-        
-        This is a utility method to help diagnose potential dataset
-        issues (e.g., mixed image modes, corrupted files) before loading.
-
-        Args:
-            path (str, Path): The directory path to inspect.
-        """
-        inspect_folder(path)
-
     def set_class_map(self, class_map: dict[str, int]) -> 'DragonDatasetObjectDetection':
         """
         Sets a map of class_name -> pixel_value. This is used by the
@@ -258,6 +238,8 @@ class DragonDatasetObjectDetection:
         **Important:** For object detection models, 'background' MUST
         be included as class 0.
         Example: `{'background': 0, 'person': 1, 'car': 2}`
+        
+        Propagates the class names and mapping to any datasets that have already been created (train/val/test).
 
         Args:
             class_map (Dict[str, int]): A dictionary mapping the string name
@@ -265,28 +247,28 @@ class DragonDatasetObjectDetection:
         """
         if 'background' not in class_map or class_map['background'] != 0:
             _LOGGER.warning("Object detection class map should include 'background' mapped to 0.")
+            raise ValueError()
         
         self.class_map = class_map
+        self.classes = list(class_map.keys())
         
         # Propagate to dataset subsets if they have already been created
-        if self._train_dataset is not None:
-            self._train_dataset.classes = self.classes
-        if self._val_dataset is not None:
-            self._val_dataset.classes = self.classes
-        if self._test_dataset is not None:
-            self._test_dataset.classes = self.classes
+        if self._is_split:
+            if self._train_dataset is not None:
+                self._train_dataset.classes = self.classes # type: ignore
+                self._train_dataset.class_map = self.class_map # type: ignore
+            if self._val_dataset is not None:
+                self._val_dataset.classes = self.classes # type: ignore
+                self._val_dataset.class_map = self.class_map # type: ignore
+            if self._test_dataset is not None:
+                self._test_dataset.classes = self.classes # type: ignore
+                self._test_dataset.class_map = self.class_map # type: ignore
             
         _LOGGER.info(f"Class map set: {class_map}")
         return self
-    
-    @property
-    def classes(self) -> list[str]:
-        """Returns the list of class names, if set."""
-        if self.class_map:
-            return list(self.class_map.keys())
-        return []
 
-    def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
+    def split_data(self, val_size: float = 0.2, 
+                   test_size: float = 0.0, 
                    random_state: Optional[int] = 42) -> 'DragonDatasetObjectDetection':
         """
         Splits the loaded image-annotation pairs into train, validation, and test sets.
@@ -333,7 +315,8 @@ class DragonDatasetObjectDetection:
             test_imgs, test_anns = get_paths(test_indices)
             
             self._test_dataset = _ObjectDetectionDataset(test_imgs, test_anns, transform=None)
-            self._test_dataset.classes = self.classes # type: ignore
+            self._test_dataset.class_map = self.class_map
+            self._test_dataset.classes = self.classes
             _LOGGER.info(f"Test set created with {len(self._test_dataset)} images.")
         else:
             val_imgs, val_anns = get_paths(val_test_indices)
@@ -342,16 +325,18 @@ class DragonDatasetObjectDetection:
         self._val_dataset = _ObjectDetectionDataset(val_imgs, val_anns, transform=None)
         
         # Propagate class names to datasets for MLTrainer
-        self._train_dataset.classes = self.classes # type: ignore
-        self._val_dataset.classes = self.classes # type: ignore
+        self._train_dataset.classes = self.classes
+        self._val_dataset.classes = self.classes
+        self._train_dataset.class_map = self.class_map
+        self._val_dataset.class_map = self.class_map
 
         self._is_split = True
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
         return self
 
     def configure_transforms(self, 
-                             mean: Optional[list[float]] = [0.485, 0.456, 0.406], 
-                             std: Optional[list[float]] = [0.229, 0.224, 0.225],
+                             mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
+                             std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
                              random_horizontal_flip_probability: float = 0.5
                              ) -> 'DragonDatasetObjectDetection':
         """
@@ -364,8 +349,8 @@ class DragonDatasetObjectDetection:
         Transforms are limited to augmentation (flip), ToTensor, and Normalize.
 
         Args:
-            mean (List[float] | None): The mean values for image normalization.
-            std (List[float] | None): The std dev values for image normalization.
+            mean (Tuple[float, ...] | None): The mean values for image normalization.
+            std (Tuple[float, ...] | None): The std dev values for image normalization.
             random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
 
         Returns:
@@ -379,11 +364,20 @@ class DragonDatasetObjectDetection:
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
         
+        self._val_recipe_components = {"_initialized": True}
+        
+        mean_list: list[float] = []
+        std_list: list[float] = []
+        # cast to list
+        if mean is not None and std is not None:
+            mean_list = list(mean)
+            std_list = list(std)
+        
         if mean is not None and std is not None:
             # --- Store components for validation recipe ---
             self._val_recipe_components = {
-                VisionTransformRecipeKeys.MEAN: mean,
-                VisionTransformRecipeKeys.STD: std
+                VisionTransformRecipeKeys.MEAN: mean_list,
+                VisionTransformRecipeKeys.STD: std_list
             }
             self._has_mean_std = True
             
@@ -391,14 +385,14 @@ class DragonDatasetObjectDetection:
             # --- Validation/Test Pipeline (Deterministic) ---
             self.val_transform = _OD_PairedCompose([
                 _OD_PairedToTensor(),
-                _OD_PairedNormalize(mean, std) # type: ignore
+                _OD_PairedNormalize(mean_list, std_list)
             ])
             
             # --- Training Pipeline (Augmentation) ---
             self.train_transform = _OD_PairedCompose([
                 _OD_PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
                 _OD_PairedToTensor(),
-                _OD_PairedNormalize(mean, std) # type: ignore
+                _OD_PairedNormalize(mean_list, std_list)
             ])
         else:
             # --- Validation/Test Pipeline (Deterministic) ---
@@ -421,25 +415,6 @@ class DragonDatasetObjectDetection:
         self._are_transforms_configured = True
         _LOGGER.info("Paired object detection transforms configured and applied.")
         return self
-
-    def get_datasets(self) -> tuple[Dataset, ...]:
-        """
-        Returns the final train, validation, and optional test datasets.
-        
-        Raises:
-            RuntimeError: If called before data is split.
-            RuntimeError: If called before transforms are configured.
-        """
-        if not self._is_split:
-            _LOGGER.error("Data has not been split. Call .split_data() first.")
-            raise RuntimeError()
-        if not self._are_transforms_configured:
-            _LOGGER.error("Transforms have not been configured. Call .configure_transforms() first.")
-            raise RuntimeError()
-
-        if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
-        return self._train_dataset, self._val_dataset # type: ignore
     
     @property
     def collate_fn(self) -> Callable:
@@ -450,77 +425,21 @@ class DragonDatasetObjectDetection:
         """
         return _od_collate_fn
     
-    def save_transform_recipe(self, filepath: Union[str, Path]) -> None:
-        """
-        Saves the validation transform pipeline as a JSON recipe file.
-        
-        For object detection, this recipe only includes ToTensor and
-        Normalize, as resizing is handled by the model.
-
-        Args:
-            filepath (str | Path): The path to save the .json recipe file.
-        """
-        if not self._are_transforms_configured:
-            _LOGGER.error("Transforms are not configured. Call .configure_transforms() first.")
-            raise RuntimeError()
-        
-        components = self._val_recipe_components
-        
-        # validate path
-        file_path = make_fullpath(filepath, make=True, enforce="file")
-
-        # Add standard transforms
-        recipe: dict[str, Any] = {
-            VisionTransformRecipeKeys.TASK: "object_detection",
-            VisionTransformRecipeKeys.PIPELINE: [
-                {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}},
-            ]
-        }
-        
-        if self._has_mean_std and components:
-            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+    def _get_task_name(self) -> str:
+        return MLTaskKeys.OBJECT_DETECTION
+    
+    def _build_recipe_pipeline(self) -> list[dict[str, Any]]:
+        pipeline = [
+            {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}}
+        ]
+        if self._has_mean_std and self._val_recipe_components:
+            pipeline.append(
                 {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
-                    "mean": components[VisionTransformRecipeKeys.MEAN],
-                    "std": components[VisionTransformRecipeKeys.STD]
+                    "mean": self._val_recipe_components[VisionTransformRecipeKeys.MEAN],
+                    "std": self._val_recipe_components[VisionTransformRecipeKeys.STD]
                 }}
             )
-        
-        # Save the file
-        _save_recipe(recipe, file_path)
-    
-    def images_per_dataset(self) -> str:
-        """
-        Get the number of images per dataset as a string.
-        """
-        if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
-        else:
-            _LOGGER.warning("No datasets found.")
-            return "No datasets found"
-    
-    @property
-    def train_dataset(self) -> Dataset:
-        if self._train_dataset is None: 
-            _LOGGER.error("Train Dataset not created.")
-            raise RuntimeError()
-        return self._train_dataset
-    
-    @property
-    def validation_dataset(self) -> Dataset:
-        if self._val_dataset is None: 
-            _LOGGER.error("Validation Dataset not yet created.")
-            raise RuntimeError()
-        return self._val_dataset
-
-    @property
-    def test_dataset(self) -> Dataset:
-        if self._test_dataset is None: 
-            _LOGGER.error("Test Dataset not yet created.")
-            raise RuntimeError()
-        return self._test_dataset
+        return pipeline
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
@@ -529,12 +448,17 @@ class DragonDatasetObjectDetection:
         s += f"  Transforms Configured: {self._are_transforms_configured}\n"
         
         if self.class_map:
-            s += f"  Classes ({len(self.class_map)}): {list(self.class_map.keys())}\n"
+            classes = list(self.class_map.keys())
+            if len(classes) > 4:
+                class_str = f"[{', '.join(f'{repr(c)}' for c in classes[:4])}, ...]"
+            else:
+                class_str = str(classes)
+            s += f"  Classes ({len(self.class_map)}): {class_str}\n"
 
         if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
+            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
+            val_len = len(self._val_dataset) if self._val_dataset else 0 # type: ignore
+            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
             s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
             
         return s

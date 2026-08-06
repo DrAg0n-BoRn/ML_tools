@@ -9,13 +9,11 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 from sklearn.model_selection import train_test_split
 
-from ..ML_vision_transformers._core_transforms import _save_recipe
-from ..ML_vision_transformers._inspect_folder import inspect_folder
-from ..IO_tools import save_json
-
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys
+from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys
+
+from ._base_vision_dataset import _BaseVisionDataset
 
 
 _LOGGER = get_logger("Segmentation Dataset")
@@ -48,9 +46,11 @@ class _SegmentationDataset(Dataset):
         mask_path = self.mask_paths[idx]
         
         try:
-            # Open as PIL Images. Masks should be 'L'
-            image = Image.open(img_path).convert("RGB")
-            mask = Image.open(mask_path).convert("L")
+            # Open as PIL Images safely to prevent file descriptor leaks
+            with open(img_path, 'rb') as f_img:
+                image = Image.open(f_img).convert("RGB")
+            with open(mask_path, 'rb') as f_mask:
+                mask = Image.open(f_mask).convert("L")
         except Exception as e:
             _LOGGER.error(f"Error loading sample #{idx}: {img_path.name} / {mask_path.name}. Error: {e}")
             # Fallback to the next index to prevent DataLoader collate crashes
@@ -95,7 +95,7 @@ class _PairedNormalize:
 class _PairedResize:
     """Resizes an image and mask to the same size."""
     def __init__(self, size: int):
-        self.size = [size, size]
+        self.size = [size]
     
     def __call__(self, image: Image.Image, mask: Image.Image) -> tuple[Image.Image, Image.Image]:
         resized_image = TF.resize(image, self.size, interpolation=TF.InterpolationMode.BILINEAR) # type: ignore
@@ -144,9 +144,34 @@ class _PairedRandomResizedCrop:
         
         return cropped_image, cropped_mask # type: ignore
 
+class _PairedResizeAspectFill:
+    """Pads an image and mask to be square, matching the longest edge."""
+    def __init__(self, image_fill: int = 0, mask_fill: int = 0):
+        self.image_fill = image_fill
+        self.mask_fill = mask_fill
+
+    def __call__(self, image: Image.Image, mask: Image.Image) -> tuple[Image.Image, Image.Image]:
+        w, h = image.size
+        if w == h:
+            return image, mask
+
+        if w > h:
+            top_padding = (w - h) // 2
+            bottom_padding = w - h - top_padding
+            padding = (0, top_padding, 0, bottom_padding)
+        else: # h > w
+            left_padding = (h - w) // 2
+            right_padding = h - w - left_padding
+            padding = (left_padding, 0, right_padding, 0)
+
+        padded_image = TF.pad(image, padding, fill=self.image_fill) # type: ignore
+        padded_mask = TF.pad(mask, padding, fill=self.mask_fill) # type: ignore
+        
+        return padded_image, padded_mask # type: ignore
+
 
 # --- Segmentation Dataset ---
-class DragonDatasetSegmentation:
+class DragonDatasetSegmentation(_BaseVisionDataset):
     """
     Creates processed PyTorch datasets for segmentation from image and mask folders.
 
@@ -159,28 +184,18 @@ class DragonDatasetSegmentation:
     2. `maker.set_class_map({'background': 0, 'road': 1})`
     3. `maker.split_data(val_size=0.2, test_size=0.1)`
     4. `maker.configure_transforms(resize_size=256, crop_size=224, mean=[...], std=[...])`
-    5. `train_ds, val_ds, test_ds = maker.get_datasets()`
-    6. `maker.save_transform_recipe('segmentation_val_recipe.json')`
-    7. `maker.save_class_map('data/')`
+    5. `maker.save_transform_recipe('segmentation_val_recipe.json')`
+    6. `maker.save_class_map('data/')`
     """
     IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
     
     def __init__(self):
-        """
-        Typically not called directly. Use the class method `from_folders()` to create an instance.
-        """
-        self._train_dataset = None
-        self._test_dataset = None
-        self._val_dataset = None
+        super().__init__()
         self.image_paths: list[Path] = []
         self.mask_paths: list[Path] = []
-        self.class_map: dict[str, int] = {}
         
-        self._is_split = False
-        self._are_transforms_configured = False
         self.train_transform: Optional[Callable] = None
         self.val_transform: Optional[Callable] = None
-        self._has_mean_std: bool = False
 
     @classmethod
     def from_folders(cls, image_dir: Union[str, Path], mask_dir: Union[str, Path]) -> 'DragonDatasetSegmentation':
@@ -257,23 +272,11 @@ class DragonDatasetSegmentation:
         
         return maker
 
-    @staticmethod
-    def inspect_folder(path: Union[str, Path]):
-        """
-        Logs a report of the types, sizes, and channels of image files
-        found in the directory and its subdirectories.
-        
-        This is a utility method to help diagnose potential dataset
-        issues (e.g., mixed image modes, corrupted files) before loading.
-
-        Args:
-            path (str, Path): The directory path to inspect.
-        """
-        inspect_folder(path)
-
     def set_class_map(self, class_map: dict[str, int]) -> 'DragonDatasetSegmentation':
         """
         Sets a map of class_name -> pixel value. This is used by the Trainer for clear evaluation reports.
+        
+        Propagates the class names and mapping to any datasets that have already been created (train/val/test).
 
         Args:
             class_map (dict[str, int]): A dictionary mapping the integer pixel
@@ -281,30 +284,25 @@ class DragonDatasetSegmentation:
                 Example: {'background': 0, 'road': 1, 'car': 2}
         """
         self.class_map = class_map
+        self.classes = list(class_map.keys())
         
         # Retroactively sync datasets if split_data was already called
         if self._is_split:
             if self._train_dataset: 
-                self._train_dataset.classes = self.classes
-                self._train_dataset.class_map = self.class_map
+                self._train_dataset.classes = self.classes # type: ignore
+                self._train_dataset.class_map = self.class_map # type: ignore
             if self._val_dataset: 
-                self._val_dataset.classes = self.classes
-                self._val_dataset.class_map = self.class_map
+                self._val_dataset.classes = self.classes # type: ignore
+                self._val_dataset.class_map = self.class_map # type: ignore
             if self._test_dataset: 
-                self._test_dataset.classes = self.classes
-                self._test_dataset.class_map = self.class_map
+                self._test_dataset.classes = self.classes # type: ignore
+                self._test_dataset.class_map = self.class_map # type: ignore
         
         _LOGGER.info(f"Class map set: {class_map}")
         return self
-    
-    @property
-    def classes(self) -> list[str]:
-        """Returns the list of class names, if set."""
-        if self.class_map:
-            return list(self.class_map.keys())
-        return []
 
-    def split_data(self, val_size: float = 0.2, test_size: float = 0.0, 
+    def split_data(self, val_size: float = 0.2, 
+                   test_size: float = 0.0, 
                    random_state: Optional[int] = 42) -> 'DragonDatasetSegmentation':
         """
         Splits the loaded image-mask pairs into train, validation, and test sets.
@@ -372,9 +370,9 @@ class DragonDatasetSegmentation:
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
-                             crop_size: Optional[int] = 224, 
                              mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
                              std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
+                             apply_paired_square_aspect: bool = False,
                              # parameters for training transforms
                              random_horizontal_flip_probability: float = 0.5,
                              random_resize_crop_scale: tuple[float, float] = (0.5, 1.0),
@@ -386,17 +384,25 @@ class DragonDatasetSegmentation:
         This method must be called AFTER data is split.
 
         Args:
-            resize_size (int): The size to resize the smallest edge to
-                               for validation/testing.
-            crop_size (int | None): The target size (square) for the final cropped image.
+            resize_size (int): The target size for Paired-RandomResizedCrop (training) and the size to resize the smallest edge of the image (validation/test).
             mean (tuple[float] | None): The mean values for image normalization.
             std (tuple[float] | None): The std dev values for image normalization.
+            apply_paired_square_aspect (bool): If True, applies a Paired-CenterCrop(resize_size) to both validation and test pipelines to enforce square inputs. 
+                Does not replace advanced preprocessing for specialized aspect ratios. Use with caution.
             random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
             random_resize_crop_scale (tuple[float, float]): Scale range for random resized crop during training.
             random_resize_crop_ratio (tuple[float, float]): Aspect ratio range for random resized crop during training.
 
         Returns:
             DragonDatasetSegmentation: The same instance, with transforms applied.
+            
+        ⚠️ WARNING: PyTorch DataLoaders require all images in a batch to have the same dimensions. 
+        Since `resize_size` scales the shortest edge and maintains the aspect ratio, 
+        datasets with varying aspect ratios will crash the DataLoader. 
+        
+        Setting `apply_paired_square_aspect=True` applies a Paired-CenterCrop(resize_size) to guarantee uniform batch 
+        dimensions. However, note that cropping may trim boundary context/mask data. 
+        For optimal results and specialized aspect-ratio handling, advanced preprocessing should be performed on the raw data beforehand.
         """
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
@@ -406,53 +412,45 @@ class DragonDatasetSegmentation:
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
         
-        if crop_size is None:
-            crop_size = resize_size
         
         # --- Store components for validation recipe ---
-        self.val_recipe_components: dict[str,Any] = {
+        self._val_recipe_components: dict[str,Any] = {
             VisionTransformRecipeKeys.RESIZE_SIZE: resize_size,
-            VisionTransformRecipeKeys.CROP_SIZE: crop_size,
+            "APPLY_SQUARE_ASPECT": apply_paired_square_aspect
         }
-    
+        
+        mean_list: list[float] = []
+        std_list: list[float] = []
+        # cast to list
         if mean is not None and std is not None:
-            self.val_recipe_components.update({
-                VisionTransformRecipeKeys.MEAN: list(mean),
-                VisionTransformRecipeKeys.STD: list(std)
+            mean_list = list(mean)
+            std_list = list(std)
+        
+            self._val_recipe_components.update({
+                VisionTransformRecipeKeys.MEAN: mean_list,
+                VisionTransformRecipeKeys.STD: std_list
             })
             self._has_mean_std = True
+        
+        base_val_pipeline: list[Any] = [_PairedResize(resize_size)]
+        if apply_paired_square_aspect:
+            base_val_pipeline.append(_PairedCenterCrop(resize_size))
+        
+        base_train_pipeline: list[Any] = [
+            _PairedRandomResizedCrop(size=resize_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio),
+            _PairedRandomHorizontalFlip(p=random_horizontal_flip_probability)
+        ]
+        
+        final_pipeline: list[Any] = [_PairedToTensor()]
+        
+        if self._has_mean_std:
+            final_pipeline.append(_PairedNormalize(mean_list, std_list))
 
         # --- Validation/Test Pipeline (Deterministic) ---
-        if self._has_mean_std:
-            # Type-checker: ensure mean/std are not None before converting to list
-            assert mean is not None and std is not None
-            self.val_transform = _PairedCompose([
-                _PairedResize(resize_size),
-                _PairedCenterCrop(crop_size),
-                _PairedToTensor(),
-                _PairedNormalize(list(mean), list(std))
-            ])
-            # --- Training Pipeline (Augmentation) ---
-            # Type-checker: ensure mean/std are not None before converting to list
-            assert mean is not None and std is not None
-            self.train_transform = _PairedCompose([
-                _PairedRandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio),
-                _PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
-                _PairedToTensor(),
-                _PairedNormalize(list(mean), list(std))
-            ])
-        else:
-            self.val_transform = _PairedCompose([
-                _PairedResize(resize_size),
-                _PairedCenterCrop(crop_size),
-                _PairedToTensor()
-            ])
-            # --- Training Pipeline (Augmentation) ---
-            self.train_transform = _PairedCompose([
-                _PairedRandomResizedCrop(size=crop_size, scale=random_resize_crop_scale, ratio=random_resize_crop_ratio),
-                _PairedRandomHorizontalFlip(p=random_horizontal_flip_probability),
-                _PairedToTensor()
-            ])
+        self.val_transform = _PairedCompose([*base_val_pipeline, *final_pipeline])
+        
+        # --- Training Pipeline (Augmentation) ---
+        self.train_transform = _PairedCompose([*base_train_pipeline, *final_pipeline])
 
         # --- Apply Transforms to the Datasets ---
         self._train_dataset.transform = self.train_transform # type: ignore
@@ -463,122 +461,36 @@ class DragonDatasetSegmentation:
         self._are_transforms_configured = True
         _LOGGER.info("Paired segmentation transforms configured and applied.")
         return self
-
-    def get_datasets(self) -> tuple[Dataset, ...]:
-        """
-        Returns the final train, validation, and optional test datasets.
-        
-        Raises:
-            RuntimeError: If called before data is split.
-            RuntimeError: If called before transforms are configured.
-        """
-        if not self._is_split:
-            _LOGGER.error("Data has not been split. Call .split_data() first.")
-            raise RuntimeError()
-        if not self._are_transforms_configured:
-            _LOGGER.error("Transforms have not been configured. Call .configure_transforms() first.")
-            raise RuntimeError()
-
-        if self._test_dataset:
-            return self._train_dataset, self._val_dataset, self._test_dataset # type: ignore
-        return self._train_dataset, self._val_dataset # type: ignore
     
-    def save_transform_recipe(self, filepath: Union[str, Path]) -> None:
-        """
-        Saves the validation transform pipeline as a JSON recipe file.
-        
-        This recipe can be loaded by the PyTorchVisionInferenceHandler
-        to ensure identical preprocessing.
-
-        Args:
-            filepath (str | Path): The path to save the .json recipe file.
-        """
-        if not self._are_transforms_configured:
-            _LOGGER.error("Transforms are not configured. Call .configure_transforms() first.")
-            raise RuntimeError()
-        
-        components = self.val_recipe_components
-        
+    def _get_task_name(self) -> str:
+        return MLTaskKeys.BINARY_SEGMENTATION if len(self.classes) == 2 else MLTaskKeys.MULTICLASS_SEGMENTATION
+    
+    def _build_recipe_pipeline(self) -> list[dict[str, Any]]:
+        components = self._val_recipe_components
         if not components:
-            _LOGGER.error(f"Error getting the transformers recipe for validation set.")
-            raise ValueError()
+            return []
+
+        pipeline = [
+            {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}}
+        ]
         
-        # validate path
-        file_path = make_fullpath(filepath, make=True, enforce="file")
-        
-        # Add standard transforms
-        recipe: dict[str, Any] = {
-            VisionTransformRecipeKeys.TASK: "segmentation",
-            VisionTransformRecipeKeys.PIPELINE: [
-                {VisionTransformRecipeKeys.NAME: "Resize", "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}},
-                {VisionTransformRecipeKeys.NAME: "CenterCrop", "kwargs": {"size": components[VisionTransformRecipeKeys.CROP_SIZE]}},
-                {VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}}
-            ]
-        }
+        if components.get("APPLY_SQUARE_ASPECT"):
+            pipeline.append({
+                VisionTransformRecipeKeys.NAME: "CenterCrop", 
+                "kwargs": {"size": components[VisionTransformRecipeKeys.RESIZE_SIZE]}
+            })
+
+        pipeline.append({VisionTransformRecipeKeys.NAME: "ToTensor", "kwargs": {}})
         
         if self._has_mean_std:
-            recipe[VisionTransformRecipeKeys.PIPELINE].append(
+            pipeline.append(
                 {VisionTransformRecipeKeys.NAME: "Normalize", "kwargs": {
                     "mean": components[VisionTransformRecipeKeys.MEAN],
                     "std": components[VisionTransformRecipeKeys.STD]
                 }}
             )
-        
-        # Save the file
-        _save_recipe(recipe, file_path)
-        
-    def save_class_map(self, save_dir: Union[str,Path]) -> None:
-        """
-        Saves the class to index mapping {str: int} to a directory.
-        
-        Args:
-            save_dir (str | Path): The directory to save the class map JSON file.
-        """
-        if not self.class_map:
-            _LOGGER.error(f"Class to index mapping is empty.")
-            raise ValueError()
-        
-        save_json(data=self.class_map,
-                  directory=save_dir,
-                  filename="Class_to_Index",
-                  verbose=False)
-        
-        _LOGGER.info(f"Class to index mapping saved to {save_dir}.")
-        
-    def images_per_dataset(self) -> str:
-        """
-        Get the number of images per dataset as a string.
-        """
-        if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
-            return f"Train | Validation | Test: {train_len} | {val_len} | {test_len} images"
-        else:
-            _LOGGER.warning("No datasets found.")
-            return "No datasets found"
+        return pipeline
     
-    @property
-    def train_dataset(self) -> Dataset:
-        if self._train_dataset is None: 
-            _LOGGER.error("Train Dataset not created.")
-            raise RuntimeError()
-        return self._train_dataset
-    
-    @property
-    def validation_dataset(self) -> Dataset:
-        if self._val_dataset is None: 
-            _LOGGER.error("Validation Dataset not yet created.")
-            raise RuntimeError()
-        return self._val_dataset
-
-    @property
-    def test_dataset(self) -> Dataset:
-        if self._test_dataset is None: 
-            _LOGGER.error("Test Dataset not yet created.")
-            raise RuntimeError()
-        return self._test_dataset
-        
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Total Image-Mask Pairs: {len(self.image_paths)}\n"
@@ -586,12 +498,17 @@ class DragonDatasetSegmentation:
         s += f"  Transforms Configured: {self._are_transforms_configured}\n"
         
         if self.class_map:
-            s += f"  Classes: {list(self.class_map.keys())}\n"
+            classes = list(self.class_map.keys())
+            if len(classes) > 4:
+                class_str = f"[{', '.join(f'{repr(c)}' for c in classes[:4])}, ...]"
+            else:
+                class_str = str(classes)
+            s += f"  Classes ({len(self.class_map)}): {class_str}\n"
 
         if self._is_split:
-            train_len = len(self._train_dataset) if self._train_dataset else 0
-            val_len = len(self._val_dataset) if self._val_dataset else 0
-            test_len = len(self._test_dataset) if self._test_dataset else 0
+            train_len = len(self._train_dataset) if self._train_dataset else 0 # type: ignore
+            val_len = len(self._val_dataset) if self._val_dataset else 0 # type: ignore
+            test_len = len(self._test_dataset) if self._test_dataset else 0 # type: ignore
             s += f"  Datasets (Train|Val|Test): {train_len} | {val_len} | {test_len}\n"
             
         return s

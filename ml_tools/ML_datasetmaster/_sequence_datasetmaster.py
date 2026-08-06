@@ -6,13 +6,15 @@ from typing import Literal, Union, Optional
 from pathlib import Path
 
 from ..ML_scaler import DragonScaler
-from ..IO_tools import save_json
 from ..schema import FeatureSchema
+
+from ..IO_tools import save_json
 from ..path_manager import make_fullpath
 from .._core import get_logger
 from ..keys._keys import DatasetKeys, MLTaskKeys, ScalerKeys
 
 from ._base_datasetmaster import _BaseDatasetMaker
+
 
 _LOGGER = get_logger("Sequence Dataset")
 
@@ -268,59 +270,41 @@ class DragonDatasetSequence(_BaseDatasetMaker):
         dummy_y = pandas.Series(0.0, index=X_train.index)
 
         # --- 3. Scale Features (and thereby Targets) ---
-        if feature_scaler == "fit":
-            self.feature_scaler = None 
-            _apply_f_scaling = True
-        elif feature_scaler == "none":
-            self.feature_scaler = None
-            _apply_f_scaling = False
-        elif isinstance(feature_scaler, DragonScaler):
-            self.feature_scaler = feature_scaler
-            _apply_f_scaling = True
-        else:
-            _LOGGER.error("Invalid feature_scaler argument.")
-            raise ValueError()
-
-        if _apply_f_scaling:
-            X_train_np, X_val_np, X_test_np = self._prepare_feature_scaler(
-                X_train, dummy_y, X_val, X_test, label_dtype=torch.float32, schema=schema, verbose=verbose
-            )
+        X_train_np, X_val_np, X_test_np = self._apply_feature_scaling_logic(
+            feature_scaler, X_train, dummy_y, X_val, X_test, torch.float32, schema, verbose
+        )
+        
+        # Explicit dtype prevents PyTorch from copying the array to cast it later
+        if not self.feature_scaler:
+            X_train_np = X_train_np.astype(numpy.float32)
+            X_val_np = X_val_np.astype(numpy.float32)
+            X_test_np = X_test_np.astype(numpy.float32)
             
-            # Extract target scaler directly from the fitted feature scaler to maintain mathematical consistency
-            if self.feature_scaler and self.feature_scaler.mean_ is not None and self.feature_scaler.std_ is not None:
-                continuous_targets = []
-                target_means = []
-                target_stds = []
-                
-                # Map absolute feature indices to relative target indices
-                for relative_idx, abs_idx in enumerate(self._target_indices):
-                    if self.feature_scaler.continuous_feature_indices and abs_idx in self.feature_scaler.continuous_feature_indices:
-                        scaler_idx = self.feature_scaler.continuous_feature_indices.index(abs_idx)
-                        continuous_targets.append(relative_idx)
-                        target_means.append(self.feature_scaler.mean_[scaler_idx].item())
-                        target_stds.append(self.feature_scaler.std_[scaler_idx].item())
-                
-                if continuous_targets:
-                    # Create a dedicated target scaler scoped ONLY to the model's output size
-                    self.target_scaler = DragonScaler(
-                        mean=torch.tensor(target_means),
-                        std=torch.tensor(target_stds),
-                        continuous_feature_indices=continuous_targets
-                    )
-                else:
-                    self.target_scaler = None
+        # Extract target scaler directly from the fitted feature scaler to maintain mathematical consistency
+        if self.feature_scaler and self.feature_scaler.mean_ is not None and self.feature_scaler.std_ is not None:
+            continuous_targets = []
+            target_means = []
+            target_stds = []
+            
+            # Map absolute feature indices to relative target indices
+            for relative_idx, abs_idx in enumerate(self._target_indices):
+                if self.feature_scaler.continuous_feature_indices and abs_idx in self.feature_scaler.continuous_feature_indices:
+                    scaler_idx = self.feature_scaler.continuous_feature_indices.index(abs_idx)
+                    continuous_targets.append(relative_idx)
+                    target_means.append(self.feature_scaler.mean_[scaler_idx].item())
+                    target_stds.append(self.feature_scaler.std_[scaler_idx].item())
+            
+            if continuous_targets:
+                # Create a dedicated target scaler scoped ONLY to the model's output size
+                self.target_scaler = DragonScaler(
+                    mean=torch.tensor(target_means),
+                    std=torch.tensor(target_stds),
+                    continuous_feature_indices=continuous_targets
+                )
             else:
                 self.target_scaler = None
         else:
-            if verbose >= 2:
-                _LOGGER.info("Features have not been scaled as specified.")
-            # Explicit dtype prevents PyTorch from copying the array to cast it later
-            X_train_np = X_train.to_numpy(dtype=numpy.float32)
-            X_val_np = X_val.to_numpy(dtype=numpy.float32)
-            X_test_np = X_test.to_numpy(dtype=numpy.float32)
-            
             self.target_scaler = None
-
 
         # --- 4. Generate Windows ---
         self._train_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_train_np, verbose=verbose)
@@ -497,7 +481,6 @@ class DragonDatasetSequence(_BaseDatasetMaker):
             filename=report_filename,
             verbose=verbose
         )
-        
 
     @classmethod
     def from_bundle(cls, filepath: Union[str, Path], verbose: bool = True) -> 'DragonDatasetSequence':

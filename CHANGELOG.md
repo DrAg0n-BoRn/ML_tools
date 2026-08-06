@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.1.0] 2026-08-06
+
+### Added
+
+- ML_trainer:
+    - `DragonSequenceTrainer`: Added a new `self.target_names` attribute to the trainer, which is initialized during the constructor. This attribute is used to store the names of the target variables for multi-target sequence prediction tasks.
+
+- ML_datasetmaster:
+    - Added `_BaseVisionDataset` abstract base class to centralize boilerplate code and unify the API for vision dataset classes.
+
+### Changed
+
+- ML_datasetmaster:
+    - Refactored code and improved modularity in `_BaseDatasetMaker`, `DragonDataset`, `DragonDatasetMulti`, and `DragonDatasetSequence`.
+    - Renamed `DragonDatasetVision` to `DragonDatasetImageClassification` for clarity and consistency with other vision dataset classes.
+    - Refactored `DragonDatasetObjectDetection`, `DragonDatasetSegmentation`, and `DragonDatasetImageClassification`(previously `DragonDatasetVision`) to inherit from `_BaseVisionDataset`, removing duplicated methods and properties. 
+        - Removed method `get_datasets()` from all dataset classes.
+        - Removed `Resize` transform from the training pipeline in `DragonDatasetImageClassification`. The training pipeline relies on `RandomResizedCrop` instead.
+        - Removed `CenterCrop` transform from the validation pipeline in `DragonDatasetImageClassification`.
+        - Refactored `DragonDatasetSegmentation.configure_transforms()` to better handle aspect ratio issues. Added `apply_paired_square_aspect` parameter to allow users to enforce square inputs via a Paired-CenterCrop, while warning about potential loss of boundary context/mask data.
+
+### Fixed
+
+- ML_datasetmaster:
+    - Fixed edge case and memory handling in `_ObjectDetectionDataset`.
+    - Fixed edge case and memory handling in `_SegmentationDataset`.
+
 ## [25.0.1] 2026-08-04
 
 ### Fixed

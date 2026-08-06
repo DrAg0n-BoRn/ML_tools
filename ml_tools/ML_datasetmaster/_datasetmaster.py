@@ -1,6 +1,5 @@
 import torch
 import pandas
-from sklearn.model_selection import train_test_split
 from typing import Literal, Union, Optional
 
 from ..ML_scaler import DragonScaler
@@ -115,23 +114,9 @@ class DragonDataset(_BaseDatasetMaker):
         # --- 3. Split Data ---
         features_df = pandas_df[self._feature_names]
         
-        if test_size > 0.0:
-            X_train_val, X_test, y_train_val, y_test = train_test_split(
-                features_df, target_series, test_size=test_size, random_state=random_state
-            )
-        else:
-            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_series, target_series.iloc[:0]
-        
-        if validation_size > 0.0:
-            val_split_size = validation_size / (1.0 - test_size)
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
-            )
-        else:
-            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_series.iloc[:0]
-        
-        self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
-        self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
+        X_train, X_val, X_test, y_train, y_val, y_test = self._perform_random_splits(
+            features_df, target_series, test_size, validation_size, random_state
+        )
         
         # --- label_dtype logic ---
         if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.AUTOENCODER]:
@@ -144,49 +129,15 @@ class DragonDataset(_BaseDatasetMaker):
         self.kind = kind
 
         # --- 4. Scale Features ---
-        if feature_scaler == "fit":
-            self.feature_scaler = None # To be created
-            _apply_f_scaling = True
-        elif feature_scaler == "none":
-            self.feature_scaler = None
-            _apply_f_scaling = False
-        elif isinstance(feature_scaler, DragonScaler):
-            self.feature_scaler = feature_scaler
-            _apply_f_scaling = True
-        else:
-            _LOGGER.error("Invalid feature_scaler argument.")
-            raise ValueError()
-
-        if _apply_f_scaling:
-            X_train_final, X_val_final, X_test_final = self._prepare_feature_scaler(
-                X_train, y_train, X_val, X_test, label_dtype, schema, verbose=verbose
-            )
-        else:
-            if verbose >= 2:
-                _LOGGER.info("Features have not been scaled as specified.")
-            X_train_final, X_val_final, X_test_final = X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
+        X_train_final, X_val_final, X_test_final = self._apply_feature_scaling_logic(
+            feature_scaler, X_train, y_train, X_val, X_test, label_dtype, schema, verbose
+        )
 
         # --- 5. Scale Targets (Regression, and Diffusion Only) ---
         if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION]:
-            if target_scaler == "fit":
-                self.target_scaler = None
-                _apply_t_scaling = True
-            elif target_scaler == "none":
-                self.target_scaler = None
-                _apply_t_scaling = False
-            elif isinstance(target_scaler, DragonScaler):
-                self.target_scaler = target_scaler
-                _apply_t_scaling = True
-            else:
-                _LOGGER.error("Invalid target_scaler argument.")
-                raise ValueError()
-
-            if _apply_t_scaling:
-                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test, verbose=verbose)
-            else:
-                y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
-                y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
-                y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
+            y_train_final, y_val_final, y_test_final = self._apply_target_scaling_logic(
+                target_scaler, y_train, y_val, y_test, verbose
+            )
         else:
             # No scaling for Classification targets or Autoencoder (features only)
             y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
@@ -351,68 +302,22 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         features_df = pandas_df[self._feature_names]
         target_df = pandas_df[self._target_names]
         
-        if test_size > 0.0:
-            X_train_val, X_test, y_train_val, y_test = train_test_split(
-                features_df, target_df, test_size=test_size, random_state=random_state
-            )
-        else:
-            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_df, target_df.iloc[:0]
-
-        if validation_size > 0.0:
-            val_split_size = validation_size / (1.0 - test_size)
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
-            )
-        else:
-            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_df.iloc[:0]
-
-        self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
-        self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
+        X_train, X_val, X_test, y_train, y_val, y_test = self._perform_random_splits(
+            features_df, target_df, test_size, validation_size, random_state
+        )
         
         label_dtype = torch.float32 
 
         # --- 4. Scale Features ---
-        if feature_scaler == "fit":
-            self.feature_scaler = None
-            _apply_f_scaling = True
-        elif feature_scaler == "none":
-            self.feature_scaler = None
-            _apply_f_scaling = False
-        elif isinstance(feature_scaler, DragonScaler):
-            self.feature_scaler = feature_scaler
-            _apply_f_scaling = True
-        else:
-            _LOGGER.error("Invalid feature_scaler argument.")
-            raise ValueError()
-
-        if _apply_f_scaling:
-            X_train_final, X_val_final, X_test_final = self._prepare_feature_scaler(
-                X_train, y_train, X_val, X_test, label_dtype, schema, verbose=verbose
-            )
-        else:
-            if verbose >= 2:
-                _LOGGER.info("Features have not been scaled as specified.")
-            X_train_final, X_val_final, X_test_final = X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
+        X_train_final, X_val_final, X_test_final = self._apply_feature_scaling_logic(
+            feature_scaler, X_train, y_train, X_val, X_test, label_dtype, schema, verbose
+        )
 
         # --- 5. Scale Targets ---
         if kind == MLTaskKeys.MULTITARGET_REGRESSION:
-            if target_scaler == "fit":
-                self.target_scaler = None
-                _apply_t_scaling = True
-            elif target_scaler == "none":
-                self.target_scaler = None
-                _apply_t_scaling = False
-            elif isinstance(target_scaler, DragonScaler):
-                self.target_scaler = target_scaler
-                _apply_t_scaling = True
-            else:
-                _LOGGER.error("Invalid target_scaler argument.")
-                raise ValueError()
-
-            if _apply_t_scaling:
-                y_train_final, y_val_final, y_test_final = self._prepare_target_scaler(y_train, y_val, y_test, verbose=verbose)
-            else:
-                y_train_final, y_val_final, y_test_final = y_train.to_numpy(), y_val.to_numpy(), y_test.to_numpy()
+            y_train_final, y_val_final, y_test_final = self._apply_target_scaling_logic(
+                target_scaler, y_train, y_val, y_test, verbose
+            )
         else:
              y_train_final, y_val_final, y_test_final = y_train.to_numpy(), y_val.to_numpy(), y_test.to_numpy()
 

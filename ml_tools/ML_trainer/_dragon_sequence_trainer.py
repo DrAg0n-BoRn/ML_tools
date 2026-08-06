@@ -110,13 +110,22 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 _LOGGER.error(f"Trainer set for '{self.kind}', but model architecture is built for '{key_to_check}'.")
                 raise RuntimeError()
         
-        # <-- Extract or assign target types -->
+        # Extract or assign target types
         self.target_types = target_types
         if self.target_types is None:
             self.target_types = self._get_dataset_attr(self.train_dataset, DatasetKeys.TARGET_TYPES)
             if not self.target_types:
                 _LOGGER.warning(f"No '{DatasetKeys.TARGET_TYPES}' provided or found in the dataset")
         
+        # Validate target types
+        if self.target_types:
+            for t_name, t_type in self.target_types.items():
+                if t_type not in [DatasetKeys.TARGET_CONTINUOUS, DatasetKeys.TARGET_CATEGORICAL]:
+                    _LOGGER.error(f"Invalid target type '{t_type}' for target '{t_name}'. Must be '{DatasetKeys.TARGET_CONTINUOUS}' or '{DatasetKeys.TARGET_CATEGORICAL}'.")
+                    raise ValueError()
+        
+        # Set target names for internal use
+        self.target_names = self._get_target_names()
 
     def _get_target_names(self) -> list[str]:
         """Helper to extract target variable names from the dataset or model."""
@@ -125,7 +134,11 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             return target_names
         elif hasattr(self.model, "targets"):
             return getattr(self.model, "targets")
-        return []
+        elif self.target_types is not None:
+            return list(self.target_types.keys())
+        
+        _LOGGER.error("Target names could not be determined from the dataset, model, or provided target types.")
+        raise ValueError()
 
     def _compute_loss(self, outputs: Union[dict[str, torch.Tensor], torch.Tensor], targets: Union[dict[str, torch.Tensor], torch.Tensor]) -> torch.Tensor:
         """
@@ -306,7 +319,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         if scaler is None:
             scaler = self._get_dataset_attr(self.train_dataset, "scaler")
             
-        target_names = self._get_target_names()
+        target_names = self.target_names if self.target_names else self._get_target_names()
 
         with torch.no_grad():
             for features, target in dataloader:
@@ -433,7 +446,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         eval_loader, _ = self._prepare_eval_data(data, self.validation_dataset)
         save_dir_path = self._validate_save_dir(save_dir)
 
-        target_names = self._get_target_names()
+        target_names = self.target_names if self.target_names else self._get_target_names()
         all_preds = {t: [] for t in target_names}
         all_true = {t: [] for t in target_names}
 
@@ -502,7 +515,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             explain_dataset (Dataset | None): Dataset to use for explanation. Defaults to validation dataset.
             n_samples (int): Number of random samples to use for explanation.
             feature_names (list[str] | None): Optional feature names for plotting. If None, attempts to extract from dataset.
-            target_names (list[str] | None): Optional target names for plotting. If None, attempts to extract from dataset or model.
+            target_names (list[str] | None): Optional target names for plotting. If None, attempts to extract from training dataset or model.
             n_steps (int): Number of steps for Integrated Gradients approximation.
             verbose (int): Verbosity level for Captum output.
         """
@@ -527,7 +540,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 _LOGGER.warning("'feature_names' not provided or found. Generic names will be used.")
 
         if target_names is None:
-            target_names = self._get_target_names()
+            target_names = self.target_names if self.target_names else self._get_target_names()
 
         # Internal Wrapper to turn multi-head dict models into single-tensor modules for Captum
         class _CaptumDictWrapper(nn.Module):

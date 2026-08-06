@@ -8,7 +8,7 @@ from ._sequence_datasetmaster import (
 )
 
 from ._vision_classification import (
-    DragonDatasetVision
+    DragonDatasetImageClassification
 )
 
 from ._segmentation_dataset import (
@@ -23,12 +23,13 @@ from .._core import _imprimir_disponibles
 
 
 __all__ = [
+    # Standard tabular datasets
     "DragonDataset",
     "DragonDatasetMulti",
     # sequence
     "DragonDatasetSequence",
     # vision classification
-    "DragonDatasetVision",
+    "DragonDatasetImageClassification",
     # segmentation
     "DragonDatasetSegmentation",
     # object detection
