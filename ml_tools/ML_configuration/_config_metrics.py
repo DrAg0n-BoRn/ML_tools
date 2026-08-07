@@ -18,8 +18,10 @@ __all__ = [
     "FormatMultiLabelBinaryClassificationMetrics",
     "FormatBinarySegmentationMetrics",
     "FormatMultiClassSegmentationMetrics",
-    "FormatSequenceValueMetrics",
-    "FormatSequenceSequenceMetrics",
+    "FormatAutoregressiveSequenceValueMetrics",
+    "FormatAutoregressiveSequenceSequenceMetrics",
+    "FormatExogenousSequenceValueMetrics",
+    "FormatExogenousSequenceSequenceMetrics",
     "FormatAutoencoderMetrics",
     "FormatTabularDiffusionMetrics",
 ]
@@ -815,9 +817,9 @@ class FormatMultiClassSegmentationMetrics(_BaseSegmentationFormat):
 
 
 # Sequence 
-class FormatSequenceValueMetrics(_BaseSequenceValueFormat):
+class FormatAutoregressiveSequenceValueMetrics(_BaseSequenceValueFormat):
     """
-    Configuration for sequence-to-value prediction.
+    Configuration for autoregressive sequence-to-value prediction.
     """
     def __init__(self, 
                  regression_config: Optional['FormatRegressionMetrics'] = None,
@@ -825,9 +827,10 @@ class FormatSequenceValueMetrics(_BaseSequenceValueFormat):
         super().__init__(regression_config=regression_config, 
                          classification_config=classification_config)
 
-class FormatSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
+
+class FormatAutoregressiveSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
     """
-    Configuration for sequence-to-sequence prediction.
+    Configuration for autoregressive sequence-to-sequence prediction.
     """
     def __init__(self,
                  font_size: int = 26,
@@ -852,6 +855,45 @@ class FormatSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
                          classification_config=classification_config)
 
 
+class FormatExogenousSequenceValueMetrics(_BaseSequenceValueFormat):
+    """
+    Configuration for exogenous sequence-to-value prediction.
+    """
+    def __init__(self, 
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None) -> None:
+        super().__init__(regression_config=regression_config, 
+                         classification_config=classification_config)
+
+
+class FormatExogenousSequenceSequenceMetrics(_BaseSequenceSequenceFormat):
+    """
+    Configuration for exogenous sequence-to-sequence prediction.
+    """
+    def __init__(self,
+                 font_size: int = 26,
+                 grid_style: str = '--',
+                 rmse_color: str = 'tab:blue',
+                 rmse_marker: str = 'o-',
+                 mae_color: str = 'tab:orange',
+                 mae_marker: str = 's--',
+                 acc_color: str = 'purple',
+                 f1_color: str = 'orange',
+                 regression_config: Optional['FormatRegressionMetrics'] = None,
+                 classification_config: Optional[Union['FormatBinaryClassificationMetrics', 'FormatMultiClassClassificationMetrics']] = None):
+        super().__init__(font_size=font_size, 
+                         grid_style=grid_style, 
+                         rmse_color=rmse_color, 
+                         rmse_marker=rmse_marker, 
+                         mae_color=mae_color, 
+                         mae_marker=mae_marker,
+                         acc_color=acc_color,
+                         f1_color=f1_color,
+                         regression_config=regression_config,
+                         classification_config=classification_config)
+
+
+# Diffusion
 class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
     """
     Configuration for mixed tabular autoencoder evaluation.

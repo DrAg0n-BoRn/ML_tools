@@ -21,8 +21,10 @@ __all__ = [
     "FinalizeMultiTargetRegression",
     "FinalizeRegression",
     "FinalizeObjectDetection",
-    "FinalizeSequenceSequencePrediction",
-    "FinalizeSequenceValuePrediction",
+    "FinalizeAutoregressiveSequenceSequence",
+    "FinalizeAutoregressiveSequenceValue",
+    "FinalizeExogenousSequenceSequence",
+    "FinalizeExogenousSequenceValue",
     "FinalizeAutoencoder",
     "FinalizeTabularDiffusion"
 ]
@@ -317,8 +319,8 @@ class _FinalizeSequencePrediction(_FinalizeModelTraining):
         self.task = task
 
 
-class FinalizeSequenceSequencePrediction(_FinalizeSequencePrediction):
-    """Parameters for finalizing a sequence-to-sequence prediction model."""
+class FinalizeAutoregressiveSequenceSequence(_FinalizeSequencePrediction):
+    """Parameters for finalizing an autoregressive sequence-to-sequence prediction model."""
     def __init__(self,
                  filename: str,
                  target_types: dict[str, str],
@@ -336,12 +338,12 @@ class FinalizeSequenceSequencePrediction(_FinalizeSequencePrediction):
         super().__init__(filename=filename, 
                          target_types=target_types, 
                          last_dataset_sequence=last_dataset_sequence, 
-                         task=MLTaskKeys.SEQUENCE_SEQUENCE, 
+                         task=MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_SEQUENCE, 
                          **kwargs)
 
 
-class FinalizeSequenceValuePrediction(_FinalizeSequencePrediction):
-    """Parameters for finalizing a sequence-to-value prediction model."""
+class FinalizeAutoregressiveSequenceValue(_FinalizeSequencePrediction):
+    """Parameters for finalizing an autoregressive sequence-to-value prediction model."""
     def __init__(self,
                  filename: str,
                  target_types: dict[str, str],
@@ -359,7 +361,53 @@ class FinalizeSequenceValuePrediction(_FinalizeSequencePrediction):
         super().__init__(filename=filename, 
                          target_types=target_types,
                          last_dataset_sequence=last_dataset_sequence, 
-                         task=MLTaskKeys.SEQUENCE_VALUE, 
+                         task=MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_VALUE, 
+                         **kwargs)
+
+
+class FinalizeExogenousSequenceSequence(_FinalizeSequencePrediction):
+    """Parameters for finalizing an exogenous sequence-to-sequence prediction model."""
+    def __init__(self,
+                 filename: str,
+                 target_types: dict[str, str],
+                 last_dataset_sequence: np.ndarray,
+                 **kwargs
+                 ) -> None:
+        """Initializes the finalization parameters for an exogenous model.
+        
+        Args:
+            filename (str): The name of the file to be saved.
+            target_types (dict[str, str]): A dictionary mapping target names to their types ('continuous' or 'categorical').
+            last_dataset_sequence (np.ndarray): A 2D array (sequence_length, num_features) from the dataset that will become the initial sequence for predictions.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
+        """
+        super().__init__(filename=filename, 
+                         target_types=target_types, 
+                         last_dataset_sequence=last_dataset_sequence, 
+                         task=MLTaskKeys.EXOGENOUS_SEQUENCE_SEQUENCE, 
+                         **kwargs)
+
+
+class FinalizeExogenousSequenceValue(_FinalizeSequencePrediction):
+    """Parameters for finalizing an exogenous sequence-to-value prediction model."""
+    def __init__(self,
+                 filename: str,
+                 target_types: dict[str, str],
+                 last_dataset_sequence: np.ndarray,
+                 **kwargs
+                 ) -> None:
+        """Initializes the finalization parameters for an exogenous model.
+        
+        Args:
+            filename (str): The name of the file to be saved.
+            target_types (dict[str, str]): A dictionary mapping target names to their types ('continuous' or 'categorical').
+            last_dataset_sequence (np.ndarray): A 2D array (sequence_length, num_features) from the dataset that will become the initial sequence for predictions.
+            **kwargs: Additional arbitrary metadata to be attached to the finalized configuration.
+        """
+        super().__init__(filename=filename, 
+                         target_types=target_types,
+                         last_dataset_sequence=last_dataset_sequence, 
+                         task=MLTaskKeys.EXOGENOUS_SEQUENCE_VALUE, 
                          **kwargs)
 
 

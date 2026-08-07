@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.2.0] 2026-08-07
+
+### Added
+
+- New tasks for multivariate sequence prediction:
+    - `EXOGENOUS_SEQUENCE_SEQUENCE` for multi-step sequence-to-sequence forecasting with exogenous variables.
+    - `EXOGENOUS_SEQUENCE_VALUE` for multi-step sequence-to-value forecasting with exogenous variables.
+
+- ML_configuration:
+    - Added `FinalizeExogenousSequenceSequence` and `FinalizeExogenousSequenceValue` classes to the public API for finalizing models trained on the new exogenous sequence prediction tasks.
+    - Added `FormatExogenousSequenceSequenceMetrics` and `FormatExogenousSequenceValueMetrics` classes to the public API for formatting evaluation metrics and plots for the new exogenous sequence prediction tasks.
+
+### Changed
+
+- Due to PyTorch's update, all `torch.load()` calls now explicitly specify `weights_only=False` to ensure that the entire custom objects are loaded in the Dragon ML pipeline.
+
+- Renamed tasks:
+    - `SEQUENCE_SEQUENCE` -> `AUTOREGRESSIVE_SEQUENCE_SEQUENCE`
+    - `SEQUENCE_VALUE` -> `AUTOREGRESSIVE_SEQUENCE_VALUE`
+
+- ML_datasetmaster:
+    - Class `DragonDatasetSequence` has been split into two specialized classes:
+        - `DragonDatasetSequenceAutoregressive`: For autoregressive sequence prediction tasks.
+        - `DragonDatasetSequenceExogenous`: For exogenous sequence prediction tasks.
+
+- ML_trainer:
+    - `DragonSequenceTrainer`
+        - Updated to support the new exogenous sequence prediction tasks. It now accepts `FinalizeExogenousSequenceSequence` and `FinalizeExogenousSequenceValue` configurations for finalizing models trained on these tasks.
+        - The `evaluate()` method now accepts a `format_configuration` parameter that can be an instance of either `FormatAutoregressiveSequenceValueMetrics`, `FormatAutoregressiveSequenceSequenceMetrics`, `FormatExogenousSequenceValueMetrics`, or `FormatExogenousSequenceSequenceMetrics`. This allows for task-specific formatting of evaluation metrics and plots.
+
+- ML_models_sequence:
+    - `DragonSequenceLSTM` and `DragonSequenceTransformer` have been updated to support the new exogenous sequence prediction tasks.
+    - `DragonSequenceTransformer`: Replaced absolute sinusoidal positional encodings with ALiBi (Attention with Linear Biases) masks to substantially improve sequence length generalization.
+    - `DragonSequenceTransformer`: Upgraded the internal encoder layers to utilize Pre-Layer Normalization (`norm_first=True`) and GELU activations for enhanced training stability.
+    - `DragonSequenceLSTM`: Refactored the recurrent backbone to unroll layers, injecting Layer Normalization and Dropout between individual LSTM layers to stabilize long-sequence hidden state dynamics.
+    - `DragonSequenceLSTM`: Implemented explicit weight initialization strategies (Orthogonal initialization for hidden-to-hidden weights, Xavier Uniform for input-to-hidden weights) to mitigate vanishing/exploding gradients.
+    - `DragonSequenceTransformer` & `DragonSequenceLSTM`: Updated the `_get_finetune_components()` mapping in both models to correctly expose the new structural layers to the `DragonFinetuner`.
+    - `DragonSequenceLSTM`: Removed the `bidirectional` parameter from the constructor. The model will now automatically determine whether to use bidirectional LSTMs based on the prediction task:
+        - For `AUTOREGRESSIVE_SEQUENCE_SEQUENCE`, the LSTM will be unidirectional to prevent information leakage.
+        - For other tasks, the LSTM will be bidirectional to safely leverage both past and future context.
+    - `DragonSequenceTransformer`: Similarly, the attribute `_is_causal` has been introduced to control the attention mask, ensuring that autoregressive sequence-to-sequence tasks are evaluated with masked attention to prevent look-ahead, while other tasks can utilize full bidirectional attention.
+
+- ML_inference_sequence:
+    - Class `DragonSequenceInferenceHandler` has been split into two specialized classes:
+        - `DragonSequenceExogenousHandler`: For exogenous sequence prediction tasks.
+        - `DragonSequenceAutoregressiveHandler`: For autoregressive sequence prediction tasks.
+
+- ML_configuration:
+    - Renamed sequence configurations:
+        - `FinalizeSequenceSequencePrediction` -> `FinalizeAutoregressiveSequenceSequence`
+        - `FinalizeSequenceValuePrediction` -> `FinalizeAutoregressiveSequenceValue`
+        - `FormatSequenceSequenceMetrics` -> `FormatAutoregressiveSequenceSequenceMetrics`
+        - `FormatSequenceValueMetrics` -> `FormatAutoregressiveSequenceValueMetrics`
+
+### Fixed
+
+- ML_trainer
+    - `DragonSequenceTrainer`
+        - Fixed a broadcasting `ValueError` in `._evaluate()` caused by mismatched dimensions between predictions and ground truth arrays (e.g., `(N, 1)` vs `(N,)`). Arrays are now properly squeezed to align shapes prior to metric calculation.
+        - Made the `.compute_loss()` method more robust to handle edge cases where the model's output is a single tensor instead of a dictionary, ensuring that loss computation does not fail in such scenarios.
+
+- ML_evaluation_captum
+    - `captum_sequence_feature_importance()` and `captum_feature_importance()`
+        - Fixed a `RuntimeError` when using `IntegratedGradients` on CUDA devices with LSTM and RNN models. The function now temporarily disables cuDNN to prevent non-deterministic behavior during attribution calculations.
+
+
 ## [25.1.1] 2026-08-06
 
 ### Fixed

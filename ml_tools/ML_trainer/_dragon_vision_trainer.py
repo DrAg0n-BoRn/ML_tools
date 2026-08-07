@@ -106,7 +106,8 @@ class DragonVisionTrainer(_BaseDragonTrainer):
                         MLTaskKeys.MULTICLASS_SEGMENTATION,
                         MLTaskKeys.BINARY_IMAGE_CLASSIFICATION,
                         MLTaskKeys.MULTICLASS_IMAGE_CLASSIFICATION]:
-            raise ValueError(f"'{kind}' is not a valid vision task type.")
+            _LOGGER.error(f"'{kind}' is not a valid vision task type.")
+            raise ValueError()
 
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset

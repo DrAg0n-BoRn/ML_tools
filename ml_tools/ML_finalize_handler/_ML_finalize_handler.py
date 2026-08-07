@@ -56,7 +56,7 @@ class FinalizedFileHandler:
         pth_path = make_fullpath(finalized_file_path, enforce="file")
         
         try:
-            pth_file_content = torch.load(pth_path, map_location='cpu')
+            pth_file_content = torch.load(pth_path, weights_only=False, map_location='cpu')
         except Exception as e:
             _LOGGER.error(f"Failed to load finalized-file from '{pth_path}': {e}")
             raise
@@ -148,7 +148,7 @@ class FinalizedFileHandler:
         target_types = self._metadata.get(PyTorchCheckpointKeys.TARGET_TYPES)
 
         # Validation
-        if self.task in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
+        if self.task in MLTaskKeys.ALL_SEQUENCE_TASKS:
             if seq_len is None and self._verbose:
                 _LOGGER.warning(f"'{PyTorchCheckpointKeys.SEQUENCE_LENGTH}' not found in model file. Forecasting validation will be skipped.")
                 
@@ -189,20 +189,3 @@ class FinalizedFileHandler:
         else:
             # If it's just a raw state dict, nothing was popped
             _LOGGER.info(f"Keys found in raw state dictionary:\n" + "\n".join(f"  - {k}" for k in self._metadata.keys()))
-    
-    # def __getattr__(self, name: str) -> Any:
-    #     """
-    #     Dynamically handles the retrieval of metadata attributes.
-    #     Called only when the attribute is not found via normal lookup.
-    #     """
-    #     if name in self._metadata:
-    #         return self._metadata[name]
-            
-    #     # _none_checker warnings
-    #     if self._verbose:
-    #         if self.task != MagicWords.UNKNOWN:
-    #             _LOGGER.warning(f"Task '{self.task}' does not have a parameter '{name}'.")
-    #         else:
-    #             _LOGGER.warning(f"Property '{name}' was not found in the file.")
-                
-    #     return None

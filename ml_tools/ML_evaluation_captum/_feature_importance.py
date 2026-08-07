@@ -145,19 +145,32 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     try:
         # attribute() returns values of the same shape as input_data
         attributions, delta = ig.attribute(inputs, 
-                                           baselines=baseline, 
-                                           target=target_index,
-                                           n_steps=n_steps,
-                                           internal_batch_size=inputs.shape[0],
-                                           return_convergence_delta=True)
-        # Check convergence quality
-        mean_delta = torch.mean(torch.abs(delta)).item()
-        if mean_delta > 0.1 and verbose > 0:
-            _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). Consider increasing 'n_steps'.")
+                                        baselines=baseline, 
+                                        target=target_index,
+                                        n_steps=n_steps,
+                                        internal_batch_size=inputs.shape[0],
+                                        return_convergence_delta=True)
         
     except Exception as e:
-        _LOGGER.error(f"Captum attribution failed for target '{target_index}': {e}")
-        return
+        _LOGGER.warning(f"Captum attribution failed for target '{target_index}': {e}.\nRetrying with cuDNN disabled.")
+        
+        try:
+            with torch.backends.cudnn.flags(enabled=False):
+                attributions, delta = ig.attribute(inputs, 
+                                                baselines=baseline, 
+                                                target=target_index,
+                                                n_steps=n_steps,
+                                                internal_batch_size=inputs.shape[0],
+                                                return_convergence_delta=True)
+        
+        except Exception as e2:
+            _LOGGER.error(f"Captum attribution failed for target '{target_index}': {e2}")
+            return
+        
+    # Check convergence quality
+    mean_delta = torch.mean(torch.abs(delta)).item()
+    if mean_delta > 0.1 and verbose > 1:
+        _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). Consider increasing 'n_steps'.")
 
     # --- Aggregate Feature Importance ---
     # take the mean of the absolute attribution values across the batch
@@ -237,7 +250,7 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     
     # Increase wrap width to prevent multi-line breaks for most feature names
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=35))
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=20))
     
     # Calculate a dynamic height to ensure large fonts do not overlap
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)

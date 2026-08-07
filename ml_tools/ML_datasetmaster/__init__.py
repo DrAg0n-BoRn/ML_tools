@@ -4,7 +4,8 @@ from ._datasetmaster import (
 )
 
 from ._sequence_datasetmaster import (
-    DragonDatasetSequence
+    DragonDatasetSequenceAutoregressive,
+    DragonDatasetSequenceExogenous,
 )
 
 from ._vision_classification import (
@@ -27,7 +28,8 @@ __all__ = [
     "DragonDataset",
     "DragonDatasetMulti",
     # sequence
-    "DragonDatasetSequence",
+    "DragonDatasetSequenceAutoregressive",
+    "DragonDatasetSequenceExogenous",
     # vision classification
     "DragonDatasetImageClassification",
     # segmentation

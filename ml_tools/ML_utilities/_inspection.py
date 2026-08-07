@@ -130,7 +130,7 @@ def inspect_pth_file(
     # --- 2. Load data ---
     try:
         # Load onto CPU to avoid GPU memory issues
-        loaded_data = torch.load(pth_file, map_location=torch.device('cpu'))
+        loaded_data = torch.load(pth_file, map_location=torch.device('cpu'), weights_only=False)
     except Exception as e:
         _LOGGER.error(f"Failed to load .pth file '{pth_file}': {e}")
         raise

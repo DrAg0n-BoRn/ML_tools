@@ -120,7 +120,7 @@ class _BaseAutoencoder(_ArchitectureBuilder, ABC):
         model.eval()
         
         if artifact_finder.scaler_path is not None:
-            scaler_dict = torch.load(artifact_finder.scaler_path, map_location="cpu")
+            scaler_dict = torch.load(artifact_finder.scaler_path, weights_only=False, map_location="cpu")
             if ScalerKeys.FEATURE_SCALER in scaler_dict:
                 model.scaler = DragonScaler.load(scaler_dict[ScalerKeys.FEATURE_SCALER], verbose=False) # type: ignore
             else:

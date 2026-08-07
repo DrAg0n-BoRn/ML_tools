@@ -216,7 +216,7 @@ class _BaseDragonDiTGuided(_ArchitectureHandlerMixin, nn.Module, ABC):
         model.eval()
         
         if artifact_finder.scaler_path is not None:
-            scaler_dict = torch.load(artifact_finder.scaler_path, map_location="cpu")
+            scaler_dict = torch.load(artifact_finder.scaler_path, weights_only=False, map_location="cpu")
             if ScalerKeys.TARGET_SCALER in scaler_dict:
                 model.target_scaler = DragonScaler.load(scaler_dict[ScalerKeys.TARGET_SCALER], verbose=False)
             else:

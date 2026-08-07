@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 
 from ..ML_finalize_handler._ML_finalize_handler import FinalizedFileHandler, ClassificationMetadata
 from ..ML_scaler import DragonScaler
+
 from .._core import get_logger
 from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchCheckpointKeys, MagicWords, ScalerKeys
@@ -88,7 +89,7 @@ class _ScalerMixin:
             
         if isinstance(scaler_path, (str, Path)):
             path_obj = make_fullpath(scaler_path, enforce="file")
-            loaded_scaler_data = torch.load(path_obj)
+            loaded_scaler_data = torch.load(path_obj, weights_only=False, map_location='cpu')
             
             if isinstance(loaded_scaler_data, dict) and (ScalerKeys.FEATURE_SCALER in loaded_scaler_data or ScalerKeys.TARGET_SCALER in loaded_scaler_data):
                 if ScalerKeys.FEATURE_SCALER in loaded_scaler_data:

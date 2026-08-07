@@ -620,7 +620,7 @@ class _BaseDatasetMaker(ABC):
                 _LOGGER.error(f"Provided path '{target_filepath}' is neither a file nor a directory.")
                 raise FileNotFoundError()
         
-        bundle = torch.load(target_filepath, weights_only=False)
+        bundle = torch.load(target_filepath, weights_only=False, map_location=torch.device('cpu'))
         
         # Bypass standard __init__ which expects pandas DataFrames
         instance = cls.__new__(cls)

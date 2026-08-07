@@ -16,10 +16,16 @@ from ..ML_evaluation._eval_classification import classification_metrics
 from ..ML_evaluation._eval_regression import regression_metrics
 from ..ML_evaluation_captum import captum_sequence_feature_importance
 from ..ML_scaler import DragonScaler
-from ..ML_configuration import (FormatSequenceValueMetrics,
-                            FormatSequenceSequenceMetrics,
-                            FinalizeSequenceSequencePrediction,
-                            FinalizeSequenceValuePrediction,
+from ..ML_configuration import (FormatAutoregressiveSequenceValueMetrics,
+                            FormatAutoregressiveSequenceSequenceMetrics,
+                            FormatExogenousSequenceValueMetrics,
+                            FormatExogenousSequenceSequenceMetrics,
+                            
+                            FinalizeAutoregressiveSequenceSequence,
+                            FinalizeAutoregressiveSequenceValue,
+                            FinalizeExogenousSequenceSequence,
+                            FinalizeExogenousSequenceValue,
+                            
                             DragonCheckpointConfig)
 
 from ..keys._keys import PyTorchLogKeys, DatasetKeys, MLTaskKeys, DragonTrainerKeys, ScalerKeys
@@ -53,7 +59,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  train_dataset: Dataset, 
                  validation_dataset: Dataset, 
                  save_dir: Union[str, Path],
-                 kind: Union[Literal["sequence-to-sequence", "sequence-to-value"], str],
+                 kind: Union[Literal["autoregressive-sequence-to-sequence", 
+                                     "autoregressive-sequence-to-value", 
+                                     "exogenous-sequence-to-sequence", 
+                                     "exogenous-sequence-to-value"], str],
                  optimizer: torch.optim.Optimizer, 
                  device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
@@ -71,7 +80,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             train_dataset (Dataset): The training dataset.
             validation_dataset (Dataset): The validation dataset.
             save_dir (str | Path): Root directory where all training artifacts will be saved.
-            kind (str): Task type ('sequence-to-sequence' or 'sequence-to-value'). 
+            kind (str): Task type. 
             optimizer (torch.optim.Optimizer): PyTorch optimizer.
             device (str): Computing device ('cpu', 'cuda', 'mps').
             early_stopping_callback: Callback for early stopping.
@@ -103,7 +112,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             extra_callbacks=extra_callbacks
         )
         
-        if kind not in [MLTaskKeys.SEQUENCE_SEQUENCE, MLTaskKeys.SEQUENCE_VALUE]:
+        if kind not in MLTaskKeys.ALL_SEQUENCE_TASKS:
             raise ValueError(f"'{kind}' is not a valid task type for DragonSequenceTrainer.")
 
         self.train_dataset = train_dataset
@@ -134,6 +143,16 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         
         # Set target names for internal use
         self.target_names = self._get_target_names()
+
+    @property
+    def _is_seq_to_val(self) -> bool:
+        """Helper property to abstract shape checks for sequence-to-value tasks."""
+        return self.kind in [MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_VALUE, MLTaskKeys.EXOGENOUS_SEQUENCE_VALUE]
+
+    @property
+    def _is_seq_to_seq(self) -> bool:
+        """Helper property to abstract shape checks for sequence-to-sequence tasks."""
+        return self.kind in [MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_SEQUENCE, MLTaskKeys.EXOGENOUS_SEQUENCE_SEQUENCE]
 
     def _get_target_names(self) -> list[str]:
         """Helper to extract target variable names from the dataset or model."""
@@ -171,9 +190,9 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 elif isinstance(targets, torch.Tensor):
                     if targets.ndim == 1:
                         target_t = targets
-                    elif self.kind == MLTaskKeys.SEQUENCE_VALUE:
+                    elif self._is_seq_to_val:
                         target_t = targets[:, i] if targets.ndim == 2 and targets.shape[1] > i else targets
-                    else:  # SEQUENCE_SEQUENCE
+                    elif self._is_seq_to_seq:
                         target_t = targets[:, :, i] if targets.ndim == 3 and targets.shape[2] > i else targets
                 else:
                     raise TypeError(f"Unsupported target type: {type(targets)}")
@@ -222,23 +241,45 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 _LOGGER.error("Model returned a single tensor output, but targets are provided as a dictionary. Cannot determine mapping.")
                 raise TypeError()
             
-            target = targets.float()
+            target_name = self.target_names[0] if self.target_names else None
+            is_categorical = False
             
+            if self.target_types and (target_name is not None) and (target_name in self.target_types):
+                is_categorical = (self.target_types[target_name] == DatasetKeys.TARGET_CATEGORICAL)
+            else:
+                is_categorical = (outputs.ndim > targets.ndim or targets.dtype in [torch.int64, torch.long, torch.int32])
+
+            if is_categorical:
+                target = targets.long()
+                if self.criterion == "auto":
+                    loss_fn = nn.CrossEntropyLoss()
+                else:
+                    loss_fn = self.criterion # type: ignore
+            else:
+                target = targets.float()
+                if self.criterion == "auto":
+                    loss_fn = nn.MSELoss()
+                else:
+                    loss_fn = self.criterion # type: ignore
+
             # Shape corrections
-            if self.kind == MLTaskKeys.SEQUENCE_VALUE:
+            if self._is_seq_to_val:
                 if outputs.ndim == 2 and outputs.shape[1] == 1 and target.ndim == 1:
                     outputs = outputs.squeeze(1)
-            elif self.kind == MLTaskKeys.SEQUENCE_SEQUENCE:
+            elif self._is_seq_to_seq:
                 if outputs.ndim == 3 and outputs.shape[2] == 1 and target.ndim == 2:
                     outputs = outputs.squeeze(-1)
 
-            loss_fn = nn.MSELoss() if self.criterion == "auto" else self.criterion  # type: ignore
-            
             if not isinstance(loss_fn, nn.Module):
                 _LOGGER.error(f"Invalid criterion type: {type(self.criterion)} for single-head output. Must be nn.Module or 'auto'.")
                 raise TypeError()
             
-            return loss_fn(outputs, target)
+            if is_categorical:
+                pred_flat = outputs.reshape(-1, outputs.shape[-1])
+                target_flat = target.reshape(-1)
+                return loss_fn(pred_flat, target_flat)
+            else:
+                return loss_fn(outputs, target)
 
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         """Initializes the DataLoaders."""
@@ -358,7 +399,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                     is_categorical = (self.target_types and self.target_types.get(t) == DatasetKeys.TARGET_CATEGORICAL)
 
                     if is_categorical:
-                        if p.ndim > (2 if self.kind == MLTaskKeys.SEQUENCE_SEQUENCE else 1):
+                        if p.ndim > (2 if self._is_seq_to_seq else 1):
                             p = p.argmax(dim=-1)
                         y_pred_batch[t] = p.cpu().numpy()
                         y_true_batch[t] = t_val.cpu().numpy()
@@ -398,23 +439,32 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
     def evaluate(self, 
                  model_checkpoint: Union[Path, str, Literal["best", "current"]],
                  test_data: Optional[Union[DataLoader, Dataset]] = None,
-                 val_format_configuration: Optional[Union[FormatSequenceValueMetrics, FormatSequenceSequenceMetrics]] = None,
-                 test_format_configuration: Optional[Union[FormatSequenceValueMetrics, FormatSequenceSequenceMetrics]] = None):
+                 val_format_configuration: Optional[Union[FormatAutoregressiveSequenceValueMetrics, 
+                                                          FormatAutoregressiveSequenceSequenceMetrics,
+                                                          FormatExogenousSequenceValueMetrics,
+                                                          FormatExogenousSequenceSequenceMetrics]] = None,
+                 test_format_configuration: Optional[Union[FormatAutoregressiveSequenceValueMetrics, 
+                                                           FormatAutoregressiveSequenceSequenceMetrics,
+                                                           FormatExogenousSequenceValueMetrics,
+                                                           FormatExogenousSequenceSequenceMetrics]] = None):
         """
         Evaluates the model and logs metrics.
         
         Args:
             model_checkpoint (Path | str | "best" | "current"): Checkpoint to evaluate. Can be a path to a .pth file, or "best"/"current" for the best or most recent checkpoint.
             test_data (DataLoader | Dataset | None): Optional test dataset. If None, only validation metrics are computed.
-            val_format_configuration (FormatSequenceValueMetrics | FormatSequenceSequenceMetrics | None): Optional configuration for formatting validation metrics.
-            test_format_configuration (FormatSequenceValueMetrics | FormatSequenceSequenceMetrics | None): Optional configuration for formatting test metrics. If None, validation configuration is reused.
+            val_format_configuration (Object | None): Optional configuration for formatting validation metrics.
+            test_format_configuration (Object | None): Optional configuration for formatting test metrics. If None, validation configuration is reused.
         """
         checkpoint_validated = self._validate_checkpoint_arg(model_checkpoint)
         save_path = self._validate_save_dir(self.training_directory_root)
         validation_metrics_path = save_path / DragonTrainerKeys.VALIDATION_METRICS_DIR
         
         if val_format_configuration is not None:
-            if not isinstance(val_format_configuration, (FormatSequenceValueMetrics, FormatSequenceSequenceMetrics)):
+            if not isinstance(val_format_configuration, (FormatAutoregressiveSequenceValueMetrics, 
+                                                         FormatAutoregressiveSequenceSequenceMetrics,
+                                                         FormatExogenousSequenceValueMetrics,
+                                                         FormatExogenousSequenceSequenceMetrics)):
                 _LOGGER.error(f"Invalid 'val_format_configuration': '{type(val_format_configuration)}'.")
                 raise ValueError()
         
@@ -448,7 +498,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                   save_dir: Union[str, Path], 
                   model_checkpoint: Union[Path, Literal["best", "current"]],
                   data: Optional[Union[DataLoader, Dataset]],
-                  format_configuration: Optional[Union[FormatSequenceValueMetrics, FormatSequenceSequenceMetrics]] = None):
+                  format_configuration: Optional[Union[FormatAutoregressiveSequenceValueMetrics, FormatAutoregressiveSequenceSequenceMetrics, FormatExogenousSequenceValueMetrics, FormatExogenousSequenceSequenceMetrics]] = None):
         """Private evaluation helper. Routes to task-specific evaluation modules per target."""
         self._load_model_state_wrapper(model_checkpoint)
         eval_loader, _ = self._prepare_eval_data(data, self.validation_dataset)
@@ -478,11 +528,18 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             y_pred = np.concatenate(all_preds[t], axis=0)
             y_true = np.concatenate(all_true[t], axis=0)
             
+            # Align shapes to prevent broadcasting issues during residual calculation
+            if y_pred.shape != y_true.shape:
+                if y_pred.ndim == y_true.ndim + 1 and y_pred.shape[-1] == 1:
+                    y_pred = y_pred.squeeze(-1)
+                elif y_true.ndim == y_pred.ndim + 1 and y_true.shape[-1] == 1:
+                    y_true = y_true.squeeze(-1)
+            
             is_categorical = (self.target_types and self.target_types.get(t) == DatasetKeys.TARGET_CATEGORICAL)
             target_save_dir = save_dir_path / sanitize_filename(t)
 
             # Route evaluation using the formalized composite configuration classes
-            if self.kind == MLTaskKeys.SEQUENCE_VALUE:
+            if self._is_seq_to_val:
                 if is_categorical:
                     classification_metrics(
                         y_true=y_true, y_pred=y_pred, save_dir=target_save_dir, 
@@ -494,9 +551,12 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                         config=format_configuration.regression_config if format_configuration else None
                     )
 
-            elif self.kind == MLTaskKeys.SEQUENCE_SEQUENCE:
+            elif self._is_seq_to_seq:
                 # Pass the full configuration to seq-to-seq metrics to retain per-step plot styling.
                 # The seq-to-seq functions will then route the sub-configs to the overall metric reports.
+                if format_configuration is None:
+                    format_configuration = FormatAutoregressiveSequenceSequenceMetrics() if self.kind == MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_SEQUENCE else FormatExogenousSequenceSequenceMetrics()
+                
                 if is_categorical:
                     sequence_to_sequence_classification_metrics(
                         y_true=y_true, y_pred=y_pred, save_dir=target_save_dir, 
@@ -590,7 +650,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         )
     
     def finalize_model_training(self, 
-                                finalize_config: Union[FinalizeSequenceSequencePrediction, FinalizeSequenceValuePrediction]):
+                                finalize_config: Union[FinalizeAutoregressiveSequenceSequence, 
+                                                       FinalizeAutoregressiveSequenceValue,
+                                                       FinalizeExogenousSequenceSequence,
+                                                       FinalizeExogenousSequenceValue]):
         """
         Saves a finalized, "inference-ready" model state to a .pth file.
 
@@ -599,12 +662,21 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         Args:
             finalize_config (FinalizeSequenceSequencePrediction | FinalizeSequenceValuePrediction): A data class instance specific to the ML task containing task-specific metadata required for inference.
         """
-        if self.kind == MLTaskKeys.SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeSequenceSequencePrediction):
-            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: '{type(finalize_config).__name__}'.")
-            raise TypeError()
-        elif self.kind == MLTaskKeys.SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeSequenceValuePrediction):
-            _LOGGER.error(f"Received a wrong finalize configuration for task {self.kind}: '{type(finalize_config).__name__}'.")
-            raise TypeError()
+        error_message = f"Invalid 'finalize_config' type: '{type(finalize_config).__name__}' for task '{self.kind}'."
+        
+        if self._is_seq_to_seq:
+            if self.kind == MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeAutoregressiveSequenceSequence):
+                _LOGGER.error(error_message)
+                raise TypeError()
+            elif self.kind == MLTaskKeys.EXOGENOUS_SEQUENCE_SEQUENCE and not isinstance(finalize_config, FinalizeExogenousSequenceSequence):
+                _LOGGER.error(error_message)
+                raise TypeError()
+        elif self._is_seq_to_val:
+            if self.kind == MLTaskKeys.AUTOREGRESSIVE_SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeAutoregressiveSequenceValue):
+                _LOGGER.error(error_message)
+                raise TypeError()
+            elif self.kind == MLTaskKeys.EXOGENOUS_SEQUENCE_VALUE and not isinstance(finalize_config, FinalizeExogenousSequenceValue):
+                _LOGGER.error(error_message)
+                raise TypeError()
         
         self._save_finalized_artifact(finalize_config=finalize_config)
-

@@ -109,15 +109,16 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
                                     target_name: str,
                                     verbose: int):
     try:
-        attributions, delta = ig.attribute(inputs, 
-                                           baselines=baseline, 
-                                           target=target_index,
-                                           n_steps=n_steps,
-                                           internal_batch_size=inputs.shape[0],
-                                           return_convergence_delta=True)
+        with torch.backends.cudnn.flags(enabled=False):
+            attributions, delta = ig.attribute(inputs, 
+                                            baselines=baseline, 
+                                            target=target_index,
+                                            n_steps=n_steps,
+                                            internal_batch_size=inputs.shape[0],
+                                            return_convergence_delta=True)
         
         mean_delta = torch.mean(torch.abs(delta)).item()
-        if mean_delta > 0.1 and verbose > 0:
+        if mean_delta > 0.1 and verbose > 1:
             _LOGGER.warning(f"Captum Convergence Delta is high ({mean_delta:.4f}). Consider increasing 'n_steps'.")
             
     except Exception as e:
@@ -208,7 +209,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # PLOT 3: Global Feature Bar Chart
     # ==========================================
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=35))
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=20))
     
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
     
@@ -216,7 +217,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.PERCENT_COLUMN], color='mediumpurple')
     plt.xlim(left=0)
     plt.xlabel("Relative Importance (%)", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
-    plt.title(f"Global Feature Importance\n'{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
+    plt.title(f"Feature Importance '{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
     plt.xticks(fontsize=_EvaluationConfig.CAPTUM_X_TICK_SIZE)
     plt.yticks(fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
     plt.grid(axis='x', linestyle='--', alpha=0.6)

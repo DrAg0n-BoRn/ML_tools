@@ -8,8 +8,10 @@ from ._config_metrics import (
     FormatMultiLabelBinaryClassificationMetrics,
     FormatBinarySegmentationMetrics,
     FormatMultiClassSegmentationMetrics,
-    FormatSequenceValueMetrics,
-    FormatSequenceSequenceMetrics,
+    FormatAutoregressiveSequenceValueMetrics,
+    FormatAutoregressiveSequenceSequenceMetrics,
+    FormatExogenousSequenceValueMetrics,
+    FormatExogenousSequenceSequenceMetrics,
     FormatAutoencoderMetrics,
     FormatTabularDiffusionMetrics
 )
@@ -25,8 +27,10 @@ from ._config_finalize import (
     FinalizeMultiTargetRegression,
     FinalizeRegression,
     FinalizeObjectDetection,
-    FinalizeSequenceSequencePrediction,
-    FinalizeSequenceValuePrediction,
+    FinalizeAutoregressiveSequenceSequence,
+    FinalizeAutoregressiveSequenceValue,
+    FinalizeExogenousSequenceSequence,
+    FinalizeExogenousSequenceValue,
     FinalizeAutoencoder,
     FinalizeTabularDiffusion
 )
@@ -81,8 +85,10 @@ __all__ = [
     "FormatMultiLabelBinaryClassificationMetrics",
     "FormatBinarySegmentationMetrics",
     "FormatMultiClassSegmentationMetrics",
-    "FormatSequenceValueMetrics",
-    "FormatSequenceSequenceMetrics",
+    "FormatAutoregressiveSequenceValueMetrics",
+    "FormatAutoregressiveSequenceSequenceMetrics",
+    "FormatExogenousSequenceValueMetrics",
+    "FormatExogenousSequenceSequenceMetrics",
     "FormatAutoencoderMetrics",
     "FormatTabularDiffusionMetrics",
     # --- Finalize Configs ---
@@ -96,8 +102,10 @@ __all__ = [
     "FinalizeMultiTargetRegression",
     "FinalizeRegression",
     "FinalizeObjectDetection",
-    "FinalizeSequenceSequencePrediction",
-    "FinalizeSequenceValuePrediction",
+    "FinalizeAutoregressiveSequenceSequence",
+    "FinalizeAutoregressiveSequenceValue",
+    "FinalizeExogenousSequenceSequence",
+    "FinalizeExogenousSequenceValue",
     "FinalizeAutoencoder",
     "FinalizeTabularDiffusion",
     # --- Model Parameter Configs ---

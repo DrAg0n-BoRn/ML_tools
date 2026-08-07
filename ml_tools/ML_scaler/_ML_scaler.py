@@ -230,7 +230,7 @@ class DragonScaler:
         """
         if isinstance(filepath_or_state, (str, Path)):
             path_obj = make_fullpath(filepath_or_state, enforce="file")
-            state = torch.load(path_obj)
+            state = torch.load(path_obj, weights_only=False, map_location='cpu')
             source_name = path_obj.name
         else:
             state = filepath_or_state
@@ -251,8 +251,14 @@ class DragonScaler:
         )
     
     def __repr__(self) -> str:
-        if self.continuous_feature_indices:
+        if self.continuous_feature_indices is not None:
             num_features = len(self.continuous_feature_indices)
-            return f"DragonScaler(fitted for {num_features} columns)"
+            return (
+                f"DragonScaler(\n"
+                f"  fitted_columns={num_features},\n"
+                f"  indices={self.continuous_feature_indices},\n"
+                f"  mean={self.mean_},\n"
+                f"  std={self.std_}\n"
+                f")"
+            )
         return "DragonScaler(not fitted)"
-

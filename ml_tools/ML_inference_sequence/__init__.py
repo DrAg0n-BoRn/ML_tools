@@ -1,12 +1,17 @@
-from ._sequence_inference import (
-    DragonSequenceInferenceHandler
+from ._autoregressive_inference import (
+    DragonSequenceAutoregressiveHandler
+)
+
+from ._exogenous_inference import (
+    DragonSequenceExogenousHandler
 )
 
 from .._core import _imprimir_disponibles
 
 
 __all__ = [
-    "DragonSequenceInferenceHandler"
+    "DragonSequenceAutoregressiveHandler",
+    "DragonSequenceExogenousHandler"
 ]
 
 

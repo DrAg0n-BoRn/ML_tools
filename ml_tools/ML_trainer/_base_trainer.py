@@ -236,7 +236,7 @@ class _BaseDragonTrainer(ABC):
             _LOGGER.info(f"Loading checkpoint from '{p.name}'...")
         
         try:
-            checkpoint = torch.load(p, map_location=self.device)
+            checkpoint = torch.load(p, map_location=self.device, weights_only=False)
             
             if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
                 _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
