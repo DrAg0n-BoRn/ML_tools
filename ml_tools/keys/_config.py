@@ -11,6 +11,7 @@ class _EvaluationConfig:
     CAPTUM_PLOT_SIZE = (10, 8)
     CAPTUM_FONT_SIZE = 24
     CAPTUM_X_TICK_SIZE = 20
+    CAPTUM_Y_TICK_SIZE = 20
     # Loss plot
     LOSS_PLOT_SIZE = (18, 9)
     LOSS_PLOT_LABEL_SIZE = 24

@@ -527,7 +527,7 @@ class _BaseSequenceDataset(_BaseDatasetMaker, ABC):
         
         if verbose:
             _LOGGER.info(
-                f"Dataset loaded from '{target_filepath.name}' with ID '{instance.id}'.\n"
+                f"Dataset loaded from '{target_filepath.name}'.\n"
                 f"{repr(instance)}"
             )
         

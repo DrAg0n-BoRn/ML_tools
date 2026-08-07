@@ -570,10 +570,11 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
     def explain_captum(self,
                        explain_dataset: Optional[Dataset] = None,
-                       n_samples: int = 100,
+                       n_samples: int = 300,
                        feature_names: Optional[list[str]] = None,
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
+                       max_sequence_bins: int = 40,
                        verbose: int = 0):
         """
         Explains sequence model predictions using Captum's Integrated Gradients.
@@ -585,6 +586,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             feature_names (list[str] | None): Optional feature names for plotting. If None, attempts to extract from dataset.
             target_names (list[str] | None): Optional target names for plotting. If None, attempts to extract from training dataset or model.
             n_steps (int): Number of steps for Integrated Gradients approximation.
+            max_sequence_bins (int): Maximum number of bins for plot visualization if using long sequence length. (0 < max_sequence_bins <= 50)
             verbose (int): Verbosity level for Captum output.
         """
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
@@ -646,6 +648,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             target_names=target_names,
             n_steps=n_steps,
             device=self.device,
+            max_sequence_bins=max_sequence_bins,
             verbose=verbose
         )
     

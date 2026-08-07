@@ -28,6 +28,7 @@ def captum_sequence_feature_importance(model: nn.Module,
                                        target_names: Optional[list[str]] = None,
                                        n_steps: int = 50,
                                        device: Union[str, torch.device] = 'cpu',
+                                       max_sequence_bins: int = 40,
                                        verbose: int = 0):
     """
     Calculates temporal and global feature importance for Sequence models using Captum's Integrated Gradients.
@@ -81,6 +82,13 @@ def captum_sequence_feature_importance(model: nn.Module,
     # --- 2. Iterate and Explain ---
     _LOGGER.info(f"⏳ Calculating Sequence Captum importance for {len(target_names)} target(s)...")
     
+    # max sequence bins should be positive and less than or equal to 50
+    if max_sequence_bins <= 0 or max_sequence_bins > 50:
+        if verbose > 0:
+            _LOGGER.warning(f"max_sequence_bins should be between 1 and 50. Received {max_sequence_bins}. Defaulting to 40.")
+        max_sequence_bins = 40
+    
+    
     for i, name in enumerate(target_names):
         clean_name = sanitize_filename(name)
         idx_to_explain = None if output_is_1d else i
@@ -95,8 +103,31 @@ def captum_sequence_feature_importance(model: nn.Module,
             n_steps=n_steps,
             file_suffix=f"_{clean_name}",
             target_name=name,
+            max_sequence_bins=max_sequence_bins,
             verbose=verbose
         )
+
+
+def _downsample_sequence(heatmap_attr: np.ndarray, max_steps: int = 40) -> tuple[np.ndarray, list[str]]:
+    seq_len = heatmap_attr.shape[0]
+    if seq_len <= max_steps:
+        return heatmap_attr, [str(i) for i in range(1, seq_len + 1)]
+        
+    splits = np.array_split(heatmap_attr, max_steps, axis=0)
+    compressed_attr = np.vstack([np.mean(split, axis=0) for split in splits])
+    
+    labels = []
+    current_idx = 1
+    for split in splits:
+        step_count = split.shape[0]
+        if step_count > 1:
+            labels.append(f"{current_idx}-{current_idx + step_count - 1}")
+        else:
+            labels.append(str(current_idx))
+        current_idx += step_count
+        
+    return compressed_attr, labels
+
 
 def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
                                     inputs: torch.Tensor,
@@ -107,6 +138,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
                                     n_steps: int,
                                     file_suffix: str,
                                     target_name: str,
+                                    max_sequence_bins: int,
                                     verbose: int):
     try:
         with torch.backends.cudnn.flags(enabled=False):
@@ -137,8 +169,11 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # 1. Heatmap (Average across batch) -> (Seq_Len, Features)
     heatmap_attr = np.mean(np.abs(attributions_np), axis=0)
     
+    compressed_heatmap, x_labels = _downsample_sequence(heatmap_attr, max_steps=max_sequence_bins)
+    compressed_seq_len = compressed_heatmap.shape[0]
+    
     # 2. Temporal Lag (Average across batch and features) -> (Seq_Len,)
-    temporal_attr = np.mean(heatmap_attr, axis=1)
+    temporal_attr = np.mean(compressed_heatmap, axis=1)
     
     # 3. Global Feature (Average across batch and time) -> (Features,)
     global_attr = np.mean(heatmap_attr, axis=0)
@@ -165,21 +200,21 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # ==========================================
     # PLOT 1: Feature-Time Heatmap
     # ==========================================
-    fig_w = max(10, seq_len * 0.5)
+    fig_w = max(10, compressed_seq_len * 0.3)
     fig_h = max(6, num_features * 0.4)
     
     plt.figure(figsize=(fig_w, fig_h), dpi=_EvaluationConfig.DPI)
     sns.heatmap(
-        heatmap_attr.T,
-        cmap="rocket_r",
-        yticklabels=feature_names,
-        xticklabels=[str(i) for i in range(1, seq_len + 1)],
+        compressed_heatmap.T,
+        cmap="Greens",
+        yticklabels=[wrap_text(f_n) for f_n in feature_names],
+        xticklabels=x_labels,
+        cbar=False
     )
                 
     plt.title(f"Feature-Time Attribution Heatmap\n'{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
-    plt.xlabel("Sequence Time Step (Lag -> Recent)", labelpad=_EvaluationConfig.LABEL_PADDING)
-    plt.ylabel("Features", labelpad=_EvaluationConfig.LABEL_PADDING)
-    plt.yticks(fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
+    plt.xlabel("Sequence Time Step", labelpad=_EvaluationConfig.LABEL_PADDING)
+    plt.yticks(rotation=0)
     plt.tight_layout()
     plt.savefig(save_dir / f"feature_time_heatmap{file_suffix}.svg", bbox_inches='tight')
     plt.close()
@@ -188,12 +223,12 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # PLOT 2: Temporal Lag Line Plot
     # ==========================================
     plt.figure(figsize=(_EvaluationConfig.CAPTUM_PLOT_SIZE[0], 6), dpi=_EvaluationConfig.DPI)
-    plt.plot(range(1, seq_len + 1), temporal_attr, marker='o', color='mediumpurple', linewidth=2, markersize=8)
+    plt.plot(range(1, compressed_seq_len + 1), temporal_attr, marker='o', color='mediumpurple', linewidth=2, markersize=8)
     
-    plt.title(f"Temporal Lag Importance\n'{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
-    plt.xlabel("Sequence Time Step (Lag -> Recent)", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
+    plt.title(f"Temporal Time Step Importance\n'{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
+    plt.xlabel("Sequence Time Step", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
     plt.ylabel("Mean Absolute Attribution", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
-    plt.xticks(range(1, seq_len + 1), fontsize=_EvaluationConfig.CAPTUM_X_TICK_SIZE)
+    plt.xticks(range(1, compressed_seq_len + 1), x_labels, rotation=90)
     plt.grid(True, linestyle='--', alpha=0.6)
     
     # Remove top and right spines
@@ -209,7 +244,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # PLOT 3: Global Feature Bar Chart
     # ==========================================
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=20))
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x))
     
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
     

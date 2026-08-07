@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.3.0] 2026-08-07
+
+### Added
+
+- data_exploration:
+    - `plot_target_temporal_analysis()`: New function to visualize the temporal autocorrelation and partial autocorrelation of a target variable in time series datasets. This function provides insights into the temporal dependencies of the target variable, aiding in feature engineering and sequence length selection for sequence prediction tasks.
+
+### Changed
+
+- ML_evaluation_captum:
+    - `captum_sequence_feature_importance()`:
+        - Enhanced plot aesthetics.
+        - Added `max_sequence_bins` parameter to allow users to control the maximum number of sequence bins in the temporal feature importance heatmap. The function will downsample the sequence length to this maximum for better visualization, while still preserving the overall trend of feature importance across time steps.
+
+- ML_trainer:
+    - `DragonSequenceTrainer`:
+        - Updated the `explain_captum()` method to accept the new `max_sequence_bins` parameter.
+
+- data_exploration -> schema
+    - Moved FeatureSchema related functions to the 'schema' module:
+        - `finalize_feature_schema()`
+        - `apply_feature_schema()`
+        - `reconstruct_from_schema()`
+
+### Fixed
+
+- ML_configuration:
+    - Updated configuration classes related to sequence models to reflect changes made in the package update 25.2.0.
+
 ## [25.2.0] 2026-08-07
 
 ### Added

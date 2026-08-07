@@ -1,7 +1,7 @@
 import math
 import torch
 from torch import nn
-from typing import Literal
+from typing import Literal, Union
 
 from ..schema import FeatureSchema
 from ..ML_models._base_save_load import _ArchitectureBuilder
@@ -87,10 +87,10 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
     def __init__(self, 
                  schema: FeatureSchema,
                  targets: list[str],
-                 prediction_mode: Literal["autoregressive-sequence-to-sequence", 
-                                          "autoregressive-sequence-to-value", 
-                                          "exogenous-sequence-to-sequence", 
-                                          "exogenous-sequence-to-value"],
+                 prediction_mode: Union[Literal["autoregressive-sequence-to-sequence", 
+                                                "autoregressive-sequence-to-value", 
+                                                "exogenous-sequence-to-sequence", 
+                                                "exogenous-sequence-to-value"], str],
                  sequence_length: int,
                  d_model: int = 128,
                  nhead: int = 4,

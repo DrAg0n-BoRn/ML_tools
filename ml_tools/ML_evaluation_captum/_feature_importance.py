@@ -250,7 +250,7 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     
     # Increase wrap width to prevent multi-line breaks for most feature names
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=20))
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x))
     
     # Calculate a dynamic height to ensure large fonts do not overlap
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)

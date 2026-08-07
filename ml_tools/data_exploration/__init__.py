@@ -28,6 +28,10 @@ from ._plotting_b import (
     plot_pairgrid_continuous_vs_target
 )
 
+from ._sequence_pacf import (
+    plot_target_temporal_analysis
+)
+
 from ._features import (
     split_features_targets,
     split_continuous_binary,
@@ -39,12 +43,6 @@ from ._features import (
     reconstruct_multibinary,
     filter_subset_categorical,
     filter_subset_continuous
-)
-
-from ._schema_ops import (
-    finalize_feature_schema,
-    apply_feature_schema,
-    reconstruct_from_schema
 )
 
 from .._core import _imprimir_disponibles
@@ -68,11 +66,9 @@ __all__ = [
     "plot_categorical_vs_target",
     "plot_correlation_heatmap",
     "plot_pairgrid_continuous_vs_target",
+    "plot_target_temporal_analysis",
     "encode_categorical_features",
     "encode_classification_target",
-    "finalize_feature_schema",
-    "apply_feature_schema",
-    "reconstruct_from_schema",
     "match_and_filter_columns_by_regex",
     "filter_subset_categorical",
     "filter_subset_continuous",

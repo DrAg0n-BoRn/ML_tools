@@ -10,8 +10,7 @@ from pandas.api.types import is_numeric_dtype, is_object_dtype
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
-from .._helpers import wrap_text
-from .._helpers import _get_consistent_palette, get_valid_matplotlib_color
+from .._helpers import wrap_text, _get_consistent_palette, get_valid_matplotlib_color
 
 
 _LOGGER = get_logger("Data Exploration: Visualization")

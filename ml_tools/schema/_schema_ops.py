@@ -1,7 +1,7 @@
 import pandas as pd
 from typing import Optional
 
-from ..schema import FeatureSchema
+from . import FeatureSchema
 
 from .._core import get_logger
 

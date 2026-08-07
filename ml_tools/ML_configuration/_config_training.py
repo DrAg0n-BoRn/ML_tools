@@ -38,8 +38,10 @@ class DragonTrainingConfig:
                                "binary segmentation",
                                "multiclass segmentation",
                                "object detection",
-                               "sequence-to-sequence",
-                               "sequence-to-value",
+                               "autoregressive-sequence-to-sequence",
+                               "autoregressive-sequence-to-value",
+                               "exogenous-sequence-to-sequence",
+                               "exogenous-sequence-to-value",
                                "diffusion",
                                "autoencoder"],
                  # Optional for data splitting

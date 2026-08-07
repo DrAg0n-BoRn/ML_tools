@@ -1,4 +1,4 @@
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 from ..schema import FeatureSchema
 
@@ -300,12 +300,14 @@ class DragonSequenceLSTMParams(_BaseModelParams):
     def __init__(self, *,
                 schema: FeatureSchema,
                 targets: list[str],
-                prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
+                prediction_mode: Union[Literal["autoregressive-sequence-to-sequence", 
+                                         "autoregressive-sequence-to-value", 
+                                         "exogenous-sequence-to-sequence", 
+                                         "exogenous-sequence-to-value"], str],
                 sequence_length: int,
                 hidden_size: int = 100,
                 recurrent_layers: int = 2,
-                dropout: float = 0.1,
-                bidirectional: bool = False):
+                dropout: float = 0.1):
         self.schema = schema
         self.targets = targets
         self.prediction_mode = prediction_mode
@@ -313,14 +315,16 @@ class DragonSequenceLSTMParams(_BaseModelParams):
         self.hidden_size = hidden_size
         self.recurrent_layers = recurrent_layers
         self.dropout = dropout
-        self.bidirectional = bidirectional
         
 class DragonSequenceTransformerParams(_BaseModelParams):
     """Parameters for a Dragon Sequence Transformer model."""
     def __init__(self, *,
                 schema: FeatureSchema,
                 targets: list[str],
-                prediction_mode: Literal["sequence-to-sequence", "sequence-to-value"],
+                prediction_mode: Union[Literal["autoregressive-sequence-to-sequence", 
+                                         "autoregressive-sequence-to-value", 
+                                         "exogenous-sequence-to-sequence", 
+                                         "exogenous-sequence-to-value"], str],
                 sequence_length: int,
                 d_model: int = 128,
                 nhead: int = 4,
