@@ -13,6 +13,7 @@ from ..ML_configuration._config_finalize import _FinalizeModelTraining
 from ..ML_configuration import DragonCheckpointConfig
 from ..ML_evaluation import plot_losses
 from ..ML_utilities import inspect_pth_file, validate_torch_device
+from ..IO_tools import train_logger
 
 from ..path_manager import make_fullpath
 from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
@@ -321,17 +322,20 @@ class _BaseDragonTrainer(ABC):
             batch_size: int = 10, 
             skip_first_epoch: bool = True,
             shuffle: bool = True,
-            resume_from_checkpoint: Optional[Union[str, Path]] = None):
+            return_history_log: bool = False,
+            resume_from_checkpoint: Optional[Union[str, Path]] = None) -> Optional[dict[str, list[Any]]]:
         """
         Starts the training-validation process of the model.
         
-        Returns the "History" callback dictionary.
+        Optionally returns the "History Log" dictionary.
 
         Args:
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
-            skip_first_epoch (bool): Whether to skip the first epoch when plotting losses at the end. This can help prevent skewed loss curves if the first epoch has a much higher loss.
+            skip_first_epoch (bool): Whether to skip the first epoch when plotting losses at the end. 
+                This can help prevent skewed loss curves if the first epoch has a much higher loss.
             shuffle (bool): Whether to shuffle the training data at each epoch.
+            return_history_log (bool): If True, returns the training history log at the end of training.
             resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
         """
         self.epochs = epochs
@@ -377,7 +381,61 @@ class _BaseDragonTrainer(ABC):
         # Training History
         plot_losses(self.history, save_dir=self.training_directory_root, skip_first_epoch=skip_first_epoch)
         
+        if return_history_log:
+            return self.history
+    
+    def get_history_dict(self) -> dict[str, list[Any]]:
+        """
+        Returns the training history dictionary.
+
+        Returns:
+            dict[str, list[Any]]: The history dictionary containing metrics for each epoch.
+        """
         return self.history
+    
+    def save_training_log(self, 
+                          train_config: Union[dict, Any],
+                          verbose: int = 3):
+        """
+        Saves the training configuration, model configuration, and training history to a JSON file in the training root directory.
+        
+        Args:
+            train_config (dict | Any): Training configuration parameters. If object, must have a `.to_log()` method returning a dict.
+            verbose (int): Verbosity level for logging.
+        
+        ### Note:
+            - The model must implement a `get_architecture_config()` method to log its configuration.
+            - If the training history is empty, it will be skipped.
+        """        
+        # fail early
+        if not isinstance(train_config, dict):
+            if not hasattr(train_config, "to_log") or not callable(getattr(train_config, "to_log")):
+                _LOGGER.error("'train_config' must be a dict or an object with a 'to_log()' method.")
+                raise ValueError()
+        
+        # check if model has get_architecture_config
+        model_parameters: dict = {}
+        if hasattr(self.model, 'get_architecture_config'):
+            model_parameters = self.model.get_architecture_config() # type: ignore
+            if not isinstance(model_parameters, dict):
+                _LOGGER.error("'model.get_architecture_config()' did not return a dictionary.")
+                raise ValueError()
+        else:
+            if verbose >= 1:
+                _LOGGER.warning(f"Model '{self.model.__class__.__name__}' does not have a 'get_architecture_config()' method. Model config will not be logged.")
+        
+        # check if history is empty
+        resolved_history: Optional[dict] = None
+        if not self.history and verbose >= 1:
+            _LOGGER.warning("Training history is empty. No training metrics will be logged.")
+        else:
+            resolved_history = self.history
+        
+        train_logger(train_config=train_config,
+                     model_parameters=model_parameters,
+                     train_history=resolved_history,
+                     save_directory=self.training_directory_root,
+                     verbose=verbose)
 
     def _callbacks_hook(self, method_name: str, *args, **kwargs):
         """Calls the specified method on all callbacks."""

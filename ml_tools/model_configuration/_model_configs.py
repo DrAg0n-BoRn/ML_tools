@@ -2,7 +2,7 @@ from typing import Optional, Literal, Union
 
 from ..schema import FeatureSchema
 
-from ._base_model_config import _BaseModelParams
+from ..ML_configuration._base_model_config import _BaseModelParams
 
 
 __all__ = [    

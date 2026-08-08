@@ -1,5 +1,5 @@
 from ._public_keys import (
-    CheckpointKeys,
+    HistoryDictKeys,
     FinalizedFileKeys,
     TaskKeys,
     InferenceKeys
@@ -10,7 +10,7 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "InferenceKeys",
-    "CheckpointKeys",
+    "HistoryDictKeys",
     "FinalizedFileKeys",
     "TaskKeys",
 ]

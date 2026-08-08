@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.4.0] 2026-08-08
+
+### Added
+
+- ML_trainer:
+    - `.get_history_dict()` method added to all trainers, allowing users to retrieve the training history dictionary at any point during or after training. This method returns a dictionary containing metrics per epoch if training has occurred, else an empty dictionary.
+    - `.save_training_log()` method added to all trainers, enabling users to quickly save the training configuration, model configuration, and training history to a JSON log.
+
+- New module "model_configuration" for all model configuration classes.
+
+#### Changed
+
+- ML_trainer:
+    - The `.fit()` method in all trainers now includes an optional `return_history_log` parameter, defaults to `False`. When set to `True`, the method will return a dictionary containing the training history log, which includes metrics for each epoch.
+
+- IO_tools:
+    - `train_logger()` relaxed to allow empty dictionaries for `train_config` and `model_parameters`, issuing a warning instead of raising an error. This change ensures that users can still save logs even if some configuration details are missing.
+
+- ML_configuration -> model_configuration
+    - Moved all model configuration classes from `ML_configuration` to the new module `model_configuration` for better modularity and separation of concerns.
+
+- Updated public keys in "keys" module.
+
+
 ## [25.3.0] 2026-08-07
 
 ### Added

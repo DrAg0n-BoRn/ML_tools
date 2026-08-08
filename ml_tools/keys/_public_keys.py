@@ -1,15 +1,16 @@
 from ._keys import PyTorchLogKeys, PyTorchCheckpointKeys, MLTaskKeys, PyTorchInferenceKeys, ObjectDetectionKeys
 
 
-class CheckpointKeys:
-    """Checkpoint callback keys."""
+class HistoryDictKeys:
+    """Keys for the History dict returned by Dragon ML trainers."""
     TRAIN_LOSS = PyTorchLogKeys.TRAIN_LOSS
     VALIDATION_LOSS = PyTorchLogKeys.VAL_LOSS
-    
+    LEARNING_RATE = PyTorchLogKeys.LEARNING_RATE
+
 
 class FinalizedFileKeys:
-    """Keys for finalized model files."""
-    MODEL_WEIGHTS = PyTorchCheckpointKeys.MODEL_STATE
+    """Keys for 'Dragon ML FinalizedFile' .pth files."""
+    MODEL_STATE = PyTorchCheckpointKeys.MODEL_STATE
     EPOCH = PyTorchCheckpointKeys.EPOCH
     TASK = PyTorchCheckpointKeys.TASK
     CLASSIFICATION_THRESHOLD = PyTorchCheckpointKeys.CLASSIFICATION_THRESHOLD
@@ -60,6 +61,9 @@ class TaskKeys:
     AUTOENCODER = MLTaskKeys.AUTOENCODER
 
 class InferenceKeys:
+    """
+    Keys for accessing outputs from Dragon ML inference classes, including predictions, probabilities, and labels.
+    """
     # For regression tasks
     PREDICTIONS = PyTorchInferenceKeys.PREDICTIONS
     

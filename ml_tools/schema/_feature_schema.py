@@ -259,8 +259,10 @@ class FeatureSchema(NamedTuple):
         Saves feature names, categorical feature names, continuous feature names to separate text files.
         """
         self.save_all_features(directory=directory, verbose=False)
-        self.save_continuous_features(directory=directory, verbose=False)
-        self.save_categorical_features(directory=directory, verbose=False)
+        if self.continuous_feature_names:
+            self.save_continuous_features(directory=directory, verbose=False)
+        if self.categorical_feature_names:
+            self.save_categorical_features(directory=directory, verbose=False)
         self.save_description(directory=directory, verbose=False)
         
         if verbose:
