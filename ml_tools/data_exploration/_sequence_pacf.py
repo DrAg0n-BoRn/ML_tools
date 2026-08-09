@@ -113,7 +113,23 @@ def plot_target_temporal_analysis(
         if verbose >= 1:
             _LOGGER.warning("No continuous or categorical targets provided. Skipping PACF plotting.")
         return
-
+    
+    if not isinstance(df, pd.DataFrame):
+        _LOGGER.error("Input 'df' must be a pandas DataFrame.")
+        return
+    
+    if not isinstance(save_dir, (str, Path)):
+        _LOGGER.error("Input 'save_dir' must be a string or Path object.")
+        return
+    
+    if not isinstance(max_lag, int) or max_lag <= 0:
+        _LOGGER.error("Input 'max_lag' must be a positive integer.")
+        return
+    
+    if not (0 < confidence_interval < 1):
+        _LOGGER.error("Input 'confidence_interval' must be a float between 0 and 1.")
+        return
+    
     # 1. Setup save directory
     base_save_path = make_fullpath(save_dir, make=True, enforce="directory")
     target_save_dir = base_save_path / "Target_Temporal_Analysis"
@@ -192,7 +208,7 @@ def plot_target_temporal_analysis(
             plt.grid(True, linestyle='--', alpha=0.6)
             plt.tight_layout()
             
-            plot_filename = f"{sanitize_filename(target)}_PACF.svg"
+            plot_filename = f"{sanitize_filename(target)}_PACF_{max_lag}.svg"
             plot_path = target_save_dir / plot_filename
             
             try:
@@ -252,7 +268,7 @@ def plot_target_temporal_analysis(
             plt.grid(True, linestyle='--', alpha=0.6)
             plt.tight_layout()
             
-            plot_filename = f"{sanitize_filename(target)}_MutualInfo.svg"
+            plot_filename = f"{sanitize_filename(target)}_MutualInfo_{max_lag}.svg"
             plot_path = target_save_dir / plot_filename
             
             try:

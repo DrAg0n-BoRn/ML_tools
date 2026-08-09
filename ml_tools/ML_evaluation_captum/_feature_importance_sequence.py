@@ -228,7 +228,10 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     plt.title(f"Temporal Time Step Importance\n'{target_name}'", pad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE + 2)
     plt.xlabel("Sequence Time Step", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
     plt.ylabel("Mean Absolute Attribution", labelpad=_EvaluationConfig.LABEL_PADDING, fontsize=_EvaluationConfig.CAPTUM_FONT_SIZE)
-    plt.xticks(range(1, compressed_seq_len + 1), x_labels, rotation=90)
+    
+    x_tick_rotation = 90 if seq_len > max_sequence_bins else 0 # smart rotation based on bin usage
+    plt.xticks(range(1, compressed_seq_len + 1), x_labels, rotation=x_tick_rotation)
+    
     plt.grid(True, linestyle='--', alpha=0.6)
     
     # Remove top and right spines

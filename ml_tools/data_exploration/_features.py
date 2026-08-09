@@ -55,7 +55,11 @@ def split_features_targets(df: pd.DataFrame, targets: list[str]):
     df_features = df.drop(columns=targets)
     
     # 3. Print summary
-    print(f"Original shape: {df.shape}\nFeatures shape: {df_features.shape}\nTargets shape: {df_targets.shape}")
+    _LOGGER.info(
+        f"Split complete.\n"
+        f"  - Features: {df_features.shape}\n"
+        f"  - Targets: {df_targets.shape}"
+    )
     
     return df_features, df_targets
 
@@ -97,9 +101,12 @@ def split_continuous_binary(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
 
     df_cont = df[continuous_cols]
     df_bin = df[binary_cols]
-
-    print(f"Continuous columns shape: {df_cont.shape}")
-    print(f"Binary columns shape: {df_bin.shape}")
+    
+    _LOGGER.info(
+        f"Split complete.\n"
+        f"  - Binary: {df_bin.shape}\n"
+        f"  - Continuous: {df_cont.shape}"
+    )
 
     return df_cont, df_bin # type: ignore
 

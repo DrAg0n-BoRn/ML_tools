@@ -326,8 +326,8 @@ class DragonSequenceTransformerParams(_BaseModelParams):
                                          "exogenous-sequence-to-sequence", 
                                          "exogenous-sequence-to-value"], str],
                 sequence_length: int,
-                d_model: int = 128,
-                nhead: int = 4,
+                embedding_dim: int = 128,
+                heads: int = 4,
                 num_layers: int = 3,
                 dim_feedforward: int = 512,
                 dropout: float = 0.1):
@@ -335,8 +335,8 @@ class DragonSequenceTransformerParams(_BaseModelParams):
         self.targets = targets
         self.prediction_mode = prediction_mode
         self.sequence_length = sequence_length
-        self.d_model = d_model
-        self.nhead = nhead
+        self.embedding_dim = embedding_dim
+        self.heads = heads
         self.num_layers = num_layers
         self.dim_feedforward = dim_feedforward
         self.dropout = dropout

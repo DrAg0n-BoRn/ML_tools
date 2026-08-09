@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.4.1] 2026-08-09
+
+### Changed
+
+- ML_models_sequence:
+    - `DragonSequenceTransformer`: 
+        - Renamed the following parameters and attributes for clarity:
+            - `nhead` -> `heads`
+            - `d_model` -> `embedding_dim`
+        - Explicitly set `enable_nested_tensor=False` in the `nn.TransformerEncoder` to ensure compatibility and avoid warnings about nested tensor support.
+
+- data_exploration:
+    - Enhanced logging in the functions `split_features_targets()` and `split_continuous_binary()`.
+    - `plot_target_temporal_analysis()`: enhanced parameter validation and added the 'max_lag' value to the plot filename for better traceability.
+
+### Fixed
+
+- ML_evaluation_captum:
+    - `captum_sequence_feature_importance()`: Fixed the x-ticks rotation logic to smartly rotate based on the number of sequence bins used, improving readability for plots with no bins.
+
+
 ## [25.4.0] 2026-08-08
 
 ### Added
