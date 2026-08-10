@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.4.3] 2026-08-10
+
+### Fixed
+
+- ML_evaluation:
+    - `dit_generation_metrics()`, added "cut=0" to the `sns.kdeplot()` calls to prevent the visualization of nonexistent tails in the KDE plots, ensuring that the density plots accurately reflect the data distribution without misleading extensions beyond the actual data range.
+
+
 ## [25.4.2] 2026-08-10
 
 ### Fixed

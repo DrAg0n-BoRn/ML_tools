@@ -253,12 +253,12 @@ def _evaluate_continuous_features(
         if np.isclose(np.std(real_i), 0, atol=1e-5):
             ax.axvline(x=real_i[0], color=format_config.real_color, linestyle='--', linewidth=2.5, label='Real Data (Constant)')
         else:
-            sns.kdeplot(real_i, fill=True, color=format_config.real_color, alpha=format_config.alpha, label='Real Data', ax=ax)
+            sns.kdeplot(real_i, fill=True, color=format_config.real_color, alpha=format_config.alpha, label='Real Data', ax=ax, cut=0)
         
         if np.isclose(np.std(gen_i), 0, atol=1e-5):
             ax.axvline(x=gen_i[0], color=format_config.gen_color, linestyle='--', linewidth=2.5, label='Generated Data (Constant)')
         else:
-            sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax)    
+            sns.kdeplot(gen_i, fill=True, color=format_config.gen_color, alpha=format_config.alpha, label='Generated Data', ax=ax, cut=0)    
         
         # ax.set_title(name, fontsize=format_config.font_size + 2, pad=_EvaluationConfig.LABEL_PADDING) # Remove title, use x-label instead for cleaner look
         ax.set_xlabel(name, fontsize=format_config.font_size, labelpad=_EvaluationConfig.LABEL_PADDING)
