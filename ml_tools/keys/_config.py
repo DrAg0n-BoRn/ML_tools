@@ -27,6 +27,8 @@ class _EvaluationConfig:
     RADAR_PLOT_HEIGHT = 800
     RADAR_MAX_FEATURES_BEFORE_DYNAMIC_SIZING = 15
     RADAR_MAX_FEATURE_NAME_LENGTH_FOR_MARGIN = 14
+    # Sequence-Sequence max points for plotting to prevent massive SVG generation
+    SEQ_SEQ_MAX_POINTS = 50000
 
 
 class _OneHotOtherPlaceholder:

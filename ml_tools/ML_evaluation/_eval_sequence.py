@@ -41,7 +41,18 @@ def sequence_to_sequence_regression_metrics(
     overall_dir = save_dir_path / "overall_metrics"
     # Extract the sub-config for the base regression metrics
     sub_config = config.regression_config if config else None 
-    regression_metrics(y_true=y_true.flatten(), y_pred=y_pred.flatten(), save_dir=overall_dir, config=sub_config)
+    
+    y_true_flat = y_true.flatten()
+    y_pred_flat = y_pred.flatten()
+    
+    max_points = _EvaluationConfig.SEQ_SEQ_MAX_POINTS
+    if len(y_true_flat) > max_points:
+        _LOGGER.info(f"Subsampling overall regression metrics to {max_points} points to prevent massive SVG generation.")
+        indices = np.random.choice(len(y_true_flat), max_points, replace=False)
+        y_true_flat = y_true_flat[indices]
+        y_pred_flat = y_pred_flat[indices]
+
+    regression_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=overall_dir, config=sub_config)
 
     # 2. Per-Step Metrics Plotting
     sequence_length = y_true.shape[1]
@@ -104,7 +115,18 @@ def sequence_to_sequence_classification_metrics(
     overall_dir = save_dir_path / "overall_metrics"
     # Extract the sub-config for the base classification metrics
     sub_config = config.classification_config if config else None
-    classification_metrics(y_true=y_true.flatten(), y_pred=y_pred.flatten(), save_dir=overall_dir, config=sub_config)
+    
+    y_true_flat = y_true.flatten()
+    y_pred_flat = y_pred.flatten()
+    
+    max_points = _EvaluationConfig.SEQ_SEQ_MAX_POINTS
+    if len(y_true_flat) > max_points:
+        _LOGGER.info(f"Subsampling overall classification metrics to {max_points} points to prevent massive SVG generation.")
+        indices = np.random.choice(len(y_true_flat), max_points, replace=False)
+        y_true_flat = y_true_flat[indices]
+        y_pred_flat = y_pred_flat[indices]
+
+    classification_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=overall_dir, config=sub_config)
 
     # 2. Per-Step Metrics Plotting
     sequence_length = y_true.shape[1]

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.4.2] 2026-08-10
+
+### Fixed
+
+- ML_evaluation:
+    - Add subsampling strategy to `sequence_to_sequence_regression_metrics()`, and `sequence_to_sequence_classification_metrics()` to prevent the creation of massive SVG plot files.
+    - Regression metrics, set an explicit "precision=2" in `pd.qcut()` and `pd.cut()` to avoid plots with excessive decimal places in the bin labels, improving readability and aesthetics.
+
+
 ## [25.4.1] 2026-08-09
 
 ### Changed

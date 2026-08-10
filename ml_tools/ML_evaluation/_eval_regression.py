@@ -199,9 +199,9 @@ def _save_error_boxplot(y_true: np.ndarray, abs_errors: np.ndarray, format_confi
     df = pd.DataFrame({'True': y_true, 'AbsError': abs_errors})
     # Safely bin targets into deciles (or fallback to fewer bins if low variance)
     try:
-        df['Bin'] = pd.qcut(df['True'], q=10, duplicates='drop')
+        df['Bin'] = pd.qcut(df['True'], q=10, duplicates='drop', precision=2)
     except ValueError:
-        df['Bin'] = pd.cut(df['True'], bins=10)
+        df['Bin'] = pd.cut(df['True'], bins=10, precision=2)
         
     # get a consistent color palette for the boxplot based on the bins
     ordered_bins = df['Bin'].cat.categories.tolist()
