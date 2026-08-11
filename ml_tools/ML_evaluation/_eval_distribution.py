@@ -150,9 +150,13 @@ def distribution_metrics(
     ]
     report_string = "\n".join(report_lines)
     
-    report_path = save_dir_path / "distribution_report.txt"
-    report_path.write_text(report_string)
-    _LOGGER.info(f"📝 Distribution report saved as '{report_path.name}'")
+    report_path_txt = save_dir_path / "distribution_report.txt"
+    report_path_txt.write_text(report_string)
+    
+    report_path_csv = save_dir_path / "distribution_report.csv"
+    pd.DataFrame([stats]).to_csv(report_path_csv, index=False)
+    
+    _LOGGER.info(f"📝 Distribution reports saved as '{report_path_txt.name}' and '{report_path_csv.name}'")
 
     # --- Plot 1: Prediction Intervals ---
     fig_pi, ax_pi = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)

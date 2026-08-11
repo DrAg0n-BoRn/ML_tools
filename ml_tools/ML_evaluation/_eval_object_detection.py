@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 
 from pathlib import Path
 from typing import Union, Optional
@@ -104,12 +105,17 @@ def object_detection_metrics(
             print(json.dumps(serializable_results, indent=4))
 
         # Save JSON report
-        detection_report_filename = VisionKeys.OBJECT_DETECTION_REPORT + ".json"
-        report_path = save_dir_path / detection_report_filename
-        with open(report_path, 'w') as f:
+        detection_report_filename_json = VisionKeys.OBJECT_DETECTION_REPORT + ".json"
+        report_path_json = save_dir_path / detection_report_filename_json
+        with open(report_path_json, 'w') as f:
             json.dump(serializable_results, f, indent=4)
+            
+        # Save CSV report
+        detection_report_filename_csv = VisionKeys.OBJECT_DETECTION_REPORT + ".csv"
+        report_path_csv = save_dir_path / detection_report_filename_csv
+        pd.DataFrame([serializable_results]).to_csv(report_path_csv, index=False)
         
-        _LOGGER.info(f"📊 Object detection (mAP) report saved as '{report_path.name}'")
+        _LOGGER.info(f"📊 Object detection (mAP) reports saved as '{report_path_json.name}' and '{report_path_csv.name}'")
 
     except Exception as e:
         _LOGGER.error(f"Failed to compute mAP: {e}")

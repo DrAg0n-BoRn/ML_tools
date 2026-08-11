@@ -87,9 +87,17 @@ def _generate_text_report(metrics: dict, per_class_df: pd.DataFrame, save_dir_pa
     ]
     
     report_string = "\n".join(report_lines)
-    report_path = save_dir_path / f"{VisionKeys.SEGMENTATION_REPORT}.txt"
-    report_path.write_text(report_string, encoding="utf-8")
-    _LOGGER.info(f"📝 Segmentation report saved as '{report_path.name}'")
+    
+    report_path_txt = save_dir_path / f"{VisionKeys.SEGMENTATION_REPORT}.txt"
+    report_path_txt.write_text(report_string, encoding="utf-8")
+    
+    report_path_csv_global = save_dir_path / f"{VisionKeys.SEGMENTATION_REPORT}_global.csv"
+    pd.DataFrame([metrics]).to_csv(report_path_csv_global, index=False)
+    
+    report_path_csv_per_class = save_dir_path / f"{VisionKeys.SEGMENTATION_REPORT}_per_class.csv"
+    per_class_df.to_csv(report_path_csv_per_class, index=False)
+    
+    _LOGGER.info(f"📝 Segmentation reports saved as '{report_path_txt.name}', '{report_path_csv_global.name}', and '{report_path_csv_per_class.name}'")
 
 
 def _plot_metrics_heatmap(per_class_df: pd.DataFrame, format_config, save_dir_path: Path) -> None:

@@ -65,6 +65,7 @@ def dit_generation_metrics(
     # _LOGGER.info(f"Starting DiT generation evaluation. Saving to '{save_dir_path.name}'")
 
     overall_report_lines = ["--- Diffusion Model Generation Report ---"]
+    global_metrics_dict = {}
     
     # if no feature names are provided, make generic ones for reporting purposes
     if num_target_names is None and real_num is not None:
@@ -76,26 +77,29 @@ def dit_generation_metrics(
     # ==========================================
     # 1. Continuous Features (Marginal Distributions)
     # ==========================================
-    continuous_lines = _evaluate_continuous_features(
+    continuous_lines, continuous_metrics = _evaluate_continuous_features(
         real_num, gen_num, num_target_names, save_dir_path, format_config
     )
     overall_report_lines.extend(continuous_lines)
+    global_metrics_dict.update(continuous_metrics)
 
     # ==========================================
     # 2. Categorical Features (Proportions)
     # ==========================================
-    categorical_lines = _evaluate_categorical_features(
+    categorical_lines, categorical_metrics = _evaluate_categorical_features(
         real_cat_list, gen_cat_list, cat_target_names, cat_class_maps, save_dir_path, format_config
     )
     overall_report_lines.extend(categorical_lines)
+    global_metrics_dict.update(categorical_metrics)
     
     # ==========================================
     # 3. Multivariate Relationships (Numerical Correlation)
     # ==========================================
-    numerical_corr_lines = _evaluate_numerical_correlations(
+    numerical_corr_lines, numerical_corr_metrics = _evaluate_numerical_correlations(
         real_num, gen_num, num_target_names, save_dir_path, format_config
     )
     overall_report_lines.extend(numerical_corr_lines)
+    global_metrics_dict.update(numerical_corr_metrics)
     
     # ==========================================
     # 4. Global Multivariate Projections (PCA)
@@ -120,16 +124,22 @@ def dit_generation_metrics(
     has_cat = real_cat_list is not None and gen_cat_list is not None and len(real_cat_list) > 0
     if has_num or has_cat:
         overall_report_lines.append(f"\n[Global Realism: Discriminator ROC]")
-        _plot_discriminator_roc(real_num, gen_num, real_cat_list, gen_cat_list, save_dir_path, format_config)
+        auc_score = _plot_discriminator_roc(real_num, gen_num, real_cat_list, gen_cat_list, save_dir_path, format_config)
         overall_report_lines.append("- Discriminator ROC curve generated (target ideal AUC is ~0.50).")
+        if auc_score is not None:
+            global_metrics_dict["Discriminator AUC"] = auc_score
     
     # ==========================================
     # 7. Save Overall Report
     # ==========================================
     report_string = "\n".join(overall_report_lines)
-    report_path = save_dir_path / "global_generation_report.txt"
-    report_path.write_text(report_string, encoding="utf-8")
-    _LOGGER.info(f"🌎 Global generation report saved to '{report_path.name}'")
+    report_path_txt = save_dir_path / "global_generation_report.txt"
+    report_path_txt.write_text(report_string, encoding="utf-8")
+    
+    report_path_csv = save_dir_path / "global_generation_report.csv"
+    pd.DataFrame([global_metrics_dict]).to_csv(report_path_csv, index=False)
+    
+    _LOGGER.info(f"📊 Global generation reports saved to '{report_path_txt.name}' and '{report_path_csv.name}'")
 
 
 # Metrics explanation:
@@ -212,14 +222,15 @@ def _evaluate_continuous_features(
     num_target_names: Optional[list[str]],
     save_dir_path: Path,
     format_config: FormatTabularDiffusionMetrics
-) -> list[str]:
-    """Evaluates continuous marginal distributions and returns report lines."""
+) -> tuple[list[str], dict]:
+    """Evaluates continuous marginal distributions and returns report lines and metrics dict."""
     report_lines = []
+    global_metrics = {}
     
     if not (real_num is not None and len(real_num) > 0 and 
             gen_num is not None and len(gen_num) > 0 and 
             num_target_names is not None and len(num_target_names) > 0):
-        return report_lines
+        return report_lines, global_metrics
 
     report_lines.append(f"\n[Continuous Features: {len(num_target_names)}]")
     metrics_summary = []
@@ -286,17 +297,21 @@ def _evaluate_continuous_features(
     _LOGGER.info(f"📊 Continuous distribution summary saved to '{csv_path.name}'")
             
     if not summary_df.empty:
-        avg_w_dist = summary_df['Wasserstein Distance'].mean()
-        avg_rel_w_dist = summary_df['Relative Wasserstein Distance'].mean()
-        avg_ks_stat = summary_df['KS Statistic'].mean()
+        avg_w_dist = float(summary_df['Wasserstein Distance'].mean())
+        avg_rel_w_dist = float(summary_df['Relative Wasserstein Distance'].mean())
+        avg_ks_stat = float(summary_df['KS Statistic'].mean())
         
         report_lines.append(f"Average Wasserstein Distance: {avg_w_dist:.4f}")
         report_lines.append(f"Average Relative Wasserstein Distance: {avg_rel_w_dist:.4f}")
         report_lines.append(f"Average KS Statistic: {avg_ks_stat:.4f}")
+        
+        global_metrics["Average Wasserstein Distance"] = avg_w_dist
+        global_metrics["Average Relative Wasserstein Distance"] = avg_rel_w_dist
+        global_metrics["Average KS Statistic"] = avg_ks_stat
     else:
         report_lines.append("Average Continuous Metrics: N/A")
         
-    return report_lines
+    return report_lines, global_metrics
 
 
 def _evaluate_categorical_features(
@@ -306,14 +321,15 @@ def _evaluate_categorical_features(
     cat_class_maps: Optional[list[Optional[dict[str, int]]]],
     save_dir_path: Path,
     format_config: FormatTabularDiffusionMetrics
-) -> list[str]:
-    """Evaluates categorical marginal distributions and returns report lines."""
+) -> tuple[list[str], dict]:
+    """Evaluates categorical marginal distributions and returns report lines and metrics dict."""
     report_lines = []
+    global_metrics = {}
     
     if not (real_cat_list is not None and len(real_cat_list) > 0 and 
             gen_cat_list is not None and len(gen_cat_list) > 0 and 
             cat_target_names is not None and len(cat_target_names) > 0):
-        return report_lines
+        return report_lines, global_metrics
         
     report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
     cat_metrics_summary = []
@@ -385,11 +401,13 @@ def _evaluate_categorical_features(
     _LOGGER.info(f"📊 Categorical distribution summary saved to '{cat_csv_path.name}'")
     
     if not cat_summary_df.empty and 'Total Variation Distance' in cat_summary_df.columns:
-        report_lines.append(f"Average Total Variation Distance: {cat_summary_df['Total Variation Distance'].mean():.4f}")
+        avg_tvd = float(cat_summary_df['Total Variation Distance'].mean())
+        report_lines.append(f"Average Total Variation Distance: {avg_tvd:.4f}")
+        global_metrics["Average Total Variation Distance"] = avg_tvd
     else:
         report_lines.append("Average Total Variation Distance: N/A")
         
-    return report_lines
+    return report_lines, global_metrics
 
 
 def _evaluate_numerical_correlations(
@@ -398,14 +416,15 @@ def _evaluate_numerical_correlations(
     num_target_names: Optional[list[str]],
     save_dir_path: Path,
     format_config: FormatTabularDiffusionMetrics
-) -> list[str]:
-    """Evaluates numerical multivariate relationships (correlations) and returns report lines."""
+) -> tuple[list[str], dict]:
+    """Evaluates numerical multivariate relationships (correlations) and returns report lines and metrics dict."""
     report_lines = []
+    global_metrics = {}
     
     if not (real_num is not None and len(real_num) > 0 and 
             gen_num is not None and len(gen_num) > 0 and 
             num_target_names is not None and len(num_target_names) > 1):
-        return report_lines
+        return report_lines, global_metrics
         
     report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
     
@@ -423,14 +442,16 @@ def _evaluate_numerical_correlations(
     mask = np.triu(np.ones_like(real_corr, dtype=bool), k=1)
     
     if mask.sum() > 0:
-        corr_mae = corr_diff_abs.where(mask).mean().mean()
-        corr_mse = (corr_diff ** 2).where(mask).mean().mean()
+        corr_mae = float(corr_diff_abs.where(mask).mean().mean())
+        corr_mse = float((corr_diff ** 2).where(mask).mean().mean())
     else:
         corr_mae = 0.0
         corr_mse = 0.0
         
     report_lines.append(f"Correlation Matrix MAE: {corr_mae:.4f}")
     report_lines.append(f"Correlation Matrix MSE: {corr_mse:.4f}")
+    global_metrics["Correlation Matrix MAE"] = corr_mae
+    global_metrics["Correlation Matrix MSE"] = corr_mse
     
     num_feats = len(num_target_names)
     fig_size_xy = max(8, num_feats * 0.8)
@@ -468,8 +489,8 @@ def _evaluate_numerical_correlations(
     plt.close(fig)
     
     _LOGGER.info(f"🔗 Correlation matrix metrics calculated and heatmap saved to '{plot_path.name}'")
-    
-    return report_lines
+
+    return report_lines, global_metrics
 
 
 def _plot_pca_projection(real_num: np.ndarray, 
@@ -653,7 +674,7 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
                             real_cat_list: Optional[list[np.ndarray]], 
                             gen_cat_list: Optional[list[np.ndarray]], 
                             save_dir_path: Path, 
-                            format_config: FormatTabularDiffusionMetrics) -> None:
+                            format_config: FormatTabularDiffusionMetrics) -> Optional[float]:
     """
     [PRIVATE] Helper function to plot Discriminator ROC curve to evaluate global realism.
     Trains a lightweight classifier to distinguish real (class 0) from generated (class 1) data.
@@ -682,7 +703,7 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
             X_gen_parts.append(np.column_stack(gen_cat_encoded))
             
         if not X_real_parts or not X_gen_parts:
-            return
+            return None
             
         X_real = np.hstack(X_real_parts)
         X_gen = np.hstack(X_gen_parts)
@@ -700,7 +721,7 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
         # 4. Train/Test Split & Train Model
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
         
-        clf = RandomForestClassifier(n_estimators=30, max_depth=3, random_state=42, n_jobs=-1)
+        clf = RandomForestClassifier(n_estimators=20, max_depth=3, random_state=42, n_jobs=-1)
         clf.fit(X_train, y_train)
         
         # 5. Predict and calculate Metrics
@@ -736,7 +757,8 @@ def _plot_discriminator_roc(real_num: Optional[np.ndarray],
         plt.close(fig)
         
         _LOGGER.info(f"📊 Discriminator ROC curve saved to '{plot_path.name}' (AUC: {auc_score:.2f})")
+        return float(auc_score)
         
     except Exception as e:
         _LOGGER.error(f"Failed to generate Discriminator ROC curve: {e}")
-
+        return None

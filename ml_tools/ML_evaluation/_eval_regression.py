@@ -260,18 +260,22 @@ def regression_metrics(
     
     report_lines = [
         "--- Regression Report ---",
-        f"  Root Mean Squared Error (RMSE):    {metrics['RMSE']:.4f}",
-        f"  Mean Absolute Error (MAE):         {metrics['MAE']:.4f}",
-        f"  Median Absolute Error (MedAE):     {metrics['MedAE']:.4f}",
-        f"  Mean Absolute Percentage (MAPE):   {metrics['MAPE']:.4f}",
-        f"  Max Error:                         {metrics['Max Error']:.4f}",
-        f"  Explained Variance Score:          {metrics['Explained Variance']:.4f}",
-        f"  Coefficient of Determination (R²): {metrics['R2-score']:.4f}"
+        f"  Root Mean Squared Error (RMSE):          {metrics['RMSE']:.4f}",
+        f"  Mean Absolute Error (MAE):               {metrics['MAE']:.4f}",
+        f"  Median Absolute Error (MedAE):           {metrics['MedAE']:.4f}",
+        f"  Mean Absolute Percentage Error (MAPE):   {metrics['MAPE']:.4f}",
+        f"  Max Error:                               {metrics['Max Error']:.4f}",
+        f"  Explained Variance Score:                {metrics['Explained Variance']:.4f}",
+        f"  Coefficient of Determination (R²):       {metrics['R2-score']:.4f}"
     ]
     
-    report_path = save_dir_path / "regression_report.txt"
-    report_path.write_text("\n".join(report_lines))
-    _LOGGER.info(f"📝 Regression report saved as '{report_path.name}'")
+    report_path_txt = save_dir_path / "regression_report.txt"
+    report_path_txt.write_text("\n".join(report_lines))
+    
+    report_path_csv = save_dir_path / "regression_report.csv"
+    pd.DataFrame([metrics]).to_csv(report_path_csv, index=False)
+    
+    _LOGGER.info(f"📝 Regression reports saved as '{report_path_txt.name}' and '{report_path_csv.name}'")
 
     # Generate Plots
     residuals = y_true - y_pred

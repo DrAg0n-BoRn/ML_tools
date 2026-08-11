@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [25.5.0] 2026-08-11
+
+### Changed
+
+- ML_evaluation:
+    - `sequence_to_sequence_regression_metrics()` and `sequence_to_sequence_classification_metrics()`, streamline the save directory structure by removing the redundant "overall_metrics" subdirectory. The overall metrics will now be saved directly in the specified `save_dir`, simplifying the directory hierarchy and making it easier to locate the overall evaluation results.
+
+### Added
+
+- ML_evaluation:
+    - All metrics scripts now save the original `.txt` report with an additional `.csv` version for easier programmatic access and analysis. The CSV files contain the same information as the text reports, structured in a tabular format for convenient data manipulation and visualization.
+
+
 ## [25.4.3] 2026-08-10
 
 ### Fixed

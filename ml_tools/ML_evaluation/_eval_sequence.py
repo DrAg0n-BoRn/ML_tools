@@ -38,7 +38,6 @@ def sequence_to_sequence_regression_metrics(
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     # 1. Flatten arrays to calculate overall robust regression reports
-    overall_dir = save_dir_path / "overall_metrics"
     # Extract the sub-config for the base regression metrics
     sub_config = config.regression_config if config else None 
     
@@ -52,7 +51,7 @@ def sequence_to_sequence_regression_metrics(
         y_true_flat = y_true_flat[indices]
         y_pred_flat = y_pred_flat[indices]
 
-    regression_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=overall_dir, config=sub_config)
+    regression_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=save_dir_path, config=sub_config)
 
     # 2. Per-Step Metrics Plotting
     sequence_length = y_true.shape[1]
@@ -112,7 +111,6 @@ def sequence_to_sequence_classification_metrics(
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
     # 1. Flatten arrays to calculate overall robust classification reports/heatmaps
-    overall_dir = save_dir_path / "overall_metrics"
     # Extract the sub-config for the base classification metrics
     sub_config = config.classification_config if config else None
     
@@ -126,7 +124,7 @@ def sequence_to_sequence_classification_metrics(
         y_true_flat = y_true_flat[indices]
         y_pred_flat = y_pred_flat[indices]
 
-    classification_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=overall_dir, config=sub_config)
+    classification_metrics(y_true=y_true_flat, y_pred=y_pred_flat, save_dir=save_dir_path, config=sub_config)
 
     # 2. Per-Step Metrics Plotting
     sequence_length = y_true.shape[1]

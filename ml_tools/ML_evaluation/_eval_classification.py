@@ -282,9 +282,13 @@ def classification_metrics(save_dir: Union[str, Path],
     
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
-    report_path = save_dir_path / "classification_report.txt"
-    report_path.write_text(report_text, encoding="utf-8")
-    _LOGGER.info(f"📝 Classification report saved as '{report_path.name}'")
+    report_path_txt = save_dir_path / "classification_report.txt"
+    report_path_txt.write_text(report_text, encoding="utf-8")
+    
+    report_path_csv = save_dir_path / "classification_report.csv"
+    pd.DataFrame(report_dict).transpose().to_csv(report_path_csv, index_label="class")
+    
+    _LOGGER.info(f"📝 Classification reports saved as '{report_path_txt.name}' and '{report_path_csv.name}'")
 
     _save_classification_report_heatmap(report_dict, save_dir_path / "classification_report_heatmap.svg", format_config, cm_font_size, cm_tick_size)
     _save_confusion_matrix(y_true, y_pred, map_labels, plot_display_labels, save_dir_path / "confusion_matrix.svg", format_config, cm_font_size, cm_tick_size)
@@ -385,8 +389,10 @@ def multi_label_classification_metrics(
     )
     (save_dir_path / "classification_report.txt").write_text(overall_report)
 
-    # Full Heatmap
+    # Full Heatmap & CSV Report
     full_report_dict: dict = classification_report(y_true, y_pred, target_names=target_names, output_dict=True, zero_division=0) # type: ignore
+    pd.DataFrame(full_report_dict).transpose().to_csv(save_dir_path / "classification_report.csv", index_label="class")
+    
     _save_classification_report_heatmap(full_report_dict, save_dir_path / "classification_report_heatmap.svg", format_config, cm_font_size, cm_tick_size)
 
     # Per-Label Logic
@@ -407,6 +413,9 @@ def multi_label_classification_metrics(
 
         report_text = classification_report(true_i, pred_i, zero_division=0)
         (save_dir_path / f"classification_report_{sanitized_name}.txt").write_text(report_text) # type: ignore
+        
+        report_dict_i = classification_report(true_i, pred_i, output_dict=True, zero_division=0)
+        pd.DataFrame(report_dict_i).transpose().to_csv(save_dir_path / f"classification_report_{sanitized_name}.csv", index_label="class")
 
         _save_confusion_matrix(true_i, pred_i, [0, 1], ["Negative", "Positive"], save_dir_path / f"confusion_matrix_{sanitized_name}.svg", 
                                format_config, format_config.font_size, format_config.ytick_size, title=f"Confusion Matrix\n'{name}'")

@@ -69,18 +69,21 @@ def autoencoder_metrics(
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
 
     overall_report_lines = ["--- Autoencoder Global Reconstruction Report ---"]
+    global_metrics_dict = {}
 
     # 1. Evaluate Individual Numerical Features
-    num_report_lines = _evaluate_numerical_features(
+    num_report_lines, num_metrics = _evaluate_numerical_features(
         y_true_num, y_pred_num, num_target_names, save_dir_path, format_config
     )
     overall_report_lines.extend(num_report_lines)
+    global_metrics_dict.update(num_metrics)
 
     # 2. Evaluate Individual Categorical Features
-    cat_report_lines = _evaluate_categorical_features(
+    cat_report_lines, cat_metrics = _evaluate_categorical_features(
         cat_true_list, cat_pred_list, cat_prob_list, cat_target_names, cat_class_maps, save_dir_path, format_config
     )
     overall_report_lines.extend(cat_report_lines)
+    global_metrics_dict.update(cat_metrics)
 
     # 3. Global Overview Plots
     _plot_global_feature_performance(
@@ -113,9 +116,13 @@ def autoencoder_metrics(
 
     # 8. Save Overall Report
     report_string = "\n".join(overall_report_lines)
-    report_path = save_dir_path / "global_autoencoder_report.txt"
-    report_path.write_text(report_string, encoding="utf-8")
-    _LOGGER.info(f"🌎 Global reconstruction report saved to '{report_path.name}'")
+    report_path_txt = save_dir_path / "global_autoencoder_report.txt"
+    report_path_txt.write_text(report_string, encoding="utf-8")
+    
+    report_path_csv = save_dir_path / "global_autoencoder_report.csv"
+    pd.DataFrame([global_metrics_dict]).to_csv(report_path_csv, index=False)
+
+    _LOGGER.info(f"🌎 Global reconstruction reports saved to '{report_path_txt.name}' and '{report_path_csv.name}'")
 
 
 # =====================================================================
@@ -128,20 +135,22 @@ def _evaluate_numerical_features(
     num_target_names: Optional[list[str]],
     save_dir_path: Path,
     format_config: FormatAutoencoderMetrics
-) -> list[str]:
-    """Evaluates numerical marginal distributions and returns report lines."""
+    ) -> tuple[list[str], dict]:
+    """Evaluates numerical marginal distributions and returns report lines and metrics dict."""
     report_lines = []
+    global_metrics = {}
     
     if not (y_true_num is not None and len(y_true_num) > 0 and 
             y_pred_num is not None and len(y_pred_num) > 0 and 
             num_target_names is not None and len(num_target_names) > 0):
-        return report_lines
+        return report_lines, global_metrics
 
     sample_mse = np.mean(np.square(y_true_num - y_pred_num), axis=1)
-    global_num_mse = np.mean(sample_mse)
+    global_num_mse = float(np.mean(sample_mse))
     
     report_lines.append(f"\n[Numerical Features: {len(num_target_names)}]")
     report_lines.append(f"Global Mean Squared Error (MSE): {global_num_mse:.4f}")
+    global_metrics["Global Mean Squared Error (MSE)"] = global_num_mse
 
     # Plot Distribution of Sample-wise Reconstruction Errors
     fig_err, ax_err = plt.subplots(figsize=REGRESSION_PLOT_SIZE, dpi=DPI_value)
@@ -192,7 +201,7 @@ def _evaluate_numerical_features(
     summary_df.to_csv(csv_path, index=False)
     _LOGGER.info(f"🔢 Numerical summary saved to '{csv_path.name}'")
 
-    return report_lines
+    return report_lines, global_metrics
 
 
 def _evaluate_categorical_features(
@@ -203,9 +212,10 @@ def _evaluate_categorical_features(
     cat_class_maps: Optional[list[Optional[dict[str, int]]]],
     save_dir_path: Path,
     format_config: FormatAutoencoderMetrics
-) -> list[str]:
-    """Evaluates categorical marginal distributions and returns report lines."""
+) -> tuple[list[str], dict]:
+    """Evaluates categorical marginal distributions and returns report lines and metrics dict."""
     report_lines = []
+    global_metrics = {}
     
     local_save_dir = save_dir_path / "categorical_features"
     local_save_dir.mkdir(exist_ok=True)
@@ -213,7 +223,7 @@ def _evaluate_categorical_features(
     if not (cat_true_list is not None and len(cat_true_list) > 0 and 
             cat_pred_list is not None and len(cat_pred_list) > 0 and 
             cat_target_names is not None and len(cat_target_names) > 0):
-        return report_lines
+        return report_lines, global_metrics
         
     report_lines.append(f"\n[Categorical Features: {len(cat_target_names)}]")
     
@@ -348,14 +358,16 @@ def _evaluate_categorical_features(
     
     _LOGGER.info(f"📊 Saved Confusion Matrices and Distribution Plots for categorical features to '{local_save_dir.name}'")    
     
-    report_lines.append(f"Macro Average Categorical Accuracy: {np.mean(global_accuracies):.4f}")
+    macro_acc = float(np.mean(global_accuracies))
+    report_lines.append(f"Macro Average Categorical Accuracy: {macro_acc:.4f}")
+    global_metrics["Macro Average Categorical Accuracy"] = macro_acc
     
     cat_summary_df = pd.DataFrame(cat_metrics_summary)
     cat_csv_path = save_dir_path / "categorical_reconstruction_summary.csv"
     cat_summary_df.to_csv(cat_csv_path, index=False)
     _LOGGER.info(f"🔢 Categorical summary saved to '{cat_csv_path.name}'")
 
-    return report_lines
+    return report_lines, global_metrics
 
 
 def _plot_global_feature_performance(y_true_num: Optional[np.ndarray], 
