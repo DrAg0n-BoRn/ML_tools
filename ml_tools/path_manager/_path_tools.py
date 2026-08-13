@@ -1,7 +1,6 @@
 from typing import Optional, Union, Literal
 from pathlib import Path
 import re
-import shutil
 
 from .._core import get_logger
 
@@ -14,9 +13,8 @@ __all__ = [
     "sanitize_filename",
     "list_csv_paths",
     "list_files_by_extension",
+    "list_files_by_extension_global",
     "list_subdirectories",
-    "clean_directory",
-    "safe_move",
 ]
 
 
@@ -195,6 +193,86 @@ def list_files_by_extension(
     return name_path_dict
 
 
+def list_files_by_extension_global(
+    directory: Union[str, Path], 
+    extension: str, 
+    depth: int = -1,
+    verbose: int = 2,
+    raise_on_empty: bool = True
+) -> list[tuple[str, Path]]:
+    """
+    Lists all files with the specified extension in the given directory and its subdirectories.
+    
+    Returns a list of tuples containing the filename (without extension) and its absolute path.
+
+    Parameters:
+        directory (str | Path): Path to the directory to search in.
+        extension (str): File extension to search for (e.g., 'json', 'txt').
+        depth (int): Search depth limit. >= 1 for specific depths, or -1 for all subdirectories.
+            - depth=1 only the specified directory
+            - depth=2 immediate subdirectories, etc.
+        verbose (int): Logs the process. 0=silent, 1=warnings, 2=info, 3=detailed information.
+        raise_on_empty (bool): If True, raises IOError if no matching files are found.
+
+    Returns:
+        (list[tuple[str, Path]]): List of tuples containing (filename, filepath). 
+    """
+    dir_path = make_fullpath(directory, enforce="directory")
+    
+    # Validate depth parameter
+    if not isinstance(depth, int):
+        _LOGGER.error("Depth must be an integer.")
+        raise TypeError()
+    
+    if depth < -1 or depth == 0:
+        _LOGGER.error("Depth must be >= 1, or -1 for all subdirectories.")
+        raise ValueError()
+
+    normalized_ext = extension.lstrip(".").lower()
+    matched_paths = []
+    
+    if depth == -1:
+        # Infinite depth
+        matched_paths = list(dir_path.rglob(f"*.{normalized_ext}"))
+    else:
+        # Controlled depth using BFS
+        queue = [(dir_path, 1)]
+        while queue:
+            current_dir, current_depth = queue.pop(0)
+            try:
+                for item in current_dir.iterdir():
+                    if item.is_file() and item.suffix.lower() == f".{normalized_ext}":
+                        matched_paths.append(item)
+                    elif item.is_dir() and current_depth < depth:
+                        queue.append((item, current_depth + 1))
+            except PermissionError:
+                continue
+    
+    if not matched_paths:
+        msg = f"No '.{normalized_ext}' files found in directory tree: {dir_path} (depth={depth})."
+        if raise_on_empty:
+            _LOGGER.error(msg)
+            raise IOError()
+        else:
+            if verbose >= 1:
+                _LOGGER.warning(msg)
+            return []
+
+    # List of tuples mapping (filename (no extension), absolute filepath)
+    name_path_list = [(p.stem, p) for p in matched_paths]
+    
+    report_depth = '♾️' if depth == -1 else str(depth)
+    
+    if verbose >= 3:
+        _LOGGER.info(f"📂 '{normalized_ext.upper()}' files found (depth={report_depth}):")
+        for name, _ in name_path_list:
+            print(f"\t{name}")
+    elif verbose >= 2:
+        _LOGGER.info(f"Found {len(name_path_list)} '.{normalized_ext}' files in '{dir_path}' (depth={report_depth}).")
+    
+    return name_path_list
+
+
 def list_subdirectories(
     root_dir: Union[str, Path], 
     verbose: bool = True, 
@@ -236,115 +314,3 @@ def list_subdirectories(
     dir_map = {p.name: p for p in directories}
     
     return dir_map
-
-
-def clean_directory(directory: Union[str, Path], verbose: bool = False) -> None:
-    """
-    ⚠️  DANGER: DESTRUCTIVE OPERATION ⚠️
-
-    Deletes all files and subdirectories inside the specified directory. It is designed to empty a folder, not delete the folder itself.
-
-    Safety: It skips hidden files and directories (those starting with a period '.'). This works for macOS/Linux hidden files and dot-config folders on Windows.
-
-    Args:
-        directory (str | Path): The directory path to clean.
-        verbose (bool): If True, prints the name of each top-level item deleted.
-    """
-    target_dir = make_fullpath(directory, enforce="directory")
-
-    if verbose:
-        _LOGGER.warning(f"Starting cleanup of directory: {target_dir}")
-
-    for item in target_dir.iterdir():
-        # Safety Check: Skip hidden files/dirs
-        if item.name.startswith("."):
-            continue
-
-        try:
-            if item.is_file() or item.is_symlink():
-                item.unlink()
-                if verbose:
-                    print(f"    🗑️  Deleted file: {item.name}")
-            elif item.is_dir():
-                shutil.rmtree(item)
-                if verbose:
-                    print(f"    🗑️  Deleted directory: {item.name}")
-        except Exception as e:
-            _LOGGER.warning(f"Failed to delete item '{item.name}': {e}")
-            continue
-
-
-def safe_move(
-    source: Union[str, Path], 
-    destination_directory: Union[str, Path], 
-    rename: Optional[str] = None, 
-    overwrite: bool = False
-) -> Path:
-    """
-    Moves a file or directory to a destination directory with safety checks.
-
-    Features:
-    - Supports optional renaming (sanitized automatically).
-    - PRESERVES file extensions during renaming (cannot be modified).
-    - Prevents accidental overwrites unless explicit.
-
-    Args:
-        source (str | Path): The file or directory to move.
-        destination_directory (str | Path): The destination DIRECTORY where the item will be moved. It will be created if it does not exist.
-        rename (Optional[str]): If provided, the moved item will be renamed to this. Note: For files, the extension is strictly preserved.
-        overwrite (bool): If True, overwrites the destination path if it exists.
-    
-    Returns:
-        Path: The new absolute path of the moved item.
-    """
-    # 1. Validation and Setup
-    src_path = make_fullpath(source, make=False)
-
-    # Ensure destination directory exists
-    dest_dir_path = make_fullpath(destination_directory, make=True, enforce="directory")
-
-    # 2. Determine Target Name
-    if rename:
-        # Prevent double extensions if the user proactively included it
-        if src_path.is_file() and src_path.suffix and rename.lower().endswith(src_path.suffix.lower()):
-            rename = rename[:-len(src_path.suffix)]
-            
-        sanitized_name = sanitize_filename(rename)
-        if src_path.is_file():
-            # Strict Extension Preservation
-            final_name = f"{sanitized_name}{src_path.suffix}"
-        else:
-            final_name = sanitized_name
-    else:
-        final_name = src_path.name
-
-    final_path = dest_dir_path / final_name
-
-    # 3. Safety Checks (Collision Detection)
-    if final_path.exists():
-        if not overwrite:
-            _LOGGER.error(f"Destination already exists: '{final_path}'. Use overwrite=True to force.")
-            raise FileExistsError()
-        
-        # Smart Overwrite Handling
-        if final_path.is_dir():
-            if src_path.is_file():
-                _LOGGER.error(f"Cannot overwrite directory '{final_path}' with file '{src_path}'")
-                raise IsADirectoryError()
-            # If overwriting a directory, we must remove the old one first to avoid nesting/errors
-            shutil.rmtree(final_path)
-        else:
-            # Destination is a file
-            if src_path.is_dir():
-                _LOGGER.error(f"Cannot overwrite file '{final_path}' with directory '{src_path}'")
-                raise FileExistsError()
-            final_path.unlink()
-
-    # 4. Perform Move
-    try:
-        shutil.move(str(src_path), str(final_path))
-        return final_path
-    except Exception as e:
-        _LOGGER.exception(f"Failed to move '{src_path}' to '{final_path}'")
-        raise e
-

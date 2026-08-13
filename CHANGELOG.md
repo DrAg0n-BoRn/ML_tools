@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [25.6.0] 2026-08-13
+
+### Added
+
+- path_manager:
+    - `list_files_by_extension_global()`: New function to recursively search for files with a specific extension across all subdirectories of a given directory. This function provides an optional 'depth' parameter to limit the search depth, and a 'verbose' parameter to control the level of logging output.
+    - `get_file_hash()`: New function to compute the hash of a file using a specified algorithm.
+    - `get_size()`: New function to calculate the size of a file or directory in a human-readable format or optionally as raw bytes.
+    - `find_duplicate_files()`: New function to find duplicate files in a robust manner.
+
+### Changed
+
+- ML_utilities:
+    - `DragonArtifactFinder`: No longer loads the `FeatureSchema` object. The `load_schema` parameter and the `feature_schema` property have been removed from the class. Users are now encouraged to load the `FeatureSchema` object directly using its own methods if needed. This change simplifies the artifact finder and reduces unnecessary dependencies on schema loading.
+
+- ML_finetune:
+    - `DragonFinetuner._set_requires_grad()`: Changed from a static method to an instance method for consistency with the class design.
+
 
 ## [25.5.0] 2026-08-11
 

@@ -1,8 +1,6 @@
 from pathlib import Path
 from typing import Union, Any
 
-from ..schema import FeatureSchema
-
 from ..IO_tools import load_list_strings
 from ..path_manager import make_fullpath, list_subdirectories, list_files_by_extension
 from .._core import get_logger
@@ -30,20 +28,17 @@ class DragonArtifactFinder:
         ├── scaler_*.pth           (Required if `load_scaler` is True)
         ├── feature_names.txt      
         ├── target_names.txt       
-        ├── architecture.json
-        └── FeatureSchema.json     (Required if `load_schema` is True)
+        └── architecture.json
     ```
     """
     def __init__(self, 
                  directory: Union[str, Path], 
-                 load_scaler: bool, 
-                 load_schema: bool,
+                 load_scaler: bool,
                  verbose: int = 2) -> None:
         """
         Args:
             directory (str | Path): The path to the directory that contains training artifacts.
             load_scaler (bool): If True, requires and searches for a scaler file `scaler_*.pth`.
-            load_schema (bool): If True, requires and searches for a FeatureSchema file `FeatureSchema.json`.
             verbose (int): Displays the missing artifacts in the directory or a success message.
         """
         # validate directory
@@ -62,16 +57,9 @@ class DragonArtifactFinder:
         self._target_names_path = parsing_dict[PytorchArtifactPathKeys.TARGETS_PATH]
         self._model_architecture_path = parsing_dict[PytorchArtifactPathKeys.ARCHITECTURE_PATH]
         self._scaler_path = None
-        self._schema = None
         
         if load_scaler:
             self._scaler_path = parsing_dict[PytorchArtifactPathKeys.SCALER_PATH]
-            
-        if load_schema:
-            try:
-                self._schema = FeatureSchema.from_json(directory=dir_path)
-            except Exception:
-                self._schema = None
 
         # Process feature names
         if self._feature_names_path is not None:
@@ -108,13 +96,6 @@ class DragonArtifactFinder:
                 _LOGGER.error("Scaler file is required but not found in the directory.")
                 raise FileNotFoundError()
             loaded_artifacts.append("Scaler File")
-            
-        # Required
-        if load_schema:
-            if self._schema is None:
-                _LOGGER.error("FeatureSchema file is required but not found in the directory.")
-                raise FileNotFoundError()
-            loaded_artifacts.append("FeatureSchema File")
         
         if missing_artifacts:
             if verbose >= 3:
@@ -173,20 +154,11 @@ class DragonArtifactFinder:
             raise AttributeError()
         return self._scaler_path
         
-    @property
-    def feature_schema(self) -> FeatureSchema:
-        """Returns the FeatureSchema object."""
-        if self._schema is None:
-            _LOGGER.error("No FeatureSchema loaded.")
-            raise AttributeError()
-        return self._schema
-        
     def __repr__(self) -> str:
         dir_name = str(self._dir_path)
         n_features = len(self._feature_names) if self._feature_names else "None"
         n_targets = len(self._target_names) if self._target_names else "None"
         scaler_status = self._scaler_path.name if self._scaler_path else "None"
-        schema_status = "Loaded" if self._schema else "None"
         
         return (
             f"{self.__class__.__name__}\n"
@@ -194,7 +166,6 @@ class DragonArtifactFinder:
             f"    weights='{self._weights_path.name if self._weights_path else 'None'}'\n"
             f"    architecture='{self._model_architecture_path.name if self._model_architecture_path else 'None'}'\n"
             f"    scaler='{scaler_status}'\n"
-            f"    schema='{schema_status}'\n"
             f"    features={n_features}\n" 
             f"    targets={n_targets}"
         )

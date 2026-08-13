@@ -175,9 +175,7 @@ class DragonFinetuner:
     # ---------------------------------------------------------
     # Helpers
     # ---------------------------------------------------------
-
-    @staticmethod
-    def _set_requires_grad(params: Iterable[nn.Parameter], requires_grad: bool) -> int:
+    def _set_requires_grad(self, params: Iterable[nn.Parameter], requires_grad: bool) -> int:
         """Helper to toggle gradients and return total elements modified."""
         params_changed = 0
         for param in params:
