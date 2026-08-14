@@ -73,7 +73,7 @@ class _ContextAdapter(logging.LoggerAdapter):
         return f"[{context}] {msg}", kwargs
 
 
-def _setup_main_logger(name: str = "ml_tools", level: int = logging.INFO) -> logging.Logger:
+def _setup_main_logger(name: str = "DragonML", level: int = logging.INFO) -> logging.Logger:
     """
     Internal function to configure the singleton logger instance.
     """

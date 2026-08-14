@@ -2,18 +2,18 @@ import pandas as pd
 import matplotlib
 # Use non-interactive backend for parallel plotting to avoid GUI issues
 matplotlib.use("Agg") 
-
+from pandas.api.types import is_numeric_dtype
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Union
 from pathlib import Path
 from joblib import Parallel, delayed
 
-from ml_tools.path_manager import make_fullpath, sanitize_filename
-from ml_tools._core import get_logger
-from ml_tools._helpers import wrap_text
-from ml_tools._helpers import get_valid_seaborn_color
-from pandas.api.types import is_numeric_dtype
+from ..path_manager import make_fullpath, sanitize_filename
+from .._core import get_logger
+from .._helpers import wrap_text
+from .._helpers import get_valid_seaborn_color
+
 
 _LOGGER = get_logger("Data Exploration: Visualization")
 

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.0.0] 2026-08-14
+
+### Changed
+
+- **Breaking Change**: Renamed the root import directory from `ml_tools` to `dragon`. All package imports must now reference the `dragon` namespace (e.g., `from dragon.[module] import ...`).
+- Updated package discovery in build configuration to target the new `dragon` directory.
+
+
 ## [25.6.0] 2026-08-13
 
 ### Added

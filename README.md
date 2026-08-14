@@ -32,7 +32,7 @@ uv add dragon-ml-toolbox
 Install from the conda-forge channel:
 
 ```bash
-conda install -c conda-forge dragon-ml-toolbox
+conda install conda-forge::dragon-ml-toolbox
 ```
 
 ## Modular Installation
@@ -227,6 +227,6 @@ constants
 After installation, import modules like this:
 
 ```python
-from ml_tools.serde import serialize_object, deserialize_object
-from ml_tools.IO_tools import train_logger
+from dragon.serde import serialize_object, deserialize_object
+from dragon.IO_tools import train_logger
 ```

@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Union, Literal, Any, Optional, Callable
 from PIL import Image
 
-from ml_tools.path_manager._path_tools import make_fullpath
-
+from ..path_manager._path_tools import make_fullpath
 from .._core import get_logger
 from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys
 

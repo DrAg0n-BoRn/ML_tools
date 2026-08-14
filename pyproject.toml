@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "25.6.0"
+version = "26.0.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -139,12 +139,9 @@ gui-torch = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-# [tool.setuptools]
-# include = ["ml_tools"]
-
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ml_tools*"]
+include = ["dragon*"]
 namespaces = false
 
 [dependency-groups]
