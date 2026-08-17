@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [26.0.1] 2026-08-17
+
+### Removed
+
+- path_manager:
+    - `DragonPathManager`: Removed the method `register_subdirs()` as it was redundant and not widely used.
+
+### Fixed
+
+- path_manager:
+    - `DragonPathManager`: 
+        - Robustness improvements for handling edge cases.
+        - Added dunder methods to prevent deletion of registered paths via `del PM.key`.
+    - Logging: Added quotes around directory paths to improve clarity in log messages all over the module functions.
+
+
 ## [26.0.0] 2026-08-14
 
 ### Changed

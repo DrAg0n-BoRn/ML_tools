@@ -73,7 +73,7 @@ def get_size(path: Union[str, Path], human_readable: bool = True, print_result: 
     elif target.is_dir():
         size_bytes = sum(f.stat().st_size for f in target.rglob('*') if f.is_file())
     else:
-        _LOGGER.error(f"Path is neither a file nor a directory: {target}")
+        _LOGGER.error(f"Path is neither a file nor a directory: '{target}'.")
         raise ValueError()
 
     if not human_readable:

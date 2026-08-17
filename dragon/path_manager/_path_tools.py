@@ -174,7 +174,7 @@ def list_files_by_extension(
     matched_paths = list(dir_path.glob(pattern))
     
     if not matched_paths:
-        msg = f"No '.{normalized_ext}' files found in directory: {dir_path}."
+        msg = f"No '.{normalized_ext}' files found in directory: '{dir_path}'."
         if raise_on_empty:
             _LOGGER.error(msg)
             raise IOError()
@@ -249,7 +249,7 @@ def list_files_by_extension_global(
                 continue
     
     if not matched_paths:
-        msg = f"No '.{normalized_ext}' files found in directory tree: {dir_path} (depth={depth})."
+        msg = f"No '.{normalized_ext}' files found in directory tree: '{dir_path}' (depth={depth})."
         if raise_on_empty:
             _LOGGER.error(msg)
             raise IOError()

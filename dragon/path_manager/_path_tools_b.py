@@ -31,7 +31,7 @@ def clean_directory(directory: Union[str, Path], verbose: bool = True) -> None:
     target_dir = make_fullpath(directory, enforce="directory")
 
     if verbose:
-        _LOGGER.warning(f"Starting cleanup of directory: {target_dir}")
+        _LOGGER.warning(f"Starting cleanup of directory: '{target_dir}'")
 
     for item in target_dir.iterdir():
         # Safety Check: Skip hidden files/dirs

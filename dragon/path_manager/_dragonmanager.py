@@ -44,7 +44,7 @@ class DragonPathManager:
                             the `__file__` of the script where DragonPathManager
                             is instantiated. This is used to locate the
                             package root directory.
-            base_directories (List[str] | None): An optional list of strings,
+            base_directories (list[str] | None): An optional list of strings,
                                                     where each string is the name
                                                     of a subdirectory to register
                                                     relative to the package root.
@@ -70,7 +70,7 @@ class DragonPathManager:
         if base_directories:
             for dir_name in base_directories:
                 sanitized_dir_name = self._sanitize_key(dir_name)
-                # self._check_underscore_key(sanitized_dir_name) # redundant check
+                self._check_underscore_key(sanitized_dir_name)
                 setattr(self, sanitized_dir_name, package_root / sanitized_dir_name)
         
         # Signal that initialization is complete.
@@ -123,56 +123,10 @@ class DragonPathManager:
         # If no conflicts, add new paths
         for key, value in new_paths.items():
             setattr(self, key, value)
-            
-    def register_subdirs(self, parents: list[Path], subdirs: list[str]) -> None:
-        """
-        Automatically registers subdirectories with the same name for a list of existing parent paths.
 
-        For each parent path and subdirectory provided, it creates a new registered path
-        with the naming convention: '{parent_key}_{sanitized_subdir}'.
-
-        Args:
-            parents (list[Path]): A list of Path objects that are already registered
-                                  in this manager.
-            subdirs (list[str]): A list of subdirectory names to append to each parent.
-            
-        Note:
-            - Each parent path must already be registered in the manager and be a directory. 
-            - Subdirectory names are case-sensitive on disk, but mapped to lowercase attributes.
-            - ATOMIC OPERATION: If any validation fails, no paths will be registered (All-or-Nothing).
-        """
-        # --- 1. Validation Pass (Read-Only) ---
-        # Validate everything first to ensure "All-or-Nothing" behavior.
-        for parent_path in parents:
-            if parent_path.suffix:
-                _LOGGER.error(f"Path '{parent_path.name}' is recognized as a file (suffix '{parent_path.suffix}'), cannot append subdirectories.")
-                raise ValueError()
-
-            # Check if parent is actually registered
-            if parent_path not in self._paths.values():
-                _LOGGER.error(f"Cannot register subdirs: The path '{parent_path}' is not registered.")
-                raise ValueError()
-
-        # --- 2. Execution Pass (State Mutation) ---
-        for parent_path in parents:
-            # Reverse lookup to find the key for this parent path
-            parent_key = next(k for k, v in self._paths.items() if v == parent_path)
-
-            for subdir in subdirs:
-                # KEY GENERATION: Sanitize AND Lowercase (e.g., "Artifacts" -> "artifacts")
-                key_suffix = self._sanitize_key(subdir)
-                lower_key_suffix = key_suffix.lower()
-                
-                # PATH GENERATION: Preserve original case (e.g., ".../Artifacts")
-                new_path = parent_path / key_suffix
-                
-                # Construct the full key (e.g., "model_node" + "_" + "artifacts")
-                new_key = f"{parent_key}_{lower_key_suffix}"
-                
-                setattr(self, new_key, new_path)
-        
     def _sanitize_key(self, key: str):
-        return sanitize_filename(key)
+        base_sanitized = sanitize_filename(key)
+        return base_sanitized.replace("-", "_").replace(".", "_")
         
     def make_dirs(self, keys: Optional[list[str]] = None, verbose: bool = False) -> None:
         """
@@ -284,6 +238,10 @@ class DragonPathManager:
         sanitized_key = self._sanitize_key(key)
         true_false = sanitized_key in self._paths
         return true_false
+    
+    def __iter__(self):
+        """Allows direct iteration over the registered path keys."""
+        return iter(self._paths)
 
     def __len__(self) -> int:
         """Allows getting the number of paths, e.g., len(PM)"""
@@ -307,7 +265,9 @@ class DragonPathManager:
         """
         # Block access to private attributes
         if name.startswith('_'):
-            _LOGGER.error(f"Access to private attribute '{name}' is not allowed, remove leading underscore.")
+            # Prevent log spam when debuggers/IDEs inspect magic methods
+            if not (name.startswith('__') and name.endswith('__')):
+                _LOGGER.error(f"Access to private attribute '{name}' is not allowed, remove leading underscore.")
             raise AttributeError()
         
         sanitized_name = self._sanitize_key(name)
@@ -336,10 +296,15 @@ class DragonPathManager:
         sanitized_name = self._sanitize_key(name)
         self._check_underscore_key(sanitized_name)
 
-        # Prevent overwriting existing methods (e.g., PM.status = 'foo').
+        ### Prevent overwriting existing methods adn paths (e.g., PM.status = 'foo').
         # This check looks at the class, not the instance therefore won't trigger __getattr__.
         if hasattr(self.__class__, sanitized_name):
             _LOGGER.error(f"Cannot overwrite existing attribute or method '{sanitized_name}' ({name}).")
+            raise AttributeError()
+        
+        # Prevent overwriting already registered paths.
+        if sanitized_name in self._paths:
+            _LOGGER.error(f"Cannot overwrite existing path for key '{sanitized_name}' ({name}).")
             raise AttributeError()
         
         if not isinstance(value, (str, Path)):
@@ -347,17 +312,45 @@ class DragonPathManager:
             raise TypeError()
         
         # Resolve the new path
-        new_path = Path(value).expanduser().absolute()
+        new_path = Path(value).expanduser().resolve() # handles symlinks and relative paths
 
         # --- STRICT CHECK ---
         # Only check if strict mode is on
         if self.__dict__.get("_strict_to_root", False) and sanitized_name != "ROOT":
-            root_path = self._paths.get("ROOT")
-            # Ensure ROOT exists and the new path is inside it
-            if root_path and not new_path.is_relative_to(root_path):
-                _LOGGER.error(f"Strict Mode Violation: '{name}' ({new_path}) is outside ROOT ({root_path})")
+            if hasattr(self, "ROOT") and not new_path.is_relative_to(self.ROOT):
+                _LOGGER.error(f"Strict Mode Violation: '{name}' ({new_path}) is outside ROOT ({self.ROOT})")
                 raise ValueError()
 
         # Store absolute Path.
         self._paths[sanitized_name] = new_path
 
+    def __dir__(self) -> list[str]:
+        """
+        Enables autocomplete in IDEs and REPLs for dynamically registered paths.
+        """
+        # Get standard class and instance attributes
+        attrs = set(super().__dir__())
+        
+        # Add dynamic path keys if the dictionary has been initialized
+        if hasattr(self, '_paths'):
+            attrs.update(self._paths.keys())
+            
+        return sorted(list(attrs))
+    
+    def __delitem__(self, key: str) -> None:
+        """Prevents dictionary-style deletion of paths."""
+        _LOGGER.error(f"Deletion of registered paths is not allowed (attempted to delete '{key}').")
+        raise TypeError()
+
+    def __delattr__(self, name: str) -> None:
+        """Prevents attribute-style deletion of paths."""
+        if name in self.__dict__ or name.startswith('_'):
+            _LOGGER.error(f"Deletion of internal attributes is strictly prohibited ('{name}').")
+            raise AttributeError()
+            
+        sanitized_name = self._sanitize_key(name)
+        if sanitized_name in self._paths:
+            _LOGGER.error(f"Deletion of registered paths is not allowed (attempted to delete '{sanitized_name}').")
+            raise AttributeError()
+            
+        super().__delattr__(name)
