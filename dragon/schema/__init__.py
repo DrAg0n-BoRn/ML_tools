@@ -10,7 +10,15 @@ from ._gui_schema import (
 from ._schema_ops import (
     finalize_feature_schema,
     apply_feature_schema,
-    reconstruct_from_schema
+    reconstruct_from_schema,
+    reorganize_columns_to_schema
+)
+
+from ._schema_ops_b import (
+    validate_schema_match,
+    extract_continuous_features,
+    extract_categorical_features,
+    enforce_schema_dtypes
 )
 
 from .._core import _imprimir_disponibles
@@ -25,6 +33,12 @@ __all__ = [
     "finalize_feature_schema",
     "apply_feature_schema",
     "reconstruct_from_schema",
+    "reorganize_columns_to_schema",
+    # Schema Ops B
+    "validate_schema_match",
+    "extract_continuous_features",
+    "extract_categorical_features",
+    "enforce_schema_dtypes"
 ]
 
 

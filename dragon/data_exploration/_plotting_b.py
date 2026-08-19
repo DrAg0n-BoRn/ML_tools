@@ -11,8 +11,7 @@ from joblib import Parallel, delayed
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
-from .._helpers import wrap_text
-from .._helpers import get_valid_seaborn_color
+from .._helpers import wrap_text, get_valid_seaborn_color
 
 
 _LOGGER = get_logger("Data Exploration: Visualization")

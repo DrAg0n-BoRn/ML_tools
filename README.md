@@ -57,6 +57,7 @@ pip install "dragon-ml-toolbox[ML]"
 data_exploration
 ETL_cleaning
 ETL_engineering
+imputation_tools
 IO_tools
 keys
 math_utilities
@@ -113,6 +114,7 @@ ensemble_learning
 ensemble_optimization
 ETL_cleaning
 ETL_engineering
+imputation_tools
 IO_tools
 math_utilities
 optimization_tools
@@ -141,6 +143,7 @@ pip install "dragon-ml-toolbox[mice]"
 #### Modules:
 
 ```Bash
+imputation_tools
 IO_tools
 math_utilities
 MICE
@@ -228,5 +231,5 @@ After installation, import modules like this:
 
 ```python
 from dragon.serde import serialize_object, deserialize_object
-from dragon.IO_tools import train_logger
+from dragon.IO_tools import custom_logger
 ```

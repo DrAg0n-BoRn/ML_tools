@@ -1,18 +1,19 @@
 import pandas as pd
 from typing import Optional
 
-from . import FeatureSchema
+from ._feature_schema import FeatureSchema
 
 from .._core import get_logger
 
 
-_LOGGER = get_logger("Data Exploration: Schema Ops")
+_LOGGER = get_logger("Schema Ops")
 
 
 __all__ = [
     "finalize_feature_schema",
     "apply_feature_schema",
     "reconstruct_from_schema",
+    "reorganize_columns_to_schema"
 ]
 
 
@@ -96,10 +97,10 @@ def apply_feature_schema(
     verbose: int = 3
 ) -> pd.DataFrame:
     """
-    Aligns the input DataFrame with the provided FeatureSchema.
+    Encodes the input DataFrame with the provided FeatureSchema.
 
-    This function aligns data for inference/fine-tuning by enforcing the schema's
-    structure and encoding.
+    This function encodes data for inference/fine-tuning by enforcing the schema's
+    structure.
 
     Args:
         df (pd.DataFrame): The input DataFrame.
@@ -273,3 +274,32 @@ def reconstruct_from_schema(
     
     return df_decoded
 
+
+def reorganize_columns_to_schema(
+    df: pd.DataFrame,
+    schema: FeatureSchema
+) -> pd.DataFrame:
+    """
+    Reorganizes the columns of a DataFrame to match the FeatureSchema.
+    
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        schema (FeatureSchema): The schema defining the required feature names and order.
+        
+    Returns:
+        pd.DataFrame: A new DataFrame with columns reorganized.
+        
+    Raises:
+        ValueError: If any required feature column is missing.
+    """
+    missing_cols = [col for col in schema.feature_names if col not in df.columns]
+    if missing_cols:
+        _LOGGER.error(f"Schema Mismatch: Missing required features: {missing_cols}")
+        raise ValueError()
+        
+    extra_cols = [col for col in df.columns if col not in schema.feature_names]
+    if extra_cols:
+        _LOGGER.warning(f"Extra columns found not present in schema. Appending to the end: {extra_cols}")
+        
+    final_column_order = list(schema.feature_names) + extra_cols
+    return df[final_column_order]

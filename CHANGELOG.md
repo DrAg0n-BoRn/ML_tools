@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [26.1.0] 2026-08-19
+
+### Added
+
+- schema:
+    - `FeatureSchema.categorical_indices`: New property to retrieve the indices of categorical features in the schema as a tuple.
+    - Added `reorganize_columns_to_schema()` to reorder DataFrame columns to match a `FeatureSchema`.
+    - Added a new script `_schema_ops_b.py` containing the following helper functions:
+        - `validate_schema_match()`: Validates feature presence and explicit column order against the schema.
+        - `extract_continuous_features()`: Subsets a DataFrame to include only continuous features.
+        - `extract_categorical_features()`: Subsets a DataFrame to include only categorical features.
+        - `enforce_schema_dtypes()`: Safely enforces column data types with a `categorical_as` parameter to control categorical casting ("int" or "str").
+
+- New module: "imputation_tools" for evaluating imputation quality.
+    - `DragonImputationEvaluator`: New class to evaluate the quality of imputed datasets against the original dataset. It provides methods to compute distributional and statistical metrics for both continuous and categorical features, allowing users to assess the effectiveness of their imputation strategies.
+
+
 ## [26.0.1] 2026-08-17
 
 ### Removed

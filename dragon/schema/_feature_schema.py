@@ -282,6 +282,13 @@ class FeatureSchema(NamedTuple):
     def number_of_categorical_features(self) -> int:
         """Returns the number of categorical features defined in the schema."""
         return len(self.categorical_feature_names)
+    
+    @property
+    def categorical_indices(self) -> tuple[int, ...]:
+        """Returns the indices of the categorical features as a tuple of integers."""
+        if self.categorical_index_map:
+            return tuple(self.categorical_index_map.keys())
+        return ()
 
     def __repr__(self) -> str:
         """Returns a concise representation of the schema's contents."""
