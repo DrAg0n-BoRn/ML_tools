@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [26.1.1] 2026-08-20
+
+### Changed
+
+- Module "imputation_tools" renamed to "imputation" for simplicity and clarity. All imports should now reference `dragon.imputation` instead of `dragon.imputation_tools`.
+    - `DragonImputationEvaluator`:
+        - methods `compute_continuous_metrics()` and `compute_categorical_metrics()` have been renamed to `evaluate_continuous()` and `evaluate_categorical()` and now require a `save_dir` parameter to specify where to save the evaluation metrics as a CSV file.
+        - enhanced performance by using pandas native methods 'align()' and 'loc[]' where necessary.
+
+
 ## [26.1.0] 2026-08-19
 
 ### Added

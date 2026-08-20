@@ -29,7 +29,7 @@ CHEMICAL_ELEMENT_SYMBOLS = [
 # --- Physics & Chemistry ---
 
 # Speed of light in vacuum (m/s)
-SPEED_OF_LIGHT = 299792458.0
+SPEED_OF_LIGHT_M_S = 299792458.0
 
 # Planck constant (J·s)
 PLANCK_CONSTANT = 6.62607015e-34
@@ -47,10 +47,10 @@ BOLTZMANN_CONSTANT = 1.380649e-23
 GRAVITATIONAL_CONSTANT = 6.67430e-11
 
 # Standard acceleration of gravity on Earth (m/s²)
-STANDARD_GRAVITY = 9.80665
+STANDARD_GRAVITY_M_S2 = 9.80665
 
 # Elementary charge (C)
-ELEMENTARY_CHARGE = 1.602176634e-19
+ELEMENTARY_CHARGE_C = 1.602176634e-19
 
 # Electron mass (kg)
 ELECTRON_MASS_KG = 9.1093837015e-31
@@ -63,13 +63,13 @@ ABSOLUTE_ZERO_CELSIUS = -273.15
 
 # --- Astronomy ---
 
-# Astronomical Unit, the mean Earth-Sun distance (meters)
+# Astronomical Unit, the mean Earth-Sun distance (kilometers)
 ASTRONOMICAL_UNIT_KM = 149597870.7
 
-# Light-year (meters)
+# Light-year (kilometers)
 LIGHT_YEAR_KM = 9460730472580.8
 
-# Earth's equatorial radius (meters)
+# Earth's equatorial radius (kilometers)
 EARTH_RADIUS_KM = 6378.137
 
 # Mass of the Earth (kg)

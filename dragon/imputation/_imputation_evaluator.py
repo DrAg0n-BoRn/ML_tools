@@ -5,7 +5,7 @@ from pathlib import Path
 from scipy.stats import wasserstein_distance, ks_2samp
 
 from ..schema._feature_schema import FeatureSchema
-from ..utilities import load_dataframe
+from ..utilities import load_dataframe, save_dataframe_filename
 from ..data_exploration import plot_value_distributions_multi, show_null_columns
 
 from .._core import get_logger
@@ -81,7 +81,7 @@ class DragonImputationEvaluator:
         self.missing_mask = self.df_original.isnull()
         
         # Identify columns that actually had missing values imputed
-        self.imputed_cols: list[str] = self.missing_mask.any()[self.missing_mask.any()].index.tolist()
+        self.imputed_cols: list[str] = self.missing_mask.columns[self.missing_mask.any()].tolist()
 
     def _validate_schema(self, cat_schema: Union[FeatureSchema, list[int], list[str], None]) -> list[str]:
         """
@@ -277,10 +277,13 @@ class DragonImputationEvaluator:
             
         return self.df_original.columns.tolist()
     
-    def calculate_continuous_metrics(self) -> pd.DataFrame:
+    def evaluate_continuous(self, save_dir: Union[Path, str]) -> pd.DataFrame:
         """
         Calculates distribution and statistical metrics comparing the observed 
         values against the imputed values for continuous columns.
+        
+        Args:
+            save_dir (Union[Path, str]): Directory to save the metrics DataFrame as a CSV file.
         
         Returns:
             pd.DataFrame: A DataFrame containing metrics for each continuous feature.
@@ -296,10 +299,9 @@ class DragonImputationEvaluator:
                 "Wasserstein Distance", "KS Statistic", "KS p-value"
             ]).set_index("Feature")
         
-        
         for col in target_cols:
             obs_vals = self.df_original[col].dropna()
-            imp_vals = self.df_imputed[col][self.missing_mask[col]]
+            imp_vals = self.df_imputed.loc[self.missing_mask[col], col]
             
             if obs_vals.empty or imp_vals.empty:
                 continue
@@ -325,13 +327,30 @@ class DragonImputationEvaluator:
                 "KS Statistic": ks_stat,
                 "KS p-value": p_value
             })
+        
+        df_metrics = pd.DataFrame(metrics)
+        
+        try:
+            save_dataframe_filename(
+                df=df_metrics,
+                save_dir=save_dir,
+                filename="continuous_metrics_imputation.csv",
+                verbose=1
+            )
+        except Exception as e:
+            _LOGGER.error(f"Failed to save continuous metrics DataFrame: {e}")
+        else:
+            _LOGGER.info(f"Continuous metrics DataFrame saved successfully to '{save_dir}'.")
             
-        return pd.DataFrame(metrics).set_index("Feature")
+        return df_metrics.set_index("Feature")
 
-    def calculate_categorical_metrics(self) -> pd.DataFrame:
+    def evaluate_categorical(self, save_dir: Union[Path, str]) -> pd.DataFrame:
         """
         Calculates distribution metrics comparing the observed values against 
         the imputed values for categorical columns.
+        
+        Args:
+            save_dir (Union[Path, str]): Directory to save the metrics DataFrame as a CSV file.
         
         Returns:
             pd.DataFrame: A DataFrame containing metrics for each categorical feature.
@@ -347,7 +366,7 @@ class DragonImputationEvaluator:
         
         for col in target_cols:
             obs_vals = self.df_original[col].dropna()
-            imp_vals = self.df_imputed[col][self.missing_mask[col]]
+            imp_vals = self.df_imputed.loc[self.missing_mask[col], col]
             
             if obs_vals.empty or imp_vals.empty:
                 continue
@@ -355,21 +374,33 @@ class DragonImputationEvaluator:
             obs_freq = obs_vals.value_counts(normalize=True)
             imp_freq = imp_vals.value_counts(normalize=True)
             
-            # Align indices for proper mathematical comparison
-            all_cats = list(set(obs_freq.index).union(set(imp_freq.index)))
-            obs_freq = obs_freq.reindex(all_cats, fill_value=0)
-            imp_freq = imp_freq.reindex(all_cats, fill_value=0)
+            # Align indices using pandas native align method
+            obs_freq, imp_freq = obs_freq.align(imp_freq, fill_value=0)
             
             # Total Variation Distance (TVD)
             tvd = 0.5 * np.sum(np.abs(obs_freq - imp_freq))
             
             metrics.append({
                 "Feature": col,
-                "Total Categories": len(all_cats),
+                "Total Categories": len(obs_freq),
                 "Total Variation Distance": tvd
             })
+        
+        df_metrics = pd.DataFrame(metrics)
+        
+        try:
+            save_dataframe_filename(
+                df=df_metrics,
+                save_dir=save_dir,
+                filename="categorical_metrics_imputation.csv",
+                verbose=1
+            )
+        except Exception as e:
+            _LOGGER.error(f"Failed to save categorical metrics DataFrame: {e}")
+        else:
+            _LOGGER.info(f"Categorical metrics DataFrame saved successfully to '{save_dir}'.")
             
-        return pd.DataFrame(metrics).set_index("Feature")
+        return df_metrics.set_index("Feature")
 
     def __repr__(self) -> str:
         """Returns a concise string representation of the evaluator's state."""
