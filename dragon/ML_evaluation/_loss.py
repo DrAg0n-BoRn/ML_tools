@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import seaborn as sns
-
+import random
 from pathlib import Path
 from typing import Union
 
@@ -33,6 +34,15 @@ def plot_losses(history: dict,
         save_dir (str | Path): Directory to save the plot image.
         skip_first_epoch (bool): If True, skips the first epoch in the plot to avoid skewing the scale.
     """
+    # use random color groups for the plots to ensure they are visually distinct every time the function is called
+    color_groups = [
+        ('tab:blue', 'tab:orange', 'tab:green'),
+        ('tab:purple', 'tab:brown', 'tab:pink'),
+        ('tab:red', 'tab:cyan', 'tab:olive'),
+        ('navy', 'crimson', 'teal')
+    ]
+    c_train, c_val, c_lr = random.choice(color_groups)
+    
     train_loss = history.get(PyTorchLogKeys.TRAIN_LOSS, [])
     val_loss = history.get(PyTorchLogKeys.VAL_LOSS, [])
     lr_history = history.get(PyTorchLogKeys.LEARNING_RATE, [])
@@ -57,32 +67,35 @@ def plot_losses(history: dict,
     # Plot training loss only if data for it exists
     if train_loss:
         epochs = range(start_epoch, start_epoch + len(train_loss))
-        line1, = ax.plot(epochs, train_loss, 'o-', label='Training Loss', color='tab:blue')
+        line1, = ax.plot(epochs, train_loss, 'o-', label='Training Loss', color=c_train)
         line_handles.append(line1)
     
     # Plot validation loss only if data for it exists
     if val_loss:
         epochs = range(start_epoch, start_epoch + len(val_loss))
-        line2, = ax.plot(epochs, val_loss, 'o-', label='Validation Loss', color='tab:orange')
+        line2, = ax.plot(epochs, val_loss, 'o-', label='Validation Loss', color=c_val)
         line_handles.append(line2)
     
     ax.set_title('Training and Validation Loss', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE + 2, pad=_EvaluationConfig.LABEL_PADDING)
     ax.set_xlabel('Epochs', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
-    ax.set_ylabel('Loss', color='tab:blue', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
-    ax.tick_params(axis='y', labelcolor='tab:blue', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
+    ax.set_ylabel('Loss', color=c_train, fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
+    ax.tick_params(axis='y', labelcolor=c_train, labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
     ax.tick_params(axis='x', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
-    ax.set_xlim(left=1) # Ensures the x-axis begins at 1 to prevent empty space
+    
+    ax.set_xlim(left=start_epoch) # Ensures the x-axis begins at the correct start epoch
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    
     ax.grid(True, linestyle='--')
     
     # --- Plot Learning Rate (Right Y-axis) ---
     if lr_history:
         ax2 = ax.twinx() # Create a second y-axis
         epochs = range(start_epoch, start_epoch + len(lr_history))
-        line3, = ax2.plot(epochs, lr_history, 'g--', label='Learning Rate')
+        line3, = ax2.plot(epochs, lr_history, linestyle='--', color=c_lr, label='Learning Rate')
         line_handles.append(line3)
         
-        ax2.set_ylabel('Learning Rate', color='g', fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
-        ax2.tick_params(axis='y', labelcolor='g', labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
+        ax2.set_ylabel('Learning Rate', color=c_lr, fontsize=_EvaluationConfig.LOSS_PLOT_LABEL_SIZE, labelpad=_EvaluationConfig.LABEL_PADDING)
+        ax2.tick_params(axis='y', labelcolor=c_lr, labelsize=_EvaluationConfig.LOSS_PLOT_TICK_SIZE)
         # Use scientific notation if the LR is very small
         ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         # increase the size of the scientific notation

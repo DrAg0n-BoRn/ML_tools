@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [26.3.0] 2026-08-22
+
+## [26.3.1] 2026-08-21
+
+### Changed
+
+- ML_evaluation:
+    - `plot_losses()`: 
+        - Forced the x-axis (epochs) to display only integer values using `MaxNLocator`.
+        - Dynamically adjusted the x-axis starting limit based on the skipped epochs.
+        - Implemented random selection from predefined color groups for the training loss, validation loss, and learning rate plots.
+
+
+## [26.3.0] 2026-08-21
 
 ### Added
 
