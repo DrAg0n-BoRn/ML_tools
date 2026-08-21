@@ -53,6 +53,10 @@ class _BaseDragonTrainer(ABC):
         self.device = self._validate_device(device)
         self.dataloader_workers = dataloader_workers
         self.training_directory_root = make_fullpath(save_dir, make=True, enforce="directory")
+        self.criterion: Optional[Union[nn.Module, dict[str, nn.Module]]] = None
+        
+        # move model to device
+        self.model.to(self.device)
         
         # Callback handler
         default_callbacks = [History(), TqdmProgressBar()]
@@ -325,7 +329,7 @@ class _BaseDragonTrainer(ABC):
             return_history_log: bool = False,
             resume_from_checkpoint: Optional[Union[str, Path]] = None) -> Optional[dict[str, list[Any]]]:
         """
-        Starts the training-validation process of the model.
+        Moves the model, optimizer, and criterion to the specified device then starts the training-validation process of the model.
         
         Optionally returns the "History Log" dictionary.
 
@@ -341,7 +345,9 @@ class _BaseDragonTrainer(ABC):
         self.epochs = epochs
         self._batch_size = batch_size
         self._create_dataloaders(self._batch_size, shuffle) # type: ignore
-        self.model.to(self.device)
+        
+        # Unifies moving the model, criterion, and any loaded optimizer states to the target device
+        self.to_device(str(self.device), verbose=False)
         
         if resume_from_checkpoint:
             self._load_checkpoint(resume_from_checkpoint)
@@ -442,7 +448,16 @@ class _BaseDragonTrainer(ABC):
         for callback in self.callbacks:
             method = getattr(callback, method_name)
             method(*args, **kwargs)
-            
+    
+    def _move_criterion_to_device(self):
+        """Moves the criterion or dictionary of criteria to self.device if they are nn.Modules."""
+        if isinstance(self.criterion, nn.Module):
+            self.criterion.to(self.device)
+        elif isinstance(self.criterion, dict):
+            for k, v in self.criterion.items():
+                if isinstance(v, nn.Module):
+                    v.to(self.device)
+    
     def to_cpu(self):
         """
         Moves the model to the CPU and updates the trainer's device setting.
@@ -451,7 +466,7 @@ class _BaseDragonTrainer(ABC):
         """
         self.to_device('cpu')
     
-    def to_device(self, device: str):
+    def to_device(self, device: str, verbose: bool = True):
         """
         Moves the model to the specified device and updates the trainer's device setting.
 
@@ -460,6 +475,7 @@ class _BaseDragonTrainer(ABC):
         """
         self.device = self._validate_device(device)
         self.model.to(self.device)
+        self._move_criterion_to_device()
         
         # Ensure all optimizer state tensors are moved to the specified device
         for state in self.optimizer.state.values():
@@ -467,7 +483,8 @@ class _BaseDragonTrainer(ABC):
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(self.device)
         
-        _LOGGER.info(f"Trainer and model moved to {self.device}.")
+        if verbose:
+            _LOGGER.info(f"Trainer, model, and criterion moved to {self.device}.")
     
     def _load_model_state_wrapper(self, model_checkpoint: Union[Path, Literal['best', 'current']], verbose: int = 2):
         """

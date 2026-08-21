@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.3.0] 2026-08-22
+
+### Added
+
+- ML_trainer:
+    - Added a `_move_criterion_to_device` helper in `_BaseDragonTrainer` to automatically synchronize loss functions with the active device (e.g., CUDA, MPS) during `fit()` and `to_device()`.
+    - Updated `DragonTrainer`, `DragonVisionTrainer`, `DragonDistributionTrainer`, and `DragonSequenceTrainer` to move their respective `criterion` to the target device upon initialization, ensuring hardware compatibility for custom loss modules with internal registered buffers.
+
+### Changed
+
+- ML_trainer:
+    - Optimized `DragonSequenceTrainer` to resolve `"auto"` criterions into explicit PyTorch loss modules during initialization rather than evaluating them dynamically on every batch inside the `_compute_loss` loop.
+    - Updated the `fit()` method in `_BaseDragonTrainer` (globally) to use `self.to_device(str(self.device))`. This ensures that the model, criterion, and optimizer states are fully synchronized to the target device before the training loop starts.
+
+
 ## [26.2.0] 2026-08-21
 
 ### Added

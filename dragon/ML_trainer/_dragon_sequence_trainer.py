@@ -117,8 +117,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
-        self.kind = kind
-        self.criterion = criterion
+        self.kind = kind        
         
         # Validate against Dragon Sequence model architecture mode if present
         if hasattr(self.model, "prediction_mode"):
@@ -143,6 +142,34 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
         
         # Set target names for internal use
         self.target_names = self._get_target_names()
+        
+        # Transform "auto" into explicit module(s) before moving to device
+        if criterion == "auto":
+            if len(self.target_names) > 1:
+                auto_criterion: dict[str, nn.Module] = {}
+                for t_name in self.target_names:
+                    is_cat = self.target_types and self.target_types.get(t_name) == DatasetKeys.TARGET_CATEGORICAL
+                    auto_criterion[t_name] = nn.CrossEntropyLoss() if is_cat else nn.MSELoss()
+                self.criterion = auto_criterion
+            else:
+                t_name = self.target_names[0]
+                is_cat = self.target_types and self.target_types.get(t_name) == DatasetKeys.TARGET_CATEGORICAL
+                self.criterion = nn.CrossEntropyLoss() if is_cat else nn.MSELoss()
+        else:
+            self.criterion = criterion
+            
+        # Validate that criterion is either nn.Module or dict[str, nn.Module]
+        if not isinstance(self.criterion, (nn.Module, dict)):
+            _LOGGER.error(f"The provided criterion is not a valid PyTorch loss module or dictionary: {type(self.criterion)}")
+            raise TypeError()
+        elif isinstance(self.criterion, dict):
+            for t_name, loss_fn in self.criterion.items():
+                if not isinstance(loss_fn, nn.Module):
+                    _LOGGER.error(f"Loss function for target '{t_name}' is not a valid PyTorch loss module: {type(loss_fn)}")
+                    raise TypeError()
+        
+        self.criterion: Union[nn.Module, dict[str, nn.Module]]
+        self._move_criterion_to_device()
 
     @property
     def _is_seq_to_val(self) -> bool:
@@ -207,12 +234,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
                 # Determine criterion for target head
                 if isinstance(self.criterion, dict):
-                    loss_fn = self.criterion.get(target_name, nn.MSELoss())
-                elif self.criterion == "auto":
-                    if is_categorical:
-                        loss_fn = nn.CrossEntropyLoss()
-                    else:
-                        loss_fn = nn.MSELoss()
+                    loss_fn = self.criterion.get(target_name, None)
+                    if loss_fn is None:
+                        _LOGGER.error(f"No loss function specified for target '{target_name}' in criterion dictionary.")
+                        raise ValueError()
                 elif isinstance(self.criterion, nn.Module):
                     loss_fn = self.criterion
                 else:
@@ -251,16 +276,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
 
             if is_categorical:
                 target = targets.long()
-                if self.criterion == "auto":
-                    loss_fn = nn.CrossEntropyLoss()
-                else:
-                    loss_fn = self.criterion # type: ignore
             else:
                 target = targets.float()
-                if self.criterion == "auto":
-                    loss_fn = nn.MSELoss()
-                else:
-                    loss_fn = self.criterion # type: ignore
+                
+            loss_fn = self.criterion
 
             # Shape corrections
             if self._is_seq_to_val:

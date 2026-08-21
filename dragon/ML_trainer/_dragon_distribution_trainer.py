@@ -102,6 +102,14 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             self.criterion = nn.GaussianNLLLoss()
         else:
             self.criterion = criterion
+            
+        # criterion should be an instance of nn.Module
+        if not isinstance(self.criterion, nn.Module):
+            _LOGGER.error(f"The provided criterion is not a valid PyTorch loss module: {type(self.criterion)}")
+            raise TypeError()
+        self.criterion: nn.Module
+    
+        self._move_criterion_to_device()
 
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         self._make_dataloaders(
