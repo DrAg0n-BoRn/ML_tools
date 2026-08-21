@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.2.0] 2026-08-21
+
+### Added
+
+- New module: "ML_loss"
+    - **Classification Losses**: `ClassificationFocalLoss`, `PolyLoss`, and `AsymmetricLoss`. Compatible with both binary and multi-class classification tasks for standard and image classification projects.
+    - **Regression Losses**: `LogCoshLoss`, `QuantileLoss`, and `WingLoss`. Compatible with regression and multi-target regression tasks.
+    - **Segmentation Losses**: `DiceLoss`, `GeneralizedDiceLoss`, `SegmentationFocalLoss`, `DiceFocalLoss`, `TverskyLoss`, and `FocalTverskyLoss`. Compatible only with multi-class image segmentation tasks.
+    - **Internal Base Components**: `_BaseClassificationLoss`, `_BaseDiceLoss`, and reduction utility helpers.
+
+- resampling:
+    - `DragonResampler`: Added missing docstrings.
 
 ## [26.1.1] 2026-08-20
 

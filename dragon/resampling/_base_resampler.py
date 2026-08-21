@@ -45,5 +45,9 @@ class _DragonBaseResampler(ABC):
     def describe_balance(self, df: Union[pd.DataFrame, pl.DataFrame], top_n: int = 10) -> None:
         """
         Prints a statistical summary of the target distribution.
+        
+        Args:
+            df (pd.DataFrame | pl.DataFrame): Input DataFrame.
+            top_n (int): Number of top classes or label combinations to display.
         """
         pass

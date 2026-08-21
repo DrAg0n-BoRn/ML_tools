@@ -40,7 +40,15 @@ class DragonResampler(_DragonBaseResampler):
                         majority_ratio: float = 1.0,
                         verbose: int = 2) -> Union[pd.DataFrame, pl.DataFrame]:
         """
-        Downsamples all classes to match the minority class size (scaled by a ratio).
+        Downsamples all classes to match the minority class size scaled by a ratio.
+        
+        Args:
+            df (pd.DataFrame | pl.DataFrame): Input DataFrame.
+            majority_ratio (float): Ratio of majority to minority class size to retain.
+            verbose (int): Verbosity level for logging.
+        
+        Returns:
+            Dataframe: Resampled DataFrame.
         """
         df_pl = self._convert_to_polars(df)
         

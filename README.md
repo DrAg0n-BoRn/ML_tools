@@ -72,6 +72,7 @@ ML_finetune
 ML_inference
 ML_inference_sequence
 ML_inference_vision
+ML_loss
 ML_models
 ML_models_diffusion
 ML_models_sequence
