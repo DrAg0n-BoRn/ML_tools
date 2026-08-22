@@ -33,22 +33,20 @@ class DiceLoss(_BaseDiceLoss):
     """
     def __init__(
         self,
-        smooth: float = 1e-6,
         include_background: bool = True,
-        reduction: Literal["none", "mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
-            smooth (float): A small constant added to the numerator and denominator 
-                to avoid division by zero and stabilize gradients. Defaults to 1e-6.
             include_background (bool): If False, the loss is computed only for the 
-                foreground classes (assumes background is at channel index 0). 
-            reduction (str): Specifies the reduction to apply to the output:
-                - 'none': No reduction, returns per-sample loss.
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+                foreground classes (assumes background is at channel index 0).
+            ignore_index (int | None): Specifies a target value that is ignored and does 
+                not contribute to the input gradient.
         """
-        super().__init__(smooth=smooth, include_background=include_background, reduction=reduction)
+        super().__init__(
+            include_background=include_background, 
+            ignore_index=ignore_index
+        )
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         intersection, cardinality, _, _ = self._prepare_inputs(logits, targets)
@@ -57,7 +55,6 @@ class DiceLoss(_BaseDiceLoss):
         dice_loss = 1.0 - dice_score
 
         loss = _apply_reduction(dice_loss, self.reduction)
-        
         return loss
 
 
@@ -77,22 +74,20 @@ class GeneralizedDiceLoss(_BaseDiceLoss):
     """
     def __init__(
         self,
-        smooth: float = 1e-6,
         include_background: bool = True,
-        reduction: Literal["none", "mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
-            smooth (float): A small constant added to the numerator and denominator 
-                to avoid division by zero and stabilize gradients. Defaults to 1e-6.
             include_background (bool): If False, the loss is computed only for the 
-                foreground classes (assumes background is at channel index 0). 
-            reduction (str): Specifies the reduction to apply to the output:
-                - 'none': No reduction, returns per-sample loss.
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+                foreground classes (assumes background is at channel index 0).
+            ignore_index (int | None): Specifies a target value that is ignored and does 
+                not contribute to the input gradient.
         """
-        super().__init__(smooth=smooth, include_background=include_background, reduction=reduction)
+        super().__init__(
+            include_background=include_background, 
+            ignore_index=ignore_index
+        )
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         intersection, cardinality, targets_one_hot, spatial_dims = self._prepare_inputs(logits, targets)
@@ -100,8 +95,9 @@ class GeneralizedDiceLoss(_BaseDiceLoss):
         volumes = torch.sum(targets_one_hot, dim=spatial_dims)
         weights = 1.0 / (volumes ** 2 + self.smooth)
 
-        numerator = torch.sum(weights * intersection, dim=1)
-        denominator = torch.sum(weights * cardinality, dim=1)
+        # Use dim=-1 to sum over the class dimension dynamically for both (C,) and (B, C) tensors
+        numerator = torch.sum(weights * intersection, dim=-1)
+        denominator = torch.sum(weights * cardinality, dim=-1)
 
         gdl_score = (2.0 * numerator + self.smooth) / (denominator + self.smooth)
         gdl_loss = 1.0 - gdl_score
@@ -125,8 +121,7 @@ class SegmentationFocalLoss(nn.Module):
         self,
         alpha: Optional[Union[float, torch.Tensor]] = None,
         gamma: float = 2.0,
-        ignore_index: int = -100,
-        reduction: Literal["none", "mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
@@ -137,17 +132,13 @@ class SegmentationFocalLoss(nn.Module):
             gamma (float): The focusing parameter that dictates the rate at which 
                 easy examples are down-weighted. A value of 0 is equivalent to 
                 standard Cross-Entropy.
-            ignore_index (int): Specifies a target value that is ignored and does 
-                not contribute to the input gradient. Defaults to -100 (PyTorch default).
-            reduction (str): Specifies the reduction to apply to the output:
-                - 'none': No reduction, returns per-sample loss.
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+            ignore_index (int | None): Specifies a target value that is ignored and does 
+                not contribute to the input gradient.
         """
         super().__init__()
         self.gamma = gamma
         self.ignore_index = ignore_index
-        self.reduction = reduction
+        self.reduction = "mean"
 
         if isinstance(alpha, (float, int)):
             self.register_buffer("alpha", torch.tensor([alpha]))
@@ -157,14 +148,33 @@ class SegmentationFocalLoss(nn.Module):
             self.alpha = None
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Squeeze channel dim for targets if necessary to match cross_entropy expectations
+        if targets.ndim == logits.ndim and targets.shape[1] == 1:
+            targets = targets.squeeze(1)
+            
+        ce_ignore_index = self.ignore_index if self.ignore_index is not None else -100
+
+        # 1. Compute raw cross entropy without weights to extract true p_t
+        raw_ce_loss = F.cross_entropy(
+            logits,
+            targets,
+            weight=None,
+            ignore_index=ce_ignore_index,
+            reduction="none",
+        )
+        pt = torch.exp(-raw_ce_loss)
+
+        # 2. Compute weighted cross entropy for the base loss
+        weight_tensor = self.alpha if (self.alpha is not None and self.alpha.numel() > 1) else None
         ce_loss = F.cross_entropy(
             logits,
             targets,
-            weight=self.alpha if (self.alpha is not None and self.alpha.numel() > 1) else None,
-            ignore_index=self.ignore_index,
+            weight=weight_tensor,
+            ignore_index=ce_ignore_index,
             reduction="none",
         )
-        pt = torch.exp(-ce_loss)
+        
+        # 3. Apply focal modulating factor
         focal_loss = ((1.0 - pt) ** self.gamma) * ce_loss
 
         if self.alpha is not None and self.alpha.numel() == 1:
@@ -193,10 +203,8 @@ class DiceFocalLoss(nn.Module):
         dice_type: Literal["standard", "generalized"] = "generalized",
         focal_alpha: Optional[Union[float, torch.Tensor]] = None,
         focal_gamma: float = 2.0,
-        dice_smooth: float = 1e-6,
         include_background: bool = True,
-        ignore_index: int = -100,
-        reduction: Literal["mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
@@ -212,15 +220,10 @@ class DiceFocalLoss(nn.Module):
             focal_gamma (float): The focusing parameter that dictates the rate at which 
                 easy examples are down-weighted. A value of 0 is equivalent to 
                 standard Cross-Entropy.
-            dice_smooth (float): The smoothing constant passed to the underlying 
-                DiceLoss. Defaults to 1e-6.
             include_background (bool): Whether to include the background class in 
                 the Dice Loss computation.
-            ignore_index (int): A target index to ignore for the Focal Loss gradient 
-                computation. Defaults to -100 (PyTorch default).
-            reduction (str): The reduction method applied to the combined loss:
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+            ignore_index (int | None): A target index to ignore for the Focal Loss gradient 
+                computation.
         """
         super().__init__()
         
@@ -234,25 +237,18 @@ class DiceFocalLoss(nn.Module):
             _LOGGER.error(f"weight_dice and weight_focal should sum to 1. Got weight_dice={weight_dice}, weight_focal={weight_focal}")
             raise ValueError()
         
-        # Validate reduction for this special case combining two losses and want to ensure consistent behavior
-        if reduction not in ["mean", "sum"]:
-            _LOGGER.error(f"Unsupported reduction type: {reduction}. Must be 'mean' or 'sum'.")
-            raise ValueError()
-        
         self.weight_dice = weight_dice
         self.weight_focal = weight_focal
 
         if dice_type == "standard":
             self.dice = DiceLoss(
-                smooth=dice_smooth,
                 include_background=include_background,
-                reduction=reduction,
+                ignore_index=ignore_index
             )
         elif dice_type == "generalized":
             self.dice = GeneralizedDiceLoss(
-                smooth=dice_smooth,
                 include_background=include_background,
-                reduction=reduction,
+                ignore_index=ignore_index
             )
         else:
             _LOGGER.error(f"Unsupported dice_type: {dice_type}.")
@@ -261,8 +257,7 @@ class DiceFocalLoss(nn.Module):
         self.focal = SegmentationFocalLoss(
             alpha=focal_alpha,
             gamma=focal_gamma,
-            ignore_index=ignore_index,
-            reduction=reduction,
+            ignore_index=ignore_index
         )
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:

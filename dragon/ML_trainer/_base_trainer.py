@@ -321,10 +321,10 @@ class _BaseDragonTrainer(ABC):
         """
         self._load_checkpoint(path=path, verbose=verbose)
 
-    def fit(self, 
-            epochs: int = 100, 
-            batch_size: int = 10, 
-            skip_first_epoch: bool = True,
+    def fit(self, *, 
+            epochs: int, 
+            batch_size: int, 
+            skip_first_epoch_plot: bool = True,
             shuffle: bool = True,
             return_history_log: bool = False,
             resume_from_checkpoint: Optional[Union[str, Path]] = None) -> Optional[dict[str, list[Any]]]:
@@ -336,7 +336,7 @@ class _BaseDragonTrainer(ABC):
         Args:
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
-            skip_first_epoch (bool): Whether to skip the first epoch when plotting losses at the end. 
+            skip_first_epoch_plot (bool): Whether to skip the first epoch when plotting losses at the end. 
                 This can help prevent skewed loss curves if the first epoch has a much higher loss.
             shuffle (bool): Whether to shuffle the training data at each epoch.
             return_history_log (bool): If True, returns the training history log at the end of training.
@@ -385,7 +385,7 @@ class _BaseDragonTrainer(ABC):
         self._callbacks_hook('on_train_end')
         
         # Training History
-        plot_losses(self.history, save_dir=self.training_directory_root, skip_first_epoch=skip_first_epoch)
+        plot_losses(self.history, save_dir=self.training_directory_root, skip_first_epoch=skip_first_epoch_plot)
         
         if return_history_log:
             return self.history

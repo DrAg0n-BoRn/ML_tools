@@ -230,7 +230,7 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
         
         return maker
 
-    def set_class_map(self, class_map: dict[str, int]) -> 'DragonDatasetObjectDetection':
+    def set_class_map(self, class_map: dict[str, int]) -> None:
         """
         Sets a map of class_name -> pixel_value. This is used by the
         trainer for clear evaluation reports.
@@ -242,8 +242,7 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
         Propagates the class names and mapping to any datasets that have already been created (train/val/test).
 
         Args:
-            class_map (Dict[str, int]): A dictionary mapping the string name
-                to its integer label.
+            class_map (Dict[str, int]): A dictionary mapping the string name to its integer label.
         """
         if 'background' not in class_map or class_map['background'] != 0:
             _LOGGER.warning("Object detection class map should include 'background' mapped to 0.")
@@ -265,11 +264,10 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
                 self._test_dataset.class_map = self.class_map # type: ignore
             
         _LOGGER.info(f"Class map set: {class_map}")
-        return self
 
     def split_data(self, val_size: float = 0.2, 
                    test_size: float = 0.0, 
-                   random_state: Optional[int] = 42) -> 'DragonDatasetObjectDetection':
+                   random_state: Optional[int] = 42) -> None:
         """
         Splits the loaded image-annotation pairs into train, validation, and test sets.
 
@@ -278,12 +276,10 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
             test_size (float): Proportion of the dataset to reserve for testing.
             random_state (int | None): Seed for reproducible splits.
 
-        Returns:
-            DragonDatasetObjectDetection: The same instance, now with datasets created.
         """
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
-            return self
+            return
 
         if val_size + test_size >= 1.0:
             _LOGGER.error("The sum of val_size and test_size must be less than 1.")
@@ -332,13 +328,12 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
 
         self._is_split = True
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
-        return self
 
     def configure_transforms(self, 
                              mean: Optional[tuple[float, ...]] = (0.485, 0.456, 0.406), 
                              std: Optional[tuple[float, ...]] = (0.229, 0.224, 0.225),
                              random_horizontal_flip_probability: float = 0.5
-                             ) -> 'DragonDatasetObjectDetection':
+                             ) -> None:
         """
         Configures and applies the image and target transformations.
         
@@ -352,9 +347,6 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
             mean (Tuple[float, ...] | None): The mean values for image normalization.
             std (Tuple[float, ...] | None): The std dev values for image normalization.
             random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
-
-        Returns:
-            DragonDatasetObjectDetection: The same instance, with transforms applied.
         """
         if not self._is_split:
             _LOGGER.error("Transforms must be configured AFTER splitting data. Call .split_data() first.")
@@ -414,7 +406,6 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
         
         self._are_transforms_configured = True
         _LOGGER.info("Paired object detection transforms configured and applied.")
-        return self
     
     @property
     def collate_fn(self) -> Callable:

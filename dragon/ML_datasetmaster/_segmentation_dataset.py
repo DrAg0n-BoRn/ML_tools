@@ -272,7 +272,7 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
         
         return maker
 
-    def set_class_map(self, class_map: dict[str, int]) -> 'DragonDatasetSegmentation':
+    def set_class_map(self, class_map: dict[str, int]) -> None:
         """
         Sets a map of class_name -> pixel value. This is used by the Trainer for clear evaluation reports.
         
@@ -299,11 +299,10 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
                 self._test_dataset.class_map = self.class_map # type: ignore
         
         _LOGGER.info(f"Class map set: {class_map}")
-        return self
 
     def split_data(self, val_size: float = 0.2, 
                    test_size: float = 0.0, 
-                   random_state: Optional[int] = 42) -> 'DragonDatasetSegmentation':
+                   random_state: Optional[int] = 42) -> None:
         """
         Splits the loaded image-mask pairs into train, validation, and test sets.
 
@@ -317,7 +316,7 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
         """
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
-            return self
+            return
 
         if val_size + test_size >= 1.0:
             _LOGGER.error("The sum of val_size and test_size must be less than 1.")
@@ -366,7 +365,6 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
 
         self._is_split = True
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
-        return self
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
@@ -377,7 +375,7 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
                              random_horizontal_flip_probability: float = 0.5,
                              random_resize_crop_scale: tuple[float, float] = (0.5, 1.0),
                              random_resize_crop_ratio: tuple[float, float] = (3/4, 4/3),
-                             ) -> 'DragonDatasetSegmentation':
+                             ) -> None:
         """
         Configures and applies the image and mask transformations.
         
@@ -392,9 +390,6 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
             random_horizontal_flip_probability (float): Probability of applying horizontal flip during training.
             random_resize_crop_scale (tuple[float, float]): Scale range for random resized crop during training.
             random_resize_crop_ratio (tuple[float, float]): Aspect ratio range for random resized crop during training.
-
-        Returns:
-            DragonDatasetSegmentation: The same instance, with transforms applied.
             
         ⚠️ WARNING: PyTorch DataLoaders require all images in a batch to have the same dimensions. 
         Since `resize_size` scales the shortest edge and maintains the aspect ratio, 
@@ -460,7 +455,6 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
         
         self._are_transforms_configured = True
         _LOGGER.info("Paired segmentation transforms configured and applied.")
-        return self
     
     def _get_task_name(self) -> str:
         return MLTaskKeys.BINARY_SEGMENTATION if len(self.classes) == 2 else MLTaskKeys.MULTICLASS_SEGMENTATION

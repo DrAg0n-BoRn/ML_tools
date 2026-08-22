@@ -28,17 +28,28 @@ class _BaseClassificationLoss(nn.Module):
 
     def _get_base_loss_and_pt(self, logits: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # key to determine if the task is binary classification or multi-class classification
-        is_binary = (logits.ndim == 1) or (logits.ndim == 2 and logits.shape[1] == 1)
+        is_binary = logits.ndim == 1 or logits.shape[1] == 1
 
         if is_binary:
-            logits = logits.view(-1)
-            targets = targets.view(-1).float()
+            # Retain original shape, squeezing channel dim if present
+            if logits.ndim > 1 and logits.shape[1] == 1:
+                logits = logits.squeeze(1)
+            
+            # Match targets shape if they have an extra channel dim
+            if targets.ndim == logits.ndim + 1 and targets.shape[1] == 1:
+                targets = targets.squeeze(1)
+                
+            targets = targets.float()
             
             base_loss = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
             
             probs = torch.sigmoid(logits)
             p_t = probs * targets + (1.0 - probs) * (1.0 - targets)
         else:
+            # Squeeze targets channel dimension if present for multi-class
+            if targets.ndim == logits.ndim and targets.shape[1] == 1:
+                targets = targets.squeeze(1)
+                
             targets = targets.long()
             base_loss = F.cross_entropy(logits, targets, reduction="none")
             

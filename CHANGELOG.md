@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.3.2] 2026-08-22
+
+### Changed
+
+- ML_datasetmaster:
+    - `DragonDatasetImageClassification`, `DragonDatasetObjectDetection`, and `DragonDatasetSegmentation`: removed self instance return from methods, removing chainable calls to favor explicit method calls and clearer code structure.
+
+- ML_trainer:
+    - The method `.fit()` in all trainer classes now requires strict keyword arguments. Removed default values for `epochs` and `batch_size`, must be explicitly provided.
+
+### Fixed
+
+- ML_loss:
+    - All loss modules have been revamped to closely mirror standard implementations in well-known libraries like PyTorch and MONAI.
+
+- ML_evaluation_captum:
+    - `captum_segmentation_heatmap()`: Fixed a plot object return leak, the function now properly closes the figure after saving.
+
 
 ## [26.3.1] 2026-08-21
 

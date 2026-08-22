@@ -122,11 +122,18 @@ class AsymmetricLoss(torch.nn.Module):
         self.reduction = reduction
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        is_binary = logits.ndim == 1 or (logits.ndim == 2 and logits.shape[1] == 1)
+        is_binary = logits.ndim == 1 or logits.shape[1] == 1
 
         if is_binary:
-            logits = logits.view(-1)
-            targets = targets.view(-1).float()
+            # Retain original shape, squeezing channel dim if present
+            if logits.ndim > 1 and logits.shape[1] == 1:
+                logits = logits.squeeze(1)
+            
+            # Match targets shape if they have an extra channel dim
+            if targets.ndim == logits.ndim + 1 and targets.shape[1] == 1:
+                targets = targets.squeeze(1)
+                
+            targets = targets.float()
             
             probs = torch.sigmoid(logits)
             probs_pos = probs
@@ -140,7 +147,17 @@ class AsymmetricLoss(torch.nn.Module):
             custom_loss = -(loss_pos + loss_neg)
             
         else:
-            targets_one_hot = F.one_hot(targets.long(), num_classes=logits.shape[1]).float()
+            # Squeeze targets channel dimension if present for multi-class
+            if targets.ndim == logits.ndim and targets.shape[1] == 1:
+                targets = targets.squeeze(1)
+                
+            num_classes = logits.shape[1]
+            targets_one_hot = F.one_hot(targets.long(), num_classes=num_classes)
+            
+            # Permute one-hot target to match logits shape (B, C, ...)
+            permute_dims = [0, targets_one_hot.ndim - 1] + list(range(1, targets_one_hot.ndim - 1))
+            targets_one_hot = targets_one_hot.permute(*permute_dims).float()
+            
             probs = torch.softmax(logits, dim=1)
             
             probs_pos = probs

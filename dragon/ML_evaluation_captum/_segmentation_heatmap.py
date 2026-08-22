@@ -118,7 +118,7 @@ def captum_segmentation_heatmap(model: nn.Module,
                 )
                 
                 save_path = save_dir_path / f"Heatmap_Sample{sample_idx}_{clean_name}.svg"
-                plt.tight_layout()
+                fig.tight_layout()
                 fig.savefig(save_path, bbox_inches='tight')
                 plt.close(fig)
                 

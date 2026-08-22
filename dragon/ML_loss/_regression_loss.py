@@ -96,7 +96,10 @@ class WingLoss(nn.Module):
     Formula:
         $$ \\mathcal{L} = \\begin{cases} w \\ln(1 + |x|/\\epsilon) & \\text{if } |x| < w \\ |x| - C & \\text{otherwise} \\end{cases} $$
     """
-    def __init__(self, w: float = 10.0, epsilon: float = 2.0, reduction: Literal["none", "mean", "sum"] = "mean"):
+    def __init__(self, 
+                 w: float = 10.0, 
+                 epsilon: float = 2.0, 
+                 reduction: Literal["none", "mean", "sum"] = "mean"):
         """
         Args:
             w (float): The threshold that separates the linear and logarithmic parts. Rule of thumb: set w to the maximum expected error.
@@ -121,4 +124,3 @@ class WingLoss(nn.Module):
         
         loss = torch.where(abs_diff < self.w, log_loss, l1_loss)
         return _apply_reduction(loss, self.reduction)
-

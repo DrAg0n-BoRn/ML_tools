@@ -1,11 +1,11 @@
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Literal
 
 from .._core import get_logger
 
-from ._z_helpers import _apply_reduction
+from ._z_helpers import _apply_reduction, _handle_ignore_index
 
 
 _LOGGER = get_logger("Segmentation Loss")
@@ -32,22 +32,17 @@ class TverskyLoss(nn.Module):
         self,
         alpha: float = 0.3,
         beta: float = 0.7,
-        smooth: float = 1e-6,
         include_background: bool = True,
-        reduction: Literal["none", "mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
             alpha (float): Weight of false positives. 
             beta (float): Weight of false negatives.
-            smooth (float): A small constant added to the numerator and denominator 
-                to avoid division by zero and stabilize gradients. Defaults to 1e-6.
             include_background (bool): If False, the loss is computed only for the 
                 foreground classes (assumes background is at channel index 0).
-            reduction (str): Specifies the reduction to apply to the output:
-                - 'none': No reduction, returns per-sample loss.
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+            ignore_index (int | None): Specifies a target value that is ignored and does 
+                not contribute to the input gradient.
         """
         super().__init__()
         
@@ -59,27 +54,31 @@ class TverskyLoss(nn.Module):
             _LOGGER.error(f"Beta must be in [0, 1], got {beta}")
             raise ValueError()
         
-        # ratios should sum to 1 for proper weighting
-        if not (abs(alpha + beta - 1.0) < 1e-6):
-            _LOGGER.error(f"Alpha and Beta should sum to 1. Got alpha={alpha}, beta={beta}")
-            raise ValueError()
-        
         self.alpha = alpha
         self.beta = beta
-        self.smooth = smooth
+        self.smooth = 1e-6
         self.include_background = include_background
-        self.reduction = reduction
+        self.reduction = "mean"
+        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         num_classes = logits.shape[1]
-        probs = F.softmax(logits, dim=1)
+        
+        if num_classes == 1:
+            probs = torch.sigmoid(logits)
+        else:
+            probs = F.softmax(logits, dim=1)
 
-        # Convert targets to one-hot and permute channel to index 1 dynamically
-        targets_one_hot = F.one_hot(targets, num_classes=num_classes)
-        permute_dims = [0, targets_one_hot.ndim - 1] + list(range(1, targets_one_hot.ndim - 1))
-        targets_one_hot = targets_one_hot.permute(*permute_dims).float()
+        # Squeeze channel dim if present, e.g., (B, 1, H, W) -> (B, H, W)
+        if targets.ndim == logits.ndim and targets.shape[1] == 1:
+            targets = targets.squeeze(1)
 
-        if not self.include_background:
+        # Streamlined execution via private helper
+        probs, targets_one_hot = _handle_ignore_index(
+            probs, targets, self.ignore_index, num_classes
+        )
+
+        if not self.include_background and num_classes > 1:
             probs = probs[:, 1:]
             targets_one_hot = targets_one_hot[:, 1:]
 
@@ -113,34 +112,29 @@ class FocalTverskyLoss(nn.Module):
         alpha: float = 0.3,
         beta: float = 0.7,
         gamma: float = 4.0 / 3.0,
-        smooth: float = 1e-6,
         include_background: bool = True,
-        reduction: Literal["none", "mean", "sum"] = "mean",
+        ignore_index: Optional[int] = None,
     ):
         """
         Args:
             alpha (float): Weight of false positives.
             beta (float): Weight of false negatives.
             gamma (float): Focal parameter to down-weight easy examples. Rule of thumb: gamma > 1 focuses more on hard examples.
-            smooth (float): A small constant added to the numerator and denominator 
-                to avoid division by zero and stabilize gradients. Defaults to 1e-6.
             include_background (bool): If False, the loss is computed only for the 
                 foreground classes (assumes background is at channel index 0).
-            reduction (str): Specifies the reduction to apply to the output:
-                - 'none': No reduction, returns per-sample loss.
-                - 'mean': Returns the mean loss across the batch.
-                - 'sum': Returns the sum of losses across the batch.
+            ignore_index (int | None): A target index to ignore for the loss gradient 
+                computation.
         """
         super().__init__()
         self.gamma = gamma
-        self.reduction = reduction
+        self.reduction = "mean"
         self.tversky = TverskyLoss(
             alpha=alpha,
             beta=beta,
-            smooth=smooth,
             include_background=include_background,
-            reduction="none" 
+            ignore_index=ignore_index
         )
+        self.tversky.reduction = "none"  # Apply reduction after the focal transformation
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         tversky_loss_unreduced = self.tversky(logits, targets)

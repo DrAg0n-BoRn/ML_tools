@@ -185,7 +185,7 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
                    val_size: float = 0.2, 
                    test_size: float = 0.0, 
                    stratify: bool = True, 
-                   random_state: Optional[int] = None) -> 'DragonDatasetImageClassification':
+                   random_state: Optional[int] = None) -> None:
         """
         PRIVATE METHOD: No need to call this, both `from_folder()` and `from_folders()` handle splitting automatically.
         
@@ -202,15 +202,12 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
                              fashion, preserving the class distribution.
             random_state (int | None): Seed for the random number generator for reproducible splits.
 
-        Returns:
-            Self: The same instance, now with datasets split.
-            
         Raises:
             ValueError: If `val_size` and `test_size` sum to 1.0 or more.
         """
         if self._is_split:
             _LOGGER.warning("Data has already been split.")
-            return self
+            return
 
         if val_size + test_size >= 1.0:
             _LOGGER.error("The sum of val_size and test_size must be less than 1.")
@@ -248,7 +245,6 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
         self._is_split = True
         
         _LOGGER.info(f"Data split into: \n- Training: {len(self._train_dataset)} images \n- Validation: {len(self._val_dataset)} images")
-        return self
 
     def configure_transforms(self, 
                              resize_size: int = 256, 
@@ -261,7 +257,7 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
                              random_resize_crop_scale: tuple[float, float] = (0.08, 1.0),
                              random_resize_crop_ratio: tuple[float, float] = (3/4, 4/3),
                              random_rotation_degrees: float = 90.0
-                             ) -> 'DragonDatasetImageClassification':
+                             ) -> None:
         """
         Configures and applies the image transformations and augmentations.
         
@@ -288,9 +284,6 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
             random_resize_crop_scale (tuple[float, float]): Scale range for random resized crop during training.
             random_resize_crop_ratio (tuple[float, float]): Aspect ratio range for random resized crop during training.
             random_rotation_degrees (float): Maximum degrees for random rotation during training.
-
-        Returns:
-            Self: The same instance, with transforms applied.
             
         ⚠️ WARNING: PyTorch DataLoaders require all images in a batch to have the same dimensions. 
         Since `Resize` with a single integer scales the shortest edge and maintains the aspect ratio, 
@@ -368,7 +361,6 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
         
         self._are_transforms_configured = True
         _LOGGER.info("Image transforms configured and applied.")
-        return self
     
     def _get_task_name(self) -> str:
         """
