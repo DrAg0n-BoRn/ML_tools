@@ -215,10 +215,13 @@ class _BaseDragonTrainer(ABC):
         dir_path = self._validate_save_dir(self.training_directory_root)
         full_path = dir_path / finalize_config.filename
         
+        # Add support for compiled model
+        base_model: nn.Module = getattr(self.model, "_orig_mod", self.model) # type: ignore
+        
         # dynamically build the dictionary with core requirements
         finalized_data = {
             PyTorchCheckpointKeys.EPOCH: self.epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.model.state_dict()
+            PyTorchCheckpointKeys.MODEL_STATE: base_model.state_dict()
         }
         
         # Map configuration attributes directly, ignoring None values and the filename itself
@@ -246,8 +249,13 @@ class _BaseDragonTrainer(ABC):
             if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
                 _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
                 raise KeyError()
-
-            self.model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
+            
+            # add support for compiled models
+            base_model: nn.Module = getattr(self.model, "_orig_mod", self.model) # type: ignore
+            
+            base_model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
+            
+            self.model = base_model  # Update the trainer's model reference
             self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
             
             # Ensure all optimizer state tensors are moved to the correct device
@@ -324,6 +332,7 @@ class _BaseDragonTrainer(ABC):
     def fit(self, *, 
             epochs: int, 
             batch_size: int, 
+            use_torch_compile: bool = False,
             skip_first_epoch_plot: bool = True,
             shuffle: bool = True,
             return_history_log: bool = False,
@@ -336,6 +345,8 @@ class _BaseDragonTrainer(ABC):
         Args:
             epochs (int): The total number of epochs to train for.
             batch_size (int): The number of samples per batch.
+            use_torch_compile (bool): Whether to compile the model with torch.compile for training. 
+                This can improve performance on supported devices (PyTorch 2.0+). Note that torch.compile is not supported on MPS devices.
             skip_first_epoch_plot (bool): Whether to skip the first epoch when plotting losses at the end. 
                 This can help prevent skewed loss curves if the first epoch has a much higher loss.
             shuffle (bool): Whether to shuffle the training data at each epoch.
@@ -346,11 +357,14 @@ class _BaseDragonTrainer(ABC):
         self._batch_size = batch_size
         self._create_dataloaders(self._batch_size, shuffle) # type: ignore
         
-        # Unifies moving the model, criterion, and any loaded optimizer states to the target device
-        self.to_device(str(self.device), verbose=False)
-        
         if resume_from_checkpoint:
             self._load_checkpoint(resume_from_checkpoint)
+        
+        if use_torch_compile:
+            self._compile_model()
+        
+        # Unifies moving the model, criterion, and any loaded optimizer states to the target device
+        self.to_device(str(self.device), verbose=False)
         
         # Reset stop_training flag on the trainer
         self.stop_training = False
@@ -386,6 +400,10 @@ class _BaseDragonTrainer(ABC):
         
         # Training History
         plot_losses(self.history, save_dir=self.training_directory_root, skip_first_epoch=skip_first_epoch_plot)
+        
+        # decompile the model if it was compiled
+        if use_torch_compile:
+            self._decompile_model()
         
         if return_history_log:
             return self.history
@@ -521,6 +539,46 @@ class _BaseDragonTrainer(ABC):
             
         return default
     
+    def _compile_model(self):
+        """
+        Compiles the model using torch.compile if available (PyTorch 2.0+).
+        """
+        # check if torch.compile is available
+        if not hasattr(torch, 'compile'):
+            _LOGGER.warning("torch.compile() is not available in this PyTorch version. Model compilation skipped.")
+            return
+        
+        # incompatible with MPS
+        if self.device.type == 'mps':
+            _LOGGER.warning("torch.compile() is not supported on MPS devices. Model compilation skipped.")
+            return
+        
+        # ensure model is on target device before building graph
+        self.model.to(self.device)
+        
+        base_msg = f"Model '{self.model.__class__.__name__}' was compiled with torch.compile()."
+        
+        # compile the model
+        try:
+            compiled_model = torch.compile(self.model) # type: ignore
+        except Exception as e:
+            _LOGGER.error(f"Failed to compile the model: {e}. Model compilation skipped.")
+            return
+        else:
+            self.model: nn.Module = compiled_model # type: ignore
+        
+        _LOGGER.info(base_msg)
+    
+    def _decompile_model(self):
+        """
+        Reverts the model back to its original state if it was compiled.
+        """
+        if hasattr(self.model, "_orig_mod"):
+            self.model = self.model._orig_mod # type: ignore
+            _LOGGER.info(f"Model '{self.model.__class__.__name__}' was decompiled to its original state.")
+        else:
+            _LOGGER.warning("Model is not compiled. No action taken.")
+        
     # --- Abstract Methods ---
     # These must be implemented by subclasses
 
@@ -553,4 +611,3 @@ class _BaseDragonTrainer(ABC):
     def finalize_model_training(self, *args, **kwargs):
         """Saves the finalized model for inference."""
         raise NotImplementedError
-

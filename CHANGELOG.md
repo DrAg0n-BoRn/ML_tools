@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.4.0] 2026-08-22
+
+### Added
+
+- ML_trainer:
+    - Added `use_torch_compile` parameter to the `fit()` method in all trainer classes. When set to `True`, the model will be compiled using `torch.compile()` for potential performance improvements. This feature is only available in PyTorch 2.0 and above, and is not supported on MPS devices. After the training loop, the model will be decompiled to ensure compatibility with subsequent operations.
+
+- ML_callbacks:
+    - `DragonModelCheckpoint`: Updated to always save the model's state dictionary from the base model (uncompiled) when `use_torch_compile=True` is used during training. This ensures that the saved checkpoint is compatible and avoids issues with compiled models.
+
 ## [26.3.2] 2026-08-22
 
 ### Changed

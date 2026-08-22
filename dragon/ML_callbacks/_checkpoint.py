@@ -134,11 +134,14 @@ class DragonModelCheckpoint(_Callback):
         score_str = f"{current_score:.4f}".replace('.', '_')
         filename = f"epoch{epoch}_{self._checkpoint_name}-{score_str}.pth"
         filepath = self.save_dir / filename
+        
+        # add support for compiled models
+        base_model = getattr(self.trainer.model, "_orig_mod", self.trainer.model)  # type: ignore
 
         # Create checkpoint dict
         checkpoint_data = {
             PyTorchCheckpointKeys.EPOCH: epoch,
-            PyTorchCheckpointKeys.MODEL_STATE: self.trainer.model.state_dict(), # type: ignore
+            PyTorchCheckpointKeys.MODEL_STATE: base_model.state_dict(), # type: ignore
             PyTorchCheckpointKeys.OPTIMIZER_STATE: self.trainer.optimizer.state_dict(), # type: ignore
             PyTorchCheckpointKeys.BEST_SCORE: current_score,
             PyTorchCheckpointKeys.HISTORY: self.trainer.history, # type: ignore
