@@ -2,6 +2,7 @@ import numpy
 from typing import Union, Optional, Callable, Any
 from pathlib import Path
 from PIL import Image
+import json
 
 import torch
 from torch.utils.data import Dataset
@@ -11,7 +12,7 @@ from sklearn.model_selection import train_test_split
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys
+from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys, VisionDatasetManifestKeys
 
 from ._base_vision_dataset import _BaseVisionDataset
 
@@ -216,6 +217,10 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
         maker = cls()
         img_path_obj = make_fullpath(image_dir, enforce="directory")
         msk_path_obj = make_fullpath(mask_dir, enforce="directory")
+        
+        # --- Manifest Tracking ---
+        maker._creation_mode = "from_folders"
+        maker._source_paths = {"image_dir": img_path_obj, "mask_dir": msk_path_obj}
 
         # Find all images
         image_files = sorted([
@@ -326,6 +331,13 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
             _LOGGER.error("There is no data to split. Use .from_folders() first.")
             raise RuntimeError()
         
+        # --- Manifest Tracking ---
+        self._split_config = {
+            "val_size": val_size,
+            "test_size": test_size,
+            "random_state": random_state
+        }
+        
         indices = list(range(len(self.image_paths)))
 
         # Split indices
@@ -407,6 +419,16 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
         
+        # --- Capture configuration for the recipe ---
+        self._config_kwargs = {
+            "resize_size": resize_size,
+            "mean": mean,
+            "std": std,
+            "apply_paired_square_aspect": apply_paired_square_aspect,
+            "random_horizontal_flip_probability": random_horizontal_flip_probability,
+            "random_resize_crop_scale": random_resize_crop_scale,
+            "random_resize_crop_ratio": random_resize_crop_ratio
+        }
         
         # --- Store components for validation recipe ---
         self._val_recipe_components: dict[str,Any] = {
@@ -454,6 +476,7 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
             self._test_dataset.transform = self.val_transform # type: ignore
         
         self._are_transforms_configured = True
+        self._populate_transform_recipe()
         _LOGGER.info("Paired segmentation transforms configured and applied.")
     
     def _get_task_name(self) -> str:
@@ -484,6 +507,88 @@ class DragonDatasetSegmentation(_BaseVisionDataset):
                 }}
             )
         return pipeline
+    
+    @classmethod
+    def from_manifest(cls, manifest_filepath: Union[str, Path]) -> 'DragonDatasetSegmentation':
+        """
+        Instantiates the segmentation dataset completely from a saved JSON manifest.
+        
+        Args:
+            manifest_filepath (Union[str, Path]): Path to the saved manifest JSON.
+            
+        Returns:
+            DragonDatasetSegmentation: A fully reconstructed dataset ready for training/evaluation.
+        """
+        manifest_path = make_fullpath(manifest_filepath, enforce="file")
+        
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        
+        if manifest.get(VisionDatasetManifestKeys.DATASET_CLASS) != cls.__name__:
+            _LOGGER.error(f"Manifest dataset class '{manifest.get(VisionDatasetManifestKeys.DATASET_CLASS)}' does not match '{cls.__name__}'.")
+            raise ValueError()
+        
+        paths = manifest.get(VisionDatasetManifestKeys.PATHS, None)
+        if not paths:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.PATHS}' key.")
+            raise ValueError()
+        manifest_dir = manifest_path.parent
+        
+        resolved_paths = {}
+        for key, rel_path in paths.items():
+            resolved_paths[key] = (manifest_dir / rel_path).resolve()
+        
+        creation_mode = manifest.get(VisionDatasetManifestKeys.CREATION_MODE)
+        # 1. Initialize from folders
+        
+        if creation_mode == "from_folders":
+            maker = cls.from_folders(
+                image_dir=resolved_paths["image_dir"],
+                mask_dir=resolved_paths["mask_dir"]
+            )
+        else:
+            _LOGGER.error(f"Unknown creation mode: {creation_mode}")
+            raise ValueError()
+        
+        # 2. Set Class Map (required if manifest wast created)
+        saved_class_map = manifest.get(VisionDatasetManifestKeys.CLASS_MAP, None)
+        if not saved_class_map:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.CLASS_MAP}' key.")
+            raise ValueError()
+        maker.set_class_map(saved_class_map)
+        
+        # 3. Apply Splits
+        split_config = manifest.get(VisionDatasetManifestKeys.SPLIT_CONFIG, None)
+        if not split_config:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.SPLIT_CONFIG}' key.")
+            raise ValueError()
+        
+        val_size = split_config.get("val_size", None)
+        if val_size is None:
+            _LOGGER.error(f"Manifest '{VisionDatasetManifestKeys.SPLIT_CONFIG}' is missing 'val_size'.")
+            raise ValueError()
+        test_size = split_config.get("test_size", 0.0)
+        random_state = split_config.get("random_state", 42)
+        
+        maker.split_data(
+            val_size=val_size,
+            test_size=test_size,
+            random_state=random_state
+        )
+        
+        # 4. Configure Transforms
+        recipe = manifest.get(VisionDatasetManifestKeys.TRANSFORM_RECIPE, {})
+        config = recipe.get(VisionTransformRecipeKeys.CONFIGURATION, {})
+        
+        if not config:
+            _LOGGER.warning(f"Manifest is missing '{VisionTransformRecipeKeys.CONFIGURATION}' in '{VisionDatasetManifestKeys.TRANSFORM_RECIPE}'. Using default transforms.")
+            maker.configure_transforms()
+        else:
+            maker.configure_transforms(**config)
+        
+        _LOGGER.info(f"📜 Dataset built from manifest '{manifest_path.name}'.")
+        
+        return maker
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"

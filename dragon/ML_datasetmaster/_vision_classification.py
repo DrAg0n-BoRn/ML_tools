@@ -1,6 +1,7 @@
 import inspect
 from typing import Union, Optional, Callable, Any
 from pathlib import Path
+import json
 
 from torch.utils.data import Dataset, Subset
 from torchvision.datasets import ImageFolder
@@ -11,7 +12,7 @@ from ..ML_vision_transformers._core_transforms import TRANSFORM_REGISTRY
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys
+from ..keys._keys import VisionTransformRecipeKeys, MLTaskKeys, VisionDatasetManifestKeys
 
 from ._base_vision_dataset import _BaseVisionDataset
 
@@ -119,6 +120,10 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
         maker.class_map = full_dataset.class_to_idx
         maker.classes = list(maker.class_map.keys())
         
+        # --- Manifest Tracking ---
+        maker._creation_mode = "from_folder"
+        maker._source_paths = {"root_dir": root_path}
+        
         # Automatically split the dataset
         maker._split_data(val_size=val_size, test_size=test_size, stratify=stratify, random_state=random_state)
         
@@ -166,6 +171,10 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
         maker.class_map = train_ds.class_to_idx
         maker.classes = list(maker.class_map.keys())
         
+        # --- Manifest Tracking ---
+        maker._creation_mode = "from_folders"
+        maker._source_paths = {"train_dir": train_path, "val_dir": val_path}
+        
         if test_dir:
             test_path = make_fullpath(test_dir, enforce="directory")
             test_ds = ImageFolder(root=test_path, transform=None)
@@ -173,6 +182,8 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
                 _LOGGER.error("Train and test directories have different or inconsistent classes.")
                 raise ValueError()
             maker._test_dataset = test_ds
+            # --- Manifest Tracking ---
+            maker._source_paths["test_dir"] = test_path
             _LOGGER.info(f"Loaded: {len(train_ds)} train, {len(val_ds)} val, {len(test_ds)} test images.")
         else:
             _LOGGER.info(f"Loaded: {len(train_ds)} train, {len(val_ds)} val images.")
@@ -216,6 +227,14 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
         if not self._full_dataset:
             _LOGGER.error("There is no dataset to split.")
             raise ValueError()
+        
+        # --- Manifest Tracking ---
+        self._split_config = {
+            "val_size": val_size,
+            "test_size": test_size,
+            "stratify": stratify,
+            "random_state": random_state
+        }
         
         indices = list(range(len(self._full_dataset)))
         labels_for_split = self.labels if stratify else None
@@ -298,11 +317,28 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
         
+        # --- Capture configuration for the recipe ---
+        # Callables cannot be serialized
+        self._config_kwargs = {
+            "resize_size": resize_size,
+            "mean": mean,
+            "std": std,
+            "random_horizontal_flip_probability": random_horizontal_flip_probability,
+            "random_resize_crop_scale": random_resize_crop_scale,
+            "random_resize_crop_ratio": random_resize_crop_ratio,
+            "random_rotation_degrees": random_rotation_degrees
+        }
+        
+        # Track un-serializable callables explicitly
+        self._callable_requirements = {
+            "pre_transforms": bool(pre_transforms),
+            "extra_train_transforms": bool(extra_train_transforms)
+        }
+        
         # --- Store components for validation recipe ---
         self._val_recipe_components = {
             VisionTransformRecipeKeys.PRE_TRANSFORMS: pre_transforms or [],
-            VisionTransformRecipeKeys.RESIZE_SIZE: resize_size,
-            # VisionTransformRecipeKeys.CROP_SIZE: crop_size,
+            VisionTransformRecipeKeys.RESIZE_SIZE: resize_size
         }
         
         if mean is not None and std is not None:
@@ -360,6 +396,7 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
             self._test_dataset = _DatasetTransformer(self._test_dataset, val_transform, self.class_map) # type: ignore
         
         self._are_transforms_configured = True
+        self._populate_transform_recipe()
         _LOGGER.info("Image transforms configured and applied.")
     
     def _get_task_name(self) -> str:
@@ -431,6 +468,110 @@ class DragonDatasetImageClassification(_BaseVisionDataset):
                 }}
             )
         return pipeline
+    
+    @classmethod
+    def from_manifest(cls, 
+                      manifest_filepath: Union[str, Path], 
+                      pre_transforms: Optional[list[Callable]] = None,
+                      extra_train_transforms: Optional[list[Callable]] = None) -> 'DragonDatasetImageClassification':
+        """
+        Instantiates the dataset completely from a saved JSON manifest.
+        
+        Args:
+            manifest_filepath (Union[str, Path]): Path to the saved manifest JSON.
+            pre_transforms (Optional[list[Callable]]): Must be provided if the dataset was originally configured with them.
+            extra_train_transforms (Optional[list[Callable]]): Must be provided if the dataset was originally configured with them.
+            
+        Returns:
+            DragonDatasetImageClassification: A fully reconstructed dataset ready for training/evaluation.
+        """
+        manifest_path = make_fullpath(manifest_filepath, enforce="file")
+        
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        
+        if manifest.get(VisionDatasetManifestKeys.DATASET_CLASS) != cls.__name__:
+            _LOGGER.error(f"Manifest dataset class '{manifest.get(VisionDatasetManifestKeys.DATASET_CLASS)}' does not match '{cls.__name__}'.")
+            raise ValueError()
+        
+        creation_mode = manifest.get(VisionDatasetManifestKeys.CREATION_MODE)
+        paths = manifest.get(VisionDatasetManifestKeys.PATHS, None)
+        if not paths:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.PATHS}' key.")
+            raise ValueError()
+        
+        # Resolve relative paths relative to the manifest's location
+        manifest_dir = manifest_path.parent
+        resolved_paths = {}
+        for key, rel_path in paths.items():
+            resolved_paths[key] = (manifest_dir / rel_path).resolve()
+        
+        if creation_mode == "from_folder":
+            split_config = manifest.get(VisionDatasetManifestKeys.SPLIT_CONFIG, None)
+            if not split_config:
+                _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.SPLIT_CONFIG}' for 'from_folder' creation mode.")
+                raise ValueError()
+            val_size = split_config.get("val_size", None)
+            if val_size is None:
+                _LOGGER.error(f"Manifest '{VisionDatasetManifestKeys.SPLIT_CONFIG}' is missing 'val_size' for 'from_folder' creation mode.")
+                raise ValueError()
+            test_size = split_config.get("test_size", 0.0)
+            stratify = split_config.get("stratify", None)
+            if stratify is None:
+                _LOGGER.error(f"Manifest '{VisionDatasetManifestKeys.SPLIT_CONFIG}' is missing 'stratify' for 'from_folder' creation mode.")
+                raise ValueError()
+            random_state = split_config.get("random_state", None)
+            
+            maker = cls.from_folder(
+                root_dir=resolved_paths["root_dir"],
+                val_size=val_size,
+                test_size=test_size,
+                stratify=stratify,
+                random_state=random_state
+            )
+        elif creation_mode == "from_folders":
+            maker = cls.from_folders(
+                train_dir=resolved_paths["train_dir"],
+                val_dir=resolved_paths["val_dir"],
+                test_dir=resolved_paths.get("test_dir", None)
+            )
+        else:
+            _LOGGER.error(f"Unknown creation mode: {creation_mode}")
+            raise ValueError()
+            
+        saved_class_map = manifest.get(VisionDatasetManifestKeys.CLASS_MAP, {})
+        if maker.class_map != saved_class_map:
+            _LOGGER.warning("Loaded class map does not match the manifest's class map. Ensuring exact match with manifest.")
+            maker.class_map = saved_class_map
+            maker.classes = list(saved_class_map.keys())
+
+        recipe = manifest.get(VisionDatasetManifestKeys.TRANSFORM_RECIPE, {})
+        config = recipe.get(VisionTransformRecipeKeys.CONFIGURATION, {})
+        
+        # Check explicit callable requirements independently
+        callable_reqs = manifest.get(VisionDatasetManifestKeys.CALLABLE_REQUIREMENTS, {})
+        
+        if callable_reqs.get("pre_transforms") and not pre_transforms:
+            _LOGGER.warning("The manifest indicates 'pre_transforms' were used during creation, but none were provided.")
+        if callable_reqs.get("extra_train_transforms") and not extra_train_transforms:
+            _LOGGER.warning("The manifest indicates 'extra_train_transforms' were used during creation, but none were provided.")
+        
+        # check if callables were provided but the manifest does not indicate they were used
+        if pre_transforms and not callable_reqs.get("pre_transforms"):
+            _LOGGER.warning("Pre-transforms were provided, but the manifest does not indicate they were used during creation. They will be applied anyway.")
+        if extra_train_transforms and not callable_reqs.get("extra_train_transforms"):
+            _LOGGER.warning("Extra train transforms were provided, but the manifest does not indicate they were used during creation. They will be applied anyway.")
+
+        # Inject callables
+        config["pre_transforms"] = pre_transforms
+        config["extra_train_transforms"] = extra_train_transforms
+        
+        # Configure transforms automatically
+        maker.configure_transforms(**config)
+        
+        _LOGGER.info(f"📜 Dataset built from manifest '{manifest_path.name}'.")
+        
+        return maker
     
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"

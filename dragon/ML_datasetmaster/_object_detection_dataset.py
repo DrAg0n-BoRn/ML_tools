@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 
 from ..path_manager import make_fullpath
 from .._core import get_logger
-from ..keys._keys import VisionTransformRecipeKeys, ObjectDetectionKeys, MLTaskKeys
+from ..keys._keys import VisionTransformRecipeKeys, ObjectDetectionKeys, MLTaskKeys, VisionDatasetManifestKeys
 
 from ._base_vision_dataset import _BaseVisionDataset
 
@@ -194,6 +194,10 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
         maker = cls()
         img_path_obj = make_fullpath(image_dir, enforce="directory")
         ann_path_obj = make_fullpath(annotation_dir, enforce="directory")
+        
+        # --- Manifest Tracking ---
+        maker._creation_mode = "from_folders"
+        maker._source_paths = {"image_dir": img_path_obj, "annotation_dir": ann_path_obj}
 
         # Find all images
         image_files = sorted([
@@ -289,6 +293,13 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
             _LOGGER.error("There is no data to split. Use .from_folders() first.")
             raise RuntimeError()
         
+        # --- Manifest Tracking ---
+        self._split_config = {
+            "val_size": val_size,
+            "test_size": test_size,
+            "random_state": random_state
+        }
+        
         indices = list(range(len(self.image_paths)))
 
         # Split indices
@@ -356,6 +367,13 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
             _LOGGER.error(f"'mean' and 'std' must be both None or both defined, but only one was provided.")
             raise ValueError()
         
+        # --- Capture configuration for the recipe ---
+        self._config_kwargs = {
+            "mean": mean,
+            "std": std,
+            "random_horizontal_flip_probability": random_horizontal_flip_probability
+        }
+        
         self._val_recipe_components = {"_initialized": True}
         
         mean_list: list[float] = []
@@ -405,6 +423,7 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
             self._test_dataset.transform = self.val_transform # type: ignore
         
         self._are_transforms_configured = True
+        self._populate_transform_recipe()
         _LOGGER.info("Paired object detection transforms configured and applied.")
     
     @property
@@ -431,7 +450,89 @@ class DragonDatasetObjectDetection(_BaseVisionDataset):
                 }}
             )
         return pipeline
+    
+    @classmethod
+    def from_manifest(cls, manifest_filepath: Union[str, Path]) -> 'DragonDatasetObjectDetection':
+        """
+        Instantiates the object detection dataset completely from a saved JSON manifest.
+        
+        Args:
+            manifest_filepath (Union[str, Path]): Path to the saved manifest JSON.
+            
+        Returns:
+            DragonDatasetObjectDetection: A fully reconstructed dataset ready for training/evaluation.
+        """
+        manifest_path = make_fullpath(manifest_filepath, enforce="file")
+        
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+            
+        if manifest.get(VisionDatasetManifestKeys.DATASET_CLASS) != cls.__name__:
+            _LOGGER.error(f"Manifest dataset class '{manifest.get(VisionDatasetManifestKeys.DATASET_CLASS)}' does not match '{cls.__name__}'.")
+            raise ValueError()
+        
+        paths = manifest.get(VisionDatasetManifestKeys.PATHS, None)
+        if not paths:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.PATHS}' key.")
+            raise ValueError()
+        manifest_dir = manifest_path.parent
+        
+        resolved_paths = {}
+        for key, rel_path in paths.items():
+            resolved_paths[key] = (manifest_dir / rel_path).resolve()
+        
+        creation_mode = manifest.get(VisionDatasetManifestKeys.CREATION_MODE)
+        # 1. Initialize from folders
+        
+        if creation_mode == "from_folders":
+            maker = cls.from_folders(
+                image_dir=resolved_paths["image_dir"],
+                annotation_dir=resolved_paths["annotation_dir"]
+            )
+        else:
+            _LOGGER.error(f"Unknown creation mode: {creation_mode}")
+            raise ValueError()
 
+        # 2. Set Class Map (required if manifest wast created)
+        saved_class_map = manifest.get(VisionDatasetManifestKeys.CLASS_MAP, None)
+        if not saved_class_map:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.CLASS_MAP}' key.")
+            raise ValueError()
+        maker.set_class_map(saved_class_map)
+            
+        # 3. Apply Splits
+        split_config = manifest.get(VisionDatasetManifestKeys.SPLIT_CONFIG, None)
+        if not split_config:
+            _LOGGER.error(f"Manifest is missing '{VisionDatasetManifestKeys.SPLIT_CONFIG}' key.")
+            raise ValueError()
+        
+        val_size = split_config.get("val_size", None)
+        if val_size is None:
+            _LOGGER.error(f"Manifest '{VisionDatasetManifestKeys.SPLIT_CONFIG}' is missing 'val_size'.")
+            raise ValueError()
+        test_size = split_config.get("test_size", 0.0)
+        random_state = split_config.get("random_state", 42)
+        
+        maker.split_data(
+            val_size=val_size,
+            test_size=test_size,
+            random_state=random_state
+        )
+        
+        # 4. Configure Transforms
+        recipe = manifest.get(VisionDatasetManifestKeys.TRANSFORM_RECIPE, {})
+        config = recipe.get(VisionTransformRecipeKeys.CONFIGURATION, {})
+        
+        if not config:
+            _LOGGER.warning(f"Manifest is missing '{VisionTransformRecipeKeys.CONFIGURATION}' in '{VisionDatasetManifestKeys.TRANSFORM_RECIPE}'. Using default transforms.")
+            maker.configure_transforms()
+        else:
+            maker.configure_transforms(**config)
+        
+        _LOGGER.info(f"📜 Dataset built from manifest '{manifest_path.name}'.")
+        
+        return maker
+    
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__}>:\n"
         s += f"  Total Image-Annotation Pairs: {len(self.image_paths)}\n"

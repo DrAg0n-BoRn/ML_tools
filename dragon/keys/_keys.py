@@ -108,6 +108,17 @@ class DatasetKeys:
     TARGET_CATEGORICAL = "categorical"
 
 
+class VisionDatasetManifestKeys:
+    """Keys for saving/loading a vision dataset manifest."""
+    DATASET_CLASS = "dataset_class"
+    CREATION_MODE = "creation_mode"
+    PATHS = "paths"
+    SPLIT_CONFIG = "split_config"
+    CLASS_MAP = "class_map"
+    TRANSFORM_RECIPE = "transform_recipe"
+    CALLABLE_REQUIREMENTS = "callable_requirements"
+
+
 class SHAPKeys:
     """Keys for SHAP functions"""
     FEATURE_COLUMN = "feature"
@@ -172,7 +183,9 @@ class VisionKeys:
 class VisionTransformRecipeKeys:
     """Defines the key names for the transform recipe JSON file."""
     TASK = "task"
+    CONFIGURATION = "configuration"
     PIPELINE = "pipeline"
+    
     NAME = "name"
     KWARGS = "kwargs"
     PRE_TRANSFORMS = "pre_transforms"

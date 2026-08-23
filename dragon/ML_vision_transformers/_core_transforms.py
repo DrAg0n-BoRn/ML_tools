@@ -20,6 +20,7 @@ __all__ = [
     "HistogramEqualization",
     "RandomHistogramEqualization",
     "_save_recipe",
+    "_load_recipe",
     "_load_recipe_and_build_transform",
 ]
 
@@ -217,6 +218,32 @@ def _save_recipe(recipe: dict[str, Any], filepath: Path) -> None:
         raise
 
 
+def _load_recipe(filepath: Union[str, Path]) -> dict[str, Any]:
+    """
+    Loads a transform recipe from a .json file into a dictionary.
+
+    Args:
+        filepath (Union[str, Path]): Path to the saved transform recipe .json file.
+
+    Returns:
+        dict[str, Any]: The loaded recipe dictionary.
+    """
+    final_filepath = make_fullpath(filepath, enforce="file")
+    
+    try:
+        with open(final_filepath, 'r') as f:
+            recipe = json.load(f)
+        
+        if VisionTransformRecipeKeys.PIPELINE not in recipe:
+            _LOGGER.error(f"Recipe file is invalid: missing '{VisionTransformRecipeKeys.PIPELINE}' key.")
+            raise ValueError()
+        
+        return recipe
+    except Exception as e:
+        _LOGGER.error(f"Failed to load recipe from '{final_filepath}': {e}")
+        raise
+
+
 def _load_recipe_and_build_transform(filepath: Union[str,Path]) -> transforms.Compose:
     """
     Loads a transform recipe from a .json file and reconstructs the
@@ -232,21 +259,9 @@ def _load_recipe_and_build_transform(filepath: Union[str,Path]) -> transforms.Co
         ValueError: If a transform name in the recipe is not found in
                     torchvision.transforms or the custom TRANSFORM_REGISTRY.
     """
-    # validate filepath
-    final_filepath = make_fullpath(filepath, enforce="file")
+    recipe = _load_recipe(filepath)
     
-    try:
-        with open(final_filepath, 'r') as f:
-            recipe = json.load(f)
-    except Exception as e:
-        _LOGGER.error(f"Failed to load recipe from '{final_filepath}': {e}")
-        raise
-        
     pipeline_steps: list[Callable] = []
-    
-    if VisionTransformRecipeKeys.PIPELINE not in recipe:
-        _LOGGER.error("Recipe file is invalid: missing 'pipeline' key.")
-        raise ValueError("Invalid recipe format.")
 
     for step in recipe[VisionTransformRecipeKeys.PIPELINE]:
         t_name = step[VisionTransformRecipeKeys.NAME]
@@ -263,7 +278,7 @@ def _load_recipe_and_build_transform(filepath: Union[str,Path]) -> transforms.Co
         # 3. Not found
         else:
             _LOGGER.error(f"Unknown transform '{t_name}' in recipe. Not found in torchvision.transforms or TRANSFORM_REGISTRY.")
-            raise ValueError(f"Unknown transform name: {t_name}")
+            raise ValueError()
             
         # Instantiate the transform
         try:
@@ -272,6 +287,5 @@ def _load_recipe_and_build_transform(filepath: Union[str,Path]) -> transforms.Co
             _LOGGER.error(f"Failed to instantiate transform '{t_name}' with kwargs {t_kwargs}: {e}")
             raise
             
-    _LOGGER.info(f"Successfully loaded and built transform pipeline from '{final_filepath.name}'.")
+    _LOGGER.info(f"Successfully loaded and built transform pipeline from '{filepath}'.")
     return transforms.Compose(pipeline_steps)
-

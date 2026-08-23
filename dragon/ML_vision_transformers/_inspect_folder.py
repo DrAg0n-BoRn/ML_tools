@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional
 from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-def inspect_folder(path: Union[str, Path]) -> None:
+def inspect_folder(directory: Union[str, Path], save_dir_log: Optional[Union[str, Path]] = None) -> None:
     """
     Logs a report of the types, sizes, and channels of image files
     found in the directory and its subdirectories.
@@ -27,9 +27,15 @@ def inspect_folder(path: Union[str, Path]) -> None:
     issues (e.g., mixed image modes, corrupted files).
 
     Args:
-        path (str, Path): The directory path to inspect.
+        directory (str, Path): The directory path to inspect.
+        save_dir_log (str, Path, optional): The directory where the log file will be saved. If not provided, the log will be saved at the same level as the inspected folder.
     """
-    path_obj = make_fullpath(path, make=False, enforce="directory")
+    path_obj = make_fullpath(directory, make=False, enforce="directory")
+    
+    save_dir_log_path = None
+    if save_dir_log is not None:
+        save_dir_log_path = make_fullpath(save_dir_log, make=True, enforce="directory")
+   
 
     non_image_files = set()
     permission_denied_files = set()
@@ -39,7 +45,7 @@ def inspect_folder(path: Union[str, Path]) -> None:
     img_counter = 0
     non_image_counter = 0
 
-    _LOGGER.info(f"Inspecting folder: {path_obj}...")
+    _LOGGER.info(f"Inspecting folder: '{path_obj}'.")
     
     # Use rglob to recursively find all files
     for filepath in path_obj.rglob('*'):
@@ -52,7 +58,7 @@ def inspect_folder(path: Union[str, Path]) -> None:
                     img_channels.update(img.getbands())
                     img_counter += 1
             except PermissionError:
-                _LOGGER.warning(f"Permission denied: {filepath.name}")
+                _LOGGER.warning(f"Permission denied: '{filepath.name}'")
                 permission_denied_files.add(str(filepath))
             except (OSError, SyntaxError, UnidentifiedImageError, Image.DecompressionBombError):
                 non_image_files.add(str(filepath))
@@ -97,9 +103,14 @@ def inspect_folder(path: Union[str, Path]) -> None:
         }
     }
 
-    # Save log at the same level as the root directory inspected
-    save_dir = path_obj.parent
-    log_name = f"inspection_report_{path_obj.name}"
+    if save_dir_log_path is None:
+        # Save log at the same level as the inspected folder
+        save_dir = path_obj.parent
+    else:
+        # Save log in the user-specified directory
+        save_dir = save_dir_log_path
+    
+    log_name = f"inspection_report-{path_obj.name}-"
     
     custom_logger(
         data=log_data,

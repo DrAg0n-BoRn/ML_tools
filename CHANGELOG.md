@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.5.0] 2026-08-23
+
+### Added
+
+- ML_datasetmaster:
+    - Added `transform_recipe` attribute to `_BaseVisionDataset` to securely persist the transformation recipe in memory state.
+    - Added `_populate_transform_recipe()` method to `_BaseVisionDataset` to assemble the recipe dictionary, including task names and pipelines.
+    - Added `load_and_configure_transforms()` method to `_BaseVisionDataset` to load a JSON recipe, parse the configuration arguments, and dynamically apply them to the datasets with support for `**override_kwargs`.
+    - Added `VisionTransformRecipeKeys.CONFIGURATION` to the saved recipe dictionary to capture and self-document the exact parameters used during configuration.
+    - Added `save_dataset_manifest()` method to `_BaseVisionDataset` to securely persist the complete dataset state (relative source paths, split configurations, class maps, and transform recipes) to a JSON file.
+    - Added `from_manifest()` class method to `DragonDatasetImageClassification`, `DragonDatasetObjectDetection`, and `DragonDatasetSegmentation` for exact and safe dataset reconstruction bypassing tensor serialization.
+    - Added state tracking attributes (`_creation_mode`, `_source_paths`, `_split_config`, `_callable_requirements`) to `_BaseVisionDataset` to support robust manifest generation.
+    - Added explicit validation in `DragonDatasetImageClassification.from_manifest()` to require and inject un-serializable callables (`pre_transforms`, `extra_train_transforms`) if the manifest indicates they were used during creation.
+    - Added new property `image_channels` to `_BaseVisionDataset` to dynamically determine the number of channels in the dataset images, returning an integer value (1 for grayscale, 3 for RGB, etc.).
+
+- ML_vision_transformers:
+    - Added `_load_recipe()` helper function in `_core_transforms.py` to isolate JSON parsing from PyTorch object reconstruction.
+
+### Changed
+
+- ML_datasetmaster:
+    - Streamlined `save_transform_recipe()` in `_BaseVisionDataset` to strictly handle file validation and saving of the populated `transform_recipe` attribute.
+    - Promoted `configure_transforms()` to an abstract method in `_BaseVisionDataset` to enforce a unified configuration contract across subclasses.
+    - Updated `configure_transforms()` in `DragonDatasetObjectDetection`, `DragonDatasetSegmentation`, and `DragonDatasetImageClassification` to capture parameters into `self._config_kwargs`.
+
+- ML_vision_transformers:
+    - Refactored `_load_recipe_and_build_transform()` in `_core_transforms.py` to call the new `_load_recipe()` helper internally, maintaining full backward compatibility.
+    - `inspect_folder()`: Added `save_dir_log` parameter to allow users to specify a custom directory for saving the inspection log file. If not provided, the log will be saved at the same level as the inspected folder.
+
+### Removed
+
+- ML_datasetmaster:
+    - Removed common method `images_per_dataset()` from `_BaseVisionDataset` and all subclasses. This method was redundant and not widely used, and its functionality can be easily achieved through standard dataset length checks.
+
+
 ## [26.4.0] 2026-08-22
 
 ### Added
