@@ -78,7 +78,7 @@ class TqdmProgressBar(_Callback):
 
     def on_train_begin(self, logs=None):
         self.epochs = self.trainer.epochs # type: ignore
-        self.epoch_bar = tqdm(total=self.epochs, desc="Training Progress")
+        self.epoch_bar = tqdm(total=self.epochs, desc="🐲 Training Progress")
 
     def on_epoch_begin(self, epoch, logs=None):
         total_batches = len(self.trainer.train_loader) # type: ignore

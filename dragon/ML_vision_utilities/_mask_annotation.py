@@ -3,7 +3,7 @@ from PIL import Image
 from pathlib import Path
 import re
 from collections import defaultdict
-from typing import Union
+from typing import Union, Literal
 
 from .._core import get_logger
 from ..path_manager import make_fullpath
@@ -15,10 +15,34 @@ _LOGGER = get_logger("Mask Annotation")
 __all__ = [
     "merge_masks",
     "merge_masks_with_inferred_class",
+    "convert_masks_mode",
 ]
 
 
 LABEL_STUDIO_PATTERN = re.compile(r"^(.*?)-tag-(.*?)(?:-\d+)?\.png$")
+
+
+def _generate_color_palette() -> list[int]:
+    """Generates a distinct color palette for P mode images (768 integers)."""
+    palette = [0, 0, 0]  # Class 0: Black
+    
+    # Standard distinct colors for classes 1-20
+    colors = [
+        (230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), 
+        (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230), 
+        (210, 245, 60), (250, 190, 212), (0, 128, 128), (220, 190, 255), 
+        (170, 110, 40), (255, 250, 200), (128, 0, 0), (170, 255, 195), 
+        (128, 128, 0), (255, 215, 180), (0, 0, 128), (128, 128, 128)
+    ]
+    for r, g, b in colors:
+        palette.extend([r, g, b])
+        
+    # Pad the rest up to 256 colors * 3 channels = 768 values
+    remaining_colors = 256 - (len(palette) // 3)
+    for i in range(remaining_colors):
+        palette.extend([i, i, i])
+        
+    return palette
 
 
 def merge_masks(input_dir: Union[Path, str], 
@@ -29,7 +53,7 @@ def merge_masks(input_dir: Union[Path, str],
     task name, merges them into a single 2D array per task, and saves the output.
     
     The function uses a regular expression to parse filenames in the format 
-    '<base_task>-tag-<label_name>[-<optional_index>].png'. 
+    `<base_task>-tag-<label_name>[-<optional_index>].png`. 
     
     It processes each group of 
     images belonging to the same base task, assigning pixel values based on the provided 
@@ -80,10 +104,13 @@ def merge_masks(input_dir: Union[Path, str],
                 merged_mask[mask_array > 127] = class_id
                 
         current_output_path = output_path / f"{base_task}.png"
-        Image.fromarray(merged_mask).save(current_output_path)
+        
+        out_img = Image.fromarray(merged_mask, mode="P")
+        out_img.putpalette(_generate_color_palette())
+        out_img.save(current_output_path)
         
     _LOGGER.info(f"Successfully saved {len(grouped_tasks)} merged output images.")
-
+    
 
 def merge_masks_with_inferred_class(
     input_dir: Union[Path, str], 
@@ -93,10 +120,10 @@ def merge_masks_with_inferred_class(
 ) -> None:
     """
     Merges individual segmentation masks into a single image, initializing the base 
-    canvas with an inferred class ID and carving out a specific background.
+    canvas with an inferred class ID and carving out specific regions.
     
     The function uses a regular expression to parse filenames in the format 
-    '<base_task>-tag-<label_name>[-<optional_index>].png'. 
+    `<base_task>-tag-<label_name>[-<optional_index>].png`. 
 
     This function is designed for scenarios where the entire image should default to a 
     specific class (the inferred class), except for areas explicitly marked as 'Background' or other specific labels.
@@ -165,6 +192,75 @@ def merge_masks_with_inferred_class(
                 merged_mask[mask_array > 127] = class_id
                 
         current_output_path = output_path / f"{base_task}.png"
-        Image.fromarray(merged_mask).save(current_output_path)
+        
+        out_img = Image.fromarray(merged_mask, mode="P")
+        out_img.putpalette(_generate_color_palette())
+        out_img.save(current_output_path)
         
     _LOGGER.info(f"Successfully saved {len(grouped_tasks)} merged output images.")
+
+
+def convert_masks_mode(
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path],
+    convert_to: Literal["L", "P"],
+    verbose: int = 2
+) -> None:
+    """
+    Converts a directory of PNG segmentation masks to the specified image mode ("L" or "P").
+    
+    Safely handles the transition between Grayscale ("L") and Palette ("P") modes 
+    by extracting the raw underlying integer data to prevent destructive color conversions.
+    
+    Args:
+        input_dir (Union[str, Path]): Directory containing the input masks (PNG files).
+        output_dir (Union[str, Path]): Directory to save the converted masks.
+        convert_to (Literal["L", "P"]): The desired output image mode.
+            - L: Grayscale (8-bit pixels, black and white)
+            - P: Palette (8-bit pixels, mapped to a color palette)
+        verbose (int): Verbosity level for logging.
+    """
+    if convert_to not in {"L", "P"}:
+        _LOGGER.error(f"Invalid mode '{convert_to}'. Must be 'L' or 'P'.")
+        raise ValueError()
+
+    input_path = make_fullpath(input_dir, make=False, enforce="directory")
+    output_path = make_fullpath(output_dir, make=True, enforce="directory")
+    
+    input_files = list(input_path.glob("*.png"))
+    if not input_files:
+        _LOGGER.error(f"Input directory is empty or contains no PNGs: {input_path}")
+        return
+    
+    if verbose >= 3:
+        _LOGGER.info(f"Found {len(input_files)} images to convert to mode '{convert_to}'.")
+    
+    palette = _generate_color_palette() if convert_to == "P" else None
+    
+    converted_count = 0
+    invalid_conversions = []
+    for file_path in input_files:
+        try:
+            with Image.open(file_path) as img:
+                if img.mode not in {"L", "P"}:
+                    if verbose >= 3:
+                        _LOGGER.warning(f"File '{file_path.name}' is in mode '{img.mode}'. Attempting to extract raw array.")
+                
+                raw_array = np.array(img)
+                out_img = Image.fromarray(raw_array, mode=convert_to)
+                
+                if convert_to == "P" and palette:
+                    out_img.putpalette(palette)
+                    
+                out_img.save(output_path / file_path.name)
+                converted_count += 1
+        except Exception as e:
+            if verbose >= 3:
+                _LOGGER.warning(f"Failed to convert '{file_path.name}': {e}")
+            invalid_conversions.append(file_path.name)
+    
+    if verbose >= 2:
+        _LOGGER.info(f"Processed {converted_count} valid mask files in '{input_path}'.")
+        
+    if invalid_conversions and verbose >= 1:
+        _LOGGER.warning(f"Skipped {len(invalid_conversions)} invalid files: {invalid_conversions}")

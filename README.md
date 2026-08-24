@@ -82,6 +82,7 @@ ML_scaler
 ML_trainer
 ML_utilities
 ML_vision_transformers
+ML_vision_utilities
 optimization_tools
 outlier_detection
 path_manager
@@ -218,6 +219,7 @@ ML_inference
 ML_inference_sequence
 ML_inference_vision # Requires: torchvision and Pillow
 ML_vision_transformers # Requires: torchvision and Pillow
+ML_vision_utilities # Requires: torchvision and Pillow
 ML_scaler
 path_manager
 schema

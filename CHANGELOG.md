@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [26.6.0] 2026-08-24
+
+### Added
+
+- New module: "ML_vision_utilities" for vision related tasks.
+    - `count_mask_pixels_by_class()` to safely calculate class pixel distributions across "L" and "P" mode masks.
+    - `convert_masks_mode()` to safely transition segmentation masks between "L" (grayscale) and "P" (palette) modes without data loss.
+
+### Changed
+
+- Moved functions from "ML_vision_transformers" to "ML_vision_utilities" for better modularity and separation of concerns:
+    - `make_tiled_dataset()`
+    - `make_tiled_inference()`
+    - `reconstruct_mask_overlapped_tiles()`
+    - `merge_masks()`
+    - `merge_masks_with_inferred_class()`
+    - `inspect_folder()`
+    - Updated `merge_masks()` and `merge_masks_with_inferred_class()` to output standard "P" mode images with an embedded color palette for easier visual inspection.
+
+- ML_datasetmaster:
+    - `DragonDatasetSegmentation` Modified inner dataset class `_SegmentationDataset` loading pipelines to natively support "P" mode mask extraction, preventing destructive Pillow grayscale conversions and preserving exact class IDs.
+
+
 ## [26.5.0] 2026-08-23
 
 ### Added

@@ -51,7 +51,13 @@ class _SegmentationDataset(Dataset):
             with open(img_path, 'rb') as f_img:
                 image = Image.open(f_img).convert("RGB")
             with open(mask_path, 'rb') as f_mask:
-                mask = Image.open(f_mask).convert("L")
+                raw_mask = Image.open(f_mask)
+                
+                if raw_mask.mode == "P":
+                    # Extract raw integer indices directly
+                    mask = Image.fromarray(numpy.array(raw_mask), mode="L")
+                else:
+                    mask = raw_mask.convert("L")
         except Exception as e:
             _LOGGER.error(f"Error loading sample #{idx}: {img_path.name} / {mask_path.name}. Error: {e}")
             # Fallback to the next index to prevent DataLoader collate crashes

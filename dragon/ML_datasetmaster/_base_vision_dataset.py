@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import os
 
 from ..ML_vision_transformers._core_transforms import _save_recipe, _load_recipe
-from ..ML_vision_transformers._inspect_folder import inspect_folder
+from ..ML_vision_utilities._inspect_folder import inspect_folder
 
 from ..IO_tools import save_json
 from ..path_manager import make_fullpath, sanitize_filename
