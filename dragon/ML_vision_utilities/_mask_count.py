@@ -63,16 +63,14 @@ def count_mask_pixels_by_class(
                     invalid_files.append(file_path.name)
                     continue
                 
+                # For both 'P' and 'L', np.array safely extracts the raw 8-bit integer indices
+                mask_array = np.array(img)
+    
         except Exception as e:
             if verbose >= 3:
                 _LOGGER.warning(f"Failed to read '{file_path.name}': {e}")
             invalid_files.append(file_path.name)
             continue
-        
-        else:
-            # For both 'P' and 'L', np.array safely extracts the raw 8-bit integer indices
-            mask_array = np.array(img)
-            
 
         class_counts = {}
         for class_name, class_value in class_map.items():

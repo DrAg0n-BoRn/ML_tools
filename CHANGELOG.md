@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [26.6.1] 2026-08-25
+
+### Fixed
+
+- ML_vision_utilities:
+    - `count_mask_pixels_by_class()`: Fixed a bug where the image would be closed before the array was stored.
+
+
 ## [26.6.0] 2026-08-24
 
 ### Added
