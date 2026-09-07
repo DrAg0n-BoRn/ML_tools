@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.7.0] 2026-09-07
+
+### Added
+
+- utilities:
+    - `merge_dataframes_horizontal()`: Introduces independent `allow_varying_lengths` and `force_index_match` flags to strictly control row alignment and sentinel selection.
+    - `merge_dataframes_vertical()`: Includes a `strict_mode` flag to safely handle datasets with varying column sets.
+
+### Removed
+
+- utilities:
+    - `merge_dataframes()`: Replaced by the strictly directional horizontal and vertical functions to prevent ambiguous Pandas outer-join behaviors and improve overall robustness.
+
 
 ## [26.6.1] 2026-08-25
 

@@ -9,7 +9,8 @@ from ._utility_save_load import (
 )
 
 from ._utility_tools import (
-    merge_dataframes,
+    merge_dataframes_horizontal,
+    merge_dataframes_vertical,
     distribute_dataset_by_target,
     train_dataset_orchestrator,
     train_dataset_yielder
@@ -33,7 +34,8 @@ __all__ = [
     "save_dataframe_filename",
     "save_dataframe",
     "save_dataframe_with_schema",
-    "merge_dataframes",
+    "merge_dataframes_horizontal",
+    "merge_dataframes_vertical",
     "translate_dataframe_columns",
     "create_translation_template",
     "audit_column_translation",

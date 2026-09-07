@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from plotnine import ggplot, labs, theme, element_blank # type: ignore
 
-from ..utilities import load_dataframe, merge_dataframes, save_dataframe_filename
+from ..utilities import load_dataframe, merge_dataframes_horizontal, save_dataframe_filename
 from ..schema import FeatureSchema
 
 from ..math_utilities import discretize_categorical_values
@@ -237,10 +237,8 @@ class DragonMICE:
             column_names=imputed_column_names
         )
         
-        final_df = merge_dataframes(
-            imputed_datasets[0], 
-            df_targets_to_save, 
-            direction="horizontal", 
+        final_df = merge_dataframes_horizontal(
+            [imputed_datasets[0], df_targets_to_save],
             verbose=False
         )
         
@@ -301,7 +299,7 @@ class DragonMICE:
 
 def _save_imputed_datasets(save_dir: Union[str, Path], imputed_datasets: list, df_targets: pd.DataFrame, imputed_dataset_names: list[str]):
     for imputed_df, subname in zip(imputed_datasets, imputed_dataset_names):
-        merged_df = merge_dataframes(imputed_df, df_targets, direction="horizontal", verbose=False)
+        merged_df = merge_dataframes_horizontal([imputed_df, df_targets], verbose=False)
         save_dataframe_filename(df=merged_df, save_dir=save_dir, filename=subname, verbose=2)
 
 
@@ -454,4 +452,3 @@ def get_imputed_distributions(kernel: mf.ImputationKernel, df_name: str, root_di
             _process_figure(fig, feature)
 
     _LOGGER.info(f"📊 MICE Imputed distributions complete.")
-    

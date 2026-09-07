@@ -12,63 +12,131 @@ _LOGGER = get_logger("Dataframe Tools")
 
 
 __all__ = [
-    "merge_dataframes",
+    "merge_dataframes_horizontal",
+    "merge_dataframes_vertical",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder"
 ]
 
 
-def merge_dataframes(
-    *dfs: pd.DataFrame,
+def merge_dataframes_horizontal(
+    dfs: list[pd.DataFrame], *,
     reset_index: bool = False,
-    direction: Literal["horizontal", "vertical"] = "horizontal",
-    verbose: bool=True
+    force_index_match: bool = False,
+    allow_varying_lengths: bool = False,
+    verbose: bool = True,
 ) -> pd.DataFrame:
     """
-    Merges multiple DataFrames either horizontally or vertically.
+    Merges multiple DataFrames horizontally (adding columns).
+    
+    If allowing varying lengths, the longest DataFrame is used as the sentinel for index alignment.
 
     Parameters:
-        *dfs (pd.DataFrame): Variable number of DataFrames to merge.
+        dfs (list[pd.DataFrame]): A list of Pandas DataFrames to merge.
         reset_index (bool): Whether to reset index in the final merged DataFrame.
-        direction (["horizontal" | "vertical"]):
-            - "horizontal": Merge on index, adding columns.
-            - "vertical": Append rows; all DataFrames must have identical columns.
+        force_index_match (bool): If True, overwrites the index of subsequent datasets 
+                                  to match the sentinel DataFrame; or add new rows if `allow_varying_lengths` is True.
+        allow_varying_lengths (bool): If True, allows different row counts and uses the 
+                                      longest DataFrame as the sentinel. If False, strictly 
+                                      enforces equal lengths.
+        verbose (bool): Whether to print shape information.
 
     Returns:
-        pd.DataFrame: A single merged DataFrame.
-
-    Raises:
-        ValueError:
-            - If fewer than 2 DataFrames are provided.
-            - If indexes do not match for horizontal merge.
-            - If column names or order differ for vertical merge.
+        pd.DataFrame: A single horizontally merged DataFrame.
     """
     if len(dfs) < 2:
-        raise ValueError("❌ At least 2 DataFrames must be provided.")
+        _LOGGER.error("At least 2 DataFrames must be provided for horizontal merge.")
+        raise ValueError()
     
     if verbose:
+        extra_info = ""
         for i, df in enumerate(dfs, start=1):
-            print(f"➡️ DataFrame {i} shape: {df.shape}")
+            extra_info += f"➡️ DataFrame {i} shape: {df.shape}\n"
+        _LOGGER.info(f"Horizontal merge details:\n{extra_info}")
     
-
-    if direction == "horizontal":
-        reference_index = dfs[0].index
-        for i, df in enumerate(dfs, start=1):
-            if not df.index.equals(reference_index):
-                raise ValueError(f"❌ Indexes do not match: Dataset 1 and Dataset {i}.")
-        merged_df = pd.concat(dfs, axis=1)
-
-    elif direction == "vertical":
-        reference_columns = dfs[0].columns
-        for i, df in enumerate(dfs, start=1):
-            if not df.columns.equals(reference_columns):
-                raise ValueError(f"❌ Column names/order do not match: Dataset 1 and Dataset {i}.")
-        merged_df = pd.concat(dfs, axis=0)
-
+    # 1. Length/Sentinel Logic
+    if allow_varying_lengths:
+        sentinel_df = max(dfs, key=len)
+        sentinel_index = dfs.index(sentinel_df) + 1  # +1 for human-readable index
     else:
-        _LOGGER.error(f"Invalid merge direction: {direction}")
+        sentinel_df = dfs[0]
+        sentinel_index = 1  # First dataset is the sentinel
+        # check that all DataFrames have the same length
+        for i, df in enumerate(dfs, start=1):
+            if len(df) != len(sentinel_df):
+                _LOGGER.error(f"Length mismatch: Sentinel-Dataset ({sentinel_index}) has length {len(sentinel_df)}, Dataset {i} has length {len(df)}.")
+                raise ValueError()
+    
+    reference_index = sentinel_df.index
+    
+    processed_dfs = []
+    
+    for i, df in enumerate(dfs, start=1):
+        # 2. Index Logic
+        if force_index_match:
+            df_adjusted = df.copy()
+            df_adjusted.index = reference_index[:len(df)]
+            processed_dfs.append(df_adjusted)
+        else:
+            # If not forcing index, and not allowing varying lengths, ensure 
+            # exact index equality so Pandas doesn't silently generate NaN rows.
+            if not allow_varying_lengths and not df.index.equals(reference_index):
+                _LOGGER.error(f"Index mismatch: Sentinel-Dataset ({sentinel_index}) index does not match Dataset {i} index.")
+                raise ValueError()
+            
+            processed_dfs.append(df)
+
+    merged_df = pd.concat(processed_dfs, axis=1)
+
+    if reset_index:
+        merged_df = merged_df.reset_index(drop=True)
+    
+    if verbose:
+        _LOGGER.info(f"Merged DataFrame shape: {merged_df.shape}")
+
+    return merged_df
+
+
+def merge_dataframes_vertical(
+    dfs: list[pd.DataFrame], *,
+    reset_index: bool = True,
+    strict_mode: bool = True,
+    verbose: bool = True
+) -> pd.DataFrame:
+    """
+    Merges multiple DataFrames vertically (appending rows).
+
+    Parameters:
+        dfs (list[pd.DataFrame]): List of Pandas DataFrames to merge.
+        reset_index (bool): Whether to reset index in the final merged DataFrame.
+        strict_mode (bool): If True, all DataFrames must have the exact same set of columns 
+                            (regardless of order). If False, allows varying columns; the 
+                            first DataFrame sets the initial column order, and new columns 
+                            are appended to the right.
+        verbose (bool): Whether to print shape information.
+
+    Returns:
+        pd.DataFrame: A single vertically merged DataFrame.
+    """
+    if len(dfs) < 2:
+        _LOGGER.error("At least 2 DataFrames must be provided for vertical merge.")
         raise ValueError()
+    
+    if verbose:
+        extra_info = ""
+        for i, df in enumerate(dfs, start=1):
+            extra_info += f"➡️ DataFrame {i} shape: {df.shape}\n"
+        _LOGGER.info(f"Vertical merge details:\n{extra_info}")
+
+    if strict_mode:
+        reference_columns = set(dfs[0].columns)
+        for i, df in enumerate(dfs[1:], start=2):
+            if set(df.columns) != reference_columns:
+                _LOGGER.error(f"Column mismatch: Dataset 1 columns {reference_columns} do not match Dataset {i} columns {set(df.columns)}.")
+                raise ValueError()
+    
+    merged_df = pd.concat(dfs, axis=0)
 
     if reset_index:
         merged_df = merged_df.reset_index(drop=True)
