@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from typing import Literal
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 
 from ._base_classification_loss import _BaseClassificationLoss
 from ._z_helpers import _apply_reduction
@@ -79,7 +79,7 @@ class PolyLoss(_BaseClassificationLoss):
         return base_loss + self.epsilon * (1.0 - p_t)
 
 
-class AsymmetricLoss(torch.nn.Module):
+class AsymmetricLoss(torch.nn.Module, ClassNameMixin):
     """
     Computes the Asymmetric Loss (ASL) for binary and multi-class classification tasks.
     

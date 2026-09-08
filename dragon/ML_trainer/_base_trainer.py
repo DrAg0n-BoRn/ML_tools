@@ -454,11 +454,28 @@ class _BaseDragonTrainer(ABC):
             _LOGGER.warning("Training history is empty. No training metrics will be logged.")
         else:
             resolved_history = self.history
+            
+        # additional information: callbacks, criterion.
+        extra_info: Optional[dict[str, Any]] = dict()
+        if self.callbacks:
+            extra_info['callbacks'] = [cb.__class__.__name__ for cb in self.callbacks]
+        if self.criterion:
+            if isinstance(self.criterion, nn.Module):
+                extra_info['criterion'] = self.criterion.__class__.__name__
+            elif isinstance(self.criterion, dict):
+                extra_info['criterion'] = {k: v.__class__.__name__ for k, v in self.criterion.items()}
+        
+        # skip passing empty extra_info
+        if not extra_info:
+            if verbose >= 2:
+                _LOGGER.info("No callbacks or criterion information found.")
+            extra_info = None
         
         train_logger(train_config=train_config,
                      model_parameters=model_parameters,
                      train_history=resolved_history,
                      save_directory=self.training_directory_root,
+                     extra_info=extra_info,
                      verbose=verbose)
 
     def _callbacks_hook(self, method_name: str, *args, **kwargs):

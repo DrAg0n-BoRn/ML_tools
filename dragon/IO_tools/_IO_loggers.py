@@ -173,6 +173,7 @@ def train_logger(train_config: Union[dict, Any],
                  model_parameters: Union[dict, Any, None],
                  train_history: Union[dict, None],
                  save_directory: Union[str, Path],
+                 extra_info: Union[dict, None] = None,
                  verbose: int = 3) -> None:
     """
     Logs training data to JSON, adding a timestamp to the filename.
@@ -181,6 +182,7 @@ def train_logger(train_config: Union[dict, Any],
         train_config (dict | Any): Training configuration parameters. If object, must have a `.to_log()` method returning a dict.
         model_parameters (dict | Any | None): Model parameters. If object, must have a `.to_log()` method returning a dict.
         train_history (dict | None): Training history log.
+        extra_info (dict | None): Additional information to include in the log.
         save_directory (str | Path): Directory to save the log file.
     """
     # 1. Resolve train_config
@@ -220,7 +222,19 @@ def train_logger(train_config: Union[dict, Any],
     # 3. Combine data
     data: dict = train_config_dict | model_parameters_dict
     
-    # 4. Add training history
+    # 4. Add extra_info
+    if extra_info is not None:
+        if not isinstance(extra_info, dict):
+            _LOGGER.error("'extra_info' must be a dict or None.")
+            raise ValueError()
+            
+        if not extra_info:
+            if verbose >= 1:
+                _LOGGER.warning("'extra_info' dictionary was provided but is empty.")
+        else:
+            data.update(extra_info)
+    
+    # 5. Add training history
     if train_history is not None:
         if not isinstance(train_history, dict):
             _LOGGER.error("'train_history' must be a dict or None.")

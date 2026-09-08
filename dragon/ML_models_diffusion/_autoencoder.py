@@ -5,6 +5,7 @@ import math
 
 from ..schema import FeatureSchema
 from ..keys._keys import SchemaKeys
+
 from ._base_autoencoder import _BaseAutoencoder
 
 

@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-class _BaseMLP(nn.Module, _ArchitectureHandlerMixin):
+class _BaseMLP(_ArchitectureHandlerMixin):
     """
     A base class for Multilayer Perceptrons.
     

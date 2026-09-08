@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Literal
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 
 from ._z_helpers import _apply_reduction
 
@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-class LogCoshLoss(nn.Module):
+class LogCoshLoss(nn.Module, ClassNameMixin):
     """
     Computes the Log-Cosh Loss for regression tasks.
     
@@ -50,7 +50,7 @@ class LogCoshLoss(nn.Module):
         return _apply_reduction(loss, self.reduction)
 
 
-class QuantileLoss(nn.Module):
+class QuantileLoss(nn.Module, ClassNameMixin):
     """
     Computes the Quantile (Pinball) Loss for regression tasks.
     
@@ -85,7 +85,7 @@ class QuantileLoss(nn.Module):
         return _apply_reduction(loss, self.reduction)
 
 
-class WingLoss(nn.Module):
+class WingLoss(nn.Module, ClassNameMixin):
     """
     Computes the Wing Loss for regression tasks requiring high precision.
     

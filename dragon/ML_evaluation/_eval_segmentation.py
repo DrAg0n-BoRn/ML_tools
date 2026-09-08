@@ -286,7 +286,7 @@ def segmentation_metrics(
         # Sort by value (index) to ensure correct metric alignment
         sorted_map = sorted(class_map.items(), key=lambda item: item[1])
         labels = np.array([val for _, val in sorted_map])
-        display_names = [wrap_text(name) for name, _ in sorted_map]
+        display_names = [wrap_text(name, width=format_config.wrap_text_width) for name, _ in sorted_map]
         
         if len(present_labels) > 0 and not np.all(np.isin(present_labels, labels)):
             _LOGGER.warning("Data contains label indices not present in the expected class mapping.")

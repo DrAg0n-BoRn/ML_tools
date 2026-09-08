@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from ..schema import FeatureSchema
 from ..ML_utilities import inspect_model_architecture
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 from ..path_manager import make_fullpath
 from ..keys._keys import PytorchModelArchitectureKeys, SchemaKeys
 
@@ -22,7 +22,7 @@ __all__ = [
 
 ##################################
 # Mixin class for saving and loading basic model architectures
-class _ArchitectureHandlerMixin:
+class _ArchitectureHandlerMixin(nn.Module, ClassNameMixin, ABC):
     """
     A mixin class to provide save and load functionality for model architectures.
     """
@@ -140,13 +140,11 @@ class _ArchitectureHandlerMixin:
 ##################################
 # Base class for loading and saving advanced models
 ##################################
-class _ArchitectureBuilder(_ArchitectureHandlerMixin, nn.Module, ABC):
+class _ArchitectureBuilder(_ArchitectureHandlerMixin, ABC):
     """
-    Base class for Dragon models that unifies architecture handling.
+    Base class for Dragon models that use a FeatureSchema.
     
-    Implements:
-    - JSON serialization and JSON deserialization with automatic FeatureSchema reconstruction.
-    - Standardized string representation (__repr__) showing hyperparameters.
+    Implements FeatureSchema reconstruction.
     """
     def __init__(self):
         super().__init__()

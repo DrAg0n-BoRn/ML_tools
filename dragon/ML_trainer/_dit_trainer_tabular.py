@@ -460,7 +460,7 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
         super().to_cpu()
         self.token_embedder.to(self.device)
         
-    def to_device(self, device: str):
+    def to_device(self, device: str, verbose: bool = True):
         """Moves the trainer, model, and token embedder to the specified device."""
-        super().to_device(device)
+        super().to_device(device, verbose)
         self.token_embedder.to(self.device)

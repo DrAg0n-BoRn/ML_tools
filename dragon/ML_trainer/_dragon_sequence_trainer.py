@@ -579,12 +579,12 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                 if is_categorical:
                     sequence_to_sequence_classification_metrics(
                         y_true=y_true, y_pred=y_pred, save_dir=target_save_dir, 
-                        config=format_configuration
+                        config=format_configuration # type: ignore
                     )
                 else:
                     sequence_to_sequence_regression_metrics(
                         y_true=y_true, y_pred=y_pred, save_dir=target_save_dir, 
-                        config=format_configuration
+                        config=format_configuration # type: ignore
                     )
 
     def explain_captum(self,

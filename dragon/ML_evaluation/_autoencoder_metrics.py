@@ -65,7 +65,7 @@ def autoencoder_metrics(
         format_config = FormatAutoencoderMetrics()
     else:
         format_config = config
-        
+    
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
 
     overall_report_lines = ["--- Autoencoder Global Reconstruction Report ---"]
@@ -235,7 +235,7 @@ def _evaluate_categorical_features(
         y_pred_c = cat_pred_list[i]
         
         # wrap feature name for title
-        wrapped_feat_name = wrap_text(feat_name)
+        wrapped_feat_name = wrap_text(feat_name, width=format_config.wrap_text_width)
         
         acc = accuracy_score(y_true_c, y_pred_c)
         f1_macro = f1_score(y_true_c, y_pred_c, average='macro', zero_division=0)
@@ -258,7 +258,7 @@ def _evaluate_categorical_features(
             if class_map is not None:
                 sorted_map = sorted(class_map.items(), key=lambda item: item[1])
                 # Apply wrap_text to the display labels for the confusion matrix axes
-                plot_display_labels = [wrap_text(item[0]) for item in sorted_map]
+                plot_display_labels = [wrap_text(item[0], width=format_config.wrap_text_width) for item in sorted_map]
                 plot_labels = [item[1] for item in sorted_map]
 
         n_classes = len(plot_labels) if plot_labels is not None else len(np.unique(y_true_c))
@@ -401,9 +401,9 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             # Sort by MAE (ascending, so best/lowest error is at the top)
             sorted_indices = np.argsort(mae_scores)
             sorted_maes = [mae_scores[i] for i in sorted_indices]
-            sorted_names = [wrap_text(num_target_names[i]) for i in sorted_indices]
+            sorted_names = [wrap_text(num_target_names[i], width=format_config.wrap_text_width) for i in sorted_indices]
             
-            fig_height_num = max(6.0, len(num_target_names) * 0.8)
+            fig_height_num = max(8.0, len(num_target_names))
             fig_num, ax_num = plt.subplots(figsize=(15, fig_height_num), dpi=DPI_value)
             
             ax_num.spines['top'].set_visible(False)
@@ -441,9 +441,9 @@ def _plot_global_feature_performance(y_true_num: Optional[np.ndarray],
             # Sort by F1 (descending, so best/highest score is at the top)
             sorted_indices = np.argsort(f1_scores)[::-1]
             sorted_f1s = [f1_scores[i] for i in sorted_indices]
-            sorted_cat_names = [wrap_text(cat_target_names[i]) for i in sorted_indices]
+            sorted_cat_names = [wrap_text(cat_target_names[i], width=format_config.wrap_text_width) for i in sorted_indices]
             
-            fig_height_cat = max(6.0, len(cat_target_names) * 0.8)
+            fig_height_cat = max(8.0, len(cat_target_names))
             fig_cat, ax_cat = plt.subplots(figsize=(15, fig_height_cat), dpi=DPI_value)
             
             ax_cat.spines['top'].set_visible(False)
@@ -624,11 +624,11 @@ def _plot_error_correlation_heatmap(y_true_num: Optional[np.ndarray],
         cross_corr = np.nan_to_num(cross_corr, nan=0.0)
         
         # Apply wrap_text to the numerical feature names for both X and Y axes
-        wrapped_names = [wrap_text(name) for name in num_target_names]
+        wrapped_names = [wrap_text(name, width=format_config.wrap_text_width) for name in num_target_names]
         cross_corr_df = pd.DataFrame(cross_corr, index=wrapped_names, columns=wrapped_names)
         
         # Dynamically scale figure size based on number of features
-        fig_size_xy = max(8, num_feats * 0.8)
+        fig_size_xy = max(8, num_feats)
         fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
         
         # Only show text annotations if there are 15 or fewer features to avoid clutter
@@ -853,7 +853,7 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         
         # Dynamically scale figure width based on number of features
         num_feats = len(num_target_names)
-        fig_width = max(12, num_feats * 0.8)
+        fig_width = max(12, num_feats)
         fig, ax = plt.subplots(figsize=(fig_width, 10), dpi=DPI_value)
         
         # Plot boxplot using np array to prevent grouping of abbreviated names
@@ -865,7 +865,7 @@ def _plot_standardized_error_boxplot(y_true_num: Optional[np.ndarray],
         
         # Manually set the x-tick labels to match feature names (wrapped)
         ax.set_xticks(np.arange(len(num_target_names)))
-        wrapped_names = [wrap_text(name) for name in num_target_names]
+        wrapped_names = [wrap_text(name, width=format_config.wrap_text_width) for name in num_target_names]
         ax.set_xticklabels(wrapped_names)
                        
         # Add a horizontal line at 0 (Perfect reconstruction)

@@ -5,6 +5,7 @@ import math
 
 from ..schema import FeatureSchema
 from ..keys._keys import SchemaKeys
+
 from ._base_autoencoder import _BaseAutoencoder
 
 
@@ -94,7 +95,9 @@ class DragonAutoencoderV2(_BaseAutoencoder):
             batch_first=True, 
             norm_first=True
         )
-        self.transformer_encoder = nn.TransformerEncoder(enc_layer, num_layers=transformer_depth)
+        self.transformer_encoder = nn.TransformerEncoder(enc_layer, 
+                                                         num_layers=transformer_depth,
+                                                         enable_nested_tensor=False)
         
         # 4. VAE Projections
         self.to_mu = nn.Linear(embedding_dim, embedding_dim)
@@ -108,7 +111,9 @@ class DragonAutoencoderV2(_BaseAutoencoder):
             batch_first=True, 
             norm_first=True
         )
-        self.transformer_decoder = nn.TransformerEncoder(dec_layer, num_layers=transformer_depth)
+        self.transformer_decoder = nn.TransformerEncoder(dec_layer, 
+                                                         num_layers=transformer_depth,
+                                                         enable_nested_tensor=False)
 
         # 6. Final Decoders (Tokens -> Raw)
         self.numerical_decoders = nn.ModuleList([

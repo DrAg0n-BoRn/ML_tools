@@ -202,6 +202,10 @@ def _save_error_boxplot(y_true: np.ndarray, abs_errors: np.ndarray, format_confi
         df['Bin'] = pd.qcut(df['True'], q=10, duplicates='drop', precision=2)
     except ValueError:
         df['Bin'] = pd.cut(df['True'], bins=10, precision=2)
+    
+    # Override category labels to forcefully apply a clean 2-decimal format
+    clean_labels = [f"({interval.left:.2f}, {interval.right:.2f}]" for interval in df['Bin'].cat.categories]
+    df['Bin'] = df['Bin'].cat.rename_categories(clean_labels)    
         
     # get a consistent color palette for the boxplot based on the bins
     ordered_bins = df['Bin'].cat.categories.tolist()

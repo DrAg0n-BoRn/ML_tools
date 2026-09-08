@@ -16,7 +16,7 @@ from ._dit_parts import TimeEmbedding
 _LOGGER = get_logger("Dragon DiT Guided")
 
 
-class _BaseDragonDiTGuided(_ArchitectureHandlerMixin, nn.Module, ABC):
+class _BaseDragonDiTGuided(_ArchitectureHandlerMixin, ABC):
     """
     Base DiT model equipped for Classifier-Free Guidance (CFG).
     Child classes must populate `self.blocks` with the desired transformer block version.

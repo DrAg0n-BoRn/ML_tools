@@ -3,16 +3,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error, accuracy_score, f1_score
 from pathlib import Path
-from typing import Union, Optional, Any
+from typing import Union, Optional
 
-from ._eval_regression import regression_metrics
-from ._eval_classification import classification_metrics
+from ..ML_configuration._config_metrics import (FormatAutoregressiveSequenceSequenceMetrics,
+                                                FormatExogenousSequenceSequenceMetrics)
 
 from ..path_manager import make_fullpath
 from ..keys._config import _EvaluationConfig
 from .._core import get_logger
 
+from ._eval_regression import regression_metrics
+from ._eval_classification import classification_metrics
+
+
 _LOGGER = get_logger("Sequence Metrics")
+
 
 __all__ = [
     "sequence_to_sequence_regression_metrics",
@@ -27,7 +32,7 @@ def sequence_to_sequence_regression_metrics(
     y_true: np.ndarray, 
     y_pred: np.ndarray, 
     save_dir: Union[str, Path],
-    config: Optional[Any] = None
+    config: Optional[Union[FormatExogenousSequenceSequenceMetrics, FormatAutoregressiveSequenceSequenceMetrics]] = None
 ):
     """
     Saves overall regression metrics and per-step plots for Sequence-to-Sequence data.
@@ -100,7 +105,7 @@ def sequence_to_sequence_classification_metrics(
     y_true: np.ndarray, 
     y_pred: np.ndarray, 
     save_dir: Union[str, Path],
-    config: Optional[Any] = None
+    config: Optional[Union[FormatAutoregressiveSequenceSequenceMetrics, FormatExogenousSequenceSequenceMetrics]] = None
 ):
     """
     Saves overall classification metrics and per-step plots for Sequence-to-Sequence data.

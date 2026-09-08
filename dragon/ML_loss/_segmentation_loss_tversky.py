@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 
 from ._z_helpers import _apply_reduction, _handle_ignore_index
 
@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 
-class TverskyLoss(nn.Module):
+class TverskyLoss(nn.Module, ClassNameMixin):
     """
     Computes the Tversky Loss for imbalanced multi-class image segmentation.
     
@@ -97,7 +97,7 @@ class TverskyLoss(nn.Module):
         return loss
 
 
-class FocalTverskyLoss(nn.Module):
+class FocalTverskyLoss(nn.Module, ClassNameMixin):
     """
     Computes the Focal Tversky Loss for imbalanced multi-class image segmentation.
     

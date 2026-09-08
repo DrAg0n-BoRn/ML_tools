@@ -84,6 +84,7 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.kind = MLTaskKeys.AUTOENCODER
+        self._is_v2 = isinstance(model, DragonAutoencoderV2)
 
     def _create_dataloaders(self, batch_size: int, shuffle: bool):
         self._make_dataloaders(
@@ -115,13 +116,13 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             encoder_out = self.model(features)
             
             # Handle V2 VAE outputs (z, mu, logvar) vs V1 deterministic outputs (tokens)
-            if isinstance(self.model, DragonAutoencoderV2):
+            if self._is_v2:
                 if not (isinstance(encoder_out, tuple) and len(encoder_out) == 3):
                     _LOGGER.error("Expected encoder output to be a tuple of (z, mu, logvar) for DragonAutoencoderV2.")
                     raise ValueError()
                 tokens, mu, logvar = encoder_out
             else:
-                # For DragonAutoencoder (V1), we only have tokens
+                # For DragonAutoencoder (V1), use tokens only
                 tokens = encoder_out
                 mu, logvar = None, None
                 

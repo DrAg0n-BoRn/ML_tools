@@ -18,7 +18,7 @@ __all__ = [
 
 
 # Object Detection
-class DragonFastRCNN(nn.Module, _ArchitectureHandlerMixin):
+class DragonFastRCNN(_ArchitectureHandlerMixin):
     """
     Object Detection
     

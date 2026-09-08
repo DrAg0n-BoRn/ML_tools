@@ -4,6 +4,69 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.8.0] 2026-09-08
+
+### Added
+
+- Core:
+    - Added `ClassNameMixin` to provide a standardized way to retrieve the class name of any object using the property method `class_name`, enhancing introspection and logging capabilities across the package.
+
+- ML_loss:
+    - All loss classes now inherit from `ClassNameMixin`, enabling consistent retrieval of class names for logging and debugging purposes.
+
+- ML_callbacks:
+    - All callback classes now inherit from `ClassNameMixin`, allowing for standardized class name retrieval.
+
+- ML_configuration:
+    - Added "wrap_text_width" to the following configuration classes:
+        - `FormatAutoencoderMetrics`
+        - `FormatTabularDiffusionMetrics`
+        - `FormatBinaryClassificationMetrics`
+        - `FormatMultiClassClassificationMetrics`
+        - `FormatBinaryImageClassificationMetrics`
+        - `FormatMultiClassImageClassificationMetrics`
+        - `FormatBinarySegmentationMetrics`
+        - `FormatMultiClassSegmentationMetrics`
+
+- ML_evaluation:
+    - Added support for the `wrap_text_width` config parameter in the following functions:
+        - `autoencoder_metrics()`
+        - `dit_generation_metrics()`
+        - `classification_metrics()`
+        - `segmentation_metrics()`
+
+### Changed
+
+- ML_models:
+    - `_ArchitectureHandlerMixin` now inherits from `nn.Module`, `ClassNameMixin`, and `ABC`, allowing all models that use this mixin to benefit from PyTorch's module functionalities and standardized class name retrieval.
+
+- ML_trainer:
+    - `.save_training_log()` method in all trainer classes now automatically attempts to save callback class names and criterion class names in the training log JSON file, providing additional context for the training configuration.
+
+- IO_tools:
+    - `train_logger()` now accepts an optional `extra_info` parameter, allowing users to include additional information in the training log JSON file.
+
+- ML_inference_diffusion:
+    - `DragonDiTGuidedGenerator.generate_multi()`, changed the "batch_per_step" parameter to "batch_size" to accept the total number of samples to generate across all targets, rather than per target. The function now automatically distributes the total batch size evenly across the specified target range, with any remainder distributed to the first few targets.
+
+### Fixed
+
+- ML_models_diffusion:
+    - Fixed a `UserWarning` in `DragonAutoencoderV2` by explicitly setting `enable_nested_tensor=False` in the `TransformerEncoder` to resolve a conflict with `norm_first=True`.
+    - Upgraded `DiTBlockFlashV2` to use PyTorch's native `nn.RMSNorm` instead of a custom implementation for improved performance and cleaner code.
+
+- ML_trainer:
+    - Fixed a crash in `DragonAutoencoderTrainer` when `use_torch_compile=True` by moving the V2 architecture type check to initialization, preventing the compiled module wrapper from breaking the forward pass logic.
+    - `DragonTabularDiTTrainer`, the override of `to_device()` now accepts a `verbose` to mirror the base class signature.
+
+- ML_evaluation:
+    - Minor tweaks to enhance plot aesthetics and readability in `dit_generation_metrics()`, `autoencoder_metrics()`, and `regression_metrics()`.
+
+### Removed
+
+- Module "model_configuration" has been deprecated and removed.
+
+
 ## [26.7.0] 2026-09-07
 
 ### Added

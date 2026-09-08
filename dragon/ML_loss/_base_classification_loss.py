@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch import nn
 from typing import Literal
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 
 from ._z_helpers import _apply_reduction
 
@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 
-class _BaseClassificationLoss(nn.Module):
+class _BaseClassificationLoss(nn.Module, ClassNameMixin):
     """
     Base class for classification loss functions. This class provides a common interface
     and shared functionality for various classification loss implementations, including

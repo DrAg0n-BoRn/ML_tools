@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Union, Literal
 
-from .._core import get_logger
+from .._core import get_logger, ClassNameMixin
 
 from ._z_helpers import _apply_reduction
 from ._base_dice_loss import _BaseDiceLoss
@@ -106,7 +106,7 @@ class GeneralizedDiceLoss(_BaseDiceLoss):
         return loss
 
 
-class SegmentationFocalLoss(nn.Module):
+class SegmentationFocalLoss(nn.Module, ClassNameMixin):
     """
     Computes the Focal Loss for multi-class image segmentation.
     
@@ -184,7 +184,7 @@ class SegmentationFocalLoss(nn.Module):
         return loss
 
 
-class DiceFocalLoss(nn.Module):
+class DiceFocalLoss(nn.Module, ClassNameMixin):
     """
     Computes a composite loss by combining Dice Loss and Focal Loss for imbalanced multi-class image segmentation.
     

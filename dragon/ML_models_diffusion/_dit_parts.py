@@ -147,31 +147,6 @@ class DiTBlockFlash(nn.Module):
 
 ##### V2 of the DiT Block ####
 
-# Note: Torch 2.4+ includes a native RMSNorm implementation, but we implement it here for compatibility with earlier versions of PyTorch.
-class RMSNorm(nn.Module):
-    """
-    Root Mean Square Layer Normalization.
-    Normalizes the input strictly by variance (no mean-centering) and optionally applies a learnable scale.
-    """
-    def __init__(self, dim: int, elementwise_affine: bool = True, eps: float = 1e-6):
-        super().__init__()
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-        if self.elementwise_affine:
-            self.weight = nn.Parameter(torch.ones(dim))
-        else:
-            self.register_parameter('weight', None)
-
-    def forward(self, x):
-        # Calculate RMS over the last dimension
-        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
-        x_normed = x / rms
-        
-        if self.elementwise_affine:
-            return x_normed * self.weight
-        return x_normed
-
-
 class SwiGLU(nn.Module):
     """
     Swish-Gated Linear Unit (SwiGLU).
@@ -203,7 +178,7 @@ class DiTBlockFlashV2(nn.Module):
         
         # 1. UPGRADE: RMSNorm replaces LayerNorm
         # elementwise_affine=False because adaLN handles the scaling and shifting
-        self.norm1 = RMSNorm(embed_dim, elementwise_affine=False)
+        self.norm1 = nn.RMSNorm(embed_dim, eps=1e-6, elementwise_affine=False)
         
         # Split QKV into separate layers to easily apply QK-Norm
         self.q_proj = nn.Linear(embed_dim, embed_dim)
@@ -211,12 +186,12 @@ class DiTBlockFlashV2(nn.Module):
         self.v_proj = nn.Linear(embed_dim, embed_dim)
         
         # 2. UPGRADE: QK-Normalization applied per attention head
-        self.q_norm = RMSNorm(self.head_dim, elementwise_affine=True)
-        self.k_norm = RMSNorm(self.head_dim, elementwise_affine=True)
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=1e-6, elementwise_affine=True)
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=1e-6, elementwise_affine=True)
         
         self.proj = nn.Linear(embed_dim, embed_dim)
         
-        self.norm2 = RMSNorm(embed_dim, elementwise_affine=False)
+        self.norm2 = nn.RMSNorm(embed_dim, eps=1e-6, elementwise_affine=False)
         
         # 3. UPGRADE: SwiGLU replaces the sequential GELU network
         # To maintain parameter parity with a standard 4x FFN, SwiGLU hidden_dim is usually 8/3 of embed_dim

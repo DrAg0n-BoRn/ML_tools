@@ -105,7 +105,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
 
     def generate_multi(self,
                        target_range: tuple[float, float, float],
-                       batch_per_step: int,
+                       batch_size: int,
                        target_name: str,
                        guidance_scale: float = 3.0,
                        cfg_rescale: float = 0.0,
@@ -120,7 +120,7 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
         Args:
             target_range (tuple[float, float, float]): The range of target values to condition on, 
                 formatted as `START(Inclusive), END(Exclusive), STEP`.
-            batch_per_step (int): The number of synthetic samples to generate per step.
+            batch_size (int): The total number of synthetic samples to generate across all targets.
             target_name (str): The name of the column to append to the DataFrame to record the conditioning target.
             guidance_scale (float): The strength of the guidance during generation.
             cfg_rescale (float): The rescaling factor for classifier-free guidance. 
@@ -155,13 +155,27 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             while current > end:
                 targets.append(round(current, 6))
                 current += step
-
-        generated_dfs = []
         
-        # 2. Generate samples for each target
-        for target in targets:
+        # 2. Calculate sample distribution per target
+        num_targets = len(targets)
+        if num_targets == 0:
+            _LOGGER.warning("No targets generated from the specified target_range. Returning an empty DataFrame.")
+            return pd.DataFrame()
+
+        base_count = batch_size // num_targets
+        remainder = batch_size % num_targets
+
+        # 3. Generate samples for each target
+        generated_dfs: list[pd.DataFrame] = []
+        
+        for i, target in enumerate(targets):
+            current_batch_size = base_count + (1 if i < remainder else 0)
+            
+            if current_batch_size == 0:
+                continue
+
             df_generated = self.generate(
-                batch_size=batch_per_step,
+                batch_size=current_batch_size,
                 target_value=target,
                 target_name=target_name,
                 guidance_scale=guidance_scale,
@@ -175,7 +189,11 @@ class DragonDiTGuidedGenerator(_BaseDiffusionGenerator):
             generated_dfs.append(df_generated)
             
         # 3. Consolidate into a single DataFrame
-        final_df = pd.concat(generated_dfs, ignore_index=True)
+        if not generated_dfs:
+            _LOGGER.warning("No samples were generated for any target in the specified range. Returning an empty DataFrame.")
+            return pd.DataFrame()
+        
+        final_df = pd.concat(generated_dfs, ignore_index=True, axis=0)
  
         _LOGGER.info(f"Multi-target generation completed. {len(final_df)} total samples generated and combined.")
         

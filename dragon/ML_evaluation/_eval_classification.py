@@ -273,7 +273,7 @@ def classification_metrics(save_dir: Union[str, Path],
             sorted_items = sorted(class_map.items(), key=lambda item: item[1])
             map_labels = [item[1] for item in sorted_items]
             map_display_labels = [item[0] for item in sorted_items]
-            plot_display_labels = [wrap_text(mapped_name) for mapped_name in map_display_labels]
+            plot_display_labels = [wrap_text(mapped_name, width=format_config.wrap_text_width) for mapped_name in map_display_labels]
         except Exception as e:
             _LOGGER.warning(f"Could not parse 'class_map': {e}")
 

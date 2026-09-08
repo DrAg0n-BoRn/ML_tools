@@ -60,7 +60,7 @@ def dit_generation_metrics(
         format_config = FormatTabularDiffusionMetrics()
     else:
         format_config = config
-        
+    
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     # _LOGGER.info(f"Starting DiT generation evaluation. Saving to '{save_dir_path.name}'")
 
@@ -361,7 +361,7 @@ def _evaluate_categorical_features(
             plot_labels = [inv_map.get(cls, str(cls)) for cls in all_classes]
             
         # Wrap long category class names
-        plot_labels = [wrap_text(str(label)) for label in plot_labels]
+        plot_labels = [wrap_text(str(label), width=format_config.wrap_text_width) for label in plot_labels]
 
         x = np.arange(len(all_classes))
         width = 0.35
@@ -428,7 +428,7 @@ def _evaluate_numerical_correlations(
         
     report_lines.append(f"\n[Multivariate Relationships: Numerical Features]")
     
-    wrapped_num_names = [wrap_text(name) for name in num_target_names]
+    wrapped_num_names = [wrap_text(name, width=format_config.wrap_text_width) for name in num_target_names]
     
     real_df = pd.DataFrame(real_num, columns=wrapped_num_names)
     gen_df = pd.DataFrame(gen_num, columns=wrapped_num_names)
@@ -454,7 +454,7 @@ def _evaluate_numerical_correlations(
     global_metrics["Correlation Matrix MSE"] = corr_mse
     
     num_feats = len(num_target_names)
-    fig_size_xy = max(8, num_feats * 0.8)
+    fig_size_xy = max(8, num_feats)
     fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
     
     show_annotations = num_feats <= 15
@@ -545,7 +545,12 @@ def _plot_pca_projection(real_num: np.ndarray,
         
         ax.tick_params(axis='x', labelsize=format_config.xtick_size)
         ax.tick_params(axis='y', labelsize=format_config.ytick_size)
-        ax.legend(fontsize=format_config.legend_size - 4) # Slightly smaller legend font
+        
+        leg = ax.legend(fontsize=format_config.legend_size - 4, markerscale=8) 
+        for handle in leg.legend_handles:
+            if handle is not None:
+                handle.set_alpha(1.0)
+        
         ax.grid(True, linestyle='--', alpha=0.6)
         
         # Turn off the top and right borders
@@ -613,7 +618,7 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
                     gen_corr[j, i] = cv_gen
 
         # Wrap names for the plot
-        wrapped_cat_names = [wrap_text(name) for name in cat_target_names]
+        wrapped_cat_names = [wrap_text(name, width=format_config.wrap_text_width) for name in cat_target_names]
 
         real_df = pd.DataFrame(real_corr, index=wrapped_cat_names, columns=wrapped_cat_names)
         gen_df = pd.DataFrame(gen_corr, index=wrapped_cat_names, columns=wrapped_cat_names)
@@ -621,7 +626,7 @@ def _plot_cramers_v_heatmap(real_cat_list: list[np.ndarray],
         corr_diff_abs = (real_df - gen_df).abs()
         
         # Dynamically scale figure size based on number of categorical features
-        fig_size_xy = max(8, num_cat * 0.8)
+        fig_size_xy = max(8, num_cat)
         fig, ax = plt.subplots(figsize=(fig_size_xy, fig_size_xy), dpi=DPI_value)
         
         show_annotations = num_cat <= 15

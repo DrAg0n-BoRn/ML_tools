@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
+class _BaseVisionWrapper(_ArchitectureHandlerMixin, ABC):
     """
     Abstract base class for torchvision model wrappers.
     
@@ -169,7 +169,7 @@ class _BaseVisionWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
 
 
 # Image segmentation
-class _BaseSegmentationWrapper(nn.Module, _ArchitectureHandlerMixin, ABC):
+class _BaseSegmentationWrapper(_ArchitectureHandlerMixin, ABC):
     """
     Abstract base class for torchvision segmentation model wrappers.
     

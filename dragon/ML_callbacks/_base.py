@@ -1,5 +1,6 @@
 from tqdm.auto import tqdm
 
+from .._core import ClassNameMixin
 from ..keys._keys import PyTorchLogKeys
 
 
@@ -10,7 +11,7 @@ __all__ = [
 ]
 
 
-class _Callback:
+class _Callback(ClassNameMixin):
     """
     Abstract base class used to build new callbacks.
     

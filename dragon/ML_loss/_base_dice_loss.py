@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .._core import ClassNameMixin
+
 from ._z_helpers import _handle_ignore_index
 
 
@@ -11,7 +13,7 @@ __all__ = [
 ]
 
 
-class _BaseDiceLoss(nn.Module):
+class _BaseDiceLoss(nn.Module, ClassNameMixin):
     def __init__(
         self,
         include_background: bool,

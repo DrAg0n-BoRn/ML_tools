@@ -6,6 +6,7 @@ from abc import ABC
 from ..ML_models._base_save_load import _ArchitectureHandlerMixin
 from ..ML_utilities._artifact_finder import DragonArtifactFinder
 from ..ML_finalize_handler import FinalizedFileHandler
+
 from .._core import get_logger
 
 from ._dit_parts import TimeEmbedding
@@ -14,7 +15,7 @@ from ._dit_parts import TimeEmbedding
 _LOGGER = get_logger("Dragon DiT")
 
 
-class _BaseDragonDiT(_ArchitectureHandlerMixin, nn.Module, ABC):
+class _BaseDragonDiT(_ArchitectureHandlerMixin, ABC):
     """
     Base Unconditioned DiT model for generating sequences using Flow Matching.
     Child classes must populate `self.blocks` with the desired transformer block version.

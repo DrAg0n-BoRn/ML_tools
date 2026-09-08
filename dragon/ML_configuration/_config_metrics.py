@@ -41,7 +41,8 @@ class _BaseClassificationFormat:
                  ytick_size: int=22,
                  legend_size: int=26,
                  font_size: int=26,
-                 cm_font_size: int=26) -> None:
+                 cm_font_size: int=26,
+                 wrap_text_width: int=15) -> None:
         """
         Initializes the formatting configuration for single-label classification metrics.
 
@@ -68,7 +69,8 @@ class _BaseClassificationFormat:
             legend_size (int): Font size for plot legends.
             
             cm_font_size (int): Font size for the confusion matrix.
-        
+            
+            wrap_text_width (int): The width in characters for wrapping text in labels.
         <br>
         
         ### [Matplotlib Colormaps](https://matplotlib.org/stable/users/explain/colors/colormaps.html)
@@ -91,7 +93,7 @@ class _BaseClassificationFormat:
         self.ytick_size = ytick_size
         self.legend_size = legend_size
         self.cm_font_size = cm_font_size
-        
+        self.wrap_text_width = wrap_text_width
     def __repr__(self) -> str:
         parts = [
             f"cmap='{self.cmap}'",
@@ -101,7 +103,8 @@ class _BaseClassificationFormat:
             f"xtick_size={self.xtick_size}",
             f"ytick_size={self.ytick_size}",
             f"legend_size={self.legend_size}",
-            f"cm_font_size={self.cm_font_size}"
+            f"cm_font_size={self.cm_font_size}",
+            f"wrap_text_width={self.wrap_text_width}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -269,7 +272,8 @@ class _BaseSegmentationFormat:
                  radar_fill_alpha: float = 0.15,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
-                 font_size: int = 26) -> None:
+                 font_size: int = 26,
+                 wrap_text_width: int = 15) -> None:
         """
         Initializes the formatting configuration for segmentation metrics.
 
@@ -287,6 +291,8 @@ class _BaseSegmentationFormat:
             font_size (int): The base font size to apply to the plots.
             xtick_size (int): Font size for x-axis tick labels.
             ytick_size (int): Font size for y-axis tick labels.
+            wrap_text_width (int): The maximum number of characters per line for class names in the plots. 
+                Longer names will be wrapped to multiple lines to improve readability.
 
         <br>
         
@@ -309,6 +315,7 @@ class _BaseSegmentationFormat:
         self.font_size = font_size
         self.xtick_size = xtick_size
         self.ytick_size = ytick_size
+        self.wrap_text_width = wrap_text_width
         
     def __repr__(self) -> str:
         parts = [
@@ -318,7 +325,8 @@ class _BaseSegmentationFormat:
             f"radar_fill_alpha={self.radar_fill_alpha}",
             f"font_size={self.font_size}",
             f"xtick_size={self.xtick_size}",
-            f"ytick_size={self.ytick_size}"
+            f"ytick_size={self.ytick_size}",
+            f"wrap_text_width={self.wrap_text_width}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -441,7 +449,8 @@ class _BaseAutoencoderFormat:
                  font_size: int = 26,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
-                 cm_font_size: int = 26) -> None:
+                 cm_font_size: int = 26,
+                 wrap_text_width: int = 15) -> None:
         """
         Initializes the formatting configuration for autoencoder metrics.
         
@@ -469,6 +478,8 @@ class _BaseAutoencoderFormat:
             xtick_size (int): Font size for x-axis tick labels.
             ytick_size (int): Font size for y-axis tick labels.
             cm_font_size (int): Font size for the confusion matrix plot.
+            wrap_text_width (int): The maximum number of characters per line for feature names in the plots. 
+                Longer names will be wrapped to multiple lines to improve readability.
         <br>
         
         ### [Matplotlib Colors](https://matplotlib.org/stable/gallery/color/named_colors.html)
@@ -504,6 +515,7 @@ class _BaseAutoencoderFormat:
         self.scatter_color = scatter_color
         self.scatter_alpha = scatter_alpha
         self.radar_fill_alpha = radar_fill_alpha
+        self.wrap_text_width = wrap_text_width
 
     def __repr__(self) -> str:
         parts = [
@@ -519,7 +531,8 @@ class _BaseAutoencoderFormat:
             f"cat_color='{self.cat_color}'",
             f"scatter_color='{self.scatter_color}'",
             f"scatter_alpha={self.scatter_alpha}",
-            f"radar_fill_alpha={self.radar_fill_alpha}"
+            f"radar_fill_alpha={self.radar_fill_alpha}",
+            f"wrap_text_width={self.wrap_text_width}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -536,7 +549,8 @@ class _BaseTabularDiffusionFormat:
                  real_color: str = 'tab:blue',
                  gen_color: str = 'tab:orange',
                  cmap: str = "coolwarm",
-                 alpha: float = 0.6) -> None:
+                 alpha: float = 0.6,
+                 wrap_text_width: int = 15) -> None:
         """
         Initializes the formatting configuration for tabular diffusion metrics.
         
@@ -551,6 +565,8 @@ class _BaseTabularDiffusionFormat:
                 - Sequential options: 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
                 - Diverging options: 'coolwarm', 'viridis', 'plasma', 'inferno'
             alpha (float): Alpha transparency for the overlaid plots.
+            wrap_text_width (int): The maximum number of characters per line for feature names in the plots. 
+                Longer names will be wrapped to multiple lines to improve readability.
         
         <br>
         
@@ -575,6 +591,7 @@ class _BaseTabularDiffusionFormat:
         self.gen_color = gen_color
         self.alpha = alpha
         self.cmap = cmap
+        self.wrap_text_width = wrap_text_width
 
     def __repr__(self) -> str:
         parts = [
@@ -585,8 +602,8 @@ class _BaseTabularDiffusionFormat:
             f"real_color='{self.real_color}'",
             f"gen_color='{self.gen_color}'",
             f"alpha={self.alpha}",
-            f"cmap='{self.cmap}'"
-
+            f"cmap='{self.cmap}'",
+            f"wrap_text_width={self.wrap_text_width}"
         ]
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
@@ -664,7 +681,8 @@ class FormatBinaryClassificationMetrics(_BaseClassificationFormat):
                  xtick_size: int=22,
                  ytick_size: int=22,
                  legend_size: int=26,
-                 cm_font_size: int=26
+                 cm_font_size: int=26,
+                 wrap_text_width: int=15
                  ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
@@ -673,7 +691,8 @@ class FormatBinaryClassificationMetrics(_BaseClassificationFormat):
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
                          legend_size=legend_size,
-                         cm_font_size=cm_font_size)
+                         cm_font_size=cm_font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 class FormatMultiClassClassificationMetrics(_BaseClassificationFormat):
@@ -688,7 +707,8 @@ class FormatMultiClassClassificationMetrics(_BaseClassificationFormat):
                  xtick_size: int=22,
                  ytick_size: int=22,
                  legend_size: int=26,
-                 cm_font_size: int=26
+                 cm_font_size: int=26,
+                 wrap_text_width: int=15
                  ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
@@ -697,7 +717,8 @@ class FormatMultiClassClassificationMetrics(_BaseClassificationFormat):
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
                          legend_size=legend_size,
-                         cm_font_size=cm_font_size)
+                         cm_font_size=cm_font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 class FormatBinaryImageClassificationMetrics(_BaseClassificationFormat):
@@ -712,7 +733,8 @@ class FormatBinaryImageClassificationMetrics(_BaseClassificationFormat):
                  xtick_size: int=22,
                  ytick_size: int=22,
                  legend_size: int=26,
-                 cm_font_size: int=26
+                 cm_font_size: int=26,
+                 wrap_text_width: int=15
                  ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
@@ -721,7 +743,8 @@ class FormatBinaryImageClassificationMetrics(_BaseClassificationFormat):
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
                          legend_size=legend_size,
-                         cm_font_size=cm_font_size)
+                         cm_font_size=cm_font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 class FormatMultiClassImageClassificationMetrics(_BaseClassificationFormat):
@@ -736,7 +759,8 @@ class FormatMultiClassImageClassificationMetrics(_BaseClassificationFormat):
                  xtick_size: int=22,
                  ytick_size: int=22,
                  legend_size: int=26,
-                 cm_font_size: int=26
+                 cm_font_size: int=26,
+                 wrap_text_width: int=15
                  ) -> None:
         super().__init__(cmap=cmap, 
                          ROC_PR_line=ROC_PR_line, 
@@ -745,7 +769,8 @@ class FormatMultiClassImageClassificationMetrics(_BaseClassificationFormat):
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
                          legend_size=legend_size,
-                         cm_font_size=cm_font_size)
+                         cm_font_size=cm_font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 # Multi-Label classification
@@ -785,14 +810,16 @@ class FormatBinarySegmentationMetrics(_BaseSegmentationFormat):
                  radar_fill_alpha: float = 0.15,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
-                 font_size: int = 26) -> None:
+                 font_size: int = 26,
+                 wrap_text_width: int = 15) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
                          radar_line_color=radar_line_color,
                          radar_fill_alpha=radar_fill_alpha,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
-                         font_size=font_size)
+                         font_size=font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 class FormatMultiClassSegmentationMetrics(_BaseSegmentationFormat):
@@ -806,14 +833,16 @@ class FormatMultiClassSegmentationMetrics(_BaseSegmentationFormat):
                  radar_fill_alpha: float = 0.15,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
-                 font_size: int = 26) -> None:
+                 font_size: int = 26,
+                 wrap_text_width: int = 15) -> None:
         super().__init__(heatmap_cmap=heatmap_cmap, 
                          cm_cmap=cm_cmap, 
                          radar_line_color=radar_line_color,
                          radar_fill_alpha=radar_fill_alpha,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
-                         font_size=font_size)
+                         font_size=font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 # Sequence 
@@ -911,7 +940,8 @@ class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
                  font_size: int = 26,
                  xtick_size: int = 22,
                  ytick_size: int = 22,
-                 cm_font_size: int = 26) -> None:
+                 cm_font_size: int = 26,
+                 wrap_text_width: int = 15) -> None:
         
         super().__init__(hist_color=hist_color,
                          hist_bins=hist_bins,
@@ -925,7 +955,8 @@ class FormatAutoencoderMetrics(_BaseAutoencoderFormat):
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
                          cmap=cmap,
-                         cm_font_size=cm_font_size)
+                         cm_font_size=cm_font_size,
+                         wrap_text_width=wrap_text_width)
 
 
 class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
@@ -940,7 +971,8 @@ class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
                  real_color: str = 'tab:blue',
                  gen_color: str = 'tab:orange',
                  cmap: str = "coolwarm",
-                 alpha: float = 0.6) -> None:
+                 alpha: float = 0.6,
+                 wrap_text_width: int = 15) -> None:
         super().__init__(font_size=font_size,
                          xtick_size=xtick_size,
                          ytick_size=ytick_size,
@@ -948,8 +980,8 @@ class FormatTabularDiffusionMetrics(_BaseTabularDiffusionFormat):
                          real_color=real_color,
                          gen_color=gen_color,
                          cmap=cmap,
-                         alpha=alpha)
-        
+                         alpha=alpha,
+                         wrap_text_width=wrap_text_width)
 
 
 
