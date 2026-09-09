@@ -34,8 +34,9 @@ class DragonColumnCleaner:
     def __init__(self, 
                  column_name: str, 
                  exact_matches: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None,
-                 rules: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None, 
-                 case_insensitive: bool = False,
+                 regex_rules: Optional[Union[dict[str, Union[str, None]], dict[str, str]]] = None, 
+                 regex_case_insensitive: bool = False,
+                 verify_numerical: bool = False,
                  verify_continuous_range: Optional[tuple[Optional[float], Optional[float]]] = None):
         """
         Args:
@@ -46,15 +47,19 @@ class DragonColumnCleaner:
                 - Uses a hash map, which is significantly faster than regex.
                 - Used for simple 1-to-1 mappings (e.g., {'Aluminum': 'Al'}).
                 - Runs BEFORE the regex rules.
-            rules (Dict[str, str | None]):
+            regex_rules (Dict[str, str | None]):
                 A dictionary of regex patterns to replacement strings. 
                 - Replacement can be None to indicate that matching values should be converted to null.
                 - Can use backreferences (e.g., r'$1 $2') for captured groups. Note that Polars uses a '$' prefix for backreferences.
-            case_insensitive (bool):
+            regex_case_insensitive (bool):
                 If True, regex matching ignores case.
+            verify_numerical (bool):
+                If True, verifies that all values in the column can be safely cast to numerical values (float or null). 
+                - Used only for the `.preview()` method.
             verify_continuous_range (tuple[float | None, float | None], optional):
                 A tuple containing the minimum and maximum values for the numerical range.
                 - Used only for numeric columns and for the `.preview()` method. 
+                - Automatically sets `verify_numerical=True`
                 - Use None for either min or max to constrain only one side of the range.
 
         ## Usage Example
@@ -74,11 +79,11 @@ class DragonColumnCleaner:
             raise TypeError()
         
         # Validate Regex Rules
-        if rules is not None:
-            if not isinstance(rules, dict):
+        if regex_rules is not None:
+            if not isinstance(regex_rules, dict):
                 _LOGGER.error("The 'rules' argument must be a dictionary.")
                 raise TypeError()
-            for pattern, replacement in rules.items():
+            for pattern, replacement in regex_rules.items():
                 if not isinstance(pattern, str):
                     _LOGGER.error("All keys in 'rules' must be strings representing regex patterns.")
                     raise TypeError()
@@ -100,14 +105,14 @@ class DragonColumnCleaner:
                     raise TypeError()
                 
         # Raise if both are None or empty
-        if not rules and not exact_matches:
+        if not regex_rules and not exact_matches:
             _LOGGER.error("At least one of 'rules' or 'exact_matches' must be provided.")
             raise ValueError()
 
         self.column_name = column_name
-        self.rules = rules if rules else {}
+        self.rules = regex_rules if regex_rules else {}
         self.exact_matches = exact_matches if exact_matches else {}
-        self.case_insensitive = case_insensitive
+        self.case_insensitive = regex_case_insensitive
         
         # Validate continuous range if provided
         if verify_continuous_range is not None:
@@ -119,7 +124,11 @@ class DragonColumnCleaner:
             # if both are None, then just set it to None
             if all(x is None for x in verify_continuous_range):
                 verify_continuous_range = None
-            
+            # must be numerical
+            verify_numerical = True
+        
+        # Check numerical values
+        self._verify_numerical = verify_numerical
         self._verify_continuous_range = verify_continuous_range
 
     def preview(self, 
@@ -146,10 +155,11 @@ class DragonColumnCleaner:
         # Load DataFrame
         df, _ = load_dataframe(df_path=csv_path, use_columns=[self.column_name], kind="polars", all_strings=True)
         
+        # Apply cleaning rules and save reports
         preview_cleaner = DragonDataFrameCleaner(cleaners=[self])
         df_preview = preview_cleaner.clean(df, rule_batch_size=rule_batch_size)
         
-        # Apply cleaning rules and save reports
+        # save unique values
         save_unique_values(csv_path_or_df=df_preview, 
                            output_dir=report_dir, 
                            use_columns=[self.column_name], 
@@ -164,7 +174,18 @@ class DragonColumnCleaner:
                                  use_columns=[self.column_name],
                                  verbose=False,
                                  keep_column_order=False)
-            
+        
+        # Verify numerical casting if requested
+        if self._verify_numerical:
+            try:
+                df_preview.select(pl.col(self.column_name).drop_nulls().cast(pl.Float64, strict=True))
+            except Exception:
+                _LOGGER.warning(f"Numerical verification: Column '{self.column_name}' contains non-numerical values (besides None) after cleaning.")
+                # cancel range verification if requested
+                self._verify_continuous_range = None
+            else:
+                _LOGGER.info("Numerical verification: All values are numerical or None.")
+        
         # verify continuous range if applicable
         if self._verify_continuous_range is not None:
             verify_continuous_range(data=df_preview, min_max=self._verify_continuous_range)

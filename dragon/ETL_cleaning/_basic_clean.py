@@ -113,7 +113,7 @@ def _cleaner_core(df_in: pl.DataFrame, all_lowercase: bool) -> pl.DataFrame:
         # Create a cleaner for every column in the dataframe
         all_columns = df_in.columns
         column_cleaners = [
-            DragonColumnCleaner(col, rules=cleaning_rules, case_insensitive=True) for col in all_columns
+            DragonColumnCleaner(col, regex_rules=cleaning_rules, regex_case_insensitive=True) for col in all_columns
         ]
         
         # Instantiate and run the main dataframe cleaner
@@ -294,12 +294,12 @@ def drop_macro_polars(df: pl.DataFrame,
         initial_rows, initial_cols = df_clean.shape
         
         # --- A. Drop Constant Columns ---
-        # Keep columns where n_unique > 1. 
-        # Note: n_unique in Polars ignores nulls by default (similar to pandas dropna=True).
-        # We assume if a column is all nulls, it should also be dropped (n_unique=0).
+        # Keep columns where n_unique > 1 (ignoring nulls). 
+        # By dropping nulls first, an all-null column returns n_unique=0, 
+        # and a [constant, null] column returns n_unique=1. Both are dropped.
         cols_to_keep = [
             col for col in df_clean.columns 
-            if df_clean[col].n_unique() > 1
+            if df_clean[col].drop_nulls().n_unique() > 1
         ]
         df_clean = df_clean.select(cols_to_keep)
         
@@ -343,6 +343,11 @@ def drop_macro_polars(df: pl.DataFrame,
         remaining_rows, remaining_cols = df_clean.shape
         if remaining_rows >= initial_rows and remaining_cols >= initial_cols:
             master = False
+    
+    # check for empty dataframe
+    if df_clean.is_empty() or df_clean.width == 0:
+        _LOGGER.error("The cleaning process resulted in an empty DataFrame. Check input data and parameters.")
+        raise ValueError
 
     # 2. Log Final State
     _generate_null_report(df_clean, log_directory, "Missing_Data_Processed")

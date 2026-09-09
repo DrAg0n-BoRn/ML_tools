@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.10.0] 2026-09-09
+
+### Added
+
+- ETL_cleaning:
+    - `DragonColumnCleaner`: New parameter `verify_numerical`, checks if column is numerical, also allowing nulls. It works only with the `preview()` method. It is automatically used when `verify_continuous_range` is passed.
+
+### Changed:
+
+- ETL_cleaning:
+    - `DragonColumnCleaner`
+        - Parameter `case_insensitive` has been renamed to `regex_case_insensitive` for clarity.
+        - Parameter `rules` has been renamed to `regex_rules` for clarity.
+
+### Fixed
+
+- ETL_cleaning:
+    - `_basic_clean.py`: Added a check for empty DataFrames after the cleaning process. If the resulting DataFrame is empty or has zero width, an error is logged and a `ValueError` is raised to alert users to potential issues with input data or parameters.
+
+
 ## [26.9.0] 2026-09-09
 
 ### Added
