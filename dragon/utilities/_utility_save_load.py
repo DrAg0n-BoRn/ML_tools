@@ -24,6 +24,23 @@ __all__ = [
 ]
 
 
+def _validate_csv_columns(path: Path, use_columns: list[str]) -> list[str]:
+    header_df = pd.read_csv(path, nrows=0, encoding='utf-8')
+    header_columns = set(header_df.columns)
+    
+    valid_cols = [col for col in use_columns if col in header_columns]
+    missing_cols = [col for col in use_columns if col not in header_columns]
+    
+    if not valid_cols:
+        _LOGGER.error(f"None of the requested columns {use_columns} are present in the CSV file '{path}'.")
+        raise ValueError()
+    
+    if missing_cols:
+        missing_str = '\n\t'.join(missing_cols)
+        _LOGGER.warning(f"The following requested columns are missing from the CSV and will be ignored:\n\t{missing_str}")
+    
+    return valid_cols
+
 
 # Overload 1: When kind='pandas'
 @overload
@@ -32,6 +49,7 @@ def load_dataframe(
     use_columns: Optional[list[str]] = None, 
     kind: Literal["pandas"] = "pandas",
     all_strings: bool = False,
+    empty_as_nan: bool = True,
     verbose: bool = True
 ) -> tuple[pd.DataFrame, str]:
     ... # for overload stubs
@@ -43,6 +61,7 @@ def load_dataframe(
     use_columns: Optional[list[str]] = None,
     kind: Literal["polars"] = "polars",
     all_strings: bool = False,
+    empty_as_nan: bool = True,
     verbose: bool = True
 ) -> tuple[pl.DataFrame, str]:
     ... # for overload stubs
@@ -52,6 +71,7 @@ def load_dataframe(
     use_columns: Optional[list[str]] = None,
     kind: Literal["pandas", "polars"] = "pandas",
     all_strings: bool = False,
+    empty_as_nan: bool = True,
     verbose: bool = True
 ) -> Union[tuple[pd.DataFrame, str], tuple[pl.DataFrame, str]]:
     """
@@ -70,9 +90,10 @@ def load_dataframe(
         all_strings (bool): 
             If True, loads all columns as string data types. This is useful for
             ETL tasks and to avoid type-inference errors.
-
+        empty_as_nan (bool):
+            If True, converts empty strings to NaN (for pandas) or Null (for polars).
     Returns:
-        (Tuple[DataFrameType, str]):
+        (Tuple[DataFrame, str]):
             A tuple containing the loaded DataFrame (either pandas or polars)
             and the base name of the file (without extension).
             
@@ -80,26 +101,44 @@ def load_dataframe(
         FileNotFoundError: If the file does not exist at the given path.
         ValueError: If the DataFrame is empty, an invalid 'kind' is provided, or a column in 'use_columns' is not found in the file.
     """
-    path = make_fullpath(df_path)
+    path = make_fullpath(df_path, enforce="file")
     
     df_name = path.stem
+    
+    if not use_columns:
+        use_columns = None  # Ensure it's None for the loading functions
 
     try:
+        if use_columns is not None:
+            use_columns = _validate_csv_columns(path, use_columns)
+        
         if kind == "pandas":
-            pd_kwargs: dict[str,Any]
-            pd_kwargs = {'encoding': 'utf-8'}
-            if use_columns:
+            pd_kwargs: dict[str,Any] = {'encoding': 'utf-8'}
+            
+            if use_columns is not None: 
                 pd_kwargs['usecols'] = use_columns
             if all_strings:
                 pd_kwargs['dtype'] = str
                 
-            df = pd.read_csv(path, **pd_kwargs)
+            df_pandas: pd.DataFrame = pd.read_csv(path, **pd_kwargs)
+            
+            if not isinstance(df_pandas, pd.DataFrame):
+                _LOGGER.error(f"Loaded object is not a pandas DataFrame. Got type: {type(df_pandas)}")
+                raise TypeError()
+            
+            # Clean any whitespace-only strings to NaN
+            if empty_as_nan:
+                str_cols = df_pandas.select_dtypes(include=['object', 'string']).columns
+                if not str_cols.empty:
+                    df_pandas[str_cols] = df_pandas[str_cols].replace(r'^\s*$', np.nan, regex=True)
+                    
+            df = df_pandas
 
         elif kind == "polars":
-            pl_kwargs: dict[str,Any]
-            pl_kwargs = {}
-            pl_kwargs['null_values'] = ["", " "]
-            if use_columns:
+            df_polars: pl.DataFrame
+            pl_kwargs: dict[str,Any] = {}
+            
+            if use_columns is not None:
                 pl_kwargs['columns'] = use_columns
                 
             if all_strings:
@@ -107,15 +146,24 @@ def load_dataframe(
             else:
                 pl_kwargs['infer_schema_length'] = 1000
                 
-            df = pl.read_csv(path, **pl_kwargs)
-
+            df_polars = pl.read_csv(path, **pl_kwargs)
+            
+            if empty_as_nan:
+                # Clean any whitespace-only strings to Null
+                df_polars = df_polars.with_columns(
+                    pl.when(pl.col(pl.String).str.strip_chars() == "")
+                    .then(None)
+                    .otherwise(pl.col(pl.String))
+                    .name.keep()
+                )
+            df = df_polars
         else:
             _LOGGER.error(f"Invalid kind '{kind}'. Must be one of 'pandas' or 'polars'.")
             raise ValueError()
             
-    except (ValueError, pl.exceptions.ColumnNotFoundError) as e:
-        _LOGGER.error(f"Failed to load '{df_name}'. A specified column may not exist in the file.")
-        raise e
+    except Exception as e:
+        _LOGGER.error(f"Failed to load '{df_name}': {e}")
+        raise
 
     # This check works for both pandas and polars DataFrames
     if df.shape[0] == 0:
@@ -131,6 +179,7 @@ def load_dataframe(
 def load_dataframe_greedy(directory: Union[str, Path],
                           use_columns: Optional[list[str]] = None,
                           all_strings: bool = False,
+                          empty_as_nan: bool = True,
                           verbose: bool = True) -> pd.DataFrame:
     """
     Greedily loads the first found CSV file from a directory into a Pandas DataFrame.
@@ -146,6 +195,8 @@ def load_dataframe_greedy(directory: Union[str, Path],
             A list of column names to load. If None, all columns are loaded.
         all_strings (bool): 
             If True, loads all columns as string data types.
+        empty_as_nan (bool):
+            If True, converts empty strings to NaN.
 
     Returns:
         pd.DataFrame: 
@@ -168,12 +219,15 @@ def load_dataframe_greedy(directory: Union[str, Path],
     # explicitly check that there is only one csv file
     if len(csv_dict) > 1:
         _LOGGER.warning(f"Multiple CSV files found in '{dir_path}'. Only one will be loaded.")
-        
+    
+    df = pd.DataFrame()
+    
     for df_path in csv_dict.values():
         df , _df_name = load_dataframe(df_path=df_path,
                                     use_columns=use_columns,
                                     kind="pandas",
                                     all_strings=all_strings,
+                                    empty_as_nan=empty_as_nan,
                                     verbose=verbose)
         break
     
@@ -184,6 +238,7 @@ def load_dataframe_with_schema(
     df_path: Union[str, Path], 
     schema: "FeatureSchema",
     all_strings: bool = False,
+    empty_as_nan: bool = True,
 ) -> tuple[pd.DataFrame, str]:
     """
     Loads a CSV file into a Pandas DataFrame, strictly validating its
@@ -208,6 +263,8 @@ def load_dataframe_with_schema(
             The schema object to validate against.
         all_strings (bool): 
             If True, loads all columns as string data types.
+        empty_as_nan (bool):
+            If True, converts empty strings to NaN.
 
     Returns:
         (Tuple[pd.DataFrame, str]):
@@ -230,6 +287,7 @@ def load_dataframe_with_schema(
             use_columns=None,  # Load all columns for validation
             kind="pandas", 
             all_strings=all_strings,
+            empty_as_nan=empty_as_nan,
             verbose=True
         )
     except Exception as e:
@@ -242,13 +300,15 @@ def load_dataframe_with_schema(
     return df_validated, df_name
 
 
-def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True):
+def yield_dataframes_from_dir(datasets_dir: Union[str,Path], 
+                              empty_as_nan: bool=True,
+                              verbose: bool=True):
     """
     Iterates over all CSV files in a given directory, loading each into a Pandas DataFrame.
 
     Parameters:
-        datasets_dir (str | Path):
-        The path to the directory containing `.csv` dataset files.
+        datasets_dir (str | Path): The path to the directory containing `.csv` dataset files.
+        empty_as_nan (bool): If True, converts empty strings to NaN before loading.
 
     Yields:
         Tuple: ([pd.DataFrame, str])
@@ -264,11 +324,18 @@ def yield_dataframes_from_dir(datasets_dir: Union[str,Path], verbose: bool=True)
     files_dict = list_csv_paths(datasets_path, verbose=verbose, raise_on_empty=True)
     for df_name, df_path in files_dict.items():
         df: pd.DataFrame
-        df, _ = load_dataframe(df_path, kind="pandas", verbose=verbose) # type: ignore
+        df, _ = load_dataframe(df_path, 
+                               kind="pandas",
+                               empty_as_nan=empty_as_nan,
+                               verbose=verbose)
         yield df, df_name
 
 
-def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Union[str,Path], filename: str, verbose: int=3) -> None:
+def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], 
+                            save_dir: Union[str,Path], 
+                            filename: str, 
+                            empty_as_nan: bool=True,
+                            verbose: int=3) -> None:
     """
     Saves a pandas or polars DataFrame to a CSV file.
 
@@ -279,6 +346,8 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
             The directory where the CSV file will be saved.
         filename (str): 
             The CSV filename. The '.csv' extension will be added if missing.
+        empty_as_nan (bool):
+            If True, converts empty strings to NaN (for pandas) or Null (for polars) before saving.
         verbose (int): 
             Verbosity level for logging.
                 - 0: Error level
@@ -306,18 +375,29 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
         
     # --- Type-specific saving logic ---
     if isinstance(df, pd.DataFrame):
-        # Transform "" to np.nan before saving
-        df_to_save = df.replace(r'^\s*$', np.nan, regex=True)
+        if empty_as_nan:
+            # Transform "" to np.nan before saving
+            str_cols = df.select_dtypes(include=['object', 'string']).columns
+            if not str_cols.empty:
+                df_to_save = df.copy()
+                df_to_save[str_cols] = df_to_save[str_cols].replace(r'^\s*$', np.nan, regex=True)
+            else:
+                df_to_save = df
+        else:
+            df_to_save = df
         # Save
         df_to_save.to_csv(output_path, index=False, encoding='utf-8')
     elif isinstance(df, pl.DataFrame):
-        # Transform empty strings to Null
-        df_to_save = df.with_columns(
-            pl.when(pl.col(pl.String).str.strip_chars() == "")
-            .then(None)
-            .otherwise(pl.col(pl.String))
-            .name.keep()
-        )
+        if empty_as_nan:
+            # Transform empty strings to Null
+            df_to_save = df.with_columns(
+                pl.when(pl.col(pl.String).str.strip_chars() == "")
+                .then(None)
+                .otherwise(pl.col(pl.String))
+                .name.keep()
+            )
+        else:
+            df_to_save = df
         # Save
         df_to_save.write_csv(output_path)
     else:
@@ -329,7 +409,10 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame], save_dir: Uni
         _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df_to_save.shape}")
 
 
-def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path, verbose: int=3) -> None:
+def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], 
+                   full_path: Path, 
+                   empty_as_nan: bool=True,
+                   verbose: int=3) -> None:
     """
     Saves a DataFrame to a specified full path.
 
@@ -339,6 +422,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path, verbo
     Args:
         df (Union[pd.DataFrame, pl.DataFrame]): The pandas or polars DataFrame to save.
         full_path (Path): The complete file path, including the filename and `.csv` extension, where the DataFrame will be saved.
+        empty_as_nan (bool): If True, converts empty strings to NaN (for pandas) or Null (for polars) before saving.
         verbose (int): Verbosity level for logging.
             - 0: Error level
             - 1: Warning level
@@ -352,6 +436,7 @@ def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], full_path: Path, verbo
     save_dataframe_filename(df=df, 
                             save_dir=full_path.parent,
                             filename=full_path.name,
+                            empty_as_nan=empty_as_nan,
                             verbose=verbose)
 
 
@@ -359,6 +444,7 @@ def save_dataframe_with_schema(
     df: pd.DataFrame, 
     full_path: Path,
     schema: "FeatureSchema",
+    empty_as_nan: bool=True,
     verbose: int=3
 ) -> None:
     """
@@ -383,6 +469,8 @@ def save_dataframe_with_schema(
             The complete file path where the DataFrame will be saved.
         schema (FeatureSchema): 
             The schema object to validate against.
+        empty_as_nan (bool):
+            If True, converts empty strings to NaN before saving.
         verbose (int): 
             Verbosity level for logging.
                 - 0: Error level
@@ -398,7 +486,10 @@ def save_dataframe_with_schema(
     df_to_save = _validate_and_reorder_schema(df=df, schema=schema, verbose=verbose)
     
     # Call the original save function
-    save_dataframe(df=df_to_save, full_path=full_path, verbose=verbose)
+    save_dataframe(df=df_to_save, 
+                   full_path=full_path, 
+                   empty_as_nan=empty_as_nan,
+                   verbose=verbose)
 
 
 def _validate_and_reorder_schema(

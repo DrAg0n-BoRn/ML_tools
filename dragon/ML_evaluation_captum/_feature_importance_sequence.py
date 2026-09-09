@@ -29,6 +29,7 @@ def captum_sequence_feature_importance(model: nn.Module,
                                        n_steps: int = 50,
                                        device: Union[str, torch.device] = 'cpu',
                                        max_sequence_bins: int = 40,
+                                       wrap_text_width: int = 15,
                                        verbose: int = 0):
     """
     Calculates temporal and global feature importance for Sequence models using Captum's Integrated Gradients.
@@ -104,6 +105,7 @@ def captum_sequence_feature_importance(model: nn.Module,
             file_suffix=f"_{clean_name}",
             target_name=name,
             max_sequence_bins=max_sequence_bins,
+            wrap_text_width=wrap_text_width,
             verbose=verbose
         )
 
@@ -139,6 +141,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
                                     file_suffix: str,
                                     target_name: str,
                                     max_sequence_bins: int,
+                                    wrap_text_width: int,
                                     verbose: int):
     try:
         with torch.backends.cudnn.flags(enabled=False):
@@ -207,7 +210,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     sns.heatmap(
         compressed_heatmap.T,
         cmap="Greens",
-        yticklabels=[wrap_text(f_n) for f_n in feature_names],
+        yticklabels=[wrap_text(f_n, width=wrap_text_width) for f_n in feature_names],
         xticklabels=x_labels,
         cbar=False
     )
@@ -247,7 +250,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # PLOT 3: Global Feature Bar Chart
     # ==========================================
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x))
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=wrap_text_width))
     
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
     

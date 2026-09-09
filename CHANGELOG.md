@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.9.0] 2026-09-09
+
+### Added
+
+- ML_evaluation_captum:
+    - Added `wrap_text_width` parameter to `captum_feature_importance()` and `captum_sequence_feature_importance()` functions to allow users to control the maximum character width for feature names in plots. Longer names will be wrapped for better readability.
+
+- ML_trainer:
+    - Added `wrap_text_width` parameter to `explain_captum()` methods in `DragonTrainer`, `DragonSequenceTrainer`, and `DragonDistributionTrainer` classes to allow users to control the maximum character width for feature names in Captum feature importance plots. Longer names will be wrapped for better readability.
+
+- utilities:
+    - Added `empty_as_nan` parameter to `load_dataframe()`, `load_dataframe_with_schema()`, and `load_dataframe_greedy()` for consistent whitespace-to-null conversion across Pandas and Polars DataFrames.
+    - Added `empty_as_nan` parameter to `save_dataframe()`, `save_dataframe_filename()`, and `save_dataframe_with_schema()` for consistent whitespace-to-null conversion across Pandas and Polars DataFrames.
+    - Added `_validate_csv_columns()` private helper in `_utility_save_load.py` to efficiently pre-validate requested columns in `load_dataframe()` by reading only the CSV header.
+
+
 ## [26.8.0] 2026-09-08
 
 ### Added

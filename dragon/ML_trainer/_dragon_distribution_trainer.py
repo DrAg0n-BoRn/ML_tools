@@ -403,6 +403,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                        feature_names: Optional[list[str]] = None,
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
+                       wrap_text_width: int = 15,
                        verbose: int = 0):
         """
         Explains the model's MEAN predictions using Captum's Integrated Gradients.
@@ -413,6 +414,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             feature_names (list[str] | None): Feature names. Required for Tabular tasks.
             target_names (list[str] | None): Names for the model outputs.
             n_steps (int): Number of interpolation steps.
+            wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
             verbose (int): Verbosity level for logging.
         """
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
@@ -473,6 +475,7 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             target_names=target_names,
             n_steps=n_steps,
             device=self.device,
+            wrap_text_width=wrap_text_width,
             verbose=verbose
         )
     

@@ -27,6 +27,7 @@ def captum_feature_importance(model: nn.Module,
                               target_names: Optional[list[str]] = None,
                               n_steps: int = 50,
                               device: Union[str, torch.device] = 'cpu',
+                              wrap_text_width: int = 15,
                               verbose: int = 0):
     """
     Calculates feature importance using Captum's Integrated Gradients.
@@ -46,6 +47,7 @@ def captum_feature_importance(model: nn.Module,
             - If `None`, generic names (e.g., "Output_0") will be generated based on model output shape.
         n_steps (int): Number of steps for the integral approximation. Higher means more accurate but slower.
         device (str | torch.device): Torch device.
+        wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
         verbose (int): Verbosity level.
     <br>
         
@@ -124,6 +126,7 @@ def captum_feature_importance(model: nn.Module,
             save_dir=save_dir_path,
             n_steps=n_steps,
             file_suffix=f"_{clean_name}",
+            wrap_text_width=wrap_text_width,
             target_name=name,  # Pass original name for plotting
             verbose=verbose
         )
@@ -137,6 +140,7 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                            save_dir: Path,
                            n_steps: int,
                            file_suffix: str,
+                           wrap_text_width: int,
                            target_name: str = "",
                            verbose: int = 0):
     """
@@ -249,11 +253,11 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     # --- Generate Plot ---
     plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     
-    # Increase wrap width to prevent multi-line breaks for most feature names
-    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x))
+    # Apply text wrapping to feature names for better readability in plots
+    plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=wrap_text_width))
     
     # Calculate a dynamic height to ensure large fonts do not overlap
-    dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
+    dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df))
     
     plt.figure(figsize=(_EvaluationConfig.CAPTUM_PLOT_SIZE[0], dynamic_height), dpi=_EvaluationConfig.DPI)
     plt.barh(plot_df[CaptumKeys.FEATURE_COLUMN], plot_df[CaptumKeys.PERCENT_COLUMN], color='mediumpurple')

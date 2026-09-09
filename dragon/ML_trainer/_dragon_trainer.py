@@ -623,6 +623,7 @@ class DragonTrainer(_BaseDragonTrainer):
                        feature_names: Optional[list[str]] = None,
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
+                       wrap_text_width: int = 15,
                        verbose: int = 0):
         """
         Explains model predictions using Captum's Integrated Gradients to generate feature importance scores and bar charts.
@@ -633,6 +634,7 @@ class DragonTrainer(_BaseDragonTrainer):
             feature_names (Optional[list[str]]): Feature names. Required for tabular tasks; attempts to extract from dataset attributes if None.
             target_names (Optional[list[str]]): Names for the model outputs or classes.
             n_steps (int): Number of interpolation steps.
+            wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
             verbose (int): Verbosity level for logging operations.
         """         
         # 2. Prepare Data
@@ -686,6 +688,7 @@ class DragonTrainer(_BaseDragonTrainer):
             target_names=target_names,
             n_steps=n_steps,
             device=self.device,
+            wrap_text_width=wrap_text_width,
             verbose=verbose
         )
         
