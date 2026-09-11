@@ -180,11 +180,11 @@ class DragonColumnCleaner:
             try:
                 df_preview.select(pl.col(self.column_name).drop_nulls().cast(pl.Float64, strict=True))
             except Exception:
-                _LOGGER.warning(f"Numerical verification: Column '{self.column_name}' contains non-numerical values (besides None) after cleaning.")
+                _LOGGER.warning(f"🔢 Numerical verification: Column '{self.column_name}' contains non-numerical values (besides None) after cleaning.")
                 # cancel range verification if requested
                 self._verify_continuous_range = None
             else:
-                _LOGGER.info("Numerical verification: All values are numerical or None.")
+                _LOGGER.info("🔢 Numerical verification: All values are numerical or None.")
         
         # verify continuous range if applicable
         if self._verify_continuous_range is not None:

@@ -290,9 +290,9 @@ def verify_continuous_range(data: Union[pl.Series, pl.DataFrame],
         out_of_bounds = valid_series.filter(valid_series > max_val)
 
     if out_of_bounds.is_empty():
-        _LOGGER.info(f"Numerical range verification: All numerical values are within the specified range {min_max}.")
+        _LOGGER.info(f"🔢 Numerical range verification: All numerical values are within the specified range {min_max}.")
     else:
         out_vals = out_of_bounds.unique().to_list()
         # format one value per line in the log
         out_val_str = '\n\t'.join(f'{v}' for v in out_vals)
-        _LOGGER.warning(f"Numerical range verification: Found values outside the range {min_max}:\n\t{out_val_str}")
+        _LOGGER.warning(f"🔢 Numerical range verification: Found values outside the range {min_max}:\n\t{out_val_str}")

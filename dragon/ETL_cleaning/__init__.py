@@ -15,12 +15,17 @@ from ._clean_tools import (
     verify_continuous_range
 )
 
+from ._faultyentrymanager import (
+    DragonFaultyEntryManager
+)
+
 from .._core import _imprimir_disponibles
 
 
 __all__ = [
     "DragonColumnCleaner",
     "DragonDataFrameCleaner",
+    "DragonFaultyEntryManager",
     "save_unique_values",
     "save_category_counts",
     "basic_clean",

@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.11.0] 2026-09-11
+
+### Added
+
+- ETL_cleaning:
+    - `DragonFaultyEntryManager`: New class to manage and clean DataFrames by tracking faulty entries. It provides methods to locate specific cell values, apply fixes, or drop invalid rows and columns while maintaining synchronized state tracking. This class works on single-level indexed DataFrames with unique indices to ensure accurate tracking of faulty entries.
+
+- utilities:
+    - `load_dataframe_header()`: New function to efficiently read only the header of a CSV file without loading the entire dataset into memory. Returns a tuple containing the list of column names and the number of columns. This function is useful for quickly inspecting the structure of large CSV files.
+
+### Changed
+
+- utilities:
+    - `create_translation_template()`, `audit_column_translation()`: Updated to use `load_dataframe_header()` when the input is a file path, allowing for efficient retrieval of column names without loading the full dataset into memory.
+
+### Fixed
+
+- ETL_engineering
+    - Moved docstrings from class to __init__() method in several transformer classes to improve documentation.
+
+
 ## [26.10.0] 2026-09-09
 
 ### Added

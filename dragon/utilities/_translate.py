@@ -7,7 +7,7 @@ from typing import Union, Literal
 from ..path_manager import make_fullpath
 from .._core import get_logger
 
-from ._utility_save_load import load_dataframe
+from ._utility_save_load import load_dataframe_header
 
 
 _LOGGER = get_logger("Translation Tools")
@@ -124,8 +124,9 @@ def create_translation_template(
     """
     # 1. Get Columns
     if isinstance(df_or_path, (str, Path)):
-        df, _ = load_dataframe(df_or_path, kind="pandas", verbose=False)
-        columns = df.columns.tolist()
+        # load header only to avoid loading large datasets into memory
+        columns_tuple = load_dataframe_header(df_or_path, verbose=1)
+        columns = list(columns_tuple)
     elif isinstance(df_or_path, pd.DataFrame):
         columns = df_or_path.columns.tolist()
     elif isinstance(df_or_path, pl.DataFrame):
@@ -176,9 +177,10 @@ def audit_column_translation(
     """
     # 1. Get DataFrame Columns
     if isinstance(df_or_path, (str, Path)):
-        df, df_name = load_dataframe(df_or_path, kind="pandas", verbose=False)
-        cols = set(df.columns)
-        source_name = f"File: '{df_name}'"
+        # load header only to avoid loading large datasets into memory
+        columns_tuple = load_dataframe_header(df_or_path, verbose=1)
+        cols = set(columns_tuple)
+        source_name = f"File: '{df_or_path}'"
     elif isinstance(df_or_path, pd.DataFrame):
         cols = set(df_or_path.columns)
         source_name = "DataFrame (Pandas)"

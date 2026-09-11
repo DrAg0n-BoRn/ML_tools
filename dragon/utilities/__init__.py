@@ -1,5 +1,6 @@
 from ._utility_save_load import (
     load_dataframe,
+    load_dataframe_header,
     load_dataframe_greedy,
     load_dataframe_with_schema,
     yield_dataframes_from_dir,
@@ -28,6 +29,7 @@ from .._core import _imprimir_disponibles
 
 __all__ = [
     "load_dataframe",
+    "load_dataframe_header",
     "load_dataframe_greedy",
     "load_dataframe_with_schema",
     "yield_dataframes_from_dir",

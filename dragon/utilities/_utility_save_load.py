@@ -15,6 +15,7 @@ _LOGGER = get_logger("Dataframe Save/Load")
 
 __all__ = [
     "load_dataframe",
+    "load_dataframe_header",
     "load_dataframe_greedy",
     "load_dataframe_with_schema",
     "yield_dataframes_from_dir",
@@ -174,6 +175,41 @@ def load_dataframe(
         _LOGGER.info(f"💾 Loaded {kind.upper()} dataset: '{df_name}' with shape: {df.shape}")
     
     return df, df_name # type: ignore
+
+
+def load_dataframe_header(df_path: Union[str, Path], verbose: int = 3) -> tuple[str, ...]:
+    """
+    Loads the header of a CSV file and returns the column names as a tuple of strings.
+    
+    Args:
+        df_path (str, Path): The path to the CSV file.
+        verbose (int): Logs the loaded header information.
+
+    Returns:
+        tuple[str, ...]: A tuple of column names.
+    """
+    path = make_fullpath(df_path, enforce="file")
+    try:
+        header_df = pd.read_csv(path, nrows=0, encoding='utf-8')
+    except Exception as e:
+        _LOGGER.error(f"Failed to load header from '{path}': {e}")
+        raise
+    
+    header_tuple = tuple(str(col) for col in header_df.columns)
+    
+    if not header_tuple:
+        if verbose >= 1:
+            _LOGGER.warning(f"No columns found in the CSV file '{path}'. The header is empty.")
+        return tuple()  # Return an empty tuple if no columns are found
+    
+    if verbose >= 3:
+        # format one column per line for better readability
+        header_str = '\n\t'.join(header_tuple)
+        _LOGGER.info(f"📃 Loaded header with {len(header_tuple)} columns from '{path}':\n\t{header_str}")
+    elif verbose >= 2:
+        _LOGGER.info(f"📃 Loaded header with {len(header_tuple)} columns.")
+    
+    return header_tuple
 
 
 def load_dataframe_greedy(directory: Union[str, Path],
@@ -406,7 +442,7 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame],
         raise TypeError()
     
     if verbose >= 2:
-        _LOGGER.info(f"Saved dataset: '{filename}' with shape: {df_to_save.shape}")
+        _LOGGER.info(f"💾 Saved dataset: '{filename}' with shape: {df_to_save.shape}")
 
 
 def save_dataframe(df: Union[pd.DataFrame, pl.DataFrame], 

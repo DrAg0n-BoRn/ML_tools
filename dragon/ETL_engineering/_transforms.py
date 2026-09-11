@@ -713,6 +713,19 @@ class RatioCalculator:
         handle_zeros: bool = False,
         handle_single_number: bool = False
     ):
+        """
+        Initializes the RatioCalculator.
+        
+        Args:
+            regex_pattern (str):
+                The regex pattern to extract the numerator and denominator.
+                Must contain exactly two capturing groups `(numerator)(denominator)`.
+                Defaults to matching positive floats/integers separated by ':', '：', or '/'.
+            handle_zeros (bool):
+                If True, returns a valid value if either the denominator or numerator is zero; returns zero if both are zero.
+            handle_single_number (bool):
+                If True, allows a single number to be treated as a ratio with an implicit denominator of 1. Else, single numbers will result in a null output.
+        """
         # --- Robust Validation ---
         try:
             compiled_pattern = re.compile(regex_pattern)
@@ -780,7 +793,7 @@ class TriRatioCalculator:
     A transformer that handles three-part ("A:B:C") ratios, enforcing a strict output structure.
 
     - Three-part ratios produce A/B and A/C.
-    - Two-part ratios are assumed to be A:C and produce None for A/B.
+    - Two-part ratios are assumed to be A/C and produce None for A/B.
     - Single values produce None for both outputs.
     """
     def __init__(self, handle_zeros: bool = False):
@@ -847,21 +860,24 @@ class CategoryMapper:
     A transformer that maps string categories to specified numerical values using a dictionary.
 
     Ideal for ordinal encoding.
-
-    Args:
-        mapping (Dict[str, [int | float]]):
-            A dictionary that defines the mapping from a string category (key)
-            to a numerical value (value).
-        unseen_value (int | float | None):
-            The numerical value to use for categories that are present in the
-            data but not in the mapping dictionary. If not provided or set
-            to None, unseen categories will be mapped to a null value.
     """
     def __init__(
         self,
         mapping: dict[str, Union[int, float]],
         unseen_value: Optional[Union[int, float]] = None,
     ):
+        """
+        Initializes the CategoryMapper.
+        
+        Args:
+            mapping (Dict[str, [int | float]]):
+                A dictionary that defines the mapping from a string category (key)
+                to a numerical value (value).
+            unseen_value (int | float | None):
+                The numerical value to use for categories that are present in the
+                data but not in the mapping dictionary. If not provided or set
+                to None, unseen categories will be mapped to a null value.
+        """
         if not isinstance(mapping, dict):
             _LOGGER.error("The 'mapping' argument must be a dictionary.")
             raise TypeError()
@@ -907,16 +923,6 @@ class RegexMapper:
     The class iterates through the mapping dictionary in order, and the first
     pattern that matches a given string determines the output value. This
     "first match wins" logic makes the order of the mapping important.
-
-    Args:
-        mapping (Dict[str, [int | float]]):
-            An ordered dictionary where keys are regex patterns and values are
-            the numbers to map to if the pattern is found.
-        unseen_value (int | float | None):
-            The numerical value to use for strings that do not match any
-            of the regex patterns. If None, unseen values are mapped to null.
-        case_insensitive (bool):
-            If True , the regex matching for all patterns will ignore case.
     """
     def __init__(
         self,
@@ -924,6 +930,19 @@ class RegexMapper:
         unseen_value: Optional[Union[int, float]] = None,
         case_insensitive: bool = True,
     ):
+        """
+        Initializes the RegexMapper.
+        
+        Args:
+            mapping (Dict[str, [int | float]]):
+                An ordered dictionary where keys are regex patterns and values are
+                the numbers to map to if the pattern is found.
+            unseen_value (int | float | None):
+                The numerical value to use for strings that do not match any
+                of the regex patterns. If None, unseen values are mapped to null.
+            case_insensitive (bool):
+                If True , the regex matching for all patterns will ignore case.
+        """
         # --- Validation ---
         if not isinstance(mapping, dict):
             _LOGGER.error("The 'mapping' argument must be a dictionary.")
@@ -1117,7 +1136,7 @@ class MolecularFormulaTransformer:
     Parses a Polars Series of molecular formula strings into a wide DataFrame.
 
     This one-to-many transformer takes a column of condensed molecular formulas
-    (e.g., 'Li0.115Mn0.529Ni0.339O2') and converts it into a DataFrame where
+    (e.g., `Li0.115Mn0.529Ni0.339O2`) and converts it into a DataFrame where
     each chemical element has its own column. The value in each column is the
     stoichiometric quantity of that element.
 
@@ -1181,4 +1200,3 @@ class MolecularFormulaTransformer:
             base_df = pl.DataFrame({'dummy': range(column.len())})
 
         return base_df.select(select_expressions)
-
