@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.12.0] 2026-09-12
+
+### Changed
+
+- ETL_engineering:
+    - `DragonTransformRecipe.add()`: Updated to allow `transform` to be `None`. This enables users to keep the column as is or perform simple column renaming without specifying a transformation function.
+
+### Added
+
+- ETL_engineering:
+    - `DragonTransformRecipe.recipe_status()`: New method to provide a summary of the expected transformation steps in the recipe for the input columns.
+    - Binarization functions based on Polars backend:
+        - `binarize_single_column()`: Binarizes a single numeric column based on a specified threshold.
+        - `binarize_columns()`: Binarizes multiple numeric columns in a DataFrame based on individual thresholds.
+        - `binarize_merge_columns()`: Binarizes multiple numeric columns and merges them into a single output column, optionally dropping the original columns.
+
+- utilities:
+    - `load_dataframe_as_dict()`: Loads a CSV file and converts it into a dictionary containing only non-null values for each column.
+
+### Fixed
+
+- ETL_engineering:
+    - `DragonTransformRecipe.add()`: Will block duplicate input columns in the recipe. Such cases should be handled by creating a custom function that chains multiple transformations together or by using several DragonProcessor pipeline stages.
+
+
 ## [26.11.0] 2026-09-11
 
 ### Added

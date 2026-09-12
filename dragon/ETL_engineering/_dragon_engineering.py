@@ -30,11 +30,12 @@ class DragonTransformRecipe:
     """
     def __init__(self):
         self._steps: list[dict[str, Any]] = []
+        self._added_input_columns: set[str] = set()
 
     def add(
         self,
         input_col_name: str,
-        transform: Union[str, Callable],
+        transform: Optional[Callable] = None,
         output_col_names: Optional[Union[str, list[str]]] = None
     ) -> "DragonTransformRecipe":
         """
@@ -42,15 +43,15 @@ class DragonTransformRecipe:
 
         Args:
             input_col_name: The name of the column from the source DataFrame.
-            output_col_names: The desired name(s) for the output column(s).
-                        - A string for a 1-to-1 mapping.
-                        - A list of strings for a 1-to-many mapping.
-                        - A string prefix for 1-to-many mapping.
-                        - If None, the input name is used for 1-to-1 transforms,
-                          or the transformer's default names are used for 1-to-many.
-            transform: The transformation to apply: 
-                - Use "rename" for simple column renaming
+            transform: The transformation to apply. 
+                - If None and `output_col_names` is None, the column is kept as is.
+                - If None and `output_col_names` is a string, performs a simple rename.
                 - If callable, must accept a `pl.Series` as the only parameter and return either a `pl.Series` or `pl.DataFrame`.
+            output_col_names: The desired name(s) for the output column(s).
+                - A string for a 1-to-1 mapping.
+                - A list of strings for a 1-to-many mapping.
+                - A string prefix for 1-to-many mapping.
+                - If None, the input name is used for 1-to-1 transforms, or the transformer's default names are used for 1-to-many.
 
         Returns:
             The instance of the recipe itself to allow for method chaining.
@@ -59,22 +60,37 @@ class DragonTransformRecipe:
         if not isinstance(input_col_name, str) or not input_col_name:
             _LOGGER.error("'input_col' must be a non-empty string.")
             raise TypeError()
-            
-        if transform == MagicWords.RENAME:
+        
+        # block duplicate input columns
+        if input_col_name in self._added_input_columns:
+            _LOGGER.error(f"A transformation for input column '{input_col_name}' already exists in the recipe. Only one transformation per column is allowed.\nFor multiple transformations, consider creating a custom function that chains them together or using several DragonProcessor pipeline stages.")
+            raise ValueError()
+        
+        # Resolve the transformation and output column names based on the provided arguments
+        resolved_transform = None
+        if transform is None and output_col_names is None:
+            resolved_transform = MagicWords.RENAME
+            output_col_names = input_col_name
+        elif transform is None:
             if not isinstance(output_col_names, str):
-                _LOGGER.error("For a RENAME operation, 'output_col' must be a string.")
+                _LOGGER.error("For a rename operation, 'output_col_names' must be a string.")
                 raise TypeError()
+            resolved_transform = MagicWords.RENAME
         elif not isinstance(transform, Callable):
-            _LOGGER.error(f"'transform' must be a callable function or the string '{MagicWords.RENAME}'.")
+            _LOGGER.error("'transform' must be a callable function or None.")
             raise TypeError()
+        else:
+            resolved_transform = transform
         
         # --- Add Step ---
         step = {
             "input_col": input_col_name,
             "output_col": output_col_names,
-            "transform": transform,
+            "transform": resolved_transform,
         }
         self._steps.append(step)
+        self._added_input_columns.add(input_col_name)
+        
         return self  # Allow chaining: recipe.add(...).add(...)
 
     def __iter__(self):
@@ -84,6 +100,35 @@ class DragonTransformRecipe:
     def __len__(self):
         """Allows the len() function to be used on an instance."""
         return len(self._steps)
+    
+    def recipe_status(self) -> dict[str, dict[str, Union[str, list[str]]]]:
+        """
+        Returns a dictionary summarizing the transformation steps in the recipe.
+        
+        The keys are the input column names, and the values are dictionaries containing:
+            - "output_columns": The specified output column names or a description of how they are determined
+            - "transform": The name of the transformation function or a description of the action taken
+        """
+        mapping = {}
+        for step in self._steps:
+            input_col: str = step["input_col"]
+            output_col: Union[str, list[str], None] = step["output_col"]
+            transform: Union[Callable, str] = step["transform"]
+            
+            if transform == MagicWords.RENAME:
+                transform_name = "No transformation with optional renaming"
+                out_cols = output_col if output_col is not None else input_col
+            else:
+                # __name__ for functions, fallback to class name for callables
+                transform_name: str = getattr(transform, "__name__", type(transform).__name__)
+                out_cols = output_col if output_col is not None else "Output column names determined by the Transformation"
+            
+            mapping[input_col] = {
+                "output_columns": out_cols,
+                "transform": transform_name
+            }
+
+        return mapping
 
 
 class DragonProcessor:

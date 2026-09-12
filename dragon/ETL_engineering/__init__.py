@@ -21,6 +21,12 @@ from ._transforms import (
     MolecularFormulaTransformer
 )
 
+from ._etl_binarize import (
+    binarize_single_column,
+    binarize_columns,
+    binarize_merge_columns
+)
+
 from .._core import _imprimir_disponibles
 
 
@@ -41,7 +47,11 @@ __all__ = [
     "RegexMapper",
     "ValueBinner",
     "DateFeatureExtractor",
-    "MolecularFormulaTransformer"
+    "MolecularFormulaTransformer",
+    # tools
+    "binarize_single_column",
+    "binarize_columns",
+    "binarize_merge_columns"
 ]
 
 

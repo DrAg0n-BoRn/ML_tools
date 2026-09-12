@@ -17,6 +17,7 @@ __all__ = [
     "load_dataframe",
     "load_dataframe_header",
     "load_dataframe_greedy",
+    "load_dataframe_as_dict",
     "load_dataframe_with_schema",
     "yield_dataframes_from_dir",
     "save_dataframe_filename",
@@ -268,6 +269,61 @@ def load_dataframe_greedy(directory: Union[str, Path],
         break
     
     return df
+
+
+def load_dataframe_as_dict(
+    df_path: Union[str, Path],
+    drop_empty_columns: bool = True,
+    unique_only: bool = False,
+    verbose: bool = True
+) -> dict[str, list[Any]]:
+    """
+    Loads a CSV file and converts it into a dictionary containing only non-null values for each column.
+
+    This function reads a dataset using Polars and iterates through its columns, dropping any null and empty values. 
+    It is particularly useful for inspecting very sparse datasets or extracting valid entries per feature.
+
+    Args:
+        df_path (Union[str, Path]): 
+            The path to the CSV file to be loaded.
+        drop_empty_columns (bool): 
+            If True, columns that contain only null or empty values will be excluded from the resulting dictionary.
+        unique_only (bool): 
+            If True, filters the valid values to return only unique entries per column.
+        verbose (bool): 
+            If True, logs the extraction process and the resulting column count.
+
+    Returns:
+        dict[str, list[Any]]: 
+            A dictionary where the keys are the column names and the values are lists of 
+            the valid entries found in those columns.
+    """
+    df, df_name = load_dataframe(
+        df_path=df_path, 
+        kind="polars",
+        empty_as_nan=True,
+        verbose=False
+    )
+    
+    output_dict: dict[str, list[Any]] = {}
+    
+    for col in df.columns:
+        series = df.get_column(col).drop_nulls()
+        
+        if unique_only:
+            series = series.unique(maintain_order=True)
+            
+        valid_values = series.to_list()
+        
+        if valid_values:
+            output_dict[col] = valid_values
+        elif not drop_empty_columns:
+            output_dict[col] = []
+
+    if verbose:
+        _LOGGER.info(f"📒 Extracted dictionary from '{df_name}' for {len(output_dict)} columns.")
+        
+    return output_dict
 
 
 def load_dataframe_with_schema(
