@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [26.12.1] 2026-09-12
+
+### Fixed
+
+- ETL_engineering:
+    - Updated all transformer classes to use latest Polars syntax and enhance robustness.
+
+
 ## [26.12.0] 2026-09-12
 
 ### Changed
