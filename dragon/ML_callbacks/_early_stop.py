@@ -43,14 +43,14 @@ class DragonPatienceEarlyStopping(_DragonEarlyStopping):
     Standard early stopping: Tracks minimum validation loss (or other metric) with a patience counter.
     """
     def __init__(self, 
-                 monitor: Union[Literal["Training Loss", "Validation Loss"], str] = "Validation Loss", 
+                 monitor: Union[Literal["Training Loss", "Validation Loss", "both"], str] = "Validation Loss", 
                  min_delta: float = 0.0, 
                  patience: int = 10, 
                  mode: Literal['min', 'max'] = 'min', 
                  verbose: int = 1):
         """  
         Args:
-            monitor (str): Metric to monitor.
+            monitor (str): Metric to monitor. If "both", tracks the sum of Training Loss and Validation Loss.
             min_delta (float): Minimum change to qualify as an improvement.
             patience (int): Number of epochs with no improvement after which training will be stopped.
             mode (str): One of {'min', 'max'}. In 'min' mode, training will stop when the quantity monitored has stopped decreasing; in 'max' mode it will stop when the quantity monitored has stopped increasing.
@@ -61,6 +61,8 @@ class DragonPatienceEarlyStopping(_DragonEarlyStopping):
             std_monitor = PyTorchLogKeys.TRAIN_LOSS
         elif monitor == "Validation Loss":
             std_monitor =  PyTorchLogKeys.VAL_LOSS
+        elif monitor == "both":
+            std_monitor = "both"
         else:
             _LOGGER.error(f"Unknown monitor key: {monitor}.")
             raise ValueError()
@@ -90,9 +92,21 @@ class DragonPatienceEarlyStopping(_DragonEarlyStopping):
     def on_train_begin(self, logs=None):
         self.wait = 0
         self.best = np.inf if self.monitor_op == np.less else -np.inf
+    
+    def _get_metric_value(self, logs):
+        if self.monitor == "both":
+            t_loss = logs.get(PyTorchLogKeys.TRAIN_LOSS)
+            v_loss = logs.get(PyTorchLogKeys.VAL_LOSS)
+            if t_loss is None or v_loss is None:
+                return None
+            return t_loss + v_loss
+        else:
+            return logs.get(self.monitor)
 
     def on_epoch_end(self, epoch, logs=None):
-        current = logs.get(self.monitor) # type: ignore
+        logs = logs or {}
+        current = self._get_metric_value(logs)
+        
         if current is None:
             return
 
@@ -205,4 +219,3 @@ class DragonPrecheltEarlyStopping(_DragonEarlyStopping):
 
         if quotient > self.alpha:
             self._stop_training(epoch, f"Prechelt Criterion triggered. Generalization/Progress quotient ({quotient:.3f}) > alpha ({self.alpha}).")
-

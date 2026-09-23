@@ -42,7 +42,6 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2,
                  cfg_dropout_rate: float = 0.15,
@@ -61,7 +60,6 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device on which to train the model.
             early_stopping_callback (Optional[_DragonEarlyStopping]): Optional callback for early stopping based on chosen metric performance.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): Optional callback for learning rate scheduling during training.
-            extra_callbacks (Optional[list[_Callback]]): Optional list of additional callbacks to integrate into the training loop.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
                 - "No-Checkpoints": No checkpoints will be saved.
@@ -79,7 +77,6 @@ class DragonTabularDiTTrainer(_BaseDragonTrainer):
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks,
             save_dir=save_dir
         )
         self.token_embedder = token_embedder

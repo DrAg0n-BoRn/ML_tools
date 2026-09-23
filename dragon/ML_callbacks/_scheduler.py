@@ -56,10 +56,6 @@ class _DragonLRScheduler(_Callback):
         
         # Log to dictionary
         logs[PyTorchLogKeys.LEARNING_RATE] = current_lr
-        
-        # Log to history
-        if hasattr(self.trainer, 'history'):
-            self.trainer.history.setdefault(PyTorchLogKeys.LEARNING_RATE, []).append(current_lr) # type: ignore
 
 
 class DragonScheduler(_DragonLRScheduler):
@@ -110,7 +106,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
     This wrapper initializes the scheduler internally using the Trainer's optimizer, simplifying the setup process.
     """
     def __init__(self, 
-                 monitor: Union[Literal["Training Loss", "Validation Loss"], str] = "Validation Loss",
+                 monitor: Union[Literal["Training Loss", "Validation Loss", "both"], str] = "Validation Loss",
                  mode: Literal['min', 'max'] = 'min', 
                  factor: float = 0.1, 
                  patience: int = 5, 
@@ -122,7 +118,7 @@ class DragonPlateauScheduler(_DragonLRScheduler):
                  verbose: int = 1):
         """
         Args:
-            monitor (Union[Literal["Training Loss", "Validation Loss"], str]): Metric to monitor.
+            monitor (Union[Literal["Training Loss", "Validation Loss", "both"], str]): Metric to monitor. If "both", tracks the sum of Training Loss and Validation Loss.
             mode ('min', 'max'): One of 'min', 'max'.
             factor (float): Factor by which the learning rate will be reduced. new_lr = lr * factor.
             patience (int): Number of epochs with no improvement after which learning rate will be reduced.
@@ -140,6 +136,8 @@ class DragonPlateauScheduler(_DragonLRScheduler):
             std_monitor = PyTorchLogKeys.TRAIN_LOSS
         elif monitor == "Validation Loss":
             std_monitor = PyTorchLogKeys.VAL_LOSS
+        elif monitor == "both":
+            std_monitor = "both"
         else:
             _LOGGER.error(f"Unknown monitor key: {monitor}.")
             raise ValueError()
@@ -180,11 +178,22 @@ class DragonPlateauScheduler(_DragonLRScheduler):
         
         # Register with trainer for checkpointing
         self.trainer.scheduler = self.scheduler # type: ignore
-
+    
+    def _get_metric_value(self, logs):
+        """Extracts or calculates the metric value based on configuration."""
+        if self.monitor == "both":
+            t_loss = logs.get(PyTorchLogKeys.TRAIN_LOSS)
+            v_loss = logs.get(PyTorchLogKeys.VAL_LOSS)
+            if t_loss is None or v_loss is None:
+                return None
+            return t_loss + v_loss
+        else:
+            return logs.get(self.monitor)
+    
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         
-        metric_val = logs.get(self.monitor)
+        metric_val = self._get_metric_value(logs)
         
         inner_verbose = True if self.verbose >= 1 else False
         
@@ -198,4 +207,3 @@ class DragonPlateauScheduler(_DragonLRScheduler):
         self.scheduler.step(metric_val)
         
         self._check_and_log_lr(epoch, logs, inner_verbose)
-

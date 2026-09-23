@@ -43,7 +43,6 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'],str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
@@ -58,7 +57,6 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             device (Union[Literal['cuda', 'mps', 'cpu'],str]): The device to train on.
             early_stopping_callback (Optional[_DragonEarlyStopping]): A callback to perform early stopping based on a chosen metric. Can be None to disable early stopping. Must work with the uncertainty weighting loss technique, loss values can drop below zero.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): A callback to adjust the learning rate during training. Can be None to disable learning rate scheduling.
-            extra_callbacks (Optional[list[_Callback]]): A list of any additional callbacks to use during training.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
                 - "No-Checkpoints": No checkpoints will be saved.
@@ -78,7 +76,6 @@ class DragonAutoencoderTrainer(_BaseDragonTrainer):
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks,
             save_dir=save_dir)
 
         self.train_dataset = train_dataset

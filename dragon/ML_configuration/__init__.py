@@ -48,6 +48,11 @@ from ._config_checkpoint import (
     DragonCheckpointConfig
 )
 
+from ._config_ddp import (
+    DragonDDPConfig
+)
+
+
 from .._core import _imprimir_disponibles
 
 
@@ -88,6 +93,7 @@ __all__ = [
 
     # --- Training Config ---
     "DragonTrainingConfig",
+    "DragonDDPConfig",
     # --- Optimization Config ---
     "DragonParetoConfig",
     "DragonOptimizerConfig",

@@ -45,7 +45,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
                  lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  criterion: Union[nn.Module, Literal["auto"]] = "auto", 
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
@@ -64,7 +63,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
             early_stopping_callback (DragonEarlyStopping | None): Callback to halt training based on validation.
             lr_scheduler_callback (DragonLRScheduler | None): Callback to adjust the learning rate.
-            extra_callbacks (list[Callback] | None): A list of extra callbacks to use during training.
             criterion (nn.Module | "auto"): The loss function to use. If "auto", it will default to `nn.GaussianNLLLoss()`. Must be compatible with `(mean, target, variance)` inputs.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
@@ -86,7 +84,6 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks,
             save_dir=save_dir)
         
         if kind not in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:

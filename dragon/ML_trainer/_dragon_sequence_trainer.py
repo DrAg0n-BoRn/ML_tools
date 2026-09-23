@@ -67,7 +67,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'], str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  target_types: Optional[dict[str, str]] = None,
                  criterion: Union[nn.Module, dict[str, nn.Module], Literal["auto"]] = "auto", 
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
@@ -85,7 +84,6 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             device (str): Computing device ('cpu', 'cuda', 'mps').
             early_stopping_callback: Callback for early stopping.
             lr_scheduler_callback: Callback for learning rate scheduling.
-            extra_callbacks (List[Callback] | None): Additional custom callbacks.
             target_types (dict[str, str] | None): Optional mapping of target names to their types ('continuous' or 'categorical').
             criterion (nn.Module | dict[str, nn.Module] | "auto"): Loss function.
                 - If "auto", infers MSE or CrossEntropy per target.
@@ -108,8 +106,7 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             dataloader_workers=dataloader_workers,
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
-            lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks
+            lr_scheduler_callback=lr_scheduler_callback
         )
         
         if kind not in MLTaskKeys.ALL_SEQUENCE_TASKS:

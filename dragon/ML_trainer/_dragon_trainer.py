@@ -62,7 +62,6 @@ class DragonTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'],str], 
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  criterion: Union[nn.Module,Literal["auto"]] = "auto", 
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
@@ -79,7 +78,6 @@ class DragonTrainer(_BaseDragonTrainer):
             device (Union[Literal['cuda', 'mps', 'cpu'], str]): The device to run training on.
             early_stopping_callback (Optional[_DragonEarlyStopping]): Callback to stop training early if metric stops improving.
             lr_scheduler_callback (Optional[_DragonLRScheduler]): Callback for learning rate scheduling.
-            extra_callbacks (Optional[list[_Callback]]): Additional custom callbacks to apply during training.
             criterion (Union[nn.Module, Literal["auto"]]): The loss function. If "auto", it is inferred from the `kind` parameter.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
@@ -106,8 +104,7 @@ class DragonTrainer(_BaseDragonTrainer):
             dataloader_workers=dataloader_workers,
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
-            lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks
+            lr_scheduler_callback=lr_scheduler_callback
         )
         
         if kind not in [MLTaskKeys.REGRESSION,
@@ -147,6 +144,23 @@ class DragonTrainer(_BaseDragonTrainer):
             batch_size=batch_size,
             shuffle=shuffle
         )
+    
+    def _format_output_and_target(self, output: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Formats the outputs and targets strictly for the criterion."""
+        # Strict type enforcement for loss functions
+        if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
+            target = target.float()
+        elif self.kind == MLTaskKeys.MULTICLASS_CLASSIFICATION:
+            target = target.long()
+        elif self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.MULTITARGET_REGRESSION]:
+            target = target.float()
+
+        # Shape mismatch handling
+        if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION]:
+            if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
+                output = output.squeeze(1)
+                
+        return output, target
 
     def _train_step(self):
         self.model.train()
@@ -165,13 +179,8 @@ class DragonTrainer(_BaseDragonTrainer):
             
             output = self.model(features)
             
-            if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
-                target = target.float()
-
-            if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION]:
-                if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
-                    output = output.squeeze(1)
-                
+            output, target = self._format_output_and_target(output, target)
+            
             loss = self.criterion(output, target)
             
             loss.backward()
@@ -202,12 +211,7 @@ class DragonTrainer(_BaseDragonTrainer):
                 
                 output = self.model(features)
                 
-                if self.kind in MLTaskKeys.ALL_BINARY_TASKS:
-                    target = target.float()
-
-                if self.kind in [MLTaskKeys.REGRESSION, MLTaskKeys.BINARY_CLASSIFICATION]:
-                    if output.ndim == 2 and output.shape[1] == 1 and target.ndim == 1:
-                        output = output.squeeze(1)
+                output, target = self._format_output_and_target(output, target)
                 
                 loss = self.criterion(output, target)
                 

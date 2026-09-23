@@ -44,8 +44,7 @@ class _BaseDragonTrainer(ABC):
                  dataloader_workers: int = 2,
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  early_stopping_callback: Optional[_DragonEarlyStopping] = None,
-                 lr_scheduler_callback: Optional[_DragonLRScheduler] = None,
-                 extra_callbacks: Optional[list[_Callback]] = None):
+                 lr_scheduler_callback: Optional[_DragonLRScheduler] = None):
 
         self.model = model
         self.optimizer = optimizer
@@ -58,11 +57,19 @@ class _BaseDragonTrainer(ABC):
         # move model to device
         self.model.to(self.device)
         
-        # Callback handler
-        default_callbacks = [History(), TqdmProgressBar()]
+        # Callback handler - Order is important
+        default_callbacks: list[_Callback] = [TqdmProgressBar()]
+        
+        if early_stopping_callback:
+            default_callbacks.append(early_stopping_callback)
+        if lr_scheduler_callback:
+            default_callbacks.append(lr_scheduler_callback)
+        
+        # Last callbacks: History and Checkpointing
+        # append history before checkpoint callback to ensure history is saved in the checkpoint
+        default_callbacks.append(History())
         
         self._checkpoint_callback = None
-        
         if checkpoint_config == "default":
             checkpoint_config = DragonCheckpointConfig()
             
@@ -78,13 +85,7 @@ class _BaseDragonTrainer(ABC):
             _LOGGER.error(f"Invalid 'checkpoint_config' provided: {checkpoint_config}. Must be a DragonCheckpointConfig instance, 'default', or 'No-Checkpoints'.")
             raise ValueError()
         
-        if early_stopping_callback:
-            default_callbacks.append(early_stopping_callback)
-        if lr_scheduler_callback:
-            default_callbacks.append(lr_scheduler_callback)
-        
-        user_callbacks = extra_callbacks if extra_callbacks is not None else []
-        self.callbacks = default_callbacks + user_callbacks
+        self.callbacks = default_callbacks
         self._set_trainer_on_callbacks()
 
         # Internal state

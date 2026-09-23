@@ -297,3 +297,8 @@ class SchemaKeys:
 class ChainKeys:
     """Used by the ML chaining module."""
     CHAIN_PREDICTION_PREFIX = "pred_"
+
+
+class DDPKeys:
+    """Used by the DDP trainers."""
+    VALIDATION_SAMPLES = "all_validation_samples"

@@ -3,10 +3,6 @@ from ._early_stop import (
     DragonPrecheltEarlyStopping,
 )
 
-# from ._checkpoint import (
-#     DragonModelCheckpoint,
-# )
-
 from ._scheduler import (
     DragonScheduler,
     DragonPlateauScheduler,

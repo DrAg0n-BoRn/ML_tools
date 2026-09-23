@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [27.0.0] 2026-09-23
+
+### Changed
+
+- ML_callbacks:
+    - Extended `DragonPatienceEarlyStopping` to accept `"both"` as a `monitor` metric to track the sum of training and validation losses.
+    - Extended `DragonPlateauScheduler` to accept `"both"` as a `monitor` metric to track the sum of training and validation losses.
+    - `DragonModelCheckpoint`
+        - Renamed checkpoint files saved during training.
+        - The `best_score` saved in the checkpoint now reflects the global best score so far, rather than the current epoch's score.
+
+- ML_trainer:
+    - Reorganized the order of callbacks in the base trainer to ensure that state-mutating callbacks (like early stopping and learning rate schedulers) are executed before checkpointing and history recording.
+    - Minor optimizations to reduce code duplication and improve maintainability.
+
+### Added
+
+- ML_configuration:
+    - `DragonDDPConfig`: New configuration class to initialize the new distributed data parallel trainer class.
+
+- ML_callbacks: 
+    - Added private callback classes to use internally with the new DDP trainer:
+        - `DDPProgressBar`,
+        - `DDPHistory`,
+        - `DDPModelCheckpoint`,
+        - `DDPPatienceEarlyStopping`,
+        - `DDPPlateauScheduler`
+
+- New module: "ML_trainer_parallel" for distributed data parallel training with PyTorch DDP.
+    - `_BaseParallelTrainer`: Base class for DDP training, handling model, optimizer, and configuration.
+    - `DragonTrainerDDP`, for tabular and general tasks.
+    - `DragonDistributionTrainerDDP`, for distributional regression tasks.
+    - `DragonSequenceTrainerDDP`, for sequence prediction tasks.
+    - `DragonVisionTrainerDDP`, for segmentation and image classification tasks.
+    - `DragonDetectionTrainerDDP`, for object detection tasks.
+
+### Fixed
+
+- ML_trainer:
+    - Fixed a bug in the `_validation_step()` method of `DragonDetectionTrainer` where BatchNorm and Dropout layers were not properly set to evaluation mode during validation. This was also added to the `_validation_step()` method of `DragonDetectionTrainerDDP` to ensure consistent behavior across both single-GPU and distributed training scenarios.
+
+### Removed
+
+- ML_trainer:
+    - Removed the `extra_callbacks` parameter from the `__init__()` method of all trainer classes. All future callback implementations will be explicitly added and handled.
+
+
 ## [26.12.1] 2026-09-12
 
 ### Fixed

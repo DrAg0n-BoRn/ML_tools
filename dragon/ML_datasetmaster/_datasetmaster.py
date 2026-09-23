@@ -92,7 +92,7 @@ class DragonDataset(_BaseDatasetMaker):
         target_cols_set = all_cols_set - feature_cols_set
         
         # intercept "autoencoder" as a special case where there is no target column and we create a dummy target of zeros. 
-        if kind == "autoencoder" or kind == MLTaskKeys.AUTOENCODER:
+        if kind == MLTaskKeys.AUTOENCODER:
             target_name = "dummy_target"
             self._target_names = [target_name]
             self._id = "autoencoder"

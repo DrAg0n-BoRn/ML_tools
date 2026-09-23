@@ -40,7 +40,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
                  device: Union[Literal['cuda', 'mps', 'cpu'],str],
                  early_stopping_callback: Optional[_DragonEarlyStopping],
                  lr_scheduler_callback: Optional[_DragonLRScheduler],
-                 extra_callbacks: Optional[list[_Callback]] = None,
                  checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
                  dataloader_workers: int = 2):
         """
@@ -56,7 +55,6 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             device (str): The device to run training on ('cpu', 'cuda', 'mps').
             early_stopping_callback (DragonEarlyStopping | None): Callback to stop training early.
             lr_scheduler_callback (DragonLRScheduler | None): Callback to manage the LR scheduler.
-            extra_callbacks (List[Callback] | None): A list of extra callbacks to use during training.
             checkpoint_config (Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]]): Configuration for model checkpointing.
                 - "default": Tracks minimization of validation loss and keeps track of the best 3 checkpoints.
                 - "No-Checkpoints": No checkpoints will be saved.
@@ -75,11 +73,10 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
             checkpoint_config=checkpoint_config,
             early_stopping_callback=early_stopping_callback,
             lr_scheduler_callback=lr_scheduler_callback,
-            extra_callbacks=extra_callbacks,
             save_dir=save_dir)
         
         self.train_dataset = train_dataset
-        self.validation_dataset = validation_dataset # <-- Renamed
+        self.validation_dataset = validation_dataset
         self.kind = MLTaskKeys.OBJECT_DETECTION
         self.collate_fn = collate_fn
         self.criterion = None # Criterion is handled inside the model
@@ -150,8 +147,15 @@ class DragonDetectionTrainer(_BaseDragonTrainer):
 
     def _validation_step(self):
         self.model.train() # Set to train mode even for validation loss calculation
-                           # as model internals (e.g., proposals) might differ, but we still need loss_dict.
-                           # use torch.no_grad() to prevent gradient updates.
+        
+        # Prevent BatchNorm running stats and Dropout from mutating/dropping during validation
+        for module in self.model.modules():
+            if isinstance(module, (torch.nn.modules.batchnorm._BatchNorm, 
+                                    torch.nn.Dropout, 
+                                    torch.nn.Dropout2d, 
+                                    torch.nn.Dropout3d)):
+                module.eval()
+        
         running_loss = 0.0
         total_samples = 0 
         

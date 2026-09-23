@@ -54,7 +54,7 @@ class DragonTrainingConfig:
                  early_stop_patience: Optional[int] = None,
                  scheduler_patience: Optional[int] = None,
                  scheduler_lr_factor: Optional[float] = None,
-                 monitor_metric: Optional[Union[Literal["Validation Loss"], Literal["Training Loss"], str]] = None,
+                 monitor_metric: Optional[Union[Literal["Validation Loss", "Training Loss", "both"], str]] = None,
                  **kwargs: Any) -> None:
         """
         Args:

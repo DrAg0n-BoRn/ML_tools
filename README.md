@@ -80,6 +80,7 @@ ML_models_vision
 ML_optimization
 ML_scaler
 ML_trainer
+ML_trainer_parallel
 ML_utilities
 ML_vision_transformers
 ML_vision_utilities
