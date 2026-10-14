@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [27.1.1] 2026-10-14
+
+### Fixed
+
+- Set pyarrow version to <26.0.0 to maintain compatibility with Numpy 1.x versions.
+
+
 ## [27.1.0] 2026-10-14
 
 ### Changed

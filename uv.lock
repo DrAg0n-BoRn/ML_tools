@@ -350,7 +350,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "27.1.0"
+version = "27.1.1"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -534,8 +534,8 @@ requires-dist = [
     { name = "polars", marker = "extra == 'mice'", specifier = ">=1.0" },
     { name = "polars", marker = "extra == 'ml'", specifier = ">=1.0" },
     { name = "pyarrow", marker = "extra == 'ensemble'" },
-    { name = "pyarrow", marker = "extra == 'mice'" },
-    { name = "pyarrow", marker = "extra == 'ml'" },
+    { name = "pyarrow", marker = "extra == 'mice'", specifier = "<26.0.0" },
+    { name = "pyarrow", marker = "extra == 'ml'", specifier = "<26.0.0" },
     { name = "scikit-learn", marker = "extra == 'ensemble'", specifier = ">=1.5,<1.8" },
     { name = "scikit-learn", marker = "extra == 'ml'" },
     { name = "seaborn", marker = "extra == 'ensemble'" },
@@ -574,7 +574,7 @@ dev = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "plotly", specifier = ">=6.5.0" },
     { name = "polars", specifier = ">=1.0" },
-    { name = "pyarrow", specifier = ">=22.0.0" },
+    { name = "pyarrow", specifier = ">=22.0.0,<26.0.0" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "shap", specifier = ">=0.49.1" },
