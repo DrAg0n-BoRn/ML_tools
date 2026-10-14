@@ -192,7 +192,7 @@ def encode_categorical_features(
     df_categorical: pd.DataFrame,
     encode_nulls: bool,
     null_label: str = "Other",
-    verbose: int = 1
+    verbose: int = 2
 ) -> tuple[pd.DataFrame, dict[str, dict[str, int]]]:
     """
     Encodes all columns in the provided DataFrame as categorical features using Label Encoding.
@@ -207,8 +207,9 @@ def encode_categorical_features(
         null_label (str): Label used for the null category in the returned mapping if `encode_nulls` is True.
         verbose (int): 
             - 0: Error level only.
-            - 1: Info and Warning levels.
-            - 2: Debug/Print everything (includes per-column summary).
+            - 1: Warning level.
+            - 2: Info level.
+            - 3: Print detailed information.
 
     Returns:
         Tuple (Dataframe, Dict):
@@ -220,7 +221,7 @@ def encode_categorical_features(
     
     cols_to_process = df_encoded.columns.tolist()
 
-    if verbose >= 1:
+    if verbose >= 2:
         _LOGGER.info(f"Encoding {len(cols_to_process)} categorical column(s).")
 
     for col_name in cols_to_process:
@@ -276,7 +277,7 @@ def encode_categorical_features(
             
             mappings[col_name] = mapping
 
-        if verbose >= 2:
+        if verbose >= 3:
             cardinality = len(mappings[col_name])
             print(f"  - Encoded '{col_name}': {cardinality} categories.")
 
@@ -348,7 +349,7 @@ def encode_classification_target(
             json.dump(class_map, f, indent=4)
             
         if verbose >= 2:
-            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes. Saved to {file_path}.")
+            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes. Saved to '{file_path}'.")
             
         if verbose >= 3:
             # Print a preview

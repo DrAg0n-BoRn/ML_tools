@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [27.1.0] 2026-10-14
+
+### Changed
+
+- schema:
+    - Updated `finalize_feature_schema()` to accept `list` or `tuple` for the `features` argument in addition to `pd.DataFrame`.
+    - Added `null_as: Optional[int]` parameter to `apply_feature_schema()` to safely isolate and manage original null values during encoding.
+    - Added `unknown_label: str` parameter to `reconstruct_from_schema()` to decode unmapped integers without overwriting original nulls.
+    - Added strict validation in `reconstruct_from_schema()` to raise a `ValueError` if feature and target lists overlap.
+
+
 ## [27.0.0] 2026-09-23
 
 ### Changed
