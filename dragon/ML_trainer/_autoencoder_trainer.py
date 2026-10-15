@@ -10,7 +10,6 @@ from ..ML_configuration._config_finalize import FinalizeAutoencoder
 from ..ML_configuration._config_metrics import FormatAutoencoderMetrics
 from ..ML_configuration import DragonCheckpointConfig
 from ..ML_evaluation import autoencoder_metrics
-from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._early_stop import _DragonEarlyStopping, DragonPrecheltEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 

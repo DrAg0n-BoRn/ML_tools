@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-from typing import Literal, Union, Iterator
+from typing import Union, Iterator
 
 from ..path_manager import make_fullpath, list_csv_paths
 from .._core import get_logger

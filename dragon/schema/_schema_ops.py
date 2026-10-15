@@ -179,7 +179,7 @@ def apply_feature_schema(
                 if null_as is not None:
                     mapped_series.loc[original_nulls] = null_as
                 else:
-                    mapped_series.loc[original_nulls] = pd.NA
+                    mapped_series.loc[original_nulls] = None # pd.NA
             
             df_processed[col_name] = mapped_series
             

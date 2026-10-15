@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from scipy.optimize import linear_sum_assignment
 
-from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation._dit_metrics import dit_generation_metrics

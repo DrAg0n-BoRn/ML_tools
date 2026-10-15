@@ -6,13 +6,20 @@ authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
 ]
 readme = "README.md"
-requires-python = "==3.12.*"
+requires-python = ">=3.12,<3.15"
 license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent"
 ]
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+    "pandas",
+    "polars>=2.0",
+    "pyarrow",
+    "joblib",
+    "colorlog"
+]
 
 [project.urls]
 Homepage = "https://github.com/DrAg0n-BoRn/ML_tools"
@@ -24,27 +31,23 @@ ML = [
     # Core
     "torch",
     "torchvision",
-    "numpy<2.0",          # Pinned for PyTorch extension compatibility
-    "pandas",
-    "polars>=1.0",
-    "pyarrow<26.0.0",     # Essential for Polars efficiency, version cap for compatibility with Pandas < 2
-    "joblib",
     "tqdm",
-    "colorlog",
     
     # Math / ML
     "scikit-learn",
-    "shap",               # Uses KernelExplainer/DeepExplainer
+    "shap>=0.46",          # Uses KernelExplainer/DeepExplainer
     "captum",
     "evotorch",
     "torchmetrics",
 
-    # Notebook / Plots
+    # Plots
     "matplotlib",
     "seaborn",
     "plotly",              # Interactive plots
     "kaleido",             # For static plotly image export
     "Pillow",
+
+    # Notebook
     "ipython",
     "ipykernel",
     "notebook",
@@ -55,27 +58,24 @@ ML = [
 # ensemble tools
 ensemble = [
     # Core
-    "numpy",              # should be >2.0
-    "numba>=0.60",        # Required for NumPy 2.0 JIT compilation
-    "shap>=0.46",         # Required to use the newer Numba
+    "shap>=0.46",
     
-    # Data
-    "pandas",
-    "polars>=1.0",        # Recommended for safest NumPy 2.0
-    "pyarrow",
-    "joblib",
+    # Utilities
     "tqdm",
-    "colorlog",
 
     # Math / ML
-    "scikit-learn>=1.5,<1.8",  # Required >1.5 for numpy 2.0 but less than 1.8 for compatibility with imbalanced-learn
+    "scikit-learn>=1.5.0,<1.6.0; python_version < '3.14'", # lightgbm compatibility
+    "scikit-learn>=1.8.0; python_version >= '3.14'",
     "imbalanced-learn",
     "xgboost",
-    "lightgbm",
+    "lightgbm<4.5.0; python_version < '3.14'",
+    "lightgbm>=4.6.0,<4.7.0; python_version >= '3.14'",
 
-    # Notebook / Plots
+    # Plots
     "matplotlib",
     "seaborn",
+
+    # Notebook
     "ipython",
     "ipykernel",
     "notebook",
@@ -85,17 +85,14 @@ ensemble = [
 
 # MICE and VIF
 mice = [
-    "numpy<2.0",
-    "pandas",
-    "polars>=1.0",
-    "joblib",
     "miceforest>=6.0.0",
     "plotnine>=0.12",
     "matplotlib",
-    "lightgbm<=4.5.0",
+    "lightgbm<4.5.0; python_version < '3.14'",
+    "lightgbm>=4.6.0,<4.7.0; python_version >= '3.14'",
+    "scikit-learn>=1.5.0,<1.6.0; python_version < '3.14'",
+    "scikit-learn>=1.8.0; python_version >= '3.14'",
     "shap",
-    "colorlog", 
-    "pyarrow<26.0.0",
 
     # Notebook
     "ipython",
@@ -107,30 +104,28 @@ mice = [
 
 # Process excel files
 excel = [
-    "pandas",
     "openpyxl",
+
+    # Notebook
     "ipython",
     "ipykernel",
     "notebook",
     "jupyterlab",
     "ipywidgets",
-    "colorlog"
 ]
 
 # GUI for boost algorithms
 # Optional: matplotlib / seaborn
 gui-boost = [
-    "numpy", # should be >2.0
-    "joblib",
     "FreeSimpleGUI>=5.2",
     "xgboost", 
-    "lightgbm", 
+    "lightgbm<4.5.0; python_version < '3.14'",
+    "lightgbm>=4.6.0,<4.7.0; python_version >= '3.14'",
 ]
 
 # GUI for Pytorch 
 # Optional: Pillow / Torchvision / matplotlib / seaborn
 gui-torch = [
-    "numpy<2.0",
     "torch",
     "FreeSimpleGUI>=5.2",
 ]
@@ -147,29 +142,30 @@ namespaces = false
 [dependency-groups]
 dev = [
     "captum>=0.8.0",
-    "colorlog>=6.10.1",
     "evotorch>=0.6.1",
     "freesimplegui>=5.2",
+    # "imbalanced-learn", #ensemble
     "ipykernel>=7.1.0",
     "ipython>=9.8.0",
     "ipywidgets>=8.1.8",
-    "joblib>=1.5.2",
     "jupyterlab>=4.5.0",
     "kaleido>=1.3.0",
+    # "lightgbm<4.5.0; python_version < '3.14'", # ensemble - mice
+    # "lightgbm>=4.6.0,<4.7.0; python_version >= '3.14'", # ensemble - mice
     "matplotlib>=3.10.8",
+    # "miceforest>=6.0.0", # mice
     "notebook>=7.5.0",
-    "numpy<2.0",
     "openpyxl>=3.1.5",
-    "pandas>=2.3.3",
     "pillow>=12.0.0",
     "plotly>=6.5.0",
-    "polars>=1.0",
-    "pyarrow>=22.0.0,<26.0.0",
-    "scikit-learn>=1.7.2",
+    # "plotnine>=0.12.0", # mice
+    "scikit-learn>=1.5.0,<1.6.0; python_version < '3.14'", # ensemble + ml (forced)
+    "scikit-learn>=1.8.0; python_version >= '3.14'", # ensemble + ml (forced)
     "seaborn>=0.13.2",
     "shap>=0.49.1",
     "torch>=2.9.1",
     "torchmetrics>=1.5.2",
     "torchvision>=0.24.1",
     "tqdm>=4.67.1",
+    # "xgboost" #ensemble
 ]

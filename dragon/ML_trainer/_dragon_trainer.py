@@ -5,7 +5,6 @@ import torch
 from torch import nn
 import numpy as np
 
-from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_scaler import DragonScaler

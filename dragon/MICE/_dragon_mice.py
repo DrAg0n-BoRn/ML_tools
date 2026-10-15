@@ -1,10 +1,10 @@
 import pandas as pd
 from pathlib import Path
 from typing import Union
-import miceforest as mf # type: ignore
+import miceforest as mf
 import matplotlib.pyplot as plt
 import numpy as np
-from plotnine import ggplot, labs, theme, element_blank # type: ignore
+from plotnine import ggplot, labs, theme, element_blank
 
 from ..utilities import load_dataframe, merge_dataframes_horizontal, save_dataframe_filename
 from ..schema import FeatureSchema
@@ -340,6 +340,10 @@ def get_convergence_diagnostic(kernel: mf.ImputationKernel, imputed_dataset_name
         for iteration in range(iterations_cap):
             # Resolve dataset ONLY ONCE per iteration
             current_imputed = kernel.complete_data(dataset=dataset_id, iteration=iteration)
+            
+            if current_imputed is None:
+                _LOGGER.error(f"Failed to retrieve completed dataset {dataset_id} at iteration {iteration}.")
+                raise ValueError()
             
             for col in column_names:
                 # Fast lookup

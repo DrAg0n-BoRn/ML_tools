@@ -1,15 +1,32 @@
-# dragon-ml-toolbox
+# Dragon-ML-Toolbox
 
-A collection of machine learning pipelines and utilities, structured as modular packages for easy reuse and installation. This package has no base dependencies, allowing for lightweight and customized virtual environments.
+A collection of machine learning pipelines and utilities, structured as modular packages for lightweight and customized virtual environments.
 
-### Features:
+Modular scripts for data science workflows, including data exploration, ETL, model training, evaluation, and inference.
 
-- Modular scripts for data science workflows, including data exploration, ETL, model training, evaluation, and inference.
-- Support for PyTorch-based models, ensemble learning (XGBoost, LightGBM), and MICE imputation.
+Support for PyTorch-based models, ensemble learning (XGBoost, LightGBM), MICE imputation, and basic GUI factory classes for model deployment.
+
+### Base Dependencies
+
+```toml
+"numpy>=2.0",
+"pandas",
+"polars>=2.0",
+"pyarrow",
+"joblib",
+"colorlog"
+```
+
+### Supported Python Versions
+
+Python 3.12
+
+Python 3.13
+
+Python 3.14
+
 
 ## Installation
-
-**Python 3.12**
 
 ### Via PyPI
 
@@ -45,7 +62,7 @@ This toolbox is designed as a collection of mutually exclusive environments due 
 
 Installs a comprehensive set of tools for typical data science workflows, including data manipulation, modeling, and evaluation using PyTorch.
 
-➡️ On Windows, the default installation includes the CPU version of PyTorch. Follow the official instructions to install the CUDA version: [PyTorch website](https://pytorch.org/get-started/locally/)
+🪟 On Windows, the default installation includes the CPU version of PyTorch. Follow the official instructions to install the CUDA version: [PyTorch website](https://pytorch.org/get-started/locally/)
 
 ```Bash
 pip install "dragon-ml-toolbox[ML]"
@@ -229,7 +246,7 @@ constants
 
 ---
 
-## Usage
+### Usage
 
 After installation, import modules like this:
 

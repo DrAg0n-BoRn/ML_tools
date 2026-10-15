@@ -4,7 +4,6 @@ from torch.utils.data import DataLoader, Dataset
 import torch
 from torch import nn
 
-from ..ML_callbacks._base import _Callback
 from ..ML_callbacks._early_stop import _DragonEarlyStopping
 from ..ML_callbacks._scheduler import _DragonLRScheduler
 from ..ML_evaluation import object_detection_metrics
