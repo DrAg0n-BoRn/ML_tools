@@ -468,8 +468,8 @@ def save_dataframe_filename(df: Union[pd.DataFrame, pl.DataFrame],
     # --- Type-specific saving logic ---
     if isinstance(df, pd.DataFrame):
         if empty_as_nan:
-            # Transform "" to np.nan before saving
-            str_cols = df.select_dtypes(include=['object', 'string']).columns
+            # Transform empty strings to np.nan before saving (ignore object columns that are not strings)
+            str_cols = df.select_dtypes(include=['string']).columns
             if not str_cols.empty:
                 df_to_save = df.copy()
                 df_to_save[str_cols] = df_to_save[str_cols].replace(r'^\s*$', np.nan, regex=True)
@@ -577,11 +577,12 @@ def save_dataframe_with_schema(
     # Call the helper to validate and reorder
     df_to_save = _validate_and_reorder_schema(df=df, schema=schema, verbose=verbose)
     
-    # Call the original save function
-    save_dataframe(df=df_to_save, 
-                   full_path=full_path, 
-                   empty_as_nan=empty_as_nan,
-                   verbose=verbose)
+    # Call the save function
+    save_dataframe_filename(df=df_to_save, 
+                            save_dir=full_path.parent,
+                            filename=full_path.name,
+                            empty_as_nan=empty_as_nan,
+                            verbose=verbose)
 
 
 def _validate_and_reorder_schema(

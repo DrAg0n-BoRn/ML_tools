@@ -10,6 +10,15 @@ from ._utility_save_load import (
     save_dataframe_with_schema
 )
 
+from ._parquet_save_load import (
+    load_parquet_dataframe,
+    load_parquet_header,
+    load_parquet_with_schema,
+    save_parquet_dataframe_filename,
+    save_parquet_dataframe,
+    save_parquet_with_schema
+)
+
 from ._utility_tools import (
     merge_dataframes_horizontal,
     merge_dataframes_vertical,
@@ -45,7 +54,14 @@ __all__ = [
     "audit_column_translation",
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
-    "train_dataset_yielder"
+    "train_dataset_yielder",
+    # parquet-specific functions
+    "load_parquet_dataframe",
+    "load_parquet_header",
+    "load_parquet_with_schema",
+    "save_parquet_dataframe_filename",
+    "save_parquet_dataframe",
+    "save_parquet_with_schema"
 ]
 
 

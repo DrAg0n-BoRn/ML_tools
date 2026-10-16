@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [28.1.0] 2026-10-16
+
+### Added
+
+- utilities:
+    - Added new functions for Parquet file handling:
+        - `load_parquet_dataframe()`: Loads a Parquet file into a Pandas or Polars DataFrame.
+        - `load_parquet_header()`: Loads only the header of a Parquet file and returns the column names as a tuple.
+        - `load_parquet_with_schema()`: Loads a Parquet file into a Pandas DataFrame while enforcing a specified schema.
+        - `save_parquet_dataframe_filename()`: Saves a Pandas or Polars DataFrame to a Parquet file with an optional filename suffix.
+        - `save_parquet_dataframe()`: Saves a Pandas or Polars DataFrame to a Parquet file at a specified path.
+        - `save_parquet_with_schema()`: Saves a Pandas or Polars DataFrame to a Parquet file while enforcing a specified schema.
+
+### Changed
+
+- utilities:
+    - `save_dataframe_filename()`: Using 'empty_as_nan=True' now transforms empty strings to `np.nan` before saving, but only for columns with string data types. This prevents edge-case errors when trying to convert non-string object columns.
+
+
 ## [28.0.0] 2026-10-16
 
 Updated package to support Python 3.13, Python 3.14.

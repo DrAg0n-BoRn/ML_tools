@@ -10,7 +10,7 @@ Support for PyTorch-based models, ensemble learning (XGBoost, LightGBM), MICE im
 
 ```toml
 "numpy>=2.0",
-"pandas",
+"pandas>=3.0",
 "polars>=2.0",
 "pyarrow",
 "joblib",
