@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib
 # Use non-interactive backend for parallel plotting to avoid GUI issues
 matplotlib.use("Agg") 
-from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_numeric_dtype, is_bool_dtype
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Union
@@ -55,10 +55,11 @@ def _worker_plot_pairgrid(
             return {"target": target, "status": "skipped", "reason": "no_correlated_features"}
 
         # 3. Safely subset only the required columns and drop NaNs
+        # cast to float to avoid dtype issues in plotting (pandas nullable types Int64, Float64, etc. can cause issues with Seaborn/Matplotlib)
         plot_df = pd.concat([
             df_continuous[top_features], 
             df_targets[target]
-        ], axis=1).dropna()
+        ], axis=1).dropna().astype(float)
 
         # 4. Guardrail against plotting errors on tiny datasets
         if len(plot_df) < 5:
@@ -154,7 +155,9 @@ def plot_pairgrid_continuous_vs_target(
     log_diagonal: bool = False
 ):
     """
-    Plots a PairGrid of the top 4 most correlated continuous features against each target.
+    Plots a PairGrid of the top 4 most correlated continuous features against each numerical target.
+    
+    ➡️ Numerically encoded categorical targets will result in meaningless plots.
     
     Each plot is saved as an SVG file for high-quality vector graphics. 
     If multiple targets are provided, plots will be saved in a subdirectory named 'PairPlots' within the specified save_dir. 
@@ -182,12 +185,12 @@ def plot_pairgrid_continuous_vs_target(
         _LOGGER.error("Invalid n_jobs parameter. Must be -1 or a positive integer.")
         return
     
-    valid_targets = [col for col in df_targets.columns if is_numeric_dtype(df_targets[col])]
+    valid_targets = [col for col in df_targets.columns if is_numeric_dtype(df_targets[col]) and not is_bool_dtype(df_targets[col])]
     if not valid_targets:
         _LOGGER.error("No valid numeric target columns provided in df_targets.")
         return
 
-    valid_features = [col for col in df_continuous.columns if is_numeric_dtype(df_continuous[col])]
+    valid_features = [col for col in df_continuous.columns if is_numeric_dtype(df_continuous[col]) and not is_bool_dtype(df_continuous[col])]
     if not valid_features:
         _LOGGER.error("No valid numeric feature columns provided in df_continuous.")
         return

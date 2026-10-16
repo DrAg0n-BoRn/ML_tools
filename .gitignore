@@ -11,3 +11,4 @@ test_dir
 *.xlsx
 .venv
 Icon?
+test_paths.py

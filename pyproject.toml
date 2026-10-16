@@ -1,6 +1,6 @@
 [project]
 name = "dragon-ml-toolbox"
-version = "27.1.1"
+version = "28.0.0"
 description = "Complete pipelines and helper tools for data science and machine learning projects."
 authors = [
     { name = "Karl Luigi Loza Vidaurre", email = "luigiloza@gmail.com" }
@@ -14,7 +14,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.0",
-    "pandas",
+    "pandas>=3.0",
     "polars>=2.0",
     "pyarrow",
     "joblib",

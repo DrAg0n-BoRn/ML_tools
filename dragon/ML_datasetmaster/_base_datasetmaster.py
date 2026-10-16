@@ -114,6 +114,7 @@ class _BaseDatasetMaker(ABC):
         self.target_scaler: Optional[DragonScaler] = None
         
         self._id: Optional[str] = None
+        self.kind: Optional[str] = None
         self._feature_names: list[str] = []
         self._target_names: list[str] = []
         self._X_train_shape = (0,0)
@@ -533,6 +534,7 @@ class _BaseDatasetMaker(ABC):
             DatasetKeys.CLASS_MAP: self.class_map,
             DatasetKeys.CLASSES: self.classes,
             DatasetKeys.ID: self.id,
+            DatasetKeys.KIND: self.kind,
             DatasetKeys.VALIDATION_SPLIT: self.validation_split,
             DatasetKeys.TEST_SPLIT: self.test_split,
             ScalerKeys.FEATURE_SCALER: self.feature_scaler._get_state() if self.feature_scaler else None,
@@ -550,6 +552,7 @@ class _BaseDatasetMaker(ABC):
         
         report_data = {
             "dataset_id": self.id,
+            "kind": self.kind,
             "number_of_features": self.number_of_features,
             "number_of_targets": self.number_of_targets,
             "feature_names": self.feature_names,
@@ -644,6 +647,7 @@ class _BaseDatasetMaker(ABC):
         instance.class_map = bundle.get(DatasetKeys.CLASS_MAP, {})
         instance.classes = bundle.get(DatasetKeys.CLASSES, [])
         instance._id = bundle.get(DatasetKeys.ID, "")
+        instance.kind = bundle.get(DatasetKeys.KIND, None)
         instance.validation_split = bundle.get(DatasetKeys.VALIDATION_SPLIT, 0.0)
         instance.test_split = bundle.get(DatasetKeys.TEST_SPLIT, 0.0)
         

@@ -1,12 +1,11 @@
 import pandas as pd
-from pandas.api.types import is_numeric_dtype, is_object_dtype
+from pandas.api.types import is_numeric_dtype, is_object_dtype, is_string_dtype
 import numpy as np
 from typing import Any, Optional, Union
 import re
 import json
 from pathlib import Path
 
-from ..path_manager import make_fullpath
 from .._core import get_logger
 
 
@@ -287,8 +286,7 @@ def encode_categorical_features(
 def encode_classification_target(
     df: pd.DataFrame,
     target_col: str,
-    save_dir: Union[str, Path],
-    suffix: str = "",
+    save_path: Union[str, Path],
     verbose: int = 2
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """
@@ -300,8 +298,7 @@ def encode_classification_target(
     Args:
         df (pd.DataFrame): Input DataFrame.
         target_col (str): Name of the target column to encode.
-        save_dir (str | Path): Directory where the class map JSON will be saved.
-        suffix (str): Suffix to append to the class map filename.
+        save_path (str | Path): Path where the target class map JSON will be saved.
         verbose (int): Verbosity level for logging.
 
     Returns:
@@ -318,18 +315,6 @@ def encode_classification_target(
         n_missing = df[target_col].isnull().sum()
         _LOGGER.error(f"Target column '{target_col}' contains {n_missing} missing values. Please handle them before encoding.")
         raise ValueError()
-    
-    # validate suffix and prepend underscore if needed
-    if suffix:
-        if not suffix.startswith("_"):
-            suffix = f"_{suffix}"
-        sanitized_suffix = suffix
-    else:
-        sanitized_suffix = ''
-        
-    # Ensure directory exists
-    save_path = make_fullpath(save_dir, make=True, enforce="directory")
-    file_path = save_path / f"class_map{sanitized_suffix}.json"
 
     # Get unique values and sort them to ensure deterministic encoding (0, 1, 2...)
     # Convert to string to ensure the keys in JSON are strings
@@ -345,12 +330,12 @@ def encode_classification_target(
     
     # Save to JSON
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(save_path, 'w', encoding='utf-8') as f:
             json.dump(class_map, f, indent=4)
             
         if verbose >= 2:
-            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes. Saved to '{file_path}'.")
-            
+            _LOGGER.info(f"Target '{target_col}' encoded with {len(class_map)} classes. Saved to '{save_path}'.")
+        
         if verbose >= 3:
             # Print a preview
             if len(class_map) <= 10:
@@ -673,8 +658,8 @@ def reconstruct_multibinary(
     
     # 3. Apply mapping
     for col in target_columns:
-        # Check if column is numeric or boolean before attempting map to avoid destroying existing strings
-        if is_numeric_dtype(new_df[col]) or is_object_dtype(new_df[col]):
+        # Check if column is numeric or object or string before attempting map to avoid destroying existing strings
+        if is_numeric_dtype(new_df[col]) or is_object_dtype(new_df[col]) or is_string_dtype(new_df[col]):
             # We cast to object implicitly by mapping to strings
             new_df[col] = new_df[col].map(mapping_dict)
             converted_count += 1

@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [28.0.0] 2026-10-16
+
+Updated package to support Python 3.13, Python 3.14.
+
+Updated third-party licenses references.
+
+Updated README.md to reflect the changes.
+
+Added base dependencies for the package:
+    - "numpy>=2.0",
+    - "pandas>=3.0",
+    - "polars>=2.0",
+    - "pyarrow",
+    - "joblib",
+    - "colorlog"
+
+### Changed
+
+- data_exploration:
+    - `encode_classification_target()`: Replaced the `save_dir` and `suffix` parameters with a single `save_path` parameter to specify the exact file path for saving the class map JSON. This change simplifies the function signature and provides more flexibility in specifying the output location.
+    - Added `is_bool_dtype()` checks to all functions that validate numeric columns in DataFrames. This ensures that boolean columns are not mistakenly treated as numeric.
+    - Cast all numeric columns to `float` before plotting in functions that generate histograms, boxplots, and correlation heatmaps. This prevents errors when using Pandas nullable types (e.g., `Int64`, `Float64`) with Seaborn and Matplotlib.
+    - `plot_value_distributions()`: Replaced the `categorical_columns` parameter with `treat_as_categorical`, which allows users to explicitly specify columns to be treated as categorical, bypassing auto-detection individually without affecting other columns.
+
+- ML_configuration:
+    - `DragonTrainingConfig`:
+        - Split `target` and `targets` properties to retrieve the target column name(s) for training.
+        - Added `to_dict()` method to return a dictionary representation of the configuration, converting `Path` and `FeatureSchema` objects to strings for easier serialization and logging.
+
+### Added
+
+- ML_datasetmaster:
+    - Added `number_of_classes` property to `DragonDataset` to retrieve the number of classes in classification tasks. This property returns the length of the `class_map` and provides a warning if accessed for non-classification tasks.
+    - Added `kind` property to the base class `_BaseDragonDataset`, this is also saved and loaded in the bundle.
+
 ## [27.1.1] 2026-10-14
 
 ### Fixed

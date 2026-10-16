@@ -126,6 +126,7 @@ class DragonDataset(_BaseDatasetMaker):
         else:
             _LOGGER.error(f"Invalid 'kind' {kind}.")
             raise ValueError()
+        # update the instance attribute for kind
         self.kind = kind
 
         # --- 4. Scale Features ---
@@ -193,9 +194,17 @@ class DragonDataset(_BaseDatasetMaker):
         if self._test_ds: self._test_ds._classes, self._test_ds._class_map = class_list, class_map # type: ignore
             
         _LOGGER.info(f"Class map set for dataset '{self.id}' and its subsets:\n{class_map}")
+    
+    @property
+    def number_of_classes(self) -> int:
+        if self.kind not in [MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.MULTICLASS_CLASSIFICATION]:
+            _LOGGER.warning(f"Number of classes is only applicable for classification tasks.")
+            return 0
+        return len(self.class_map)
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
+        s = f"  Kind: {self.kind}\n"
         s += f"  Target: {self.target_names[0]}\n"
         s += f"  Features: {self.number_of_features}\n"
         s += f"  Feature Scaler: {'Fitted' if self.feature_scaler else 'None'}\n"
@@ -269,6 +278,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         if kind not in [MLTaskKeys.MULTITARGET_REGRESSION, MLTaskKeys.MULTILABEL_BINARY_CLASSIFICATION]:
             _LOGGER.error(f"Invalid 'kind' {kind}.")
             raise ValueError()
+        # update the instance attribute for kind
         self.kind = kind
         
         self.validation_split = validation_size
@@ -331,6 +341,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
 
     def __repr__(self) -> str:
         s = f"<{self.__class__.__name__} (ID: '{self.id}')>\n"
+        s += f"  Kind: {self.kind}\n"
         s += f"  Targets: {self.number_of_targets}\n"
         s += f"  Features: {self.number_of_features}\n"
         s += f"  Feature Scaler: {'Fitted' if self.feature_scaler else 'None'}\n"

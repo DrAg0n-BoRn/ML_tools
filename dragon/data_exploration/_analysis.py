@@ -5,6 +5,7 @@ import numpy as np
 import re
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.ticker as ticker
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
@@ -254,13 +255,23 @@ def check_class_balance(
             raise ValueError()
         elif len(target) == 1:
             target = target[0]  # Simplify to single column case
-
-    # Case 1: Single Target (Binary or Multi-class)
+    
+    # Early validation for missing columns and type checking
     if isinstance(target, str):
         if target not in df.columns:
             _LOGGER.error(f"Target column '{target}' not found in DataFrame.")
             raise ValueError()
-        
+    elif isinstance(target, list):
+        missing_cols = [t for t in target if t not in df.columns]
+        if missing_cols:
+            _LOGGER.error(f"Target columns not found: {missing_cols}")
+            raise ValueError()
+    else:
+        _LOGGER.error("Target must be a string or a list of strings.")
+        raise TypeError()
+
+    # Case 1: Single Target (Binary or Multi-class)
+    if isinstance(target, str):
         # Calculate stats
         counts = df[target].value_counts(dropna=False).sort_index()
         percents = df[target].value_counts(normalize=True, dropna=False).sort_index() * 100
@@ -282,8 +293,11 @@ def check_class_balance(
                 bars = plt.bar(x_labels, summary['Count'], color=color, edgecolor='black', alpha=0.7)
                 
                 plt.title(f"Class Balance: {target}")
-                plt.xlabel(target)
+                plt.xlabel("")
                 plt.ylabel("Count")
+                
+                plt.gca().yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+                
                 plt.grid(axis='y', linestyle='--', alpha=0.5)
                 
                 # Add percentage labels on top of bars
@@ -311,11 +325,6 @@ def check_class_balance(
 
     # Case 2: Multi-label (List of binary columns)
     elif isinstance(target, list):
-        missing_cols = [t for t in target if t not in df.columns]
-        if missing_cols:
-            _LOGGER.error(f"Target columns not found: {missing_cols}")
-            raise ValueError()
-        
         stats = []
         for col in target:
             # Assume 0/1 or False/True. Sum gives the count of positives.
@@ -377,7 +386,3 @@ def check_class_balance(
                 plt.close()
 
         return summary.sort_values("Positive_Percentage", ascending=False)
-    
-    else:
-        _LOGGER.error("Target must be a string or a list of strings.")
-        raise TypeError()

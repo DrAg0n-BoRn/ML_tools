@@ -84,6 +84,7 @@ class DatasetKeys:
     CLASS_MAP = "class_map"
     CLASSES = "classes"
     ID = "id"
+    KIND = "kind"
     VALIDATION_SPLIT = "validation_split"
     TEST_SPLIT = "test_split"
     

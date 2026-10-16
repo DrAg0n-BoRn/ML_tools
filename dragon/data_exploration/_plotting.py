@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colormaps as matplotcolormaps
 import matplotlib.ticker as ticker
 import seaborn as sns
-from pandas.api.types import is_numeric_dtype, is_object_dtype
+from pandas.api.types import is_numeric_dtype, is_object_dtype, is_bool_dtype
 
 from ..path_manager import make_fullpath, sanitize_filename
 from .._core import get_logger
@@ -30,7 +30,7 @@ __all__ = [
 def plot_value_distributions(
     df: pd.DataFrame,
     save_dir: Union[str, Path],
-    categorical_columns: Optional[list[str]] = None,
+    treat_as_categorical: Optional[list[str]] = None,
     max_categories: int = 20,
     fill_na_with: str = "[MISSING DATA]",
     font_scaling: float = 1.5,
@@ -48,7 +48,7 @@ def plot_value_distributions(
     Args:
         df (pd.DataFrame): The input DataFrame to analyze.
         save_dir (str | Path): Directory path to save the plots.
-        categorical_columns (List[str] | None): If provided, these will be treated as categorical, and all other columns will be treated as continuous.
+        treat_as_categorical (list[str] | None): If provided, these columns will be explicitly treated as categorical, bypassing auto-detection.
         max_categories (int): The maximum number of unique categories a categorical feature can have to be plotted. Features exceeding this limit will be skipped.
         fill_na_with (str): A string to replace NaN values in categorical columns. This allows plotting 'missingness' as its own category.
         font_scaling (float): Scaling factor for all fonts in the generated plots.
@@ -76,16 +76,16 @@ def plot_value_distributions(
     categorical_set = None
 
     # Setup for forced categorical logic
-    if categorical_columns is not None:
-        if len(categorical_columns) == 0:
+    if treat_as_categorical is not None:
+        if len(treat_as_categorical) == 0:
             categorical_set = None
         else:
             # Validate that the provided categorical columns exist in the DataFrame
-            missing_cols = [col for col in categorical_columns if col not in columns_to_plot]
+            missing_cols = [col for col in treat_as_categorical if col not in columns_to_plot]
             if missing_cols:
                 _LOGGER.error(f"The following specified categorical columns are not in the DataFrame: {missing_cols}")
                 raise ValueError()
-            categorical_set = set(categorical_columns)
+            categorical_set = set(treat_as_categorical)
 
     numeric_plots_saved = 0
     categorical_plots_saved = 0
@@ -96,15 +96,14 @@ def plot_value_distributions(
     with sns.plotting_context("notebook", font_scale=font_scaling):
         for col_name in columns_to_plot:
             try:
-                is_numeric = is_numeric_dtype(df[col_name])
-                n_unique = df[col_name].nunique()
+                is_numeric = is_numeric_dtype(df[col_name]) and not is_bool_dtype(df[col_name])
+                n_unique = df[col_name].nunique(dropna=False)
 
                 # --- 3. Determine Plot Type ---
                 is_continuous = False
-                if categorical_set is not None:
-                    # Use the explicit list
-                    if col_name not in categorical_set:
-                        is_continuous = True
+                if categorical_set is not None and col_name in categorical_set:
+                    # Explicitly forced to categorical
+                    is_continuous = False
                 else:
                     # Use auto-detection
                     if is_numeric:
@@ -115,7 +114,7 @@ def plot_value_distributions(
                     plt.figure(figsize=(10, 6))
                     # Drop NaNs for histogram, as they can't be plotted on a numeric axis
                     ax = sns.histplot(
-                        x=df[col_name].dropna(), 
+                        x=df[col_name].dropna().astype(float), # cast to float to avoid dtype issues with pandas nullable types (Int64, Float64, etc.) 
                         kde=True, 
                         bins=30,
                         stat="percent" if mode == "percentage" else "count",
@@ -311,7 +310,7 @@ def plot_value_distributions_multi(
     with sns.plotting_context("notebook", font_scale=font_scaling):
         for col_name in columns_to_plot:
             try:
-                is_numeric = is_numeric_dtype(plot_df[col_name])
+                is_numeric = is_numeric_dtype(plot_df[col_name]) and not is_bool_dtype(plot_df[col_name])
                 n_unique = plot_df[col_name].nunique()
 
                 # --- Case 1: Continuous Numeric (Overlapping Histogram/KDE) ---
@@ -320,6 +319,7 @@ def plot_value_distributions_multi(
                     
                     # Drop NaNs for plotting numeric axes
                     plot_data = plot_df[[col_name, SECRET_COLUMN_NAME]].dropna()
+                    plot_data[col_name] = plot_data[col_name].astype(float) # cast to float to avoid dtype issues with pandas nullable types (Int64, Float64, etc.)
                     
                     ax = sns.histplot(
                         data=plot_data, 
@@ -462,11 +462,14 @@ def plot_numeric_overview_boxplot(
     
     ### [Seaborn Color Palettes](https://www.practicalpythonfordatascience.com/ap_seaborn_palette)
     """
-    numeric_df = df.select_dtypes(include='number')
+    numeric_df = df.select_dtypes(include='number').select_dtypes(exclude=['bool', 'boolean'])
     
     if numeric_df.empty:
         _LOGGER.warning("No numeric columns found. Overview boxplot not generated.")
         return
+    
+    # cast to float to avoid dtype issues with pandas nullable types (Int64, Float64, etc.)
+    numeric_df = numeric_df.astype(float)
     
     # Wrap long feature names for better visualization on the y-axis
     numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x, width=35))
@@ -620,8 +623,10 @@ def plot_continuous_vs_target(
     font_scaling: float = 1.5,
     color: str = "tab:purple"
 ):
-    """
-    Plots each continuous feature from df_continuous against each target in df_targets.
+    """    
+    Plots each continuous feature from df_continuous against each numerical target in df_targets.
+    
+    ➡️ Numerically encoded categorical targets will result in meaningless plots.
 
     This function creates a scatter plot for each feature-target pair, overlays a 
     simple linear regression line, and saves each plot as an individual .svg file.
@@ -653,9 +658,9 @@ def plot_continuous_vs_target(
     def _get_valid_numeric_cols(df: pd.DataFrame, df_name: str) -> list[str]:
         valid_cols = []
         for col in df.columns:
-            if not is_numeric_dtype(df[col]):
+            if not is_numeric_dtype(df[col]) or is_bool_dtype(df[col]):
                 if verbose > 0:
-                    _LOGGER.warning(f"Column '{col}' in {df_name} is not numeric. Skipping.")
+                    _LOGGER.warning(f"Column '{col}' in {df_name} is not strictly numeric. Skipping.")
             else:
                 valid_cols.append(col)
         return valid_cols
@@ -696,6 +701,9 @@ def plot_continuous_vs_target(
                     df_continuous[feature_name], 
                     df_targets[target_name]
                 ], axis=1).dropna()
+                
+                # Cast to float to prevent Matplotlib/Seaborn errors with nullable Pandas types
+                temp_df = temp_df.astype(float)
 
                 if temp_df.empty:
                     if verbose > 0:
@@ -769,6 +777,8 @@ def plot_categorical_vs_target(
 ):
     """
     Plots each feature in df_categorical against each numeric target in df_targets using box plots.
+    
+    ➡️ Numerically encoded categorical targets will result in meaningless plots.
 
     Automatically aligns the two DataFrames by index. If a numeric
     column is passed within df_categorical, it will be cast to object type to treat it as a category.
@@ -797,9 +807,9 @@ def plot_categorical_vs_target(
     # 2. Validate target columns (must be numeric)
     valid_targets = []
     for col in df_targets.columns:
-        if not is_numeric_dtype(df_targets[col]):
+        if not is_numeric_dtype(df_targets[col]) or is_bool_dtype(df_targets[col]):
             if verbose > 0:
-                _LOGGER.warning(f"Target column '{col}' in df_targets is not numeric. Skipping.")
+                _LOGGER.warning(f"Target column '{col}' in df_targets is not strictly numeric. Skipping.")
         else:
             valid_targets.append(col)
     
@@ -807,17 +817,23 @@ def plot_categorical_vs_target(
         _LOGGER.error("No valid numeric target columns provided in df_targets.")
         return
 
-    # 3. Validate feature columns (Flexible: Allow numeric but warn)
+    # 3. Validate feature columns (Flexible: Allow numeric but warn if highly continuous)
     valid_features = []
     for col in df_categorical.columns:
+        n_unique = df_categorical[col].nunique(dropna=False)
+
         # If numeric, warn but accept it (will be cast to object later)
-        if is_numeric_dtype(df_categorical[col]):
+        if is_numeric_dtype(df_categorical[col]) and not is_bool_dtype(df_categorical[col]):
             if verbose > 0:
                 _LOGGER.warning(f"Feature '{col}' in df_categorical is numeric. It will be cast to 'object' and treated as categorical.")
-            valid_features.append(col)
-        else:
-            # Assume it is already object/category
-            valid_features.append(col)
+        
+        # Check cardinality before any memory-intensive operations
+        if n_unique > max_categories:
+            if verbose > 0:
+                _LOGGER.warning(f"Skipping feature '{col}': {n_unique} unique categories exceeds max_categories ({max_categories}).")
+            continue
+        
+        valid_features.append(col)
 
     if not valid_features:
         _LOGGER.error("No valid feature columns provided in df_categorical.")
@@ -853,6 +869,9 @@ def plot_categorical_vs_target(
                         if verbose > 0:
                             _LOGGER.warning(f"No valid data left for '{feature_name}' vs '{target_name}' after dropping empty targets. Skipping.")
                         continue
+                
+                # Cast target to float to ensure compatibility with Seaborn and nullable types
+                temp_df[target_name] = temp_df[target_name].astype(float)
 
                 # Force feature to object if it isn't already (handling the numeric flexibility)
                 if not is_object_dtype(temp_df[feature_name]):
@@ -867,13 +886,6 @@ def plot_categorical_vs_target(
                 
                 # Wrap the class names for better visualization
                 temp_df[feature_name] = temp_df[feature_name].apply(lambda x: wrap_text(x))
-
-                # Check cardinality
-                n_unique = temp_df[feature_name].nunique()
-                if n_unique > max_categories:
-                    if verbose > 0:
-                        _LOGGER.warning(f"Skipping '{feature_name}': {n_unique} unique categories > {max_categories} max_categories.")
-                    continue
                 
                 # Get category order
                 order = temp_df[feature_name].value_counts().index.tolist()
@@ -950,7 +962,7 @@ def plot_correlation_heatmap(df: pd.DataFrame,
         - Annotations are disabled if there are more than 20 features.
         - Missing values are handled via pairwise complete observations.
     """
-    numeric_df = df.select_dtypes(include='number')
+    numeric_df = df.select_dtypes(include='number').select_dtypes(exclude=['bool', 'boolean'])
     num_features = numeric_df.shape[1]
     
     if num_features < 2:
@@ -962,6 +974,9 @@ def plot_correlation_heatmap(df: pd.DataFrame,
     if cmap not in matplotcolormaps:
         _LOGGER.error(f"Invalid colormap '{cmap}' provided.")
         raise ValueError()
+    
+    # Cast to float to ensure the correlation matrix computation and seaborn heatmap work flawlessly
+    numeric_df = numeric_df.astype(float)
     
     # Wrap long feature names for better visualization on the axes
     numeric_df = numeric_df.rename(columns=lambda x: wrap_text(x))

@@ -47,7 +47,8 @@ class DragonTrainingConfig:
                  # Optional for data splitting
                  validation_size: Optional[float] = None,
                  test_size: Optional[float] = None,
-                 targets: Optional[Union[list[str], str]] = None,
+                 target: Optional[str] = None,
+                 targets: Optional[list[str]] = None,
                  random_state: Optional[int] = None,
                  # optional for callbacks
                  weight_decay: Optional[float] = None,
@@ -65,7 +66,8 @@ class DragonTrainingConfig:
             task (str): Task type for training. Must be one of the predefined tasks in MLTaskKeys.ALL_TASKS.
             validation_size (float | None): Optional fraction of data to use for validation (between 0 and 1).
             test_size (float | None): Optional fraction of data to use for testing (between 0 and 1).
-            targets (List[str] | str | None): Optional list of target column names or a single target name.
+            target (str | None): Optional name of the target column.
+            targets (List[str] | None): Optional list of target column names.
             random_state (int | None): Optional random seed for reproducibility.
             weight_decay (float | None): Optional weight decay for optimizers.
             early_stop_patience (int | None): Optional patience for early stopping.
@@ -88,6 +90,7 @@ class DragonTrainingConfig:
         # Optional parameters to be obtained through getter properties
         self._validation_size = validation_size
         self._test_size = test_size
+        self._target = target
         self._targets = targets
         self._random_state = random_state
         self._weight_decay = weight_decay
@@ -132,7 +135,14 @@ class DragonTrainingConfig:
         return self._test_size
     
     @property
-    def targets(self) -> Union[list[str], str]:
+    def target(self) -> str:
+        if self._target is None:
+            _LOGGER.error("Target is not set.")
+            raise ValueError()
+        return self._target
+    
+    @property
+    def targets(self) -> list[str]:
         if self._targets is None:
             _LOGGER.error("Targets are not set.")
             raise ValueError()
@@ -223,6 +233,14 @@ class DragonTrainingConfig:
             else:
                 clean_dict[k] = v
         return clean_dict
+    
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Returns a dictionary representation of the configuration.
+        
+        Converts Path and FeatureSchema to strings if detected.
+        """
+        return self.to_log()
     
     def __repr__(self) -> str:
         """Returns a formatted multi-line string representation of the public state."""
