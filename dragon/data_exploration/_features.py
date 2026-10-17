@@ -287,6 +287,7 @@ def encode_classification_target(
     df: pd.DataFrame,
     target_col: str,
     save_path: Union[str, Path],
+    explicit_order: Optional[list[str]] = None,
     verbose: int = 2
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """
@@ -299,6 +300,9 @@ def encode_classification_target(
         df (pd.DataFrame): Input DataFrame.
         target_col (str): Name of the target column to encode.
         save_path (str | Path): Path where the target class map JSON will be saved.
+        explicit_order (list[str], optional): A strict ordered list of target categories. 
+            If provided, this exact order is mapped to 0, 1, 2... preventing incorrect 
+            alphabetical sorting for ordinal categories (e.g., ["Low", "Medium", "High"]).
         verbose (int): Verbosity level for logging.
 
     Returns:
@@ -316,9 +320,18 @@ def encode_classification_target(
         _LOGGER.error(f"Target column '{target_col}' contains {n_missing} missing values. Please handle them before encoding.")
         raise ValueError()
 
-    # Get unique values and sort them to ensure deterministic encoding (0, 1, 2...)
-    # Convert to string to ensure the keys in JSON are strings
-    unique_labels = sorted(df[target_col].astype(str).unique())
+    if explicit_order is not None:
+        # User provided an explicit ordinal structure
+        unique_labels = [str(x) for x in explicit_order]
+        actual_uniques = set(df[target_col].astype(str).unique())
+        
+        # Validate that the provided order matches the data
+        if set(unique_labels) != actual_uniques:
+            _LOGGER.error(f"The 'explicit_order' elements do not match the unique values in the target column.")
+            raise ValueError()
+    else:
+        # Default behavior: Get unique values and sort them lexicographically
+        unique_labels = sorted(df[target_col].astype(str).unique())
     
     # Create mapping: { Label -> Integer }
     class_map = {label: idx for idx, label in enumerate(unique_labels)}

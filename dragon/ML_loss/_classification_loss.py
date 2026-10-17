@@ -1,11 +1,11 @@
 import torch
 import torch.nn.functional as F
-from typing import Literal
+from typing import Literal, Optional
 
 from .._core import get_logger, ClassNameMixin
 
 from ._base_classification_loss import _BaseClassificationLoss
-from ._z_helpers import _apply_reduction
+from ._z_helpers import _apply_reduction, _handle_ignore_index
 
 
 _LOGGER = get_logger("Classification Loss")
@@ -14,7 +14,8 @@ _LOGGER = get_logger("Classification Loss")
 __all__ = [
     "ClassificationFocalLoss",
     "PolyLoss",
-    "AsymmetricLoss"
+    "AsymmetricLoss",
+    "OrdinalEMDLoss"
 ]
 
 
@@ -170,5 +171,67 @@ class AsymmetricLoss(torch.nn.Module, ClassNameMixin):
             
             custom_loss = -(loss_pos + loss_neg).sum(dim=1)
 
+        loss = _apply_reduction(custom_loss, self.reduction)
+        return loss
+
+
+class OrdinalEMDLoss(torch.nn.Module, ClassNameMixin):
+    """
+    Computes the Earth Mover's Distance (EMD) loss for ordinal classification tasks.
+    
+    This loss penalizes predictions based on their ordinal distance from the true 
+    class by computing the difference between the Cumulative Distribution Functions 
+    (CDFs) of the predicted probabilities and the one-hot encoded targets.
+    
+    Formula:
+        $$ \\mathcal{L}_{\\text{EMD}} = \\sum_{k=0}^{K-1} |\\text{CDF}_{pred}(k) - \\text{CDF}_{target}(k)|^r $$
+    """
+    def __init__(self, 
+                 r: Literal[1, 2] = 2, 
+                 ignore_index: Optional[int] = None,
+                 reduction: Literal["none", "mean", "sum"] = "mean"):
+        """
+        Args:
+            r (int): The power to which the absolute difference between CDFs is raised.
+                - r=1 corresponds to Mean Absolute Error (MAE) distance behavior.
+                - r=2 corresponds to Mean Squared Error (MSE) distance behavior.
+            ignore_index (int, optional): Specifies a target value that is ignored 
+                and does not contribute to the input gradient.
+            reduction (str): Specifies the reduction to apply to the output:
+                - 'none': No reduction, returns per-sample loss.
+                - 'mean': Returns the mean loss across the batch.
+                - 'sum': Returns the sum of losses across the batch.
+        """
+        super().__init__()
+        self.r = r
+        self.ignore_index = ignore_index
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Squeeze targets channel dimension if present
+        if targets.ndim == logits.ndim and targets.shape[1] == 1:
+            targets = targets.squeeze(1)
+            
+        targets = targets.long()
+        num_classes = logits.shape[1]
+        
+        # Convert logits to probabilities
+        probs = F.softmax(logits, dim=1)
+        
+        # Leverage helper for one-hot encoding, permutation, and safe ignore_index masking
+        probs, targets_one_hot = _handle_ignore_index(
+            probs=probs, 
+            targets=targets, 
+            ignore_index=self.ignore_index, 
+            num_classes=num_classes
+        )
+        
+        # Calculate CDFs
+        cdf_pred = torch.cumsum(probs, dim=1)
+        cdf_target = torch.cumsum(targets_one_hot, dim=1)
+        
+        # Compute EMD loss
+        custom_loss = torch.pow(torch.abs(cdf_pred - cdf_target), self.r).sum(dim=1)
+        
         loss = _apply_reduction(custom_loss, self.reduction)
         return loss

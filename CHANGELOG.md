@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [28.2.0] 2026-10-17
+
+### Added
+
+- ML_loss:
+    - `OrdinalEMDLoss`: A new loss function for ordinal classification tasks. 
+
+### Changed
+
+- data_exploration:
+    - `encode_classification_target()`: Now accepts an optional `explicit_order` parameter to allow users to specify a strict order for ordinal categories, preventing incorrect alphabetical sorting.
+
+### Fixed
+
+- Core:
+    - Fixed a bug in the `ClassNameMixin` where the `class_name` property was not correctly returning the class name for subclasses. The property now accurately retrieves the class name for any object that inherits from `ClassNameMixin`.
+
+
 ## [28.1.0] 2026-10-16
 
 ### Added

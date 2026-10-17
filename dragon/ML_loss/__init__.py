@@ -7,7 +7,8 @@ from ._regression_loss import (
 from ._classification_loss import (
     ClassificationFocalLoss,
     PolyLoss,
-    AsymmetricLoss
+    AsymmetricLoss,
+    OrdinalEMDLoss
 )
 
 from ._segmentation_loss import (
@@ -35,6 +36,7 @@ __all__ = [
     "ClassificationFocalLoss",
     "PolyLoss",
     "AsymmetricLoss",
+    "OrdinalEMDLoss",
     # Segmentation Losses
     "DiceLoss",
     "GeneralizedDiceLoss",
