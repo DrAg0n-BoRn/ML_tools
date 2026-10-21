@@ -1,0 +1,631 @@
+from typing import Literal, Union, Optional, Any
+from pathlib import Path
+from torch.utils.data import DataLoader, Dataset
+import torch
+from torch import nn
+from abc import ABC, abstractmethod
+
+from ..callbacks._base import _Callback, History, TqdmProgressBar
+from ..callbacks._checkpoint import DragonModelCheckpoint
+from ..callbacks._early_stop import _DragonEarlyStopping
+from ..callbacks._scheduler import _DragonLRScheduler
+from ..configuration._config_finalize import _FinalizeModelTraining
+from ..configuration import DragonCheckpointConfig
+from ..evaluation import plot_losses
+from ..ML_utilities import inspect_pth_file, validate_torch_device
+from ..IO import train_logger
+
+from ..path_manager import make_fullpath
+from ..keys._keys import PyTorchCheckpointKeys, MagicWords, DragonTrainerKeys
+from .._core import get_logger
+
+
+_LOGGER = get_logger("Dragon Trainer")
+
+
+__all__ = [
+    "_BaseDragonTrainer",
+]
+
+
+class _BaseDragonTrainer(ABC):
+    """
+    Abstract base class for Dragon Trainers.
+    
+    Handles the common training loop orchestration, checkpointing, callback
+    management, and device handling. Subclasses must implement the
+    task-specific logic (dataloaders, train/val steps, evaluation).
+    """
+    def __init__(self, 
+                 model: nn.Module, 
+                 optimizer: torch.optim.Optimizer, 
+                 device: Union[Literal['cuda', 'mps', 'cpu'],str],
+                 save_dir: Union[str, Path],
+                 dataloader_workers: int = 2,
+                 checkpoint_config: Union[DragonCheckpointConfig, Literal["default", "No-Checkpoints"]] = "default",
+                 early_stopping_callback: Optional[_DragonEarlyStopping] = None,
+                 lr_scheduler_callback: Optional[_DragonLRScheduler] = None):
+
+        self.model = model
+        self.optimizer = optimizer
+        self.scheduler = None
+        self.device = self._validate_device(device)
+        self.dataloader_workers = dataloader_workers
+        self.training_directory_root = make_fullpath(save_dir, make=True, enforce="directory")
+        self.criterion: Optional[Union[nn.Module, dict[str, nn.Module]]] = None
+        
+        # move model to device
+        self.model.to(self.device)
+        
+        # Callback handler - Order is important
+        default_callbacks: list[_Callback] = [TqdmProgressBar()]
+        
+        if early_stopping_callback:
+            default_callbacks.append(early_stopping_callback)
+        if lr_scheduler_callback:
+            default_callbacks.append(lr_scheduler_callback)
+        
+        # Last callbacks: History and Checkpointing
+        # append history before checkpoint callback to ensure history is saved in the checkpoint
+        default_callbacks.append(History())
+        
+        self._checkpoint_callback = None
+        if checkpoint_config == "default":
+            checkpoint_config = DragonCheckpointConfig()
+            
+        if isinstance(checkpoint_config, DragonCheckpointConfig):
+            self._checkpoint_callback = DragonModelCheckpoint(**checkpoint_config)
+            default_callbacks.append(self._checkpoint_callback)
+            # attach save_dir to checkpoint callback for artifact organization
+            _checkpoints_directory = make_fullpath(self.training_directory_root / DragonTrainerKeys.CHECKPOINT_DIR, make=True, enforce="directory")
+            self._checkpoint_callback.save_dir = _checkpoints_directory
+        elif checkpoint_config == "No-Checkpoints":
+            pass
+        else:
+            _LOGGER.error(f"Invalid 'checkpoint_config' provided: {checkpoint_config}. Must be a DragonCheckpointConfig instance, 'default', or 'No-Checkpoints'.")
+            raise ValueError()
+        
+        self.callbacks = default_callbacks
+        self._set_trainer_on_callbacks()
+
+        # Internal state
+        self.train_loader: Optional[DataLoader] = None
+        self.validation_loader: Optional[DataLoader] = None 
+        self.history: dict[str, list[Any]] = {}
+        self.epoch = 0
+        self.epochs = 0 # Total epochs for the fit run
+        self.start_epoch = 1
+        self.stop_training = False
+        self._batch_size = 10
+
+    def _validate_device(self, device: str) -> torch.device:
+        """Validates the selected device and returns a torch.device object."""
+        validated_device = validate_torch_device(device)
+        return validated_device
+
+    def _set_trainer_on_callbacks(self):
+        """Gives each callback a reference to this trainer instance."""
+        for callback in self.callbacks:
+            callback.set_trainer(self)
+    
+    def _make_dataloaders(self, 
+                          train_dataset: Any, 
+                          validation_dataset: Any, 
+                          batch_size: int, 
+                          shuffle: bool,
+                          collate_fn: Optional[Any] = None):
+        """
+        Shared logic to initialize standard DataLoaders. 
+        Subclasses can call this inside their _create_dataloaders implementation.
+        """
+        # Ensure stability on MPS devices by setting num_workers to 0
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        pin_memory = ("cuda" in self.device.type)
+        
+        self.train_loader = DataLoader(
+            dataset=train_dataset, 
+            batch_size=batch_size, 
+            shuffle=shuffle, 
+            num_workers=loader_workers, 
+            pin_memory=pin_memory,
+            drop_last=True,
+            collate_fn=collate_fn
+        )
+        
+        self.validation_loader = DataLoader(
+            dataset=validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=loader_workers, 
+            pin_memory=pin_memory,
+            collate_fn=collate_fn
+        )
+
+    def _validate_checkpoint_arg(self, model_checkpoint: Union[Path, str]) -> Union[Path, str]:
+        """Validates the model_checkpoint argument."""
+        if model_checkpoint in [MagicWords.BEST, MagicWords.CURRENT]:
+            return model_checkpoint
+        
+        if isinstance(model_checkpoint, str):
+            model_checkpoint = Path(model_checkpoint)
+            
+        if isinstance(model_checkpoint, Path):
+            return make_fullpath(model_checkpoint, enforce="file")
+            
+        _LOGGER.error(f"'model_checkpoint' must be a Path object, a valid file path string, or the string '{MagicWords.BEST}' or '{MagicWords.CURRENT}'.")
+        raise ValueError()
+
+    def _validate_save_dir(self, save_dir: Union[str, Path]) -> Path:
+        """Validates and creates the save directory."""
+        return make_fullpath(save_dir, make=True, enforce="directory")
+
+    def _prepare_eval_data(self, 
+                           data: Optional[Union[DataLoader, Dataset]], 
+                           default_dataset: Optional[Dataset], 
+                           collate_fn: Optional[Any] = None) -> tuple[DataLoader, Any]:
+        """
+        Prepares the DataLoader and dataset artifact source for evaluation.
+        
+        Returns:
+            (eval_loader, dataset_for_artifacts)
+        """
+        eval_loader = None
+        dataset_for_artifacts = None
+        
+        # Loader workers config
+        loader_workers = 0 if self.device.type == 'mps' else self.dataloader_workers
+        pin_memory = (self.device.type == "cuda")
+
+        if isinstance(data, DataLoader):
+            eval_loader = data
+            if hasattr(data, 'dataset'):
+                dataset_for_artifacts = data.dataset
+        elif isinstance(data, Dataset):
+            eval_loader = DataLoader(data, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=loader_workers,
+                                     pin_memory=pin_memory,
+                                     collate_fn=collate_fn)
+            dataset_for_artifacts = data
+        else: # data is None
+            if default_dataset is None:
+                _LOGGER.error("Cannot evaluate. No data provided and no validation dataset available in the trainer.")
+                raise ValueError()
+            
+            eval_loader = DataLoader(default_dataset, 
+                                     batch_size=self._batch_size, 
+                                     shuffle=False, 
+                                     num_workers=loader_workers,
+                                     pin_memory=pin_memory,
+                                     collate_fn=collate_fn)
+            dataset_for_artifacts = default_dataset
+
+        if eval_loader is None:
+            _LOGGER.error("Cannot evaluate. No valid data was provided or found.")
+            raise ValueError()
+            
+        return eval_loader, dataset_for_artifacts
+
+    def _save_finalized_artifact(self, 
+                                 finalize_config: _FinalizeModelTraining):
+        """
+        Handles the common logic for saving the finalized model dictionary to disk.
+        """
+        # handle save path
+        dir_path = self._validate_save_dir(self.training_directory_root)
+        full_path = dir_path / finalize_config.filename
+        
+        # Add support for compiled model
+        base_model: nn.Module = getattr(self.model, "_orig_mod", self.model) # type: ignore
+        
+        # dynamically build the dictionary with core requirements
+        finalized_data = {
+            PyTorchCheckpointKeys.EPOCH: self.epoch,
+            PyTorchCheckpointKeys.MODEL_STATE: base_model.state_dict()
+        }
+        
+        # Map configuration attributes directly, ignoring None values and the filename itself
+        for key, value in vars(finalize_config).items():
+            if key != 'filename' and value is not None:
+                finalized_data[key] = value
+        
+        torch.save(finalized_data, full_path)
+        
+        _LOGGER.info(f"Finalized model file saved to '{full_path}'")
+        
+        if full_path.is_file():
+            inspect_pth_file(pth_path=full_path, save_dir=dir_path, verbose=2)
+    
+    def _load_checkpoint(self, path: Union[str, Path], verbose: int = 3):
+        """Loads a training checkpoint to resume training."""
+        p = make_fullpath(path, enforce="file")
+        
+        if verbose >= 2:
+            _LOGGER.info(f"Loading checkpoint from '{p.name}'...")
+        
+        try:
+            checkpoint = torch.load(p, map_location=self.device, weights_only=False)
+            
+            if PyTorchCheckpointKeys.MODEL_STATE not in checkpoint or PyTorchCheckpointKeys.OPTIMIZER_STATE not in checkpoint:
+                _LOGGER.error(f"Checkpoint file '{p.name}' is invalid. Missing 'model_state_dict' or 'optimizer_state_dict'.")
+                raise KeyError()
+            
+            # add support for compiled models
+            base_model: nn.Module = getattr(self.model, "_orig_mod", self.model) # type: ignore
+            
+            base_model.load_state_dict(checkpoint[PyTorchCheckpointKeys.MODEL_STATE])
+            
+            self.model = base_model  # Update the trainer's model reference
+            self.optimizer.load_state_dict(checkpoint[PyTorchCheckpointKeys.OPTIMIZER_STATE])
+            
+            # Ensure all optimizer state tensors are moved to the correct device
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self.device)
+            
+            self.epoch = checkpoint.get(PyTorchCheckpointKeys.EPOCH, 0)
+            self.start_epoch = self.epoch + 1 # Resume on the *next* epoch
+            
+            # --- Load History ---
+            if PyTorchCheckpointKeys.HISTORY in checkpoint:
+                self.history = checkpoint[PyTorchCheckpointKeys.HISTORY]
+                if verbose >= 3:
+                    _LOGGER.info(f"Restored training history up to epoch {self.epoch}.")
+            else:
+                if verbose >= 1:
+                    _LOGGER.warning("No 'history' found in checkpoint. A new history will be started.")
+                self.history = {} # Ensure it's at least an empty dict
+            
+            # --- Scheduler State Loading Logic ---
+            scheduler_state_exists = PyTorchCheckpointKeys.SCHEDULER_STATE in checkpoint
+            scheduler_object_exists = self.scheduler is not None
+
+            if scheduler_object_exists and scheduler_state_exists:
+                # Case 1: Both exist. Attempt to load.
+                try:
+                    self.scheduler.load_state_dict(checkpoint[PyTorchCheckpointKeys.SCHEDULER_STATE]) # type: ignore
+                    scheduler_name = self.scheduler.__class__.__name__
+                    if verbose >= 3:
+                        _LOGGER.info(f"Restored LR scheduler state for: {scheduler_name}")
+                except Exception as e:
+                    # Loading failed, likely a mismatch
+                    scheduler_name = self.scheduler.__class__.__name__
+                    _LOGGER.error(f"Failed to load scheduler state for '{scheduler_name}'. A different scheduler type might have been used.")
+                    raise e
+
+            elif scheduler_object_exists and not scheduler_state_exists:
+                # Case 2: Scheduler provided, but no state in checkpoint.
+                scheduler_name = self.scheduler.__class__.__name__
+                if verbose >= 1:
+                    _LOGGER.warning(f"'{scheduler_name}' was provided, but no scheduler state was found in the checkpoint. The scheduler will start from its initial state.")
+            
+            elif not scheduler_object_exists and scheduler_state_exists:
+                # Case 3: State in checkpoint, but no scheduler provided.
+                _LOGGER.error("Checkpoint contains an LR scheduler state, but no LRScheduler callback was provided.")
+                raise ValueError()
+            
+            # Restore callback states
+            for cb in self.callbacks:
+                if isinstance(cb, DragonModelCheckpoint) and PyTorchCheckpointKeys.BEST_SCORE in checkpoint:
+                    cb.best = checkpoint[PyTorchCheckpointKeys.BEST_SCORE]
+                    if verbose >= 3:
+                        _LOGGER.info(f"Restored {cb.__class__.__name__} 'best' score to: {cb.best:.4f}")
+            
+            if verbose >= 2:
+                _LOGGER.info(f"Model restored to epoch {self.epoch}.")
+            
+        except Exception as e:
+            _LOGGER.error(f"Failed to load checkpoint from '{p}': {e}")
+            raise
+    
+    def load_checkpoint(self, path: Union[str, Path], verbose: int = 3):
+        """
+        Loads a specific checkpoint state into the model, optimizer, and scheduler.
+
+        Args:
+            path (str | Path): Path to the .pth checkpoint file.
+            verbose (int): Verbosity level for logging.
+        """
+        self._load_checkpoint(path=path, verbose=verbose)
+
+    def fit(self, *, 
+            epochs: int, 
+            batch_size: int, 
+            use_torch_compile: bool = False,
+            skip_first_epoch_plot: bool = True,
+            shuffle: bool = True,
+            return_history_log: bool = False,
+            resume_from_checkpoint: Optional[Union[str, Path]] = None) -> Optional[dict[str, list[Any]]]:
+        """
+        Moves the model, optimizer, and criterion to the specified device then starts the training-validation process of the model.
+        
+        Optionally returns the "History Log" dictionary.
+
+        Args:
+            epochs (int): The total number of epochs to train for.
+            batch_size (int): The number of samples per batch.
+            use_torch_compile (bool): Whether to compile the model with torch.compile for training. 
+                This can improve performance on supported devices (PyTorch 2.0+). Note that torch.compile is not supported on MPS devices.
+            skip_first_epoch_plot (bool): Whether to skip the first epoch when plotting losses at the end. 
+                This can help prevent skewed loss curves if the first epoch has a much higher loss.
+            shuffle (bool): Whether to shuffle the training data at each epoch.
+            return_history_log (bool): If True, returns the training history log at the end of training.
+            resume_from_checkpoint (str | Path | None): Optional path to a checkpoint to resume training.
+        """
+        self.epochs = epochs
+        self._batch_size = batch_size
+        self._create_dataloaders(self._batch_size, shuffle) # type: ignore
+        
+        if resume_from_checkpoint:
+            self._load_checkpoint(resume_from_checkpoint)
+        
+        if use_torch_compile:
+            self._compile_model()
+        
+        # Unifies moving the model, criterion, and any loaded optimizer states to the target device
+        self.to_device(str(self.device), verbose=False)
+        
+        # Reset stop_training flag on the trainer
+        self.stop_training = False
+
+        self._callbacks_hook('on_train_begin')
+        
+        if not self.train_loader:
+            _LOGGER.error("Train loader is not initialized.")
+            raise ValueError()
+        
+        if not self.validation_loader:
+            _LOGGER.error("Validation loader is not initialized.")
+            raise ValueError()
+        
+        for epoch in range(self.start_epoch, self.epochs + 1):
+            self.epoch = epoch
+            epoch_logs: dict[str, Any] = {}
+            self._callbacks_hook('on_epoch_begin', epoch, logs=epoch_logs)
+            
+            train_logs = self._train_step()
+            epoch_logs.update(train_logs)
+
+            val_logs = self._validation_step()
+            epoch_logs.update(val_logs)
+            
+            self._callbacks_hook('on_epoch_end', epoch, logs=epoch_logs)
+            
+            # Check the early stopping flag
+            if self.stop_training:
+                break
+
+        self._callbacks_hook('on_train_end')
+        
+        # Training History
+        plot_losses(self.history, save_dir=self.training_directory_root, skip_first_epoch=skip_first_epoch_plot)
+        
+        # decompile the model if it was compiled
+        if use_torch_compile:
+            self._decompile_model()
+        
+        if return_history_log:
+            return self.history
+    
+    def get_history_dict(self) -> dict[str, list[Any]]:
+        """
+        Returns the training history dictionary.
+
+        Returns:
+            dict[str, list[Any]]: The history dictionary containing metrics for each epoch.
+        """
+        return self.history
+    
+    def save_training_log(self, 
+                          train_config: Union[dict, Any],
+                          verbose: int = 3):
+        """
+        Saves the training configuration, model configuration, and training history to a JSON file in the training root directory.
+        
+        Args:
+            train_config (dict | Any): Training configuration parameters. If object, must have a `.to_log()` method returning a dict.
+            verbose (int): Verbosity level for logging.
+        
+        ### Note:
+            - The model must implement a `get_architecture_config()` method to log its configuration.
+            - If the training history is empty, it will be skipped.
+        """        
+        # fail early
+        if not isinstance(train_config, dict):
+            if not hasattr(train_config, "to_log") or not callable(getattr(train_config, "to_log")):
+                _LOGGER.error("'train_config' must be a dict or an object with a 'to_log()' method.")
+                raise ValueError()
+        
+        # check if model has get_architecture_config
+        model_parameters: dict = {}
+        if hasattr(self.model, 'get_architecture_config'):
+            model_parameters = self.model.get_architecture_config() # type: ignore
+            if not isinstance(model_parameters, dict):
+                _LOGGER.error("'model.get_architecture_config()' did not return a dictionary.")
+                raise ValueError()
+        else:
+            if verbose >= 1:
+                _LOGGER.warning(f"Model '{self.model.__class__.__name__}' does not have a 'get_architecture_config()' method. Model config will not be logged.")
+        
+        # check if history is empty
+        resolved_history: Optional[dict] = None
+        if not self.history and verbose >= 1:
+            _LOGGER.warning("Training history is empty. No training metrics will be logged.")
+        else:
+            resolved_history = self.history
+            
+        # additional information: callbacks, criterion.
+        extra_info: Optional[dict[str, Any]] = dict()
+        if self.callbacks:
+            extra_info['callbacks'] = [cb.__class__.__name__ for cb in self.callbacks]
+        if self.criterion:
+            if isinstance(self.criterion, nn.Module):
+                extra_info['criterion'] = self.criterion.__class__.__name__
+            elif isinstance(self.criterion, dict):
+                extra_info['criterion'] = {k: v.__class__.__name__ for k, v in self.criterion.items()}
+        
+        # skip passing empty extra_info
+        if not extra_info:
+            if verbose >= 2:
+                _LOGGER.info("No callbacks or criterion information found.")
+            extra_info = None
+        
+        train_logger(train_config=train_config,
+                     model_parameters=model_parameters,
+                     train_history=resolved_history,
+                     save_directory=self.training_directory_root,
+                     extra_info=extra_info,
+                     verbose=verbose)
+
+    def _callbacks_hook(self, method_name: str, *args, **kwargs):
+        """Calls the specified method on all callbacks."""
+        for callback in self.callbacks:
+            method = getattr(callback, method_name)
+            method(*args, **kwargs)
+    
+    def _move_criterion_to_device(self):
+        """Moves the criterion or dictionary of criteria to self.device if they are nn.Modules."""
+        if isinstance(self.criterion, nn.Module):
+            self.criterion.to(self.device)
+        elif isinstance(self.criterion, dict):
+            for k, v in self.criterion.items():
+                if isinstance(v, nn.Module):
+                    v.to(self.device)
+    
+    def to_cpu(self):
+        """
+        Moves the model to the CPU and updates the trainer's device setting.
+        
+        This is useful for running operations that require the CPU.
+        """
+        self.to_device('cpu')
+    
+    def to_device(self, device: str, verbose: bool = True):
+        """
+        Moves the model to the specified device and updates the trainer's device setting.
+
+        Args:
+            device (str): The target device (e.g., 'cuda', 'mps', 'cpu').
+        """
+        self.device = self._validate_device(device)
+        self.model.to(self.device)
+        self._move_criterion_to_device()
+        
+        # Ensure all optimizer state tensors are moved to the specified device
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+        
+        if verbose:
+            _LOGGER.info(f"Trainer, model, and criterion moved to {self.device}.")
+    
+    def _load_model_state_wrapper(self, model_checkpoint: Union[Path, Literal['best', 'current']], verbose: int = 2):
+        """
+        Private helper to load the correct model state_dict based on user's choice.
+        """
+        if isinstance(model_checkpoint, Path):
+            self._load_checkpoint(path=model_checkpoint, verbose=verbose)
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback:
+            path_to_latest = self._checkpoint_callback.best_checkpoint_path
+            self._load_checkpoint(path_to_latest, verbose=verbose)
+        elif model_checkpoint == MagicWords.BEST and self._checkpoint_callback is None:
+            _LOGGER.error(f"'model_checkpoint' set to '{MagicWords.BEST}' but no checkpoint callback was found.")
+            raise ValueError()
+        elif model_checkpoint == MagicWords.CURRENT:
+            pass
+        else:
+            _LOGGER.error(f"Unknown 'model_checkpoint' received '{model_checkpoint}'.")
+            raise ValueError()
+    
+    def _get_dataset_attr(self, dataset: Any, attr_name: str, default: Any = None) -> Any:
+        """Helper to extract metadata even if the dataset is wrapped in a PyTorch Subset."""
+        # 1. Check top level
+        if hasattr(dataset, attr_name):
+            try:
+                val = getattr(dataset, attr_name)
+                if val is not None:
+                    return val
+            except AttributeError:
+                pass
+                
+        # 2. Check wrapped dataset (e.g. torch.utils.data.Subset)
+        if hasattr(dataset, "dataset"):
+            return self._get_dataset_attr(dataset.dataset, attr_name, default)
+            
+        return default
+    
+    def _compile_model(self):
+        """
+        Compiles the model using torch.compile if available (PyTorch 2.0+).
+        """
+        # check if torch.compile is available
+        if not hasattr(torch, 'compile'):
+            _LOGGER.warning("torch.compile() is not available in this PyTorch version. Model compilation skipped.")
+            return
+        
+        # incompatible with MPS
+        if self.device.type == 'mps':
+            _LOGGER.warning("torch.compile() is not supported on MPS devices. Model compilation skipped.")
+            return
+        
+        # ensure model is on target device before building graph
+        self.model.to(self.device)
+        
+        base_msg = f"Model '{self.model.__class__.__name__}' was compiled with torch.compile()."
+        
+        # compile the model
+        try:
+            compiled_model = torch.compile(self.model) # type: ignore
+        except Exception as e:
+            _LOGGER.error(f"Failed to compile the model: {e}. Model compilation skipped.")
+            return
+        else:
+            self.model: nn.Module = compiled_model # type: ignore
+        
+        _LOGGER.info(base_msg)
+    
+    def _decompile_model(self):
+        """
+        Reverts the model back to its original state if it was compiled.
+        """
+        if hasattr(self.model, "_orig_mod"):
+            self.model = self.model._orig_mod # type: ignore
+            _LOGGER.info(f"Model '{self.model.__class__.__name__}' was decompiled to its original state.")
+        else:
+            _LOGGER.warning("Model is not compiled. No action taken.")
+        
+    # --- Abstract Methods ---
+    # These must be implemented by subclasses
+
+    @abstractmethod
+    def _create_dataloaders(self, batch_size: int, shuffle: bool):
+        """Initializes the DataLoaders."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _train_step(self) -> dict[str, float]:
+        """Runs a single training epoch."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _validation_step(self) -> dict[str, float]:
+        """Runs a single validation epoch."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def evaluate(self, *args, **kwargs):
+        """Runs the full model evaluation."""
+        raise NotImplementedError
+    
+    @abstractmethod
+    def _evaluate(self, *args, **kwargs):
+        """Internal evaluation helper."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def finalize_model_training(self, *args, **kwargs):
+        """Saves the finalized model for inference."""
+        raise NotImplementedError

@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+
+## [28.3.0] 2026-10-21
+
+### Changed
+
+- Modules renamed:
+    - 'ML_callbacks' -> 'callbacks'
+    - 'ML_chain' -> 'chain'
+    - 'ML_datasetmaster' -> 'datasetmaster'
+    - 'ML_evaluation' -> 'evaluation'
+    - 'ML_evaluation_captum' -> 'evaluation_captum'
+    - 'ML_finetune' -> 'finetune'
+    - 'ML_inference' -> 'inference'
+    - 'ML_inference_diffusion' -> 'inference_diffusion'
+    - 'ML_inference_sequence' -> 'inference_sequence'
+    - 'ML_inference_vision' -> 'inference_vision'
+    - 'ML_loss' -> 'loss'
+    - 'ML_models' -> 'models'
+    - 'ML_models_diffusion' -> 'models_diffusion'
+    - 'ML_models_sequence' -> 'models_sequence'
+    - 'ML_models_vision' -> 'models_vision'
+    - 'ML_optimization' -> 'optimization'
+    - 'ML_scaler' -> 'scaler'
+    - 'ML_trainer' -> 'trainer'
+    - 'ML_trainer_parallel' -> 'trainer_parallel'
+    - 'ML_vision_transformers' -> 'vision_transformers'
+    - 'ML_vision_utilities' -> 'vision_utilities'
+    - 'IO_tools' -> 'IO'
+
+- outlier_detection:
+    - Isolation Forest and Local Outlier Factor:
+        - Renamed `continuous_columns` and `categorical_columns` arguments to `treat_as_continuous` and `treat_as_categorical` in the mixed data wrapper functions and helper.
+        - Implemented heuristic-first column inference for mixed data: undeclared columns are now automatically categorized as continuous or categorical based on their pandas data types.
+        - Updated `_prepare_numeric_data` to explicitly coerce user-provided columns to numeric types using `pd.to_numeric(errors='coerce')` instead of dropping non-numeric inputs.
+
+- IO (IO_tools):
+    - `compare_lists()` moved to module `utilities`.
+
+### Fixed
+
+- optimization (ML_optimization):
+    - Fixed a bug in the `DragonOptimizer` and `DragonParetoOptimizer` classes where the `treat_as_categorical` parameter was not being passed correctly to the `plot_value_distributions()` function.
+
+
 ## [28.2.0] 2026-10-17
 
 ### Added

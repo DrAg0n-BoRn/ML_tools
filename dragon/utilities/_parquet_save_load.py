@@ -11,7 +11,7 @@ from .._core import get_logger
 from ._utility_save_load import _validate_and_reorder_schema
 
 
-_LOGGER = get_logger("Dataframe Parquet Save/Load")
+_LOGGER = get_logger("Parquet Save/Load")
 
 
 __all__ = [

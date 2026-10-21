@@ -84,8 +84,8 @@ def isolation_forest_continuous(
 def isolation_forest(
     df_features: pd.DataFrame,
     ignore_columns: Optional[list[str]] = None,
-    continuous_columns: Optional[list[str]] = None,
-    categorical_columns: Optional[list[str]] = None,
+    treat_as_continuous: Optional[list[str]] = None,
+    treat_as_categorical: Optional[list[str]] = None,
     n_estimators: int = 100,
     random_state: int = 42,
     shadow_median_imputation: bool = True,
@@ -98,9 +98,9 @@ def isolation_forest(
     Args:
         df_features (pd.DataFrame): The input dataset containing features for outlier detection.
         ignore_columns (list[str] | None): Columns to exclude early from outlier detection.
-        continuous_columns (list[str] | None): Specific continuous columns to use. If None, uses all numeric columns.
-        categorical_columns (list[str] | None): Specific categorical columns to use. If None, uses all non-numeric columns.
-        n_estimators (int): The number of base estimators in the ensemble.
+        treat_as_continuous (list[str] | None): Specific columns to cast and treat as continuous. Remaining columns are inferred.
+        treat_as_categorical (list[str] | None): Specific columns to cast and treat as categorical. Remaining columns are inferred.
+        n_estimators (int): The number of base estimators in the ensemble. Increase (200~400) only for extremely large datasets.
         random_state (int): Seed for reproducibility.
         shadow_median_imputation (bool): Temporarily fill missing continuous values with the median.
         verbose (int): Controls the verbosity.
@@ -109,13 +109,12 @@ def isolation_forest(
         pd.Series: A boolean mask aligned with the input DataFrame index. True indicates an outlier.
         
     Note:
-    - If any column is specified in one parameter (e.g., continuous_columns), but the other parameter is None, the function will not automatically infer the remaining columns. 
-    It will only use the specified columns for outlier detection.
+    - Columns not explicitly provided in `treat_as_continuous` or `treat_as_categorical` will be automatically inferred based on pandas data types.
     """
     data_clean = _prepare_mixed_data(
         df=df_features, 
-        continuous_columns=continuous_columns, 
-        categorical_columns=categorical_columns,
+        treat_as_continuous=treat_as_continuous, 
+        treat_as_categorical=treat_as_categorical,
         ignore_columns=ignore_columns,
         verbose=verbose, 
         shadow_median_imputation=shadow_median_imputation

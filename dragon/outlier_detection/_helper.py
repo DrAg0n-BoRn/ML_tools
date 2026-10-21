@@ -37,12 +37,12 @@ def _prepare_numeric_data(df: pd.DataFrame,
     
     if columns:
         data = data[columns]
-        # Ensure selected columns are numeric
+        # Ensure selected columns are numeric by coercing them
         non_numeric = data.select_dtypes(exclude='number').columns
         if not non_numeric.empty:
             if verbose >= 1:
-                _LOGGER.warning(f"Ignoring non-numeric columns provided: {non_numeric.tolist()}")
-            data = data.select_dtypes(include='number')
+                _LOGGER.warning(f"Coercing non-numeric columns to NaN: {non_numeric.tolist()}")
+            data[non_numeric] = data[non_numeric].apply(pd.to_numeric, errors='coerce')
     else:
         data = data.select_dtypes(include='number')
     
@@ -63,8 +63,8 @@ def _prepare_numeric_data(df: pd.DataFrame,
 def _prepare_mixed_data(
     df: pd.DataFrame, 
     ignore_columns: Optional[list[str]] = None,
-    continuous_columns: Optional[list[str]] = None, 
-    categorical_columns: Optional[list[str]] = None,
+    treat_as_continuous: Optional[list[str]] = None, 
+    treat_as_categorical: Optional[list[str]] = None,
     verbose: int = 2, 
     shadow_median_imputation: bool = True
 ) -> pd.DataFrame:
@@ -74,7 +74,11 @@ def _prepare_mixed_data(
     
     #validate columns
     all_columns = set(data.columns)
-    specified_columns = set((continuous_columns or []) + (categorical_columns or []))
+    
+    treat_as_continuous = treat_as_continuous or []
+    treat_as_categorical = treat_as_categorical or []
+    
+    specified_columns = set(treat_as_continuous + treat_as_categorical)
     if specified_columns and not specified_columns.issubset(all_columns):
         missing_cols = specified_columns - all_columns
         _LOGGER.error(f"Specified columns not found in DataFrame: {missing_cols}")
@@ -91,25 +95,25 @@ def _prepare_mixed_data(
         data = data.drop(columns=ignore_columns)
     
     # --- INFERENCE LOGIC ---
-    # If both are None, infer everything based on data types
-    if continuous_columns is None and categorical_columns is None:
-        continuous_columns = data.select_dtypes(include='number').columns.tolist()
-        categorical_columns = data.select_dtypes(exclude='number').columns.tolist()
-    else:
-        # If the user provided one list, assume the other is empty unless specified
-        continuous_columns = continuous_columns if continuous_columns is not None else []
-        categorical_columns = categorical_columns if categorical_columns is not None else []
+    # Determine which columns are left to be inferred
+    remaining_cols = [c for c in data.columns if c not in treat_as_continuous and c not in treat_as_categorical]
+    
+    inferred_continuous = data[remaining_cols].select_dtypes(include='number').columns.tolist()
+    inferred_categorical = data[remaining_cols].select_dtypes(exclude='number').columns.tolist()
+    
+    final_continuous = treat_as_continuous + inferred_continuous
+    final_categorical = treat_as_categorical + inferred_categorical
         
-    if not continuous_columns and not categorical_columns:
+    if not final_continuous and not final_categorical:
         _LOGGER.error("No valid columns available for outlier detection.")
         raise ValueError()
         
     # Isolate only the required columns
-    data = data[continuous_columns + categorical_columns]
+    data = data[final_continuous + final_categorical]
     
     # Process continuous columns
-    if continuous_columns:
-        non_numeric = data[continuous_columns].select_dtypes(exclude='number').columns
+    if final_continuous:
+        non_numeric = data[final_continuous].select_dtypes(exclude='number').columns
         if not non_numeric.empty:
             if verbose >= 1:
                 _LOGGER.warning(f"Coercing non-numeric continuous columns to NaN: {non_numeric.tolist()}")
@@ -118,19 +122,19 @@ def _prepare_mixed_data(
         if shadow_median_imputation:
             if verbose >= 3:
                 _LOGGER.info("Using median imputation for missing continuous values.")
-            data[continuous_columns] = data[continuous_columns].fillna(data[continuous_columns].median())
+            data[final_continuous] = data[final_continuous].fillna(data[final_continuous].median())
 
     # Process categorical columns (Frequency Encoding)
-    if categorical_columns:
+    if final_categorical:
         if verbose >= 2:
-            _LOGGER.info(f"Applying frequency encoding to {len(categorical_columns)} categorical columns.")
+            _LOGGER.info(f"Applying frequency encoding to {len(final_categorical)} categorical columns.")
             
         # --- CATEGORICAL NAN HANDLING ---
         if shadow_median_imputation:
             # Treat NaN as a distinct structural category so it gets a frequency
-            data[categorical_columns] = data[categorical_columns].fillna("__MISSING-DATA__")
+            data[final_categorical] = data[final_categorical].fillna("__MISSING-DATA__")
             
-        for col in categorical_columns:
+        for col in final_categorical:
             # dropna=True ensures that if shadow_median_imputation is False, 
             # actual NaNs map to NaN and get dropped by the final data.dropna()
             freq_mapping = data[col].value_counts(normalize=True, dropna=True)

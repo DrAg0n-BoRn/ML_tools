@@ -75,32 +75,32 @@ data_exploration
 ETL_cleaning
 ETL_engineering
 imputation
-IO_tools
+IO
 keys
 math_utilities
-ML_callbacks
-ML_chain
-ML_configuration
-ML_datasetmaster
-ML_evaluation
-ML_evaluation_captum
+callbacks
+chain
+configuration
+datasetmaster
+evaluation
+evaluation_captum
 ML_finalize_handler
-ML_finetune
-ML_inference
-ML_inference_sequence
-ML_inference_vision
-ML_loss
-ML_models
-ML_models_diffusion
-ML_models_sequence
-ML_models_vision
-ML_optimization
-ML_scaler
-ML_trainer
-ML_trainer_parallel
+finetune
+inference
+inference_sequence
+inference_vision
+loss
+models
+models_diffusion
+models_sequence
+models_vision
+optimization
+scaler
+trainer
+trainer_parallel
 ML_utilities
-ML_vision_transformers
-ML_vision_utilities
+vision_transformers
+vision_utilities
 optimization_tools
 outlier_detection
 path_manager
@@ -135,7 +135,7 @@ ensemble_optimization
 ETL_cleaning
 ETL_engineering
 imputation
-IO_tools
+IO
 math_utilities
 optimization_tools
 outlier_detection
@@ -164,7 +164,7 @@ pip install "dragon-ml-toolbox[mice]"
 
 ```Bash
 imputation
-IO_tools
+IO
 math_utilities
 MICE
 path_manager
@@ -187,7 +187,7 @@ pip install "dragon-ml-toolbox[excel]"
 #### Modules:
 
 ```Bash
-IO_tools
+IO
 excel_handler
 path_manager
 ```
@@ -207,11 +207,10 @@ pip install "dragon-ml-toolbox[gui-boost]"
 ```Bash
 ensemble_inference
 GUI_tools
-IO_tools
+IO
 path_manager
 schema
 serde
-constants
 ```
 
 ---
@@ -228,20 +227,20 @@ pip install "dragon-ml-toolbox[gui-torch]"
 
 ```Bash
 GUI_tools
-IO_tools
+IO
 keys
-ML_models
-ML_models_sequence
-ML_models_vision # Requires: torchvision and Pillow
-ML_inference
-ML_inference_sequence
-ML_inference_vision # Requires: torchvision and Pillow
-ML_vision_transformers # Requires: torchvision and Pillow
-ML_vision_utilities # Requires: torchvision and Pillow
-ML_scaler
+models
+models_sequence
+models_vision # Requires: torchvision and Pillow
+inference
+inference_sequence
+inference_vision # Requires: torchvision and Pillow
+vision_transformers # Requires: torchvision and Pillow
+vision_utilities # Requires: torchvision and Pillow
+scaler
 path_manager
 schema
-constants
+serde
 ```
 
 ---
@@ -252,5 +251,5 @@ After installation, import modules like this:
 
 ```python
 from dragon.serde import serialize_object, deserialize_object
-from dragon.IO_tools import custom_logger
+from dragon.IO import custom_logger
 ```

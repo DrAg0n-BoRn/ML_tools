@@ -3,7 +3,7 @@ from typing import Union, Optional
 import torch
 from torch import nn
 
-from ..IO_tools import save_json
+from ..IO import save_json
 from ..path_manager import make_fullpath
 from .._core import get_logger
 from ..keys._keys import UtilityKeys, PyTorchCheckpointKeys

@@ -33,6 +33,10 @@ from ._translate import (
     audit_column_translation
 )
 
+from ._compare_lists import (
+    compare_lists,
+)
+
 
 from .._core import _imprimir_disponibles
 
@@ -49,9 +53,11 @@ __all__ = [
     "save_dataframe_with_schema",
     "merge_dataframes_horizontal",
     "merge_dataframes_vertical",
+    # translation functions
     "translate_dataframe_columns",
     "create_translation_template",
     "audit_column_translation",
+    # dataset distribution
     "distribute_dataset_by_target",
     "train_dataset_orchestrator",
     "train_dataset_yielder",
@@ -61,7 +67,9 @@ __all__ = [
     "load_parquet_with_schema",
     "save_parquet_dataframe_filename",
     "save_parquet_dataframe",
-    "save_parquet_with_schema"
+    "save_parquet_with_schema",
+    # Others
+    "compare_lists",
 ]
 
 

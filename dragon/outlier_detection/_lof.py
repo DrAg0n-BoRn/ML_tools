@@ -86,8 +86,8 @@ def local_outlier_factor_continuous(
 def local_outlier_factor(
     df_features: pd.DataFrame,
     ignore_columns: Optional[list[str]] = None,
-    continuous_columns: Optional[list[str]] = None,
-    categorical_columns: Optional[list[str]] = None,
+    treat_as_continuous: Optional[list[str]] = None,
+    treat_as_categorical: Optional[list[str]] = None,
     n_neighbors: int = 20,
     leaf_size: int = 30,
     shadow_median_imputation: bool = True,
@@ -100,10 +100,10 @@ def local_outlier_factor(
     Args:
         df_features (pd.DataFrame): The input dataset containing features for outlier detection.
         ignore_columns (list[str] | None): Columns to exclude early from outlier detection.
-        continuous_columns (list[str] | None): Specific continuous columns to use. If None, uses all numeric columns.
-        categorical_columns (list[str] | None): Specific categorical columns to use. If None, uses all non-numeric columns.
-        n_neighbors (int): Number of neighbors to use by default for k-neighbors queries.
-        leaf_size (int): Leaf size passed to BallTree or KDTree.
+        treat_as_continuous (list[str] | None): Specific columns to cast and treat as continuous. Remaining columns are inferred.
+        treat_as_categorical (list[str] | None): Specific columns to cast and treat as categorical. Remaining columns are inferred.
+        n_neighbors (int): Number of neighbors to use by default for k-neighbors queries. Increase for highly dimensional datasets or if the dataset is very large (30~80).
+        leaf_size (int): Leaf size passed to BallTree or KDTree. Doesn't usually need to be changed, but can be adjusted for performance tuning.
         shadow_median_imputation (bool): Temporarily fill missing values with the median for fitting the model.
         verbose (int): Controls the verbosity of the model.
 
@@ -111,13 +111,12 @@ def local_outlier_factor(
         pd.Series: A boolean mask aligned with the input DataFrame index. True indicates an outlier.
         
     Note:
-    - If any column is specified in one parameter (e.g., continuous_columns), but the other parameter is None, the function will not automatically infer the remaining columns. 
-    It will only use the specified columns for outlier detection.
+    - Columns not explicitly provided in `treat_as_continuous` or `treat_as_categorical` will be automatically inferred based on pandas data types.
     """
     data_clean = _prepare_mixed_data(
         df=df_features, 
-        continuous_columns=continuous_columns, 
-        categorical_columns=categorical_columns,
+        treat_as_continuous=treat_as_continuous, 
+        treat_as_categorical=treat_as_categorical,
         ignore_columns=ignore_columns,
         verbose=verbose, 
         shadow_median_imputation=shadow_median_imputation

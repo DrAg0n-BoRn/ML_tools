@@ -2,7 +2,7 @@ from typing import NamedTuple, Optional, Union, Any
 from pathlib import Path
 import json
 
-from ..IO_tools import save_list_strings
+from ..IO import save_list_strings
 
 from .._core import get_logger
 from ..path_manager import make_fullpath

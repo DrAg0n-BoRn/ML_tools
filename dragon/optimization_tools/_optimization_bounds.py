@@ -2,7 +2,7 @@ from typing import Union, Any, Optional
 from pathlib import Path
 
 from ..schema import FeatureSchema
-from ..IO_tools import save_json, load_json
+from ..IO import save_json, load_json
 
 from ..keys._keys import OptimizationToolsKeys
 from ..path_manager import make_fullpath
