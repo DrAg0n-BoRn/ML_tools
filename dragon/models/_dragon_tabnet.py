@@ -108,18 +108,28 @@ class DragonTabNet(_ArchitectureBuilder):
         if schema.categorical_index_map:
             self.categorical_indices = list(schema.categorical_index_map.keys())
             self.cardinalities = list(schema.categorical_index_map.values())
+            
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
         
         all_indices = set(range(len(schema.feature_names)))
-        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices)))
+        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices) - set(self.nlp_indices)))
         
         # Standard TabNet Embeddings:
-        # We use a simple embedding for each categorical feature and concat with continuous.
+        # simple embedding for each categorical feature and concat with continuous.
         self.cat_embeddings = nn.ModuleList([
             nn.Embedding(card, 1) for card in self.cardinalities
         ])
         
+        if self.nlp_indices:
+            self.nlp_proj = nn.Linear(len(self.nlp_indices), n_d)
+        else:
+            self.nlp_proj = None
+        
         self.n_continuous = len(self.numerical_indices)
-        self.input_dim = self.n_continuous + len(self.cardinalities)
+        self.input_dim = self.n_continuous + len(self.cardinalities) + (n_d if self.nlp_indices else 0)
         
         # -- 2. TabNet Backbone Components --
         self.n_d = n_d
@@ -193,11 +203,15 @@ class DragonTabNet(_ArchitectureBuilder):
         for i, embed in enumerate(self.cat_embeddings):
             cat_list.append(embed(x_cat[:, i])) # (B, 1)
         
+        if self.nlp_proj is not None:
+            x_nlp = x[:, self.nlp_indices].float()
+            nlp_mapped = self.nlp_proj(x_nlp)
+            cat_list.append(nlp_mapped)
+        
         if cat_list:
             x_in = torch.cat([x_cont, *cat_list], dim=1)
         else:
             x_in = x_cont
-            
         
         # -- TabNet Encoder Pass --
         x_bn = self.initial_bn(x_in)
@@ -260,9 +274,12 @@ class DragonTabNet(_ArchitectureBuilder):
         
     def _get_finetune_components(self) -> dict[str, nn.Module]:
         """Maps TabNet layers for the DragonFinetuner."""
+        embed_modules = [self.initial_bn, self.cat_embeddings]
+        if self.nlp_proj is not None:
+            embed_modules.append(self.nlp_proj)
+            
         components = {
-            # Group initial BN and categorical embeddings
-            "embeddings": nn.ModuleList([self.initial_bn, self.cat_embeddings]),
+            "embeddings": nn.ModuleList(embed_modules),
             "initial_splitter": self.initial_splitter,
         }
         

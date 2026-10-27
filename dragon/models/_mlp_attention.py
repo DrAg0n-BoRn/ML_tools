@@ -1,5 +1,4 @@
 import torch
-from torch import nn
 from typing import Any
 
 from ._base_mlp_attention import _BaseMLP, _BaseAttention, _AttentionLayer, _MultiHeadAttentionLayer

@@ -37,7 +37,9 @@ class DragonSequenceLSTM(_ArchitectureBuilder):
                  sequence_length: int,
                  hidden_size: int = 100,
                  recurrent_layers: int = 2,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 nlp_project_dim: int = 16,
+                 nlp_dropout: float = 0.0):
         """
         Initializes the multi-head LSTM for multivariate sequence prediction.
 
@@ -54,6 +56,8 @@ class DragonSequenceLSTM(_ArchitectureBuilder):
             hidden_size (int): The number of features in the LSTM's hidden state
             recurrent_layers (int): The number of recurrent LSTM layers.
             dropout (float): The dropout probability for all but the last LSTM layer.
+            nlp_project_dim (int): The output dimension of the projection layer for NLP features.
+            nlp_dropout (float): The dropout probability for the NLP projection layer.
             
         ### Note:
         The LSTM will be bidirectional for any prediction mode except autoregressive sequence-to-sequence to prevent information leakage (look-ahead). 
@@ -95,18 +99,38 @@ class DragonSequenceLSTM(_ArchitectureBuilder):
             'sequence_length': sequence_length,
             'hidden_size': hidden_size,
             'recurrent_layers': recurrent_layers,
-            'dropout': dropout
+            'dropout': dropout,
+            'nlp_project_dim': nlp_project_dim,
+            'nlp_dropout': nlp_dropout
         }
 
         self.prediction_mode = prediction_mode
         self.targets = targets
         self.sequence_length = sequence_length
         
-        # Adjust input features for exogenous modes
+        # Handle NLP features if present
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
+        
+        self.nlp_projection = None
+        if self.nlp_indices:
+            self.nlp_projection = nn.Sequential(
+                nn.Linear(len(self.nlp_indices), nlp_project_dim),
+                nn.ReLU(),
+                nn.Dropout(nlp_dropout)
+            )
+        
+        # Adjust input features based on prediction mode and NLP features
+        base_features = schema.number_of_features
         if prediction_mode in [MLTaskKeys.EXOGENOUS_SEQUENCE_SEQUENCE, MLTaskKeys.EXOGENOUS_SEQUENCE_VALUE]:
-            self.in_features = schema.number_of_features - len(targets)
-        else: # autoregressive modes
-            self.in_features = schema.number_of_features
+            base_features -= len(targets)
+
+        if self.nlp_indices:
+            self.in_features = (base_features - len(self.nlp_indices)) + nlp_project_dim
+        else:
+            self.in_features = base_features
             
         self.hidden_size = hidden_size
         self.recurrent_layers = recurrent_layers
@@ -191,6 +215,19 @@ class DragonSequenceLSTM(_ArchitectureBuilder):
         # --- Handle Input Shape ---
         if x.ndim == 2:
             x = x.unsqueeze(-1)
+            
+        # --- Handle NLP Features ---
+        if self.nlp_projection is not None:
+            # 1. Isolate non-NLP features
+            non_nlp_indices = [i for i in range(x.shape[-1]) if i not in self.nlp_indices]
+            x_standard = x[:, :, non_nlp_indices]
+            
+            # 2. Project NLP features
+            x_nlp = x[:, :, self.nlp_indices]
+            x_nlp_projected = self.nlp_projection(x_nlp)
+            
+            # 3. Recombine
+            x = torch.cat([x_standard, x_nlp_projected], dim=-1)
 
         # --- Route through unrolled LSTM layers ---
         current_out = x
@@ -235,12 +272,19 @@ class DragonSequenceLSTM(_ArchitectureBuilder):
             f"hidden_size={self.hidden_size}, "
             f"recurrent_layers={self.recurrent_layers}, "
             f"bidirectional={self.bidirectional}, "
-            f"dropout={self.dropout}"
+            f"dropout={self.dropout},"
+            f"nlp_project_dim={self.nlp_project_dim},"
+            f"nlp_dropout={self.nlp_dropout},"
+            f"nlp_indices={self.nlp_indices}"
         )
 
     def _get_finetune_components(self) -> dict[str, nn.Module]:
         """Maps LSTM sequence model layers for the DragonFinetuner."""
-        return {
+        components = {
             "backbone": nn.ModuleList([self.lstm_layers, self.layer_norms]),
             "heads": self.target_heads
         }
+        
+        if self.nlp_projection is not None:
+            components["nlp_projection"] = self.nlp_projection
+        return components

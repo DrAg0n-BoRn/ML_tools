@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [Unreleased]
+
+### Changed
+
+- models:
+    - Updated `Embedding1dLayer` and `Embedding2dLayer` in `_models_advanced_helpers.py` to natively support NLP embeddings via dedicated linear projections, bypassing Batch Normalization.
+    - Modified `_FeatureTokenizer` in `_dragon_tabular.py` to isolate NLP features, preventing them from being processed by Gaussian Fourier Features which would destroy their semantic geometry.
+    - Updated `__init__`, `forward` methods across `DragonNodeModel`, `DragonAutoInt`, `DragonGateModel`, and `DragonTabNet` to correctly intercept, project, and concatenate NLP embedding tensors with standard tabular features.
+    - Updated `data_aware_initialization` in `DragonNodeModel` to account for projected NLP features when calculating the input feature dimension for the first layer.
+    - Updated `_get_finetune_components` in `DragonTabNet` to explicitly expose the new NLP projection layers, ensuring full compatibility with the `DragonFinetuner`.
+
+- models_sequence:
+    - Added `nlp_project_dim` and `nlp_dropout` parameters to `DragonSequenceLSTM` and `DragonSequenceTransformer` initialization.
+        - Implemented a dedicated `nlp_projection` block (`Linear -> ReLU -> Dropout`) to compress dense text embeddings before they merge with the main sequence backbone, preventing high-dimensional NLP features from dominating the sequence models.
+        - Updated `self.in_features` calculation to account for the projected NLP dimensions rather than the raw column count.
+        - Modified `_get_finetune_components` in both models to explicitly expose the new NLP projection layers, ensuring full compatibility with the `DragonFinetuner`.
+
+- schema:
+    - Added `embedding_feature_names: Optional[tuple[str, ...]]` to the `FeatureSchema` NamedTuple to formally separate dense NLP embeddings from standard continuous features.
+    - Modified `finalize_feature_schema` in `_schema_ops.py` to accept an `embedding_columns` argument, routing these specific features to the new schema attribute.
+    - Updated `prepare_schema_from_json` in `_schema_load_ops.py` to safely load the new `embedding_feature_names` attribute while defaulting to `None` for backward compatibility with older saved models.
+    - Added `save_embedding_features` method to the `FeatureSchema` class to save the NLP feature artifacts independently.
+    - Updated `enforce_schema_dtypes` to include the new `embedding_feature_names` attribute when validating and enforcing schema compliance on DataFrames.
+
+### Added
+
+- schema:
+    - Added `extract_embedding_features()` to `_schema_ops_b.py` to subset a DataFrame to include only the embedding features defined in a `FeatureSchema`. This function complements the existing continuous and categorical feature extractors.
+
+
 ## [28.3.0] 2026-10-21
 
 ### Changed

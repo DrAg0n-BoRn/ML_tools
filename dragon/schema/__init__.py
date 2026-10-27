@@ -18,6 +18,7 @@ from ._schema_ops_b import (
     validate_schema_match,
     extract_continuous_features,
     extract_categorical_features,
+    extract_embedding_features,
     enforce_schema_dtypes
 )
 
@@ -38,6 +39,7 @@ __all__ = [
     "validate_schema_match",
     "extract_continuous_features",
     "extract_categorical_features",
+    "extract_embedding_features",
     "enforce_schema_dtypes"
 ]
 

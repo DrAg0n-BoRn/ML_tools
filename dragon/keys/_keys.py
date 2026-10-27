@@ -92,6 +92,7 @@ class DatasetKeys:
     # Feature Schema
     CONTINUOUS_NAMES = "continuous_feature_names"
     CATEGORICAL_NAMES = "categorical_feature_names"
+    EMBEDDING_NAMES = "embedding_feature_names"
     # Dataset splits
     TRAIN_SUBSET = "train_set"
     VALIDATION_SUBSET = "validation_set"
@@ -279,6 +280,9 @@ class SchemaKeys:
     """Used by the schema module."""
     SCHEMA_FILENAME = "FeatureSchema.json"
     GUI_SCHEMA_FILENAME = "GUISchema.json"
+    # Schema attributes
+    CATEGORICAL_INDEX_MAP = "categorical_index_map"
+    CATEGORICAL_MAPPINGS = "categorical_mappings"
     # Model architecture API
     SCHEMA_DICT = "schema_dict"
     # GUI Schema

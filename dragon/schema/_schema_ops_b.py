@@ -13,6 +13,7 @@ __all__ = [
     "validate_schema_match",
     "extract_continuous_features",
     "extract_categorical_features",
+    "extract_embedding_features",
     "enforce_schema_dtypes",
 ]
 
@@ -84,13 +85,32 @@ def extract_categorical_features(df: pd.DataFrame, schema: FeatureSchema) -> pd.
     return df[available_cols].copy()
 
 
+def extract_embedding_features(df: pd.DataFrame, schema: FeatureSchema) -> pd.DataFrame:
+    """
+    Returns a DataFrame containing only the embedding features defined in the schema.
+    
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        schema (FeatureSchema): The schema defining feature types.
+        
+    Returns:
+        pd.DataFrame: A new DataFrame containing only the embedding features.
+    """
+    if not schema.embedding_feature_names:
+        _LOGGER.info("No embedding features defined in the schema. returning an empty DataFrame.")
+        return pd.DataFrame()  # Return an empty DataFrame if no embedding features are defined
+    
+    available_cols = [col for col in schema.embedding_feature_names if col in df.columns]
+    return df[available_cols].copy()
+
+
 def enforce_schema_dtypes(
     df: pd.DataFrame, 
     schema: FeatureSchema, 
     categorical_as: Literal["int", "str"] = "int"
 ) -> pd.DataFrame:
     """
-    Explicitly casts continuous features to numeric and categorical features to 
+    Explicitly casts continuous features to numeric, embedding features to numeric, and categorical features to 
     either int or str, preventing silent downstream type errors.
     
     Args:
@@ -106,7 +126,12 @@ def enforce_schema_dtypes(
     for col in schema.continuous_feature_names:
         if col in df_out.columns:
             df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
-            
+    
+    if schema.embedding_feature_names:
+        for col in schema.embedding_feature_names:
+            if col in df_out.columns:
+                df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
+    
     for col in schema.categorical_feature_names:
         if col in df_out.columns:
             if categorical_as == "int":

@@ -176,7 +176,7 @@ class _FeatureTokenizer(nn.Module):
     """
     Transforms raw numerical and categorical features from any column order 
     into a sequence of embeddings. Uses Gaussian Fourier Features for numerical
-    columns to capture high-frequency non-linear variations.
+    columns, and a linear projection for dense NLP embeddings.
     """
     def __init__(self,
                  schema: FeatureSchema,
@@ -196,21 +196,33 @@ class _FeatureTokenizer(nn.Module):
         else:
             self.categorical_indices = []
             cardinalities = []
+            
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
         
         all_indices = set(range(len(schema.feature_names)))
         categorical_indices_set = set(self.categorical_indices)
-        self.numerical_indices = sorted(list(all_indices - categorical_indices_set))
+        nlp_indices_set = set(self.nlp_indices)
+        self.numerical_indices = sorted(list(all_indices - categorical_indices_set - nlp_indices_set))
         
         self.embedding_dim = embedding_dim
         
         half_dim = embedding_dim // 2
-        self.numerical_frequencies = nn.Parameter(
-            torch.randn(len(self.numerical_indices), half_dim) * numerical_sigma
-        )
+        
+        # Only initialize Fourier frequencies if there are numerical features
+        if self.numerical_indices:
+            self.numerical_frequencies = nn.Parameter(
+                torch.randn(len(self.numerical_indices), half_dim) * numerical_sigma
+            )
         
         self.categorical_embeddings = nn.ModuleList(
             [nn.Embedding(num_embeddings=c, embedding_dim=embedding_dim) for c in cardinalities]
         )
+        
+        if self.nlp_indices:
+            self.nlp_proj = nn.Linear(len(self.nlp_indices), embedding_dim)
 
         self.layer_norm = nn.LayerNorm(embedding_dim)
 
@@ -219,9 +231,7 @@ class _FeatureTokenizer(nn.Module):
 
         if self.numerical_indices:
             x_numerical = x[:, self.numerical_indices].float()
-            
             v = x_numerical.unsqueeze(-1) * self.numerical_frequencies
-            
             numerical_tokens = torch.cat([torch.sin(v), torch.cos(v)], dim=-1)
             tokens_list.append(numerical_tokens)
         
@@ -234,6 +244,11 @@ class _FeatureTokenizer(nn.Module):
             
             all_categorical_tokens = torch.cat(categorical_tokens, dim=1)
             tokens_list.append(all_categorical_tokens)
+            
+        if self.nlp_indices:
+            x_nlp = x[:, self.nlp_indices].float()
+            nlp_token = self.nlp_proj(x_nlp).unsqueeze(1)
+            tokens_list.append(nlp_token)
         
         all_tokens = torch.cat(tokens_list, dim=1)
         all_tokens = self.layer_norm(all_tokens)
