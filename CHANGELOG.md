@@ -29,11 +29,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - Added `save_embedding_features` method to the `FeatureSchema` class to save the NLP feature artifacts independently.
     - Updated `enforce_schema_dtypes` to include the new `embedding_feature_names` attribute when validating and enforcing schema compliance on DataFrames.
 
+- chain:
+    - Updated `derive_next_step_schema` in `_update_schema.py` to correctly retain and pass `embedding_feature_names` to the new `FeatureSchema`, preventing the loss of embedding tracking during multi-step model chaining.
+
+- inference_sequence:
+    - Optimized `forecast` methods in `_autoregressive_inference.py` and `_exogenous_inference.py` to bypass full-width zero-padded dummy tensors during scaling. 
+    - The scaling logic now selectively applies transformations only to explicitly mapped continuous exogenous features, preventing redundant computations on high-dimensional NLP embeddings and significantly improving inference speed.
+
+- optimization_tools:
+    - Updated `create_optimization_bounds` in `_optimization_bounds.py` to automatically clamp the upper and lower bounds of embedding features to `[0.0, 0.0]`. 
+    - This freezes embeddings during EvoTorch genetic optimization, preventing invalid mutations to individual vector dimensions and preserving their semantic context.
+
+- VIF:
+    - Added an `include_embeddings` flag (default `False`) to `compute_vif()` in `_dragon_vif.py`, allowing users to optionally exclude high-dimensional embeddings from computationally expensive correlation matrix inversions.
+    - Fixed a bug in `drop_vif_based` to ensure `embedding_feature_names` are properly retained when instantiating the updated `FeatureSchema` after dropping collinear features.
+
+
 ### Added
 
 - schema:
     - Added `extract_embedding_features()` to `_schema_ops_b.py` to subset a DataFrame to include only the embedding features defined in a `FeatureSchema`. This function complements the existing continuous and categorical feature extractors.
 
+- New module: "NLP"
+    - `DragonNLP`: A new class to manage dense NLP embeddings for tabular and sequence models. It provides methods to load, validate, and preprocess embedding vectors. 
 
 ## [28.3.0] 2026-10-21
 

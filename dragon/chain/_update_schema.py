@@ -82,6 +82,9 @@ def derive_next_step_schema(
         else:
             # Regression / Multitarget Regression
             new_cont_names.append(col_name)
+            
+    # extract embeddings
+    new_emb_names = tuple(current_schema.embedding_feature_names) if current_schema.embedding_feature_names else None
     
     if verbose:
         _LOGGER.info(f"Derived next step schema with {len(new_feature_names)} features:\n    {len(new_cont_names)} continuous\n    {len(new_cat_names)} categorical")
@@ -92,5 +95,6 @@ def derive_next_step_schema(
         continuous_feature_names=tuple(new_cont_names),
         categorical_feature_names=tuple(new_cat_names),
         categorical_index_map=new_cat_index_map if new_cat_index_map else None,
-        categorical_mappings=new_cat_mappings if new_cat_mappings else None
+        categorical_mappings=new_cat_mappings if new_cat_mappings else None,
+        embedding_feature_names=new_emb_names
     )
