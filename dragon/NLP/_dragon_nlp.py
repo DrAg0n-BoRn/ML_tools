@@ -2,7 +2,7 @@ from numbers import Integral
 import numpy as np
 import pandas as pd
 import polars as pl
-from typing import Union, Optional, Literal
+from typing import Union, Optional, Literal, Any
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ..serde import serialize_object_filename, deserialize_object
 
-from ..IO import save_json
+from ..IO import save_json, save_list_strings
 from .._core import get_logger
 
 
@@ -40,7 +40,8 @@ class DragonNLP:
     3. TruncatedSVD (Lexical exact-match features).
     4. Dense NLP Embeddings (Semantic context via sentence-transformers).
     
-    Note:
+    ### Note:
+    
     - Output contains only generated numerical features and preserves pandas indexes. 
     - Input columns and feature order are learned once per successful fit.
     - Additional inference columns are ignored; missing required columns fail. 
@@ -48,40 +49,54 @@ class DragonNLP:
     
     """
     def __init__(self, *,
-                 text_columns: Union[list[str], None],
+                 text_columns: Union[list[str], tuple[str, ...], None],
                  embedding_model_name: str = "all-MiniLM-L6-v2",
-                 svd_components: Optional[int] = 50,
+                 svd_components: Optional[int] = 30,
                  strategy: Literal["concat", "independent"] = "concat",
                  batch_size: int = 32,
                  scale_statistics: bool = True,
                  random_state: Optional[int] = 42,
                  empty_vocabulary: Literal["skip", "raise"] = "raise",
-                 max_features: Optional[int] = None,
-                 tfidf_dtype: Literal["float32", "float64"] = "float64"):
+                 max_features: Optional[int] = 10000,
+                 tfidf_dtype: Literal["float32", "float64"] = "float32"):
         """
         Initializes the NLP Vectorizer pipeline.
         
         Args:
-            text_columns (list[str] | None): Explicit ordered columns, or None to discover String columns during fitting.
+            text_columns (list[str] | tuple[str, ...] | None): Explicit ordered columns, or None to discover all String columns during fitting.
             embedding_model_name (str): The HuggingFace model string. 
+                - 'all-MiniLM-L6-v2' A small, fast model with 384 dimensions, ~80 MB
+                - 'all-mpnet-base-v2' The gold standard for medium-sized models with 768 dimensions, ~420 MB
+                - 'BAAI/bge-large-en-v1.5' A large, high-quality model with 1024 dimensions, ~1.4 GB. Requires GPU for speed.
+                - 'hkunlp/instructor-xl' A massive, high-quality model with 768 dimensions, ~5.0 GB. Requires GPU.
             svd_components (int | None): Number of SVD dimensions to compress the TF-IDF matrix into.
             strategy (str): 'concat' to join all text columns into one before processing, or 'independent' to process each column separately.
-            batch_size (int): Batch size for generating dense embeddings.`
+            batch_size (int): Batch size for generating dense embeddings.
             scale_statistics (bool): Whether to standardize the statistical features.
             random_state (int | None): Random state for reproducible results.
             empty_vocabulary (str): 'skip' to ignore empty vocabulary, 'raise' to raise an error.
             max_features (int | None): Optional positive TF-IDF vocabulary limit.
-            tfidf_dtype (str): Data type for TF-IDF features.
-        """        
+            tfidf_dtype (str): Data type for TF-IDF features. float32 is faster and uses less memory; float64 is more precise.
+            
+        ### Note:
+        
+        - SVD is highly recommended for large vocabularies to reduce dimensionality and improve performance.
+        - The 'concat' strategy is useful for short text columns, while 'independent' is better for semantically distinct columns. However, 
+        'independent' will produce more features and require more memory.
+        """
+        # Validate the original argument before converting it.
+        if text_columns is not None:
+            self._validate_columns(text_columns)
+
         self._text_columns = None if text_columns is None else tuple(text_columns)
         self.embedding_model_name = embedding_model_name
         self.svd_components = svd_components
         self.strategy = strategy
         self.batch_size = batch_size
-        self.scale_statistics = scale_statistics
+        self._scale_statistics = scale_statistics
         self.random_state = random_state
-        self.empty_vocabulary = empty_vocabulary
-        self.max_features = max_features
+        self._empty_vocabulary = empty_vocabulary
+        self._max_features = max_features
         self.tfidf_dtype = tfidf_dtype
         self._validate_config()
 
@@ -123,7 +138,7 @@ class DragonNLP:
         if self.strategy not in ("concat", "independent"):
             _LOGGER.error("strategy must be 'concat' or 'independent'.")
             raise ValueError()
-        if self.empty_vocabulary not in ("skip", "raise"):
+        if self._empty_vocabulary not in ("skip", "raise"):
             _LOGGER.error("empty_vocabulary must be 'skip' or 'raise'.")
             raise ValueError()
         if self.tfidf_dtype not in ("float32", "float64"):
@@ -131,7 +146,7 @@ class DragonNLP:
             raise ValueError()
         self._positive_integer("svd_components", self.svd_components, allow_none=True)
         self._positive_integer("batch_size", self.batch_size)
-        self._positive_integer("max_features", self.max_features, allow_none=True)
+        self._positive_integer("max_features", self._max_features, allow_none=True)
         if self.random_state is not None and (
             isinstance(self.random_state, bool)
             or not isinstance(self.random_state, Integral)
@@ -139,7 +154,7 @@ class DragonNLP:
         ):
             _LOGGER.error("random_state must be None or an integer in [0, 2**32).")
             raise ValueError()
-        if not isinstance(self.scale_statistics, bool):
+        if not isinstance(self._scale_statistics, bool):
             _LOGGER.error("scale_statistics must be a boolean.")
             raise ValueError()
     
@@ -150,10 +165,10 @@ class DragonNLP:
             "svd_components": None if self.svd_components is None else int(self.svd_components),
             "strategy": self.strategy,
             "batch_size": int(self.batch_size),
-            "scale_statistics": self.scale_statistics,
+            "scale_statistics": self._scale_statistics,
             "random_state": None if self.random_state is None else int(self.random_state),
-            "empty_vocabulary": self.empty_vocabulary,
-            "max_features": None if self.max_features is None else int(self.max_features),
+            "empty_vocabulary": self._empty_vocabulary,
+            "max_features": None if self._max_features is None else int(self._max_features),
             "tfidf_dtype": self.tfidf_dtype
         }
     
@@ -438,7 +453,7 @@ class DragonNLP:
             
         statistics_scaler = (
             StandardScaler()
-            if self.scale_statistics
+            if self._scale_statistics
             else None
         )
 
@@ -453,7 +468,7 @@ class DragonNLP:
         vectorizers, svds, modes, embedding_dimensions = {}, {}, {}, {}
         for name, text_list in texts.items():
             vectorizer = TfidfVectorizer(
-                max_features=self.max_features, dtype=np.dtype(self.tfidf_dtype).type
+                max_features=self._max_features, dtype=np.dtype(self.tfidf_dtype).type
             )
             try:
                 matrix = vectorizer.fit_transform(text_list)
@@ -461,7 +476,7 @@ class DragonNLP:
                 if "empty vocabulary" not in str(exc).lower():
                     _LOGGER.error(f"TF-IDF fitting failed for {name!r}: {exc}")
                     raise ValueError() from exc
-                if self.empty_vocabulary == "raise":
+                if self._empty_vocabulary == "raise":
                     _LOGGER.error(f"TF-IDF for {name!r} has an empty vocabulary.")
                     raise ValueError() from exc
                 modes[name] = "disabled"
@@ -573,7 +588,7 @@ class DragonNLP:
         return self._restore_output(final_df, df, is_pandas)
     
     def get_feature_names(self) -> np.ndarray:
-        """Return a copy of the fitted numerical feature names, in output order."""
+        """Return a copy of the fitted numerical feature names, in output order as a NumPy array."""
         state = self._require_fitted()
         return np.asarray(state["schema"]["feature_names"], dtype=object).copy()
 
@@ -629,7 +644,7 @@ class DragonNLP:
     
     @classmethod
     def _validate_saved_state(cls, state):
-        """Reject incomplete state."""
+        """Reject incomplete state or a schema inconsistent with fitted artifacts."""
         
         if not isinstance(state, dict):
             _LOGGER.error("Invalid DragonNLP state: expected a dictionary.")
@@ -785,6 +800,72 @@ class DragonNLP:
                         _LOGGER.error("SVD and vocabulary dimensions disagree")
                         raise ValueError()
                     
+            # Reconstruct the schema in the same order as fit_transform().
+            ordered_groups = (
+                ("concat_text",)
+                if config["strategy"] == "concat"
+                else tuple(schema["text_columns"])
+            )
+            expected_raw_names = list(statistic_names)
+            expected_dtypes: list[Any] = [ pl.Float64 if scaling_enabled else pl.UInt32] * statistic_width
+            float_dtypes = {
+                np.dtype("float32"): pl.Float32,
+                np.dtype("float64"): pl.Float64,
+            }
+
+            for name in ordered_groups:
+                mode = modes[name]
+                embedding_width = int(dimensions[name])
+                if mode == "svd":
+                    lexical_width = svds[name].components_.shape[0]
+                elif mode == "tfidf":
+                    lexical_width = len(vectorizers[name].vocabulary_)
+                else:
+                    lexical_width = 0
+
+                # Reject oversized dimensions before allocating feature names.
+                if len(expected_raw_names) + lexical_width + embedding_width > len(names):
+                    _LOGGER.error(f"Feature widths exceed the saved schema for {name!r}.")
+                    raise ValueError()
+
+                if mode != "disabled":
+                    lexical_dtype = np.dtype(vectorizers[name].dtype)
+                    if mode == "svd":
+                        lexical_dtype = np.result_type(
+                            lexical_dtype, svds[name].components_.dtype
+                        )
+                        lexical_names = [f"{name}_svd_{i}" for i in range(lexical_width)]
+                    else:
+                        lexical_names = [
+                            f"{name}_tfidf_{term}"
+                            for term in vectorizers[name].get_feature_names_out()
+                        ]
+
+                    if lexical_dtype not in float_dtypes:
+                        _LOGGER.error(f"Unsupported lexical dtype for {name!r}: {lexical_dtype}.")
+                        raise ValueError()
+                    expected_raw_names.extend(lexical_names)
+                    expected_dtypes.extend([float_dtypes[lexical_dtype]] * lexical_width)
+
+                expected_raw_names.extend(
+                    f"{name}_emb_{i}" for i in range(embedding_width)
+                )
+                expected_dtypes.extend([pl.Float32] * embedding_width)
+
+            if tuple(schema["raw_feature_names"]) != tuple(expected_raw_names):
+                _LOGGER.error("Raw feature names or order do not match the fitted artifacts.")
+                raise ValueError()
+
+            expected_names = cls._unique_feature_names(expected_raw_names)
+            if names != expected_names:
+                _LOGGER.error("Feature names do not match the reconstructed unique names.")
+                raise ValueError()
+
+            expected_schema = dict(zip(expected_names, expected_dtypes))
+            if not isinstance(schema["dtypes"], dict) or schema["dtypes"] != expected_schema:
+                _LOGGER.error("Feature dtypes do not match the fitted artifacts.")
+                raise ValueError()
+                    
         except (KeyError, TypeError, AttributeError, ValueError) as exc:
             _LOGGER.error(f"Incomplete or invalid DragonNLP fitted state: {exc}")
             raise ValueError() from exc
@@ -835,3 +916,50 @@ class DragonNLP:
             _LOGGER.info(f"Loaded DragonNLP state from '{file_path}'.")
 
         return instance
+    
+    def save_feature_names(
+        self,
+        directory: Union[str, Path],
+        filename: str = "dragon_nlp_features",
+        save_as: Literal["txt", "json"] = "txt",
+        verbose: bool = True,
+    ) -> None:
+        """
+        Saves all fitted feature names in output order to a text file or JSON file.
+        
+        Args:
+            directory (str | Path): Directory to save the feature names file.
+            filename (str): Name of the file to save the feature names.
+            save_as ("txt" | "json"): Format to save the feature names in.
+            verbose (bool): If True, prints a saving confirmation message.
+        """
+        names: list[str] = self.get_feature_names().tolist()
+        
+        if save_as not in ("txt", "json"):
+            _LOGGER.error("save_as must be either 'txt' or 'json'.")
+            raise ValueError()
+        
+        if save_as == "txt":
+            if any("\n" in name or "\r" in name or name != name.strip() for name in names):
+                _LOGGER.warning("Feature names containing line breaks or leading/trailing whitespace cannot be saved as a text file. Saving as JSON instead.")
+                save_as = "json"
+            else:
+                save_list_strings(
+                    list_strings=names,
+                    directory=directory,
+                    filename=filename,
+                    verbose=False
+                )
+        
+        # JSON default
+        if save_as == "json":
+            save_json(
+                data=names,
+                directory=directory,
+                filename=filename,
+                verbose=False,
+            )
+            
+        if verbose:
+            _LOGGER.info(f"Saved DragonNLP feature names to '{directory}'.")
+
