@@ -591,7 +591,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
                        n_steps: int = 50,
                        max_sequence_bins: int = 40,
                        wrap_text_width: int = 15,
-                       verbose: int = 0):
+                       verbose: int = 0,
+                       plot_n_best: Optional[int] = 20):
         """
         Explains sequence model predictions using Captum's Integrated Gradients.
         Automatically wraps multi-head dictionary models into continuous PyTorch modules.
@@ -605,6 +606,10 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             max_sequence_bins (int): Maximum number of bins for plot visualization if using long sequence length. (0 < max_sequence_bins <= 50)
             wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
             verbose (int): Verbosity level for Captum output.
+            plot_n_best (int | None): Maximum number of top features in the bar
+                chart and heatmap. Defaults to 20; None plots all features. Must
+                be a positive integer or None. CSV reports, percentages, and the
+                temporal lag plot always use all features.
         """
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
         if dataset_to_use is None:
@@ -667,7 +672,8 @@ class DragonSequenceTrainer(_BaseDragonTrainer):
             device=self.device,
             max_sequence_bins=max_sequence_bins,
             wrap_text_width=wrap_text_width,
-            verbose=verbose
+            verbose=verbose,
+            plot_n_best=plot_n_best
         )
     
     def finalize_model_training(self, 

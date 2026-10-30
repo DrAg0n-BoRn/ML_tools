@@ -44,6 +44,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - Added an `include_embeddings` flag (default `False`) to `compute_vif()` in `_dragon_vif.py`, allowing users to optionally exclude high-dimensional embeddings from computationally expensive correlation matrix inversions.
     - Fixed a bug in `drop_vif_based` to ensure `embedding_feature_names` are properly retained when instantiating the updated `FeatureSchema` after dropping collinear features.
 
+- trainer:
+    - Added the keyword-only `plot_n_best: Optional[int] = 20` parameter to `explain_captum` across standard, sequence, and distribution trainers, and to `explain_shap` in `DragonTrainer`.
+    - Forwarded `plot_n_best` to the corresponding evaluation functions while preserving compatibility with existing positional arguments.
+
+- evaluation:
+    - Added `plot_n_best` to `shap_summary_plot` and the deprecated `multi_target_shap_summary_plot`, controlling the number of top features displayed in bar and dot plots through SHAP's native `max_display` parameter.
+    - Defaulted to the top 20 features, with `None` explicitly displaying all features. Added validation requiring a positive integer or `None`.
+    - Preserved full-feature SHAP calculations and complete CSV reports regardless of the plot limit.
+
+- evaluation_captum:
+    - Replaced the hard-coded top-20 bar chart limit with `plot_n_best` in `captum_feature_importance` and `captum_sequence_feature_importance`.
+    - Applied the same per-target feature selection to sequence heatmap rows and global bar charts, ranking features by mean absolute attribution.
+    - Defaulted to the top 20 features, with `None` displaying all features. Added validation requiring a positive integer or `None`.
+    - Preserved complete CSV reports, attribution calculations, and percentage denominators across all features. Sequence temporal lag plots continue to aggregate all features independently of the plot limit.
 
 ### Added
 

@@ -1,4 +1,5 @@
 from typing import Optional, Union
+from numbers import Integral
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -30,7 +31,9 @@ def captum_sequence_feature_importance(model: nn.Module,
                                        device: Union[str, torch.device] = 'cpu',
                                        max_sequence_bins: int = 40,
                                        wrap_text_width: int = 15,
-                                       verbose: int = 0):
+                                       verbose: int = 0,
+                                       *,
+                                       plot_n_best: Optional[int] = 20):
     """
     Calculates temporal and global feature importance for Sequence models using Captum's Integrated Gradients.
 
@@ -38,7 +41,19 @@ def captum_sequence_feature_importance(model: nn.Module,
     1. Global Feature Ranking (Bar chart)
     2. Temporal Lag Importance (Line plot)
     3. Feature-Time Attribution Matrix (Heatmap)
+
+    plot_n_best (int | None): Maximum number of top features in the bar chart
+        and heatmap, ranked by mean absolute attribution across samples and time.
+        Defaults to 20; None plots all features. Must be a positive integer or
+        None. CSV reports, percentage denominators, and the temporal lag plot
+        always use all features. max_sequence_bins controls the time axis only.
     """
+    if plot_n_best is not None:
+        if isinstance(plot_n_best, bool) or not isinstance(plot_n_best, Integral):
+            raise TypeError("plot_n_best must be a positive integer or None.")
+        if plot_n_best <= 0:
+            raise ValueError("plot_n_best must be a positive integer or None.")
+
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     device_obj = torch.device(device) if isinstance(device, str) else device
     
@@ -106,7 +121,8 @@ def captum_sequence_feature_importance(model: nn.Module,
             target_name=name,
             max_sequence_bins=max_sequence_bins,
             wrap_text_width=wrap_text_width,
-            verbose=verbose
+            verbose=verbose,
+            plot_n_best=plot_n_best
         )
 
 
@@ -142,7 +158,9 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
                                     target_name: str,
                                     max_sequence_bins: int,
                                     wrap_text_width: int,
-                                    verbose: int):
+                                    verbose: int,
+                                    *,
+                                    plot_n_best: Optional[int] = 20):
     try:
         with torch.backends.cudnn.flags(enabled=False):
             attributions, delta = ig.attribute(inputs, 
@@ -200,17 +218,21 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     
     summary_df.to_csv(save_dir / f"{CaptumKeys.SAVENAME}{file_suffix}.csv", index=False)
 
+    # Select only for plotting; retain original column indices for the heatmap.
+    plot_features = summary_df if plot_n_best is None else summary_df.head(plot_n_best)
+    plot_heatmap = compressed_heatmap[:, plot_features.index.to_numpy()]
+
     # ==========================================
     # PLOT 1: Feature-Time Heatmap
     # ==========================================
     fig_w = max(10, compressed_seq_len * 0.3)
-    fig_h = max(6, num_features * 0.4)
+    fig_h = max(6, len(plot_features) * 0.4)
     
     plt.figure(figsize=(fig_w, fig_h), dpi=_EvaluationConfig.DPI)
     sns.heatmap(
-        compressed_heatmap.T,
+        plot_heatmap.T,
         cmap="Greens",
-        yticklabels=[wrap_text(f_n, width=wrap_text_width) for f_n in feature_names],
+        yticklabels=[wrap_text(f_n, width=wrap_text_width) for f_n in plot_features[CaptumKeys.FEATURE_COLUMN]],
         xticklabels=x_labels,
         cbar=False
     )
@@ -249,7 +271,7 @@ def _process_single_sequence_target(ig: 'IntegratedGradients', # type: ignore
     # ==========================================
     # PLOT 3: Global Feature Bar Chart
     # ==========================================
-    plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
+    plot_df = plot_features.sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=wrap_text_width))
     
     dynamic_height = max(_EvaluationConfig.CAPTUM_PLOT_SIZE[1], len(plot_df) * 0.8)
