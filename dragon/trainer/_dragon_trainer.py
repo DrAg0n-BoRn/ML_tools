@@ -522,8 +522,8 @@ class DragonTrainer(_BaseDragonTrainer):
                 explain_dataset: Optional[Dataset] = None, 
                 n_samples: int = 300,
                 feature_names: Optional[list[str]] = None,
-                target_names: Optional[list[str]] = None,
-                explainer_type: Literal['deep', 'kernel'] = 'kernel'):
+                explainer_type: Literal['deep', 'kernel'] = 'kernel',
+                plot_n_best: Optional[int] = 20):
         """
         Explains model predictions using SHAP and saves all artifacts.
         
@@ -536,8 +536,10 @@ class DragonTrainer(_BaseDragonTrainer):
             explain_dataset (Optional[Dataset]): A specific dataset to explain. Defaults to the internal validation set if None.
             n_samples (int): The number of samples to use for both background and explanation.
             feature_names (Optional[list[str]]): Feature names. If None, it will be extracted from the Dataset.
-            target_names (Optional[list[str]]): Target names for multi-target tasks.
             explainer_type (Literal['deep', 'kernel']): The explainer to use ('deep' for efficiency, 'kernel' for model-agnostic but slower explanation).
+            plot_n_best (int | None): Maximum number of top features in each plot.
+                Defaults to 20; None plots all features. Must be a positive integer
+                or None. CSV reports always include all features.
         """
         # --- 1. Compatibility Guard ---
         valid_shap_tasks = [
@@ -616,7 +618,8 @@ class DragonTrainer(_BaseDragonTrainer):
             feature_names=feature_names,
             save_dir=shap_save_dir,
             explainer_type=explainer_type,
-            device=self.device
+            device=self.device,
+            plot_n_best=plot_n_best
         )
 
 
@@ -627,7 +630,8 @@ class DragonTrainer(_BaseDragonTrainer):
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
                        wrap_text_width: int = 15,
-                       verbose: int = 0):
+                       verbose: int = 0,
+                       plot_n_best: Optional[int] = 20):
         """
         Explains model predictions using Captum's Integrated Gradients to generate feature importance scores and bar charts.
         
@@ -639,6 +643,9 @@ class DragonTrainer(_BaseDragonTrainer):
             n_steps (int): Number of interpolation steps.
             wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
             verbose (int): Verbosity level for logging operations.
+            plot_n_best (int | None): Maximum number of top features in each plot.
+                Defaults to 20; None plots all features. Must be a positive integer
+                or None. CSV reports and percentages always use all features.
         """         
         # 2. Prepare Data
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
@@ -692,7 +699,8 @@ class DragonTrainer(_BaseDragonTrainer):
             n_steps=n_steps,
             device=self.device,
             wrap_text_width=wrap_text_width,
-            verbose=verbose
+            verbose=verbose,
+            plot_n_best=plot_n_best
         )
         
     def finalize_model_training(self,

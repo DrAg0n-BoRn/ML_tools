@@ -96,7 +96,9 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
                  heads: int = 4,
                  num_layers: int = 3,
                  dim_feedforward: int = 512,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 nlp_project_dim: int = 16,
+                 nlp_dropout: float = 0.0):
         """
         Initializes the multi-head Transformer for multivariate sequence prediction.
     
@@ -119,6 +121,8 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
             num_layers (int): The number of sub-encoder layers in the Transformer. 
             dim_feedforward (int): The dimension of the feedforward network model within the encoder. 
             dropout (float): The dropout probability applied to the encoder layers and positional encodings.
+            nlp_project_dim (int): The output dimension of the projection layer for NLP features.
+            nlp_dropout (float): The dropout probability for the NLP projection layer.
         
         ### Note:
         For autoregressive sequence-to-sequence tasks, causal masking is applied to prevent information leakage.
@@ -145,6 +149,8 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
             'num_layers': num_layers,
             'dim_feedforward': dim_feedforward,
             'dropout': dropout,
+            'nlp_project_dim': nlp_project_dim,
+            'nlp_dropout': nlp_dropout
         }
         
         self.prediction_mode = prediction_mode
@@ -152,11 +158,29 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
         self.sequence_length = sequence_length
         self._heads = heads
         
-        # Adjust input features for exogenous modes
+        # Handle NLP features if present
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
+        
+        self.nlp_projection = None
+        if self.nlp_indices:
+            self.nlp_projection = nn.Sequential(
+                nn.Linear(len(self.nlp_indices), nlp_project_dim),
+                nn.ReLU(),
+                nn.Dropout(nlp_dropout)
+            )
+        
+        # Adjust input features based on prediction mode and NLP features
+        base_features = schema.number_of_features
         if prediction_mode in [MLTaskKeys.EXOGENOUS_SEQUENCE_SEQUENCE, MLTaskKeys.EXOGENOUS_SEQUENCE_VALUE]:
-            self.in_features = schema.number_of_features - len(targets)
-        else: # autoregressive modes
-            self.in_features = schema.number_of_features
+            base_features -= len(targets)
+        
+        if self.nlp_indices:
+            self.in_features = (base_features - len(self.nlp_indices)) + nlp_project_dim
+        else:
+            self.in_features = base_features
 
         # --- 3. Transformer Backbone ---
         self.input_projection = nn.Linear(self.in_features, embedding_dim)
@@ -218,6 +242,19 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
         if x.ndim == 2:
             x = x.unsqueeze(-1)
             
+        # --- Handle NLP Features ---
+        if self.nlp_projection is not None:
+            # 1. Isolate non-NLP features
+            non_nlp_indices = [i for i in range(x.shape[-1]) if i not in self.nlp_indices]
+            x_standard = x[:, :, non_nlp_indices]
+            
+            # 2. Project NLP features
+            x_nlp = x[:, :, self.nlp_indices]
+            x_nlp_projected = self.nlp_projection(x_nlp)
+            
+            # 3. Recombine
+            x = torch.cat([x_standard, x_nlp_projected], dim=-1)
+            
         batch_size, seq_len, _ = x.shape
 
         # 1. Project input (Positional encoding removed in favor of ALiBi mask)
@@ -267,13 +304,20 @@ class DragonSequenceTransformer(_ArchitectureBuilder):
             f"heads={self.model_hparams['heads']}, "
             f"num_layers={self.model_hparams['num_layers']}, "
             f"dim_feedforward={self.model_hparams['dim_feedforward']}, "
-            f"dropout={self.model_hparams['dropout']}"
+            f"dropout={self.model_hparams['dropout']}, "
+            f"nlp_project_dim={self.model_hparams['nlp_project_dim']}, "
+            f"nlp_dropout={self.model_hparams['nlp_dropout']}, "
+            f"nlp_indices={self.nlp_indices}"
         )
 
     def _get_finetune_components(self) -> dict[str, nn.Module]:
         """Maps Transformer sequence model layers for the DragonFinetuner."""
+        embed_modules: list[nn.Module] = [self.input_projection]
+        if self.nlp_projection is not None:
+            embed_modules.append(self.nlp_projection)
+            
         return {
-            "embeddings": self.input_projection,
-            "encoder": self.transformer_encoder,
+            "embedding": nn.ModuleList(embed_modules),
+            "backbone": self.transformer_encoder,
             "heads": self.target_heads
         }

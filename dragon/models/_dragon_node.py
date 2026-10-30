@@ -134,9 +134,14 @@ class DragonNodeModel(_ArchitectureBuilder):
         if schema.categorical_index_map:
             self.categorical_indices = list(schema.categorical_index_map.keys())
             self.cardinalities = list(schema.categorical_index_map.values())
+            
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
         
         all_indices = set(range(len(schema.feature_names)))
-        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices)))
+        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices) - set(self.nlp_indices)))
         
         embedding_dims = [(c, embedding_dim) for c in self.cardinalities]
         n_continuous = len(self.numerical_indices)
@@ -145,10 +150,12 @@ class DragonNodeModel(_ArchitectureBuilder):
             continuous_dim=n_continuous,
             categorical_embedding_dims=embedding_dims,
             embedding_dropout=embedding_dropout,
-            batch_norm_continuous_input=batch_norm_continuous
+            batch_norm_continuous_input=batch_norm_continuous,
+            nlp_embedding_dim=len(self.nlp_indices),
+            nlp_proj_dim=embedding_dim
         )
         
-        total_embedded_dim = n_continuous + sum([d for _, d in embedding_dims])
+        total_embedded_dim = n_continuous + sum([d for _, d in embedding_dims]) + (embedding_dim if self.nlp_indices else 0)
         
         # -- 2. Backbone (Dense ODST) --
         # The tree output dim includes the target dim + auxiliary dims for deep learning
@@ -177,18 +184,11 @@ class DragonNodeModel(_ArchitectureBuilder):
         # Split inputs
         x_cont = x[:, self.numerical_indices].float()
         x_cat = x[:, self.categorical_indices].long()
+        x_nlp = x[:, self.nlp_indices].float() if self.nlp_indices else None
         
-        # 1. Embeddings
-        x = self.embedding_layer(x_cont, x_cat)
-        
-        # 2. Backbone
-        # Output shape: (Batch, Total_Trees, Tree_Dim)
+        x = self.embedding_layer(x_cont, x_cat, x_nlp)
         x = self.backbone(x)
         
-        # 3. Head (Averaging)
-        # We take the first 'out_targets' channels and average them across all trees
-        # subset: x[..., :out_targets]
-        # mean: .mean(dim=-2) -> average over Total_Trees dimension
         return x[..., :self.out_targets].mean(dim=-2)
 
     def data_aware_initialization(self, train_dataset, num_samples: int = 2000, verbose: int = 2):
@@ -236,9 +236,10 @@ class DragonNodeModel(_ArchitectureBuilder):
         # 3. Process features (Split -> Embed)
         x_cont = x_input[:, self.numerical_indices].float()
         x_cat = x_input[:, self.categorical_indices].long()
+        x_nlp = x_input[:, self.nlp_indices].float() if self.nlp_indices else None
         
         with torch.no_grad():
-            x_embedded = self.embedding_layer(x_cont, x_cat)
+            x_embedded = self.embedding_layer(x_cont, x_cat, x_nlp)
             
             # 4. Initialize Backbone
             if hasattr(self.backbone, 'initialize'):

@@ -144,14 +144,16 @@ class DragonSequenceExogenousHandler(_BaseSequenceInferenceHandler):
         exog_np = future_exogenous[self._exog_names].iloc[:n_steps].to_numpy()
         exog_tensor = torch.from_numpy(exog_np).float()
         
-        if self.feature_scaler:
-            # Pad the missing targets with zeros to satisfy the full-width scaler transformation
-            dummy_full = torch.zeros((n_steps, num_features))
-            dummy_full[:, self._exog_indices] = exog_tensor
-            dummy_scaled = self.feature_scaler.transform(dummy_full)
-            scaled_exog_tensor = dummy_scaled[:, self._exog_indices].to(self.device)
-        else:
-            scaled_exog_tensor = exog_tensor.to(self.device)
+        scaled_exog_tensor = exog_tensor.to(self.device)
+        
+        # Efficiently scale only the continuous exogenous features without dummy matrices
+        if self.feature_scaler and self.feature_scaler.continuous_feature_indices and self.feature_scaler.mean_ is not None and self.feature_scaler.std_ is not None:
+            for i, abs_idx in enumerate(self._exog_indices):
+                if abs_idx in self.feature_scaler.continuous_feature_indices:
+                    stat_idx = self.feature_scaler.continuous_feature_indices.index(abs_idx)
+                    mean = self.feature_scaler.mean_[stat_idx].to(self.device)
+                    std = self.feature_scaler.std_[stat_idx].to(self.device)
+                    scaled_exog_tensor[:, i] = (scaled_exog_tensor[:, i] - mean) / (std + 1e-8)
 
         # --- 4. Sliding Exogenous Window Loop ---
         descaled_predictions = []

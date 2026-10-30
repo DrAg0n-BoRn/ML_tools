@@ -400,7 +400,8 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
                        target_names: Optional[list[str]] = None,
                        n_steps: int = 50,
                        wrap_text_width: int = 15,
-                       verbose: int = 0):
+                       verbose: int = 0,
+                       plot_n_best: Optional[int] = 20):
         """
         Explains the model's MEAN predictions using Captum's Integrated Gradients.
         
@@ -412,6 +413,9 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             n_steps (int): Number of interpolation steps.
             wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
             verbose (int): Verbosity level for logging.
+            plot_n_best (int | None): Maximum number of top features in each plot.
+                Defaults to 20; None plots all features. Must be a positive integer
+                or None. CSV reports and percentages always use all features.
         """
         dataset_to_use = explain_dataset if explain_dataset is not None else self.validation_dataset
         if dataset_to_use is None:
@@ -472,7 +476,8 @@ class DragonDistributionTrainer(_BaseDragonTrainer):
             n_steps=n_steps,
             device=self.device,
             wrap_text_width=wrap_text_width,
-            verbose=verbose
+            verbose=verbose,
+            plot_n_best=plot_n_best
         )
     
     def finalize_model_training(self,

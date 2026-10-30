@@ -59,7 +59,8 @@ class DragonVIF:
     def compute_vif(
         self, 
         use_columns: Optional[list[str]] = None, 
-        ignore_columns: Optional[list[str]] = None
+        ignore_columns: Optional[list[str]] = None,
+        include_embeddings: bool = False
     ) -> pd.DataFrame:
         """
         Computes standard VIF for continuous features and squared Adjusted GVIF for 
@@ -71,12 +72,17 @@ class DragonVIF:
         Args:
             use_columns (Optional[list[str]]): If provided, computes VIF only for these specified features.
             ignore_columns (Optional[list[str]]): If provided, excludes these features from the computation.
+            include_embeddings (bool): Whether to include embedding features in the VIF calculation.
 
         Returns:
             pd.DataFrame: A DataFrame containing 'feature', 'VIF' (numeric score), and 'type' 
                 ('Continuous' or 'Categorical'), sorted by descending VIF values.
         """
         base_cols = list(self.schema.feature_names)
+        
+        if not include_embeddings and self.schema.embedding_feature_names:
+            emb_set = set(self.schema.embedding_feature_names)
+            base_cols = [c for c in base_cols if c not in emb_set]
         
         if use_columns:
             base_cols = [c for c in base_cols if c in use_columns]
@@ -292,6 +298,11 @@ class DragonVIF:
         new_cont_names = tuple(f for f in self.schema.continuous_feature_names if f not in to_drop)
         new_cat_names = tuple(f for f in self.schema.categorical_feature_names if f not in to_drop)
         
+        # Handle embeddings
+        new_emb_names = None
+        if self.schema.embedding_feature_names:
+            new_emb_names = tuple(f for f in self.schema.embedding_feature_names if f not in to_drop)
+        
         new_mappings = None
         if self.schema.categorical_mappings:
             new_mappings = {k: v for k, v in self.schema.categorical_mappings.items() if k not in to_drop}
@@ -309,7 +320,8 @@ class DragonVIF:
             continuous_feature_names=new_cont_names,
             categorical_feature_names=new_cat_names,
             categorical_index_map=new_index_map,
-            categorical_mappings=new_mappings
+            categorical_mappings=new_mappings,
+            embedding_feature_names=new_emb_names
         )
         
         return result_df, new_schema

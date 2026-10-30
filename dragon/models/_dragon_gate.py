@@ -145,9 +145,14 @@ class DragonGateModel(_ArchitectureBuilder):
         if schema.categorical_index_map:
             self.categorical_indices = list(schema.categorical_index_map.keys())
             self.cardinalities = list(schema.categorical_index_map.values())
+            
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
         
         all_indices = set(range(len(schema.feature_names)))
-        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices)))
+        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices) - set(self.nlp_indices)))
         
         embedding_dims = [(c, embedding_dim) for c in self.cardinalities]
         n_continuous = len(self.numerical_indices)
@@ -156,12 +161,14 @@ class DragonGateModel(_ArchitectureBuilder):
         self.embedding_layer = Embedding1dLayer(
             continuous_dim=n_continuous,
             categorical_embedding_dims=embedding_dims,
-            batch_norm_continuous_input=batch_norm_continuous
+            batch_norm_continuous_input=batch_norm_continuous,
+            nlp_embedding_dim=len(self.nlp_indices),
+            nlp_proj_dim=embedding_dim
         )
         
         # Calculate total feature dimension after embedding
         total_embedded_cat_dim = sum([d for _, d in embedding_dims])
-        self.n_features = n_continuous + total_embedded_cat_dim
+        self.n_features = n_continuous + total_embedded_cat_dim + (embedding_dim if self.nlp_indices else 0)
         
         # -- 3. GFLU Backbone --
         self.gflu_stages = gflu_stages
@@ -223,15 +230,15 @@ class DragonGateModel(_ArchitectureBuilder):
         else:
             # Fallback if no trees (just GFLU -> Linear)
             self.head = SimpleLinearHead(self.n_features, out_targets)
-            # Add T0 manually for consistency if needed, but SimpleLinear covers bias
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Split inputs
         x_cont = x[:, self.numerical_indices].float()
         x_cat = x[:, self.categorical_indices].long()
+        x_nlp = x[:, self.nlp_indices].float() if self.nlp_indices else None
         
         # 1. Embeddings
-        x = self.embedding_layer(x_cont, x_cat)
+        x = self.embedding_layer(x_cont, x_cat, x_nlp)
         
         # 2. GFLU
         if self.gflu_stages > 0:

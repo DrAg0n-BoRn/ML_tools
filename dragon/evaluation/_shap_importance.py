@@ -6,6 +6,7 @@ import torch
 import shap
 from pathlib import Path
 from typing import Union, Optional, Literal
+from numbers import Integral
 import warnings
 
 from ..path_manager import make_fullpath, sanitize_filename
@@ -19,8 +20,6 @@ _LOGGER = get_logger("Feature Importance")
 
 __all__ = [
     "shap_summary_plot",
-    "plot_attention_importance",
-    "multi_target_shap_summary_plot",
 ]
 
 
@@ -33,7 +32,9 @@ def shap_summary_plot(model,
                       feature_names: Optional[list[str]], 
                       save_dir: Union[str, Path],
                       device: torch.device = torch.device('cpu'),
-                      explainer_type: Literal['deep', 'kernel'] = 'kernel'):
+                      explainer_type: Literal['deep', 'kernel'] = 'kernel',
+                      *,
+                      plot_n_best: Optional[int] = 20):
     """
     Calculates SHAP values and saves summary plots and data.
 
@@ -49,8 +50,19 @@ def shap_summary_plot(model,
               PyTorch models.
             - 'kernel': Uses shap.KernelExplainer. Model-agnostic but EXTREMELY
               slow and memory-intensive.
+        plot_n_best (int | None): Maximum number of top features in each summary
+            plot, ranked by mean absolute SHAP value. Defaults to 20; None plots
+            all features. Must be a positive integer or None. CSV reports always
+            include all features.
     """
-    
+    if plot_n_best is not None:
+        if isinstance(plot_n_best, bool) or not isinstance(plot_n_best, Integral):
+            _LOGGER.error("plot_n_best must be a positive integer or None.")
+            raise TypeError()
+        if plot_n_best <= 0:
+            _LOGGER.error("plot_n_best must be a positive integer or None.")
+            raise ValueError()
+
     _LOGGER.info(f"📊 Running SHAP Value Explanation Using {explainer_type.upper()} Explainer")
     
     model.eval()
@@ -138,10 +150,12 @@ def shap_summary_plot(model,
         feature_names = [f'feature_{i}' for i in range(num_features)]
         
     instances_df = pd.DataFrame(instances_to_explain_np, columns=feature_names)
+    # SHAP's legacy summary_plot treats max_display=None as its default limit.
+    max_display = len(feature_names) if plot_n_best is None else min(plot_n_best, len(feature_names))
     
     # Save Bar Plot
     bar_path = save_dir_path / "shap_bar_plot.svg"
-    shap.summary_plot(shap_values, instances_df, plot_type="bar", show=False)
+    shap.summary_plot(shap_values, instances_df, plot_type="bar", show=False, max_display=max_display)
     ax = plt.gca()
     ax.set_xlabel("SHAP Value Impact", labelpad=10)
     plt.title("SHAP Feature Importance")
@@ -152,7 +166,7 @@ def shap_summary_plot(model,
 
     # Save Dot Plot
     dot_path = save_dir_path / "shap_dot_plot.svg"
-    shap.summary_plot(shap_values, instances_df, plot_type="dot", show=False)
+    shap.summary_plot(shap_values, instances_df, plot_type="dot", show=False, max_display=max_display)
     ax = plt.gca()
     ax.set_xlabel("SHAP Value Impact", labelpad=10)
     if plt.gcf().axes and len(plt.gcf().axes) > 1:
@@ -186,6 +200,9 @@ def shap_summary_plot(model,
     _LOGGER.info(f"📝 SHAP summary data saved as '{summary_path.name}'")
     plt.ion()
 
+
+#### DEPRECATED FUNCTIONS BELOW. Use Captum module instead. ###
+# functions have already been removed from other modules.
 
 def plot_attention_importance(weights: list[torch.Tensor], feature_names: Optional[list[str]], save_dir: Union[str, Path], top_n: int = 10):
     """
@@ -266,7 +283,9 @@ def multi_target_shap_summary_plot(
     target_names: list[str],
     save_dir: Union[str, Path],
     device: torch.device = torch.device('cpu'),
-    explainer_type: Literal['deep', 'kernel'] = 'kernel'
+    explainer_type: Literal['deep', 'kernel'] = 'kernel',
+    *,
+    plot_n_best: Optional[int] = 20
 ):
     """
     DEPRECATED
@@ -284,7 +303,17 @@ def multi_target_shap_summary_plot(
         explainer_type (Literal['deep', 'kernel']): The explainer to use.
             - 'deep': Uses shap.DeepExplainer. Fast and efficient.
             - 'kernel': Uses shap.KernelExplainer. Model-agnostic but slow and memory-intensive.
+        plot_n_best (int | None): Maximum number of top features per target plot,
+            ranked by mean absolute SHAP value. Defaults to 20; None plots all
+            features. Must be a positive integer or None. CSV reports always
+            include all features.
     """
+    if plot_n_best is not None:
+        if isinstance(plot_n_best, bool) or not isinstance(plot_n_best, Integral):
+            raise TypeError("plot_n_best must be a positive integer or None.")
+        if plot_n_best <= 0:
+            raise ValueError("plot_n_best must be a positive integer or None.")
+
     _LOGGER.warning("This function is deprecated and may be removed in future versions. Use Captum module instead.")
     
     _LOGGER.info(f"--- Multi-Target SHAP Value Explanation (Using: {explainer_type.upper()}Explainer) ---")
@@ -368,6 +397,8 @@ def multi_target_shap_summary_plot(
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     plt.ioff()
 
+    max_display = len(feature_names) if plot_n_best is None else min(plot_n_best, len(feature_names))
+
     # Iterate through each target's SHAP values and generate plots.
     for i, target_name in enumerate(target_names):
         print(f"  -> Generating SHAP plots for target: '{target_name}'")
@@ -375,7 +406,7 @@ def multi_target_shap_summary_plot(
         sanitized_target_name = sanitize_filename(target_name)
 
         # Save Bar Plot for the target
-        shap.summary_plot(shap_values_for_target, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False)
+        shap.summary_plot(shap_values_for_target, instances_to_explain_np, feature_names=feature_names, plot_type="bar", show=False, max_display=max_display)
         plt.title(f"SHAP Feature Importance for '{target_name}'")
         plt.tight_layout()
         bar_path = save_dir_path / f"shap_bar_plot_{sanitized_target_name}.svg"
@@ -383,7 +414,7 @@ def multi_target_shap_summary_plot(
         plt.close()
 
         # Save Dot Plot for the target
-        shap.summary_plot(shap_values_for_target, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False)
+        shap.summary_plot(shap_values_for_target, instances_to_explain_np, feature_names=feature_names, plot_type="dot", show=False, max_display=max_display)
         plt.title(f"SHAP Feature Importance for '{target_name}'")
         if plt.gcf().axes and len(plt.gcf().axes) > 1:
             cb = plt.gcf().axes[-1]

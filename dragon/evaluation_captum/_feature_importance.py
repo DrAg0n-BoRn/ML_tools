@@ -1,4 +1,5 @@
 from typing import Optional, Union
+from numbers import Integral
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -28,7 +29,9 @@ def captum_feature_importance(model: nn.Module,
                               n_steps: int = 50,
                               device: Union[str, torch.device] = 'cpu',
                               wrap_text_width: int = 15,
-                              verbose: int = 0):
+                              verbose: int = 0,
+                              *,
+                              plot_n_best: Optional[int] = 20):
     """
     Calculates feature importance using Captum's Integrated Gradients.
 
@@ -49,11 +52,21 @@ def captum_feature_importance(model: nn.Module,
         device (str | torch.device): Torch device.
         wrap_text_width (int): Maximum character width for feature names in plots. Longer names will be wrapped.
         verbose (int): Verbosity level.
+        plot_n_best (int | None): Maximum number of top features to plot, ranked by
+            mean absolute attribution. Defaults to 20; None plots all features.
+            Must be a positive integer or None. CSV reports always include all
+            features, and percentages remain relative to all features.
     <br>
         
     ### NOTE: 
     The internal batch size used by Captum will be set to the number of samples. If you run into OOM errors, consider reducing `n_samples`.
     """
+    if plot_n_best is not None:
+        if isinstance(plot_n_best, bool) or not isinstance(plot_n_best, Integral):
+            raise TypeError("plot_n_best must be a positive integer or None.")
+        if plot_n_best <= 0:
+            raise ValueError("plot_n_best must be a positive integer or None.")
+
     # Ensure output directory exists
     save_dir_path = make_fullpath(save_dir, make=True, enforce="directory")
     
@@ -128,7 +141,8 @@ def captum_feature_importance(model: nn.Module,
             file_suffix=f"_{clean_name}",
             wrap_text_width=wrap_text_width,
             target_name=name,  # Pass original name for plotting
-            verbose=verbose
+            verbose=verbose,
+            plot_n_best=plot_n_best
         )
 
 
@@ -142,7 +156,9 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
                            file_suffix: str,
                            wrap_text_width: int,
                            target_name: str = "",
-                           verbose: int = 0):
+                           verbose: int = 0,
+                           *,
+                           plot_n_best: Optional[int] = 20):
     """
     Private helper to run the attribution, aggregation, and saving for a single context.
     """
@@ -251,7 +267,8 @@ def _process_single_target(ig: 'IntegratedGradients', # type: ignore
     summary_df.to_csv(csv_path, index=False)
 
     # --- Generate Plot ---
-    plot_df = summary_df.head(20).sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
+    plot_df = summary_df if plot_n_best is None else summary_df.head(plot_n_best)
+    plot_df = plot_df.sort_values(CaptumKeys.PERCENT_COLUMN, ascending=True)
     
     # Apply text wrapping to feature names for better readability in plots
     plot_df[CaptumKeys.FEATURE_COLUMN] = plot_df[CaptumKeys.FEATURE_COLUMN].apply(lambda x: wrap_text(x, width=wrap_text_width))

@@ -35,12 +35,14 @@ def check_numpy(x):
         return x.detach().cpu().numpy()
     return np.array(x)
 
+
 def _make_ix_like(X, dim):
     d = X.size(dim)
     rho = torch.arange(1, d + 1, device=X.device, dtype=X.dtype)
     view = [1] * X.dim()
     view[0] = -1
     return rho.view(view).transpose(0, dim)
+
 
 def _roll_last(X, dim):
     if dim == -1:
@@ -49,6 +51,7 @@ def _roll_last(X, dim):
         dim = X.dim() - dim
     perm = [i for i in range(X.dim()) if i != dim] + [dim]
     return X.permute(perm)
+
 
 def _sparsemax_threshold_and_support(X, dim=-1, k=None):
     if k is None or k >= X.shape[dim]:
@@ -72,6 +75,7 @@ def _sparsemax_threshold_and_support(X, dim=-1, k=None):
             _roll_last(tau, dim)[unsolved] = tau_
             _roll_last(support_size, dim)[unsolved] = ss_
     return tau, support_size
+
 
 def _entmax_threshold_and_support(X, dim=-1, k=None):
     if k is None or k >= X.shape[dim]:
@@ -100,6 +104,7 @@ def _entmax_threshold_and_support(X, dim=-1, k=None):
             _roll_last(support_size, dim)[unsolved] = ss_
     return tau_star, support_size
 
+
 class SparsemaxFunction(Function):
     @classmethod
     def forward(cls, ctx, X, dim=-1, k=None):
@@ -121,6 +126,7 @@ class SparsemaxFunction(Function):
         v_hat = v_hat.unsqueeze(dim)
         grad_input = torch.where(output != 0, grad_input - v_hat, grad_input)
         return grad_input, None, None
+
 
 class Entmax15Function(Function):
     @classmethod
@@ -144,11 +150,14 @@ class Entmax15Function(Function):
         dX -= q * gppr
         return dX, None, None
 
+
 def sparsemax(X, dim=-1, k=None):
     return SparsemaxFunction.apply(X, dim, k)
 
+
 def entmax15(X, dim=-1, k=None):
     return Entmax15Function.apply(X, dim, k)
+
 
 class Entmoid15(Function):
     @staticmethod
@@ -177,11 +186,14 @@ class Entmoid15(Function):
         grad_input -= q * gppr0
         return grad_input
 
+
 def entmoid15(input):
     return Entmoid15.apply(input)
 
+
 def sparsemoid(input):
     return (0.5 * input + 0.5).clamp_(0, 1)
+
 
 def t_softmax(input: torch.Tensor, t: torch.Tensor = None, dim: int = -1) -> torch.Tensor: # type: ignore
     if t is None:
@@ -190,6 +202,7 @@ def t_softmax(input: torch.Tensor, t: torch.Tensor = None, dim: int = -1) -> tor
     input_minus_maxes = input - maxes
     w = torch.relu(input_minus_maxes + t) + 1e-8
     return torch.softmax(input_minus_maxes + torch.log(w), dim=dim)
+
 
 class RSoftmax(nn.Module):
     def __init__(self, dim: int = -1, eps: float = 1e-8):
@@ -247,9 +260,11 @@ class GhostBatchNorm1d(nn.Module):
         res = [self.bn(chunk) for chunk in chunks]
         return torch.cat(res, 0)
 
+
 class Embedding1dLayer(nn.Module):
     """
-    Concatenates continuous features (processed by BN) and categorical embeddings.
+    Concatenates continuous features (processed by BN), categorical embeddings, 
+    and projected NLP embeddings.
     """
     def __init__(
         self,
@@ -258,13 +273,19 @@ class Embedding1dLayer(nn.Module):
         embedding_dropout: float = 0.0,
         batch_norm_continuous_input: bool = False,
         virtual_batch_size: Optional[int] = None,
+        nlp_embedding_dim: int = 0,
+        nlp_proj_dim: int = 0,
     ):
         super().__init__()
         self.continuous_dim = continuous_dim
         self.categorical_embedding_dims = categorical_embedding_dims
         self.batch_norm_continuous_input = batch_norm_continuous_input
+        self.nlp_embedding_dim = nlp_embedding_dim
 
         self.cat_embedding_layers = nn.ModuleList([nn.Embedding(x, y) for x, y in categorical_embedding_dims])
+        
+        if nlp_embedding_dim > 0:
+            self.nlp_proj = nn.Linear(nlp_embedding_dim, nlp_proj_dim)
         
         if embedding_dropout > 0:
             self.embd_dropout = nn.Dropout(embedding_dropout)
@@ -274,9 +295,7 @@ class Embedding1dLayer(nn.Module):
         if batch_norm_continuous_input:
             self.normalizing_batch_norm = GhostBatchNorm1d(continuous_dim, virtual_batch_size)
 
-    def forward(self, x_cont: torch.Tensor, x_cat: torch.Tensor) -> torch.Tensor:
-        # x_cont: (B, Cont_Dim), x_cat: (B, Cat_Dim)
-        
+    def forward(self, x_cont: torch.Tensor, x_cat: torch.Tensor, x_nlp: Optional[torch.Tensor] = None) -> torch.Tensor:
         embed = None
         # Process Continuous
         if self.continuous_dim > 0:
@@ -298,10 +317,19 @@ class Embedding1dLayer(nn.Module):
                 embed = categorical_embed
             else:
                 embed = torch.cat([embed, categorical_embed], dim=1)
+        
+        # Process NLP Embeddings
+        if self.nlp_embedding_dim > 0 and x_nlp is not None:
+            nlp_embed = self.nlp_proj(x_nlp)
+            if embed is None:
+                embed = nlp_embed
+            else:
+                embed = torch.cat([embed, nlp_embed], dim=1)
                 
         if self.embd_dropout is not None:
             embed = self.embd_dropout(embed)
         return embed # type: ignore
+
 
 class GatedFeatureLearningUnit(nn.Module):
     def __init__(
@@ -367,6 +395,7 @@ class GatedFeatureLearningUnit(nn.Module):
             h_out = torch.tanh(self.W_out[d](torch.cat([r * h, x], dim=-1)))
             h = self.dropout((1 - z) * h + z * h_out)
         return h
+
 
 class NeuralDecisionStump(nn.Module):
     def __init__(
@@ -468,6 +497,7 @@ class NeuralDecisionTree(nn.Module):
         
         return self.dropout(layer_nodes), feature_masks # type: ignore
 
+
 class ODST(nn.Module):
     def __init__(
         self,
@@ -567,6 +597,7 @@ class ODST(nn.Module):
             )
             temperatures /= max(1.0, self.threshold_init_cutoff)
             self.log_temperatures.data[...] = torch.log(torch.as_tensor(temperatures).to(feature_values.device) + eps)
+
 
 class SimpleLinearHead(nn.Module):
     def __init__(self, in_units: int, output_dim: int, dropout: float = 0.0):
@@ -693,9 +724,11 @@ class SharedEmbeddings(nn.Module):
             out[:, : shared_embed.shape[1]] = shared_embed
         return out
 
+
 class Embedding2dLayer(nn.Module):
     """
-    Embeds categorical and continuous features into a 2D tensor (Batch, Num_Features, Embed_Dim).
+    Embeds categorical, continuous features, and NLP features into a 
+    2D tensor (Batch, Num_Features, Embed_Dim).
     """
     def __init__(
         self,
@@ -708,6 +741,7 @@ class Embedding2dLayer(nn.Module):
         batch_norm_continuous_input: bool = False,
         embedding_dropout: float = 0.0,
         initialization: Optional[str] = None,
+        nlp_embedding_dim: int = 0,
     ):
         super().__init__()
         self.continuous_dim = continuous_dim
@@ -717,6 +751,7 @@ class Embedding2dLayer(nn.Module):
         self.shared_embedding_strategy = shared_embedding_strategy
         self.frac_shared_embed = frac_shared_embed
         self.embedding_bias = embedding_bias
+        self.nlp_embedding_dim = nlp_embedding_dim
         
         # Initialization Helper
         d_sqrt_inv = 1 / math.sqrt(embedding_dim)
@@ -749,17 +784,22 @@ class Embedding2dLayer(nn.Module):
             self.cat_embedding_bias = nn.Parameter(torch.Tensor(len(categorical_cardinality), self.embedding_dim))
             init_weights(self.cat_embedding_bias)
 
-        # 3. Continuous Embedding (Linear projection for scalar -> vector)
+        # 3. Continuous Embedding 
         self.cont_embedding_layer = nn.Embedding(self.continuous_dim, self.embedding_dim)
         if embedding_bias:
             self.cont_embedding_bias = nn.Parameter(torch.Tensor(self.continuous_dim, self.embedding_dim))
             init_weights(self.cont_embedding_bias)
 
-        # 4. Batch Norm
+        # 4. NLP Embedding Projection
+        if self.nlp_embedding_dim > 0:
+            self.nlp_proj = nn.Linear(self.nlp_embedding_dim, self.embedding_dim)
+            if initialization: init_weights(self.nlp_proj.weight)
+
+        # 5. Batch Norm
         if batch_norm_continuous_input:
             self.normalizing_batch_norm = nn.BatchNorm1d(continuous_dim)
             
-        # 5. Dropout
+        # 6. Dropout
         if embedding_dropout > 0:
             self.embd_dropout = nn.Dropout(embedding_dropout)
         else:
@@ -774,8 +814,7 @@ class Embedding2dLayer(nn.Module):
                     init_weights(m.shared_embed)
             init_weights(self.cont_embedding_layer.weight)
 
-    def forward(self, x_cont: torch.Tensor, x_cat: torch.Tensor) -> torch.Tensor:
-        # x_cont: (B, N_cont), x_cat: (B, N_cat)
+    def forward(self, x_cont: torch.Tensor, x_cat: torch.Tensor, x_nlp: Optional[torch.Tensor] = None) -> torch.Tensor:
         embed = None
         
         # --- Process Continuous ---
@@ -783,11 +822,7 @@ class Embedding2dLayer(nn.Module):
             if self.batch_norm_continuous_input:
                 x_cont = self.normalizing_batch_norm(x_cont)
             
-            # Continuous embedding usually works by multiplying value * weight_vector
-            # Or using an index-based lookup if we treat feature indices as tokens
             cont_idx = torch.arange(self.continuous_dim, device=x_cont.device).expand(x_cont.size(0), -1)
-            
-            # (B, N_cont, Embed_Dim)
             cont_embed = torch.mul(
                 x_cont.unsqueeze(2),
                 self.cont_embedding_layer(cont_idx)
@@ -813,6 +848,14 @@ class Embedding2dLayer(nn.Module):
                 embed = cat_embed
             else:
                 embed = torch.cat([embed, cat_embed], dim=1)
+        
+        # --- Process NLP Embeddings ---
+        if self.nlp_embedding_dim > 0 and x_nlp is not None:
+            nlp_embed = self.nlp_proj(x_nlp).unsqueeze(1)
+            if embed is None:
+                embed = nlp_embed
+            else:
+                embed = torch.cat([embed, nlp_embed], dim=1)
                 
         if self.embd_dropout is not None:
             embed = self.embd_dropout(embed)

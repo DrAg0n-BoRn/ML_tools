@@ -152,6 +152,26 @@ constants
 
 ---
 
+### 🔠 Natural Language Processing [NLP]
+
+NLP class using Sentence Transformers for generating dense embeddings from text data. Uses HuggingFace models and includes utilities for text preprocessing, TF-IDF vectorization, and dimensionality reduction.
+
+```Bash
+pip install "dragon-ml-toolbox[NLP]"
+```
+
+##### Modules:
+
+```Bash
+IO
+NLP
+path_manager
+serde
+utilities
+```
+
+---
+
 ### 🔬 MICE Imputation and Variance Inflation Factor [mice]
 
 Utilities for advanced data cleaning and statistical checks. Features **Multiple Imputation by Chained Equations (MICE)** for handling missing data and **Variance Inflation Factor (VIF)** analysis to detect multicollinearity in features.

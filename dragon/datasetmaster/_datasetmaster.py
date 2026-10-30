@@ -117,6 +117,7 @@ class DragonDataset(_BaseDatasetMaker):
         X_train, X_val, X_test, y_train, y_val, y_test = self._perform_random_splits(
             features_df, target_series, test_size, validation_size, random_state
         )
+        del features_df, target_series, pandas_df
         
         # --- label_dtype logic ---
         if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION, MLTaskKeys.BINARY_CLASSIFICATION, MLTaskKeys.AUTOENCODER]:
@@ -133,6 +134,7 @@ class DragonDataset(_BaseDatasetMaker):
         X_train_final, X_val_final, X_test_final = self._apply_feature_scaling_logic(
             feature_scaler, X_train, y_train, X_val, X_test, label_dtype, schema, verbose
         )
+        del X_train, X_val, X_test
 
         # --- 5. Scale Targets (Regression, and Diffusion Only) ---
         if kind in [MLTaskKeys.REGRESSION, MLTaskKeys.DIFFUSION]:
@@ -141,14 +143,18 @@ class DragonDataset(_BaseDatasetMaker):
             )
         else:
             # No scaling for Classification targets or Autoencoder (features only)
-            y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
-            y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
-            y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
+            y_train_final = self._owned_tensor(y_train, dtype=label_dtype)
+            y_val_final = self._owned_tensor(y_val, dtype=label_dtype)
+            y_test_final = self._owned_tensor(y_test, dtype=label_dtype)
+        del y_train, y_val, y_test
 
         # --- 6. Create Datasets ---
         self._train_ds = _PytorchDataset(X_train_final, y_train_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_train_final, y_train_final
         self._val_ds = _PytorchDataset(X_val_final, y_val_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_val_final, y_val_final
         self._test_ds = _PytorchDataset(X_test_final, y_test_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_test_final, y_test_final
         
         # --- 7. Attach scalers to datasets ---
         self._attach_scalers_to_datasets()
@@ -315,6 +321,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         X_train, X_val, X_test, y_train, y_val, y_test = self._perform_random_splits(
             features_df, target_df, test_size, validation_size, random_state
         )
+        del features_df, target_df, pandas_df
         
         label_dtype = torch.float32 
 
@@ -322,6 +329,7 @@ class DragonDatasetMulti(_BaseDatasetMaker):
         X_train_final, X_val_final, X_test_final = self._apply_feature_scaling_logic(
             feature_scaler, X_train, y_train, X_val, X_test, label_dtype, schema, verbose
         )
+        del X_train, X_val, X_test
 
         # --- 5. Scale Targets ---
         if kind == MLTaskKeys.MULTITARGET_REGRESSION:
@@ -329,12 +337,18 @@ class DragonDatasetMulti(_BaseDatasetMaker):
                 target_scaler, y_train, y_val, y_test, verbose
             )
         else:
-             y_train_final, y_val_final, y_test_final = y_train.to_numpy(), y_val.to_numpy(), y_test.to_numpy()
+            y_train_final = self._owned_tensor(y_train, dtype=label_dtype)
+            y_val_final = self._owned_tensor(y_val, dtype=label_dtype)
+            y_test_final = self._owned_tensor(y_test, dtype=label_dtype)
+        del y_train, y_val, y_test
 
         # --- 6. Create Datasets ---
         self._train_ds = _PytorchDataset(X_train_final, y_train_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_train_final, y_train_final
         self._val_ds = _PytorchDataset(X_val_final, y_val_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_val_final, y_val_final
         self._test_ds = _PytorchDataset(X_test_final, y_test_final, labels_dtype=label_dtype, feature_names=self._feature_names, target_names=self._target_names)
+        del X_test_final, y_test_final
         
         # --- 7. Attach scalers to datasets ---
         self._attach_scalers_to_datasets()

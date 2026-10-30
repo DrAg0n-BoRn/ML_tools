@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [28.4.0] 2026-10-30
+
+### Changed
+
+- models:
+    - Updated `Embedding1dLayer` and `Embedding2dLayer` in `_models_advanced_helpers.py` to natively support NLP embeddings via dedicated linear projections, bypassing Batch Normalization.
+    - Modified `_FeatureTokenizer` in `_dragon_tabular.py` to isolate NLP features, preventing them from being processed by Gaussian Fourier Features which would destroy their semantic geometry.
+    - Updated `__init__`, `forward` methods across `DragonNodeModel`, `DragonAutoInt`, `DragonGateModel`, and `DragonTabNet` to correctly intercept, project, and concatenate NLP embedding tensors with standard tabular features.
+    - Updated `data_aware_initialization` in `DragonNodeModel` to account for projected NLP features when calculating the input feature dimension for the first layer.
+    - Updated `_get_finetune_components` in `DragonTabNet` to explicitly expose the new NLP projection layers, ensuring full compatibility with the `DragonFinetuner`.
+
+- models_sequence:
+    - Added `nlp_project_dim` and `nlp_dropout` parameters to `DragonSequenceLSTM` and `DragonSequenceTransformer` initialization.
+        - Implemented a dedicated `nlp_projection` block (`Linear -> ReLU -> Dropout`) to compress dense text embeddings before they merge with the main sequence backbone, preventing high-dimensional NLP features from dominating the sequence models.
+        - Updated `self.in_features` calculation to account for the projected NLP dimensions rather than the raw column count.
+        - Modified `_get_finetune_components` in both models to explicitly expose the new NLP projection layers, ensuring full compatibility with the `DragonFinetuner`.
+
+- schema:
+    - Added `embedding_feature_names: Optional[tuple[str, ...]]` to the `FeatureSchema` NamedTuple to formally separate dense NLP embeddings from standard continuous features.
+    - Modified `finalize_feature_schema` in `_schema_ops.py` to accept an `embedding_columns` argument, routing these specific features to the new schema attribute.
+    - Updated `prepare_schema_from_json` in `_schema_load_ops.py` to safely load the new `embedding_feature_names` attribute while defaulting to `None` for backward compatibility with older saved models.
+    - Added `save_embedding_features` method to the `FeatureSchema` class to save the NLP feature artifacts independently.
+    - Updated `enforce_schema_dtypes` to include the new `embedding_feature_names` attribute when validating and enforcing schema compliance on DataFrames.
+
+- chain:
+    - Updated `derive_next_step_schema` in `_update_schema.py` to correctly retain and pass `embedding_feature_names` to the new `FeatureSchema`, preventing the loss of embedding tracking during multi-step model chaining.
+
+- inference_sequence:
+    - Optimized `forecast` methods in `_autoregressive_inference.py` and `_exogenous_inference.py` to bypass full-width zero-padded dummy tensors during scaling. 
+    - The scaling logic now selectively applies transformations only to explicitly mapped continuous exogenous features, preventing redundant computations on high-dimensional NLP embeddings and significantly improving inference speed.
+
+- optimization_tools:
+    - Updated `create_optimization_bounds` in `_optimization_bounds.py` to automatically clamp the upper and lower bounds of embedding features to `[0.0, 0.0]`. 
+    - This freezes embeddings during EvoTorch genetic optimization, preventing invalid mutations to individual vector dimensions and preserving their semantic context.
+
+- VIF:
+    - Added an `include_embeddings` flag (default `False`) to `compute_vif()` in `_dragon_vif.py`, allowing users to optionally exclude high-dimensional embeddings from computationally expensive correlation matrix inversions.
+    - Fixed a bug in `drop_vif_based` to ensure `embedding_feature_names` are properly retained when instantiating the updated `FeatureSchema` after dropping collinear features.
+
+- trainer:
+    - Added the keyword-only `plot_n_best: Optional[int] = 20` parameter to `explain_captum` across standard, sequence, and distribution trainers, and to `explain_shap` in `DragonTrainer`.
+    - Forwarded `plot_n_best` to the corresponding evaluation functions while preserving compatibility with existing positional arguments.
+
+- evaluation:
+    - Added `plot_n_best` to `shap_summary_plot` and the deprecated `multi_target_shap_summary_plot`, controlling the number of top features displayed in bar and dot plots through SHAP's native `max_display` parameter.
+    - Defaulted to the top 20 features, with `None` explicitly displaying all features. Added validation requiring a positive integer or `None`.
+    - Preserved full-feature SHAP calculations and complete CSV reports regardless of the plot limit.
+
+- evaluation_captum:
+    - Replaced the hard-coded top-20 bar chart limit with `plot_n_best` in `captum_feature_importance` and `captum_sequence_feature_importance`.
+    - Applied the same per-target feature selection to sequence heatmap rows and global bar charts, ranking features by mean absolute attribution.
+    - Defaulted to the top 20 features, with `None` displaying all features. Added validation requiring a positive integer or `None`.
+    - Preserved complete CSV reports, attribution calculations, and percentage denominators across all features. Sequence temporal lag plots continue to aggregate all features independently of the plot limit.
+
+- datasetmaster:
+    - Optimized random splitting in `_base_datasetmaster.py` to split row indices before selecting dataframe subsets, preserving the existing random seed, split sizes, and row order.
+    - Replaced the full temporary tensor dataset used for feature-scaler fitting with batched dataframe access, preserving the existing `DragonScaler` algorithm and fitting batch size.
+    - Added chunked feature and target transformations into preallocated tensors, reducing temporary memory allocations while preserving scaling rules, output shapes, and task-specific label dtypes.
+    - Updated `DragonDataset` and `DragonDatasetMulti` in `_datasetmaster.py` to reuse prepared tensors without additional full-data copies and release construction intermediates earlier.
+    - Updated `_BaseSequenceDataset` in `_base_sequence_dataset.py` to reuse internally owned float32 tensor storage through NumPy views, avoiding redundant conversions while preserving chronological splitting and sequence-window behavior.
+    - Made `last_dataset_sequence` an independent copy of the final window, preventing it from retaining the entire source dataframe.
+    - Preserved public constructor signatures, dataset metadata, and access through `train_dataset`, `validation_dataset`, and `test_dataset`.
+
+### Added
+
+- schema:
+    - Added `extract_embedding_features()` to `_schema_ops_b.py` to subset a DataFrame to include only the embedding features defined in a `FeatureSchema`. This function complements the existing continuous and categorical feature extractors.
+
+- New module: "NLP"
+    - Added `DragonNLP` to convert raw text columns into numerical features for tabular and sequence models, combining text statistics, TF-IDF with optional TruncatedSVD, and SentenceTransformer embeddings.
+    - Added consistent float32 output across `fit_transform()`, `transform()`, and empty-input results, with matching fitted-schema and saved-state validation.
+    - Retained configurable internal TF-IDF computation precision through `tfidf_dtype`, independently of the float32 output format.
+    - Reduced peak memory usage by converting lexical features to float32 before dense output assembly and releasing intermediate matrices before embedding generation.
+    - Included pandas and Polars support, fitted-state serialization, and feature-name export.
+
+
 ## [28.3.0] 2026-10-21
 
 ### Changed

@@ -37,6 +37,9 @@ class FeatureSchema(NamedTuple):
     # Map string-to-int category values (e.g., {'color': {'red': 0, 'blue': 1}})
     categorical_mappings: Optional[dict[str, dict[str, int]]]
     
+    # embedding feature names, continuous in nature but should not be normalized (e.g., embeddings, pre-trained features)
+    embedding_feature_names: Optional[tuple[str, ...]] = None
+    
     def to_json(self, directory: Union[str, Path], verbose: bool = True, save_description: bool = True) -> None:
         """
         Saves the schema as 'FeatureSchema.json' to the provided directory. 
@@ -232,6 +235,22 @@ class FeatureSchema(NamedTuple):
                           filename=DatasetKeys.CATEGORICAL_NAMES,
                           verbose=verbose)
         
+    def save_embedding_features(self, directory: Union[str,Path], verbose: bool=True):
+        """
+        Saves embedding feature names to a text file.
+
+        Args:
+            directory: The directory where the file will be saved.
+            verbose: If True, prints a confirmation message upon saving.
+        """
+        if not self.embedding_feature_names:
+            _LOGGER.warning("No embedding feature names to save.")
+            return
+        self._save_helper(artifact=self.embedding_feature_names,
+                          directory=directory,
+                          filename=DatasetKeys.EMBEDDING_NAMES,
+                          verbose=verbose)
+        
     def save_description(self, directory: Union[str, Path], verbose: bool = False) -> None:
         """
         Saves the schema's description to a .txt file.
@@ -263,6 +282,9 @@ class FeatureSchema(NamedTuple):
             self.save_continuous_features(directory=directory, verbose=False)
         if self.categorical_feature_names:
             self.save_categorical_features(directory=directory, verbose=False)
+        if self.embedding_feature_names:
+            self.save_embedding_features(directory=directory, verbose=False)
+            
         self.save_description(directory=directory, verbose=False)
         
         if verbose:
@@ -289,6 +311,13 @@ class FeatureSchema(NamedTuple):
         if self.categorical_index_map:
             return tuple(self.categorical_index_map.keys())
         return ()
+    
+    @property
+    def number_of_embedding_features(self) -> int:
+        """Returns the number of embedding features defined in the schema."""
+        if self.embedding_feature_names:
+            return len(self.embedding_feature_names)
+        return 0
 
     def __repr__(self) -> str:
         """Returns a concise representation of the schema's contents."""
@@ -297,7 +326,8 @@ class FeatureSchema(NamedTuple):
         cat = len(self.categorical_feature_names)
         index_map = self.categorical_index_map is not None
         cat_map = self.categorical_mappings is not None
+        emb = self.number_of_embedding_features
         return (
-            f"FeatureSchema(total={total}, continuous={cont}, categorical={cat}, index_map={index_map}, categorical_map={cat_map})"
+            f"FeatureSchema(total={total}, continuous={cont}, categorical={cat}, index_map={index_map}, categorical_map={cat_map}, embedding={emb})"
         )
 

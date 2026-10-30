@@ -37,3 +37,5 @@ This project depends on the following third-party packages. Each is governed by 
 - [pytorch-widedeep](https://github.com/jrzaurin/pytorch-widedeep?tab=readme-ov-file#license)
 - [pytorch-fm](https://github.com/rixwew/pytorch-fm/blob/master/LICENSE)
 - [plotly](https://github.com/plotly/plotly.py/blob/main/LICENSE.txt)
+- [transformers](https://github.com/huggingface/transformers/blob/main/LICENSE)
+- [sentence-transformers](https://github.com/huggingface/sentence-transformers/blob/main/LICENSE)

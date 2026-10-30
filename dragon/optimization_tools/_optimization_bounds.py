@@ -209,12 +209,21 @@ def create_optimization_bounds(
         
     _LOGGER.info(f"Manually set bounds for {count_continuous} continuous features.")
 
-    # 5. Final Validation (all Nones should be filled)
+    # 5. Populate Embedding bounds (Frozen at 0.0)
+    if schema.embedding_feature_names:
+        for emb_name in schema.embedding_feature_names:
+            index = feature_names.index(emb_name)
+            lower_bounds[index] = 0.0
+            upper_bounds[index] = 0.0
+        
+        _LOGGER.info(f"Automatically frozen bounds at [0.0, 0.0] for {len(schema.embedding_feature_names)} embedding features.")
+
+    # 6. Final Validation (all Nones should be filled)
     if None in lower_bounds:
         missing_indices = [i for i, b in enumerate(lower_bounds) if b is None]
         missing_names = [feature_names[i] for i in missing_indices]
         _LOGGER.error(f"Failed to create all bounds. This indicates an internal logic error. Missing: {missing_names}")
-        raise RuntimeError("Internal error: Not all bounds were populated.")
+        raise RuntimeError()
     
     # Cast to float lists, as 'None' sentinels are gone
     return (

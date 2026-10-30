@@ -23,6 +23,10 @@ def prepare_schema_from_json(data: dict[str, Any]) -> dict[str, Any]:
     feature_names = tuple(data.get("feature_names", []))
     cont_names = tuple(data.get("continuous_feature_names", []))
     cat_names = tuple(data.get("categorical_feature_names", []))
+    
+    # Restore embeddings tuple (handle backward compatibility if not present)
+    emb_names_raw = data.get("embedding_feature_names")
+    emb_names = tuple(emb_names_raw) if emb_names_raw is not None else None
 
     # 2. Restore Integer Keys for categorical_index_map
     raw_map = data.get("categorical_index_map")
@@ -38,6 +42,7 @@ def prepare_schema_from_json(data: dict[str, Any]) -> dict[str, Any]:
         "feature_names": feature_names,
         "continuous_feature_names": cont_names,
         "categorical_feature_names": cat_names,
+        "embedding_feature_names": emb_names,
         "categorical_index_map": cat_index_map,
         "categorical_mappings": cat_mappings
     }

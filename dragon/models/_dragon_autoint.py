@@ -113,9 +113,14 @@ class DragonAutoInt(_ArchitectureBuilder):
         if schema.categorical_index_map:
             self.categorical_indices = list(schema.categorical_index_map.keys())
             self.cardinalities = list(schema.categorical_index_map.values())
+            
+        self.nlp_indices = []
+        if getattr(schema, 'embedding_feature_names', None):
+            if schema.embedding_feature_names is not None:
+                self.nlp_indices = [schema.feature_names.index(name) for name in schema.embedding_feature_names]
         
         all_indices = set(range(len(schema.feature_names)))
-        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices)))
+        self.numerical_indices = sorted(list(all_indices - set(self.categorical_indices) - set(self.nlp_indices)))
         n_continuous = len(self.numerical_indices)
         
         self.embedding_layer = Embedding2dLayer(
@@ -123,7 +128,8 @@ class DragonAutoInt(_ArchitectureBuilder):
             categorical_cardinality=self.cardinalities,
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
-            batch_norm_continuous_input=batch_norm_continuous
+            batch_norm_continuous_input=batch_norm_continuous,
+            nlp_embedding_dim=len(self.nlp_indices)
         )
         
         # -- 2. Deep Layers (Optional MLP) --
@@ -137,10 +143,8 @@ class DragonAutoInt(_ArchitectureBuilder):
             
             for units in layer_sizes:
                 layers_list.append(nn.Linear(curr_units, units))
-                
-                # Changed BatchNorm1d to LayerNorm to handle (Batch, Tokens, Embed) shape correctly
+                # LayerNorm to handle (Batch, Tokens, Embed) shape
                 layers_list.append(nn.LayerNorm(units)) 
-
                 layers_list.append(activation_fn())
                 layers_list.append(nn.Dropout(embedding_dropout))
                 curr_units = units
@@ -169,8 +173,7 @@ class DragonAutoInt(_ArchitectureBuilder):
             res_dim = attn_embed_dim * num_attn_blocks if attention_pooling else attn_embed_dim
             self.V_res_embedding = nn.Linear(curr_units, res_dim)
             
-        # -- 4. Output Dimension Calculation --
-        num_features = n_continuous + len(self.cardinalities)
+        num_features = n_continuous + len(self.cardinalities) + (1 if self.nlp_indices else 0)
         
         # Output is flattened: (Num_Features * Attn_Dim)
         final_dim = num_features * attn_embed_dim
@@ -183,9 +186,9 @@ class DragonAutoInt(_ArchitectureBuilder):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_cont = x[:, self.numerical_indices].float()
         x_cat = x[:, self.categorical_indices].long()
+        x_nlp = x[:, self.nlp_indices].float() if self.nlp_indices else None
         
-        # 1. Embed -> (Batch, Num_Features, Embed_Dim)
-        x = self.embedding_layer(x_cont, x_cat)
+        x = self.embedding_layer(x_cont, x_cat, x_nlp)
         
         # 2. Deep Layers
         if self.deep_layers_mod:

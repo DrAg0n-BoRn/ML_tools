@@ -251,7 +251,8 @@ class _BaseSequenceDataset(_BaseDatasetMaker, ABC):
         
         # Last sequence from dataset
         if total_size >= self.sequence_length:
-            self._last_dataset_sequence = features_df.iloc[-self.sequence_length:].to_numpy(dtype=numpy.float32)
+            # Own just the last window; a view could retain the whole input frame.
+            self._last_dataset_sequence = features_df.iloc[-self.sequence_length:].to_numpy(dtype=numpy.float32, copy=True)
         else:
             _LOGGER.error("The total dataset size is smaller than the specified sequence length. Cannot extract a valid last sequence.")
             raise ValueError()
@@ -264,19 +265,20 @@ class _BaseSequenceDataset(_BaseDatasetMaker, ABC):
         X_val = features_df.iloc[start_val : test_split_idx]
         X_test = features_df.iloc[start_test :]
         
-        # dummy target for target scaler
-        dummy_y = pandas.Series(0.0, index=X_train.index)
+        # Placeholder for the shared signature; feature fitting ignores labels.
+        dummy_y = pandas.Series(dtype=numpy.float32)
         
         # --- 3. Scale Features and derive a custom Target Scaler ---
         X_train_np, X_val_np, X_test_np = self._apply_feature_scaling_logic(
             feature_scaler, X_train, dummy_y, X_val, X_test, torch.float32, schema, verbose
         )
         
-        # Set explicit dtype
-        if not self.feature_scaler:
-            X_train_np = X_train_np.astype(numpy.float32)
-            X_val_np = X_val_np.astype(numpy.float32)
-            X_test_np = X_test_np.astype(numpy.float32)
+        # Shared helpers return private float32 tensors. NumPy views keep their
+        # storage alive for windowing without copying or exposing caller buffers.
+        X_train_np = X_train_np.numpy()
+        X_val_np = X_val_np.numpy()
+        X_test_np = X_test_np.numpy()
+        del X_train, X_val, X_test, features_df, dummy_y, pandas_df
         
         # Extract target scaler
         if self.feature_scaler and self.feature_scaler.mean_ is not None and self.feature_scaler.std_ is not None:
@@ -306,13 +308,16 @@ class _BaseSequenceDataset(_BaseDatasetMaker, ABC):
             
         # --- 4. Generate Windows ---
         self._train_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_train_np, verbose=verbose)
+        del X_train_np
         self._val_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_val_np, verbose=verbose)
+        del X_val_np
         self._test_ds: Optional[_PytorchSequenceDataset] = self._create_windowed_dataset(X_test_np, verbose=verbose)
+        del X_test_np
 
         # Update shapes
-        self._X_train_shape = self._train_ds.features.shape if self._train_ds else (0,0)
-        self._X_val_shape = self._val_ds.features.shape if self._val_ds else (0,0)
-        self._X_test_shape = self._test_ds.features.shape if self._test_ds else (0,0)
+        self._X_train_shape = torch.Size(self._train_ds._features_np.shape) if self._train_ds else (0,0)
+        self._X_val_shape = torch.Size(self._val_ds._features_np.shape) if self._val_ds else (0,0)
+        self._X_test_shape = torch.Size(self._test_ds._features_np.shape) if self._test_ds else (0,0)
 
         self._attach_scalers_to_datasets()
 
@@ -452,13 +457,16 @@ class _BaseSequenceDataset(_BaseDatasetMaker, ABC):
                 expected_pattern = f"{DatasetKeys.DATASET_FILENAME}_Seq_*.pth"
                 matching_files = list(target_filepath.glob(expected_pattern))
                 if not matching_files:
-                    raise FileNotFoundError(f"No files matching pattern '{expected_pattern}' found.")
+                    _LOGGER.error(f"No files matching pattern '{expected_pattern}' found in directory '{target_filepath}'.")
+                    raise FileNotFoundError()
                 elif len(matching_files) > 1:
-                    raise FileNotFoundError(f"Multiple files matching pattern '{expected_pattern}' found. Specify exact file.")
+                    _LOGGER.error(f"Multiple files matching pattern '{expected_pattern}' found in directory '{target_filepath}'. Please specify the exact file to load.")
+                    raise FileNotFoundError()
                 else:
                     target_filepath = matching_files[0]
             else:
-                raise FileNotFoundError(f"Provided path '{target_filepath}' is invalid.")
+                _LOGGER.error(f"Provided path '{target_filepath}' is neither a valid file nor a directory.")
+                raise FileNotFoundError()
             
         bundle = torch.load(target_filepath, weights_only=False, map_location='cpu')
         instance = cls.__new__(cls)

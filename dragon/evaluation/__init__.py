@@ -12,10 +12,8 @@ from ._loss import (
     plot_losses,
 )
 
-from ._feature_importance import (
-    shap_summary_plot,
-    multi_target_shap_summary_plot,
-    plot_attention_importance
+from ._shap_importance import (
+    shap_summary_plot
 )
 
 from ._eval_sequence import (
@@ -62,8 +60,6 @@ __all__ = [
     "plot_losses",
     # feature importance
     "shap_summary_plot",
-    "multi_target_shap_summary_plot",
-    "plot_attention_importance",
     # sequence
     "sequence_to_sequence_regression_metrics",
     "sequence_to_sequence_classification_metrics",
