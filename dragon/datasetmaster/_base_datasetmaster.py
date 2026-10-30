@@ -26,6 +26,28 @@ __all__ = [
 
 
 # --- Internal Helper Class ---
+class _FeatureFrameDataset(Dataset):
+    """Expose training rows to DragonScaler without copying the full frame.
+
+    The scaler ignores labels. Batched fetching retains its existing row order
+    and batch size while converting only the requested rows to float32.
+    """
+    def __init__(self, features: pandas.DataFrame):
+        self._frame = features
+
+    def __len__(self):
+        return len(self._frame)
+
+    def __getitem__(self, index):
+        values = self._frame.iloc[index:index + 1].to_numpy(dtype=numpy.float32, copy=True)
+        return torch.from_numpy(values[0]), 0
+
+    def __getitems__(self, indices):
+        values = self._frame.iloc[indices].to_numpy(dtype=numpy.float32, copy=True)
+        batch = torch.from_numpy(values)
+        return [(row, 0) for row in batch]
+
+
 class _PytorchDataset(Dataset):
     """
     Internal helper class to create a PyTorch Dataset.
@@ -105,6 +127,11 @@ class _BaseDatasetMaker(ABC):
     """
     Abstract base class for dataset makers. Contains shared logic.
     """
+    # Bound conversion/transform temporaries without adding public arguments.
+    # Final datasets still reside in RAM. DragonScaler.fit keeps its own batch size.
+    _PREPROCESSING_BYTES = 8 * 1024 * 1024
+    _PREPROCESSING_MAX_ROWS = 8192
+
     def __init__(self):
         self._train_ds: Optional[_PytorchDataset] = None
         self._val_ds: Optional[_PytorchDataset] = None
@@ -128,6 +155,55 @@ class _BaseDatasetMaker(ABC):
         self.validation_split: float = 0.0
         self.test_split: float = 0.0
 
+    @classmethod
+    def _preprocessing_rows(cls, shape: tuple, dtype: torch.dtype) -> int:
+        width = int(numpy.prod(shape[1:])) if len(shape) > 1 else 1
+        itemsize = torch.empty((), dtype=dtype).element_size()
+        return max(1, min(cls._PREPROCESSING_MAX_ROWS,
+                          cls._PREPROCESSING_BYTES // max(1, width * itemsize)))
+
+    @classmethod
+    def _owned_tensor(cls, data, dtype: torch.dtype = torch.float32,
+                      scaler: Optional[DragonScaler] = None,
+                      ensure_2d: bool = False) -> torch.Tensor:
+        """Copy rows into final, private CPU storage with bounded temporaries.
+
+        Never share a caller's pandas/NumPy buffers with a finished dataset.
+        Tensor results can be passed directly to _PytorchDataset, which already
+        accepts tensors without copying when the dtype matches.
+        """
+        shape = tuple(data.shape)
+        if ensure_2d and len(shape) == 1:
+            shape = (shape[0], 1)
+        result = torch.empty(shape, dtype=dtype, device="cpu")
+        numpy_dtype = result.numpy().dtype
+        rows = cls._preprocessing_rows(shape, dtype)
+        for start in range(0, len(data), rows):
+            stop = min(start + rows, len(data))
+            if isinstance(data, (pandas.Series, pandas.DataFrame)):
+                values = data.iloc[start:stop].to_numpy(dtype=numpy_dtype, copy=True)
+                batch = torch.from_numpy(values)
+            elif isinstance(data, torch.Tensor):
+                batch = data[start:stop].to(device="cpu", dtype=dtype)
+            else:
+                values = numpy.array(data[start:stop], dtype=numpy_dtype, copy=True)
+                batch = torch.from_numpy(values)
+            if ensure_2d and batch.ndim == 1:
+                batch = batch.reshape(-1, 1)
+            if scaler is not None:
+                batch = scaler.transform(batch)
+            result[start:stop].copy_(batch)
+        return result
+
+    @classmethod
+    def _scale_owned_tensor(cls, data: torch.Tensor, scaler: DragonScaler) -> torch.Tensor:
+        """Reuse private target storage after fitting, never mutate caller data."""
+        rows = cls._preprocessing_rows(tuple(data.shape), data.dtype)
+        for start in range(0, len(data), rows):
+            chunk = data[start:start + rows]
+            chunk.copy_(scaler.transform(chunk))
+        return data
+
     def _prepare_feature_scaler(self, 
                         X_train: pandas.DataFrame, 
                         y_train: Union[pandas.Series, pandas.DataFrame], 
@@ -135,7 +211,7 @@ class _BaseDatasetMaker(ABC):
                         X_test: pandas.DataFrame, 
                         label_dtype: torch.dtype, 
                         schema: FeatureSchema,
-                        verbose:int = 3) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+                        verbose:int = 3) -> tuple[torch.Tensor, ...]:
         """Internal helper to fit and apply a DragonScaler for FEATURES using a FeatureSchema."""
         continuous_feature_indices: Optional[list[int]] = None
 
@@ -155,86 +231,84 @@ class _BaseDatasetMaker(ABC):
             if verbose >= 2:
                 _LOGGER.info("No continuous features listed in schema. Feature scaler will not be fitted.")
 
-        X_train_values = X_train.to_numpy()
-        X_val_values = X_val.to_numpy()
-        X_test_values = X_test.to_numpy()
-
         # continuous_feature_indices is derived
         if self.feature_scaler is None and continuous_feature_indices:
             if verbose >= 3:
                 _LOGGER.info("Fitting a new DragonScaler on training features.")
-            temp_train_ds = _PytorchDataset(X_train_values, y_train, label_dtype) 
+            temp_train_ds = _FeatureFrameDataset(X_train)
             self.feature_scaler = DragonScaler.fit(temp_train_ds, continuous_feature_indices, verbose=verbose)
+            del temp_train_ds
 
         if self.feature_scaler and self.feature_scaler.mean_ is not None:
             if verbose >= 3:
                 _LOGGER.info("Applying scaler transformation to train, validation, and test feature sets.")
-            X_train_tensor = self.feature_scaler.transform(torch.tensor(X_train_values, dtype=torch.float32))
-            X_val_tensor = self.feature_scaler.transform(torch.tensor(X_val_values, dtype=torch.float32))
-            X_test_tensor = self.feature_scaler.transform(torch.tensor(X_test_values, dtype=torch.float32))
-            return X_train_tensor.numpy(), X_val_tensor.numpy(), X_test_tensor.numpy()
+            return tuple(self._owned_tensor(frame, scaler=self.feature_scaler) for frame in (X_train, X_val, X_test))
         
         if verbose >= 2:
             _LOGGER.info("Feature scaling transformation complete.")
 
-        return X_train_values, X_val_values, X_test_values
+        return tuple(self._owned_tensor(frame) for frame in (X_train, X_val, X_test))
     
     def _prepare_target_scaler(self,
                                y_train: Union[pandas.Series, pandas.DataFrame],
                                y_val: Union[pandas.Series, pandas.DataFrame],
                                y_test: Union[pandas.Series, pandas.DataFrame],
-                               verbose: int = 3) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+                               verbose: int = 3) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Internal helper to fit and apply a DragonScaler for TARGETS."""
         
-        y_train_arr = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
-        y_val_arr = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
-        y_test_arr = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
-        
-        # --- Ensure targets are 2D (N, 1) if they are currently 1D (N,) ---
-        if y_train_arr.ndim == 1: y_train_arr = y_train_arr.reshape(-1, 1)
-        if y_val_arr.ndim == 1:   y_val_arr = y_val_arr.reshape(-1, 1)
-        if y_test_arr.ndim == 1:  y_test_arr = y_test_arr.reshape(-1, 1)
-        # ------------------------------------------------------------------
+        # Keep the existing full-tensor target statistic calculation. Reuse this
+        # owned tensor as the final training labels after the fit has completed.
+        y_train_tensor = self._owned_tensor(y_train, ensure_2d=True)
 
         if self.target_scaler is None:
             if verbose >= 3:
                 _LOGGER.info("Fitting a new DragonScaler on training targets.")
-            # Convert to float tensor for calculation
-            y_train_tensor = torch.tensor(y_train_arr, dtype=torch.float32)
             self.target_scaler = DragonScaler.fit_tensor(y_train_tensor, verbose=verbose)
             
         if self.target_scaler and self.target_scaler.mean_ is not None:
             if verbose >= 3:
                  _LOGGER.info("Applying scaler transformation to train, validation, and test targets.")
-            y_train_tensor = self.target_scaler.transform(torch.tensor(y_train_arr, dtype=torch.float32))
-            y_val_tensor = self.target_scaler.transform(torch.tensor(y_val_arr, dtype=torch.float32))
-            y_test_tensor = self.target_scaler.transform(torch.tensor(y_test_arr, dtype=torch.float32))
-            return y_train_tensor.numpy(), y_val_tensor.numpy(), y_test_tensor.numpy()
+            self._scale_owned_tensor(y_train_tensor, self.target_scaler)
+            y_val_tensor = self._owned_tensor(y_val, scaler=self.target_scaler, ensure_2d=True)
+            y_test_tensor = self._owned_tensor(y_test, scaler=self.target_scaler, ensure_2d=True)
+            return y_train_tensor, y_val_tensor, y_test_tensor
         
         if verbose >= 2:
             _LOGGER.info("Target scaling transformation complete.")
 
-        return y_train_arr, y_val_arr, y_test_arr
+        return (y_train_tensor, self._owned_tensor(y_val, ensure_2d=True),
+                self._owned_tensor(y_test, ensure_2d=True))
     
     def _perform_random_splits(self, features_df: pandas.DataFrame, 
                                target_data: Union[pandas.Series, pandas.DataFrame], 
                                test_size: float, 
                                validation_size: float, 
                                random_state: int) -> tuple:
+        # Split positions, not feature matrices. Match sklearn's original
+        # two-stage permutation, including order and rounding of split sizes.
+        indices = numpy.arange(len(features_df))
+        empty_indices = indices[:0]
         if test_size > 0.0:
-            X_train_val, X_test, y_train_val, y_test = train_test_split(
-                features_df, target_data, test_size=test_size, random_state=random_state
+            train_val_indices, test_indices = train_test_split(
+                indices, test_size=test_size, random_state=random_state
             )
         else:
-            X_train_val, X_test, y_train_val, y_test = features_df, features_df.iloc[:0], target_data, target_data.iloc[:0]
+            train_val_indices, test_indices = indices, empty_indices
         
         if validation_size > 0.0:
             val_split_size = validation_size / (1.0 - test_size)
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_train_val, y_train_val, test_size=val_split_size, random_state=random_state
+            train_indices, val_indices = train_test_split(
+                train_val_indices, test_size=val_split_size, random_state=random_state
             )
         else:
-            X_train, X_val, y_train, y_val = X_train_val, features_df.iloc[:0], y_train_val, target_data.iloc[:0]
+            train_indices, val_indices = train_val_indices, empty_indices
+
+        if test_size == 0.0 and validation_size == 0.0:
+            X_train, y_train = features_df, target_data
+        else:
+            X_train, y_train = features_df.iloc[train_indices], target_data.iloc[train_indices]
+        X_val, y_val = features_df.iloc[val_indices], target_data.iloc[val_indices]
+        X_test, y_test = features_df.iloc[test_indices], target_data.iloc[test_indices]
             
         self._X_train_shape, self._X_val_shape, self._X_test_shape = X_train.shape, X_val.shape, X_test.shape
         self._y_train_shape, self._y_val_shape, self._y_test_shape = y_train.shape, y_val.shape, y_test.shape
@@ -267,7 +341,7 @@ class _BaseDatasetMaker(ABC):
         else:
             if verbose >= 2:
                 _LOGGER.info("Features have not been scaled as specified.")
-            return X_train.to_numpy(), X_val.to_numpy(), X_test.to_numpy()
+            return tuple(self._owned_tensor(frame) for frame in (X_train, X_val, X_test))
 
     def _apply_target_scaling_logic(self, target_scaler_arg: Union[str, DragonScaler],
                                     y_train: Union[pandas.Series, pandas.DataFrame],
@@ -290,10 +364,7 @@ class _BaseDatasetMaker(ABC):
         if _apply_scaling:
             return self._prepare_target_scaler(y_train, y_val, y_test, verbose)
         else:
-            y_train_final = y_train.to_numpy() if isinstance(y_train, (pandas.Series, pandas.DataFrame)) else y_train
-            y_val_final = y_val.to_numpy() if isinstance(y_val, (pandas.Series, pandas.DataFrame)) else y_val
-            y_test_final = y_test.to_numpy() if isinstance(y_test, (pandas.Series, pandas.DataFrame)) else y_test
-            return y_train_final, y_val_final, y_test_final
+            return tuple(self._owned_tensor(y) for y in (y_train, y_val, y_test))
     
     def _attach_scalers_to_datasets(self):
         """Helper to attach the master scalers to the child datasets."""

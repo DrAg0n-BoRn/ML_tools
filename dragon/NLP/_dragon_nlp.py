@@ -42,7 +42,7 @@ class DragonNLP:
     
     ### Note:
     
-    - Output contains only generated numerical features and preserves pandas indexes. 
+    - Output contains only generated float32 features and preserves pandas indexes.
     - Input columns and feature order are learned once per successful fit.
     - Additional inference columns are ignored; missing required columns fail. 
     - A failed refit leaves the previously fitted artifacts intact.
@@ -76,7 +76,8 @@ class DragonNLP:
             random_state (int | None): Random state for reproducible results.
             empty_vocabulary (str): 'skip' to ignore empty vocabulary, 'raise' to raise an error.
             max_features (int | None): Optional positive TF-IDF vocabulary limit.
-            tfidf_dtype (str): Data type for TF-IDF features. float32 is faster and uses less memory; float64 is more precise.
+            tfidf_dtype (str): Internal TF-IDF/SVD computation dtype. Generated output
+                features always use float32, including when computation uses float64.
             
         ### Note:
         
@@ -286,15 +287,26 @@ class DragonNLP:
         return pl.DataFrame(features)
     
     @staticmethod
+    def _float32_frame(values, names):
+        """Normalize an output block before assembly, including overflow checks."""
+        with np.errstate(over="ignore", invalid="ignore"):
+            values = np.asarray(values).astype(np.float32, copy=False)
+        if not np.isfinite(values).all():
+            _LOGGER.error("Generated features contain non-finite values after float32 conversion.")
+            raise ValueError()
+        return pl.DataFrame(values, schema=names, orient="row")
+
+    @staticmethod
     def _scale_statistical_features(statistics, scaler, *, fit=False):
         """Scale only the statistics block, preserving names and column order.
 
         A fresh scaler is fitted locally during fit_transform. Inference always
         reuses the committed scaler; its result is independent of batch size or
-        the other rows in an inference batch. None preserves raw integer counts.
+        the other rows in an inference batch. None preserves unscaled counts,
+        represented as float32 along with all other generated features.
         """
         if scaler is None:
-            return statistics
+            return statistics.cast(pl.Float32)
 
         values = statistics.to_numpy().astype(np.float64, copy=False)
         values = (
@@ -307,11 +319,7 @@ class DragonNLP:
             _LOGGER.error("Statistics scaling produced non-finite values.")
             raise ValueError()
 
-        return pl.DataFrame(
-            values,
-            schema=statistics.columns,
-            orient="row",
-        )
+        return DragonNLP._float32_frame(values, statistics.columns)
     
     def _generate_embeddings(self, col_name, text_list, verbose, expected_dim=None):
         self._require_embedding_model()
@@ -419,7 +427,8 @@ class DragonNLP:
         
     def _dense_tfidf_frame(self, matrix, vectorizer, col_name):
         names = [f"{col_name}_tfidf_{name}" for name in vectorizer.get_feature_names_out()]
-        return pl.DataFrame(matrix.toarray(), schema=names, orient="row")
+        # Cast the sparse values first, avoiding a full float64 dense intermediate.
+        return self._float32_frame(matrix.astype(np.float32, copy=False).toarray(), names)
 
     def fit_transform(self, 
                       df: Union[pd.DataFrame, pl.DataFrame], 
@@ -437,7 +446,7 @@ class DragonNLP:
                 - 3: Detailed information
             
         Returns:
-            df (pd.DataFrame | pl.DataFrame): A fully numerical DataFrame.
+            df (pd.DataFrame | pl.DataFrame): A numerical DataFrame with float32 columns.
         """
         self._validate_config()
         self._require_embedding_model()
@@ -466,7 +475,8 @@ class DragonNLP:
         blocks = [statistics]
         
         vectorizers, svds, modes, embedding_dimensions = {}, {}, {}, {}
-        for name, text_list in texts.items():
+        for name in list(texts):
+            text_list = texts.pop(name)
             vectorizer = TfidfVectorizer(
                 max_features=self._max_features, dtype=np.dtype(self.tfidf_dtype).type
             )
@@ -491,17 +501,22 @@ class DragonNLP:
                     svd = TruncatedSVD(n_components=n_components, random_state=self.random_state)
                     reduced = svd.fit_transform(matrix)
                     names = [f"{name}_svd_{i}" for i in range(reduced.shape[1])]
-                    blocks.append(pl.DataFrame(reduced, schema=names, orient="row"))
+                    blocks.append(self._float32_frame(reduced, names))
+                    del reduced
                     svds[name], modes[name] = svd, "svd"
                 else:
                     blocks.append(self._dense_tfidf_frame(matrix, vectorizer, name))
                     modes[name] = "tfidf"
+                del matrix
                     
             embeddings = self._generate_embeddings(name, text_list, verbose)
             blocks.append(embeddings)
             embedding_dimensions[name] = embeddings.width
+            del text_list, embeddings
             
         final_df, raw_names = self._assemble_features(blocks, text_df.height)
+        fitted_text_columns = tuple(text_df.columns)
+        del blocks, statistics, text_df, texts
         
         output = self._restore_output(final_df, df, is_pandas)
         
@@ -515,7 +530,7 @@ class DragonNLP:
                 "statistics_scaler": statistics_scaler,
             },
             "schema": {
-                "text_columns": tuple(text_df.columns),
+                "text_columns": fitted_text_columns,
                 "raw_feature_names": raw_names,
                 "feature_names": tuple(final_df.columns),
                 "dtypes": dict(final_df.schema),
@@ -542,7 +557,7 @@ class DragonNLP:
                 - 3: Detailed information
         
         Returns:
-            df (pd.DataFrame | pl.DataFrame): The processed numerical DataFrame.
+            df (pd.DataFrame | pl.DataFrame): The processed DataFrame with float32 columns.
         """
         state = self._require_fitted()
         self._positive_integer("batch_size", self.batch_size)
@@ -568,7 +583,8 @@ class DragonNLP:
 
         blocks = [statistics]
         
-        for name, text_list in texts.items():
+        for name in list(texts):
+            text_list = texts.pop(name)
             mode = artifacts["lexical_modes"][name]
             if mode != "disabled":
                 vectorizer = artifacts["tf_idf_vectorizers"][name]
@@ -576,14 +592,18 @@ class DragonNLP:
                 if mode == "svd":
                     reduced = artifacts["svd_transformers"][name].transform(matrix)
                     names = [f"{name}_svd_{i}" for i in range(reduced.shape[1])]
-                    blocks.append(pl.DataFrame(reduced, schema=names, orient="row"))
+                    blocks.append(self._float32_frame(reduced, names))
+                    del reduced
                 else:
                     blocks.append(self._dense_tfidf_frame(matrix, vectorizer, name))
+                del matrix
             blocks.append(self._generate_embeddings(
                 name, text_list, verbose, expected_dim=artifacts["embedding_dimensions"][name]
             ))
+            del text_list
             
         final_df, _ = self._assemble_features(blocks, text_df.height, state["schema"])
+        del blocks, statistics, text_df, texts
         
         return self._restore_output(final_df, df, is_pandas)
     
@@ -618,6 +638,7 @@ class DragonNLP:
         
         info = {
             "description": "DragonNLP Serialized State",
+            "output_dtype": "float32",
             "embedding_model_name": state["config"]["embedding_model_name"],
             "fitted_columns": list(state["schema"]["text_columns"]),
             "feature_names": list(state["schema"]["feature_names"]),
@@ -736,10 +757,10 @@ class DragonNLP:
                     raise ValueError()
 
                 if any(
-                    schema["dtypes"][name] != pl.Float64
+                    schema["dtypes"][name] != pl.Float32
                     for name in statistic_names
                 ):
-                    _LOGGER.error("scaled statistics must have Float64 output dtypes")
+                    _LOGGER.error("scaled statistics must have Float32 output dtypes")
                     raise ValueError()
 
             elif scaler is not None:
@@ -807,7 +828,7 @@ class DragonNLP:
                 else tuple(schema["text_columns"])
             )
             expected_raw_names = list(statistic_names)
-            expected_dtypes: list[Any] = [ pl.Float64 if scaling_enabled else pl.UInt32] * statistic_width
+            expected_dtypes: list[Any] = [pl.Float32] * statistic_width
             float_dtypes = {
                 np.dtype("float32"): pl.Float32,
                 np.dtype("float64"): pl.Float64,
@@ -845,7 +866,7 @@ class DragonNLP:
                         _LOGGER.error(f"Unsupported lexical dtype for {name!r}: {lexical_dtype}.")
                         raise ValueError()
                     expected_raw_names.extend(lexical_names)
-                    expected_dtypes.extend([float_dtypes[lexical_dtype]] * lexical_width)
+                    expected_dtypes.extend([pl.Float32] * lexical_width)
 
                 expected_raw_names.extend(
                     f"{name}_emb_{i}" for i in range(embedding_width)

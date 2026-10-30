@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
-## [Unreleased]
+## [28.4.0] 2026-10-30
 
 ### Changed
 
@@ -59,13 +59,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - Defaulted to the top 20 features, with `None` displaying all features. Added validation requiring a positive integer or `None`.
     - Preserved complete CSV reports, attribution calculations, and percentage denominators across all features. Sequence temporal lag plots continue to aggregate all features independently of the plot limit.
 
+- datasetmaster:
+    - Optimized random splitting in `_base_datasetmaster.py` to split row indices before selecting dataframe subsets, preserving the existing random seed, split sizes, and row order.
+    - Replaced the full temporary tensor dataset used for feature-scaler fitting with batched dataframe access, preserving the existing `DragonScaler` algorithm and fitting batch size.
+    - Added chunked feature and target transformations into preallocated tensors, reducing temporary memory allocations while preserving scaling rules, output shapes, and task-specific label dtypes.
+    - Updated `DragonDataset` and `DragonDatasetMulti` in `_datasetmaster.py` to reuse prepared tensors without additional full-data copies and release construction intermediates earlier.
+    - Updated `_BaseSequenceDataset` in `_base_sequence_dataset.py` to reuse internally owned float32 tensor storage through NumPy views, avoiding redundant conversions while preserving chronological splitting and sequence-window behavior.
+    - Made `last_dataset_sequence` an independent copy of the final window, preventing it from retaining the entire source dataframe.
+    - Preserved public constructor signatures, dataset metadata, and access through `train_dataset`, `validation_dataset`, and `test_dataset`.
+
 ### Added
 
 - schema:
     - Added `extract_embedding_features()` to `_schema_ops_b.py` to subset a DataFrame to include only the embedding features defined in a `FeatureSchema`. This function complements the existing continuous and categorical feature extractors.
 
 - New module: "NLP"
-    - `DragonNLP`: A new class to manage dense NLP embeddings for tabular and sequence models. It provides methods to load, validate, and preprocess embedding vectors. 
+    - Added `DragonNLP` to convert raw text columns into numerical features for tabular and sequence models, combining text statistics, TF-IDF with optional TruncatedSVD, and SentenceTransformer embeddings.
+    - Added consistent float32 output across `fit_transform()`, `transform()`, and empty-input results, with matching fitted-schema and saved-state validation.
+    - Retained configurable internal TF-IDF computation precision through `tfidf_dtype`, independently of the float32 output format.
+    - Reduced peak memory usage by converting lexical features to float32 before dense output assembly and releasing intermediate matrices before embedding generation.
+    - Included pandas and Polars support, fitted-state serialization, and feature-name export.
+
 
 ## [28.3.0] 2026-10-21
 
