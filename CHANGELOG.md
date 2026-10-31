@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [28.4.1] 2026-10-31
+
+### Fixed
+
+- Added missing dependency `socksio` to the [NLP] extra group. To support huggingface model downloads.
+
+
 ## [28.4.0] 2026-10-30
 
 ### Changed
