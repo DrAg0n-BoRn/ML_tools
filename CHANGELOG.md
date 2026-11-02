@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [28.4.2] 2026-11-02
+
+### Fixed
+
+- inference:
+  - Safely copy read-only NumPy inputs before tensor conversion in tabular and chained inference, preventing PyTorch warnings and unsafe memory sharing.
+  - Handle NumPy views with negative strides by copying them before conversion.
+
+- inference_sequence:
+  - Safely convert read-only and negative-stride NumPy inputs during batch prediction and autoregressive/exogenous forecasting.
+  - Copy future exogenous inputs before in-place scaling to prevent unintended changes to source DataFrames.
+
+
 ## [28.4.1] 2026-10-31
 
 ### Fixed

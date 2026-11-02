@@ -22,6 +22,19 @@ __all__ = [
 ]
 
 
+def _numpy_to_float_tensor(array: np.ndarray, *, copy: bool = False) -> torch.Tensor:
+    """Convert a NumPy input to float32 without exposing read-only storage.
+
+    Copy before calling from_numpy: a later float()/to() may reuse storage.
+    Negative strides also need a copy because PyTorch cannot wrap them.
+    Compatible writable arrays retain the existing shared-memory behavior;
+    use copy=True when the caller will modify the resulting tensor in place.
+    """
+    if copy or not array.flags.writeable or any(stride < 0 for stride in array.strides):
+        array = array.copy()
+    return torch.from_numpy(array).float()
+
+
 class _ClassificationMixin:
     """
     Mixin class to provide classification metadata and threshold management 

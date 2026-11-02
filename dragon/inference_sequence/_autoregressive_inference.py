@@ -11,6 +11,7 @@ from .._core import get_logger
 from ..keys._keys import MLTaskKeys, DatasetKeys
 
 from ._base_sequence_inference import _BaseSequenceInferenceHandler
+from ..inference._base_inference import _numpy_to_float_tensor
 
 
 _LOGGER = get_logger("Autoregressive Inference")
@@ -87,9 +88,9 @@ class DragonSequenceAutoregressiveHandler(_BaseSequenceInferenceHandler):
             if self.initial_sequence is None:
                 _LOGGER.error("No 'initial_sequence' provided/loaded. Cannot forecast.")
                 raise ValueError()
-            initial_sequence_tensor = torch.from_numpy(self.initial_sequence).float()
+            initial_sequence_tensor = _numpy_to_float_tensor(self.initial_sequence)
         elif isinstance(initial_sequence, np.ndarray):
-            initial_sequence_tensor = torch.from_numpy(initial_sequence).float()
+            initial_sequence_tensor = _numpy_to_float_tensor(initial_sequence)
         else:
             initial_sequence_tensor = initial_sequence.float()
 
@@ -131,7 +132,8 @@ class DragonSequenceAutoregressiveHandler(_BaseSequenceInferenceHandler):
                 raise ValueError()
                 
             exog_np = future_exogenous[self._exog_names].iloc[:n_steps].to_numpy()
-            exog_tensor = torch.from_numpy(exog_np).float()
+            # Scaling below writes in place, do not share the DataFrame's storage.
+            exog_tensor = _numpy_to_float_tensor(exog_np, copy=True)
             
             scaled_exog_tensor = exog_tensor.to(self.device)
             

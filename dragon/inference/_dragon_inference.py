@@ -6,9 +6,8 @@ from typing import Union, Literal, Any, Optional
 
 from .._core import get_logger
 from ..keys._keys import PyTorchInferenceKeys, MLTaskKeys
-from ..scaler import DragonScaler
 
-from ._base_inference import _CoreInferenceHandler, _ClassificationMixin, _ScalerMixin
+from ._base_inference import _CoreInferenceHandler, _ClassificationMixin, _ScalerMixin, _numpy_to_float_tensor
 
 
 _LOGGER = get_logger("Inference Handler")
@@ -87,7 +86,7 @@ class DragonInferenceHandler(_CoreInferenceHandler, _ClassificationMixin, _Scale
         present, and moves it to the correct device.
         """
         if isinstance(features, np.ndarray):
-            features_tensor = torch.from_numpy(features).float()
+            features_tensor = _numpy_to_float_tensor(features)
         else:
             features_tensor = features.float()
 

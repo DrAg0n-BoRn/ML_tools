@@ -10,7 +10,7 @@ import seaborn as sns
 from itertools import cycle
 
 from ..schema import FeatureSchema
-from ..inference._base_inference import _CoreInferenceHandler, _ScalerMixin
+from ..inference._base_inference import _CoreInferenceHandler, _ScalerMixin, _numpy_to_float_tensor
 
 from .._core import get_logger
 from ..path_manager import make_fullpath, sanitize_filename
@@ -165,7 +165,7 @@ class _BaseSequenceInferenceHandler(_CoreInferenceHandler, _ScalerMixin, ABC):
             raise ValueError()
         
         if isinstance(features, np.ndarray):
-            features_tensor = torch.from_numpy(features).float()
+            features_tensor = _numpy_to_float_tensor(features)
         else:
             features_tensor = features.float()
 

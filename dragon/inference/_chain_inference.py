@@ -6,6 +6,7 @@ from ..keys._keys import MLTaskKeys, PyTorchInferenceKeys
 from .._core import get_logger
 
 from ._dragon_inference import DragonInferenceHandler
+from ._base_inference import _numpy_to_float_tensor
 
 
 _LOGGER = get_logger("Chain Inference")
@@ -117,7 +118,7 @@ class DragonChainInference:
                 # We need to concatenate. 
                 # Ensure current_features is a Tensor (it might be numpy on first iter)
                 if isinstance(current_features, np.ndarray):
-                    current_features = torch.from_numpy(current_features).float()
+                    current_features = _numpy_to_float_tensor(current_features)
                 
                 # Ensure step_output is on the same device/type as current_features
                 # Usually handlers return tensors on their device.
