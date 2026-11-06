@@ -208,7 +208,7 @@ pip install "dragon-ml-toolbox[excel]"
 
 ```Bash
 IO
-excel_handler
+excel
 path_manager
 ```
 

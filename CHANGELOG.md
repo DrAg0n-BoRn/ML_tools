@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
+## [28.5.0] 2026-11-06
+
+### Changed
+
+- Renamed module `excel_handler` to `excel` and reorganized its implementation into focused, task-specific scripts.
+- Consolidated workbook processing into `ExcelProcessor`, supporting validation, splitting, unmerging, vertical stacking, positional concatenation, and key-based joins.
+- Made file discovery deterministic, optionally recursive, and aware of supported file formats.
+- Standardized sheet selection, column ordering, missing-value handling, and type validation across pandas and Polars outputs.
+
+### Added
+
+- `load_dataframe_excel()` with sheet selection by name or index, multi-sheet concatenation, strict/union schemas, and optional source tracking.
+- `load_workbook_dataframes()` and `yield_dataframes_from_excel()` for separate or sequential worksheet loading.
+- `load_excel_header()`, `load_excel_with_schema()`, and `list_excel_sheets()`.
+- `save_dataframe_excel()` and `save_workbook_dataframes()` with formatting options and worksheet append/replacement support.
+- `ExcelReader` for reusable workbook access and `ExcelReadOptions` for shared configuration.
+- `ExcelValidationReport` and `ExcelValidationIssue` for programmatic validation results.
+- Standalone `unmerge_excel_cells()` and `split_excel_sheets()` utilities.
+- Atomic file writes, explicit overwrite controls, and output collision checks.
+- `python-calamine` and `xlsxwriter` dependencies in the Excel extra; raised the minimum `openpyxl` version to `3.1.5`.
+
+### Fixed
+
+- Schema validation checking the active worksheet instead of the first worksheet.
+- Legacy `.xls` files being routed to an incompatible reader.
+- Duplicate-column suffixes colliding with existing column names.
+
+### Deprecated
+
+- Legacy merge, validation, and unmerge/split functions in favor of `ExcelProcessor`.
+
+
 ## [28.4.2] 2026-11-02
 
 ### Fixed
