@@ -14,7 +14,7 @@ from ._types import ExcelReadOptions, Frame, Kind, SheetSelection
 def load_dataframe_excel(
     df_path: str | Path,
     *,
-    use_columns: list[str] | None = None,
+    use_columns: list[str] | tuple[str, ...] | None = None,
     kind: Literal["pandas"] = "pandas",
     all_strings: bool = False,
     empty_as_nan: bool = True,
@@ -27,20 +27,7 @@ def load_dataframe_excel(
 def load_dataframe_excel(
     df_path: str | Path,
     *,
-    use_columns: list[str] | None = None,
-    kind: Literal["polars"],
-    all_strings: bool = False,
-    empty_as_nan: bool = True,
-    verbose: bool = True,
-    **kwargs: Any,
-) -> tuple[pl.DataFrame, str]: ...
-
-
-@overload
-def load_dataframe_excel(
-    df_path: str | Path,
-    *,
-    use_columns: list[str] | None,
+    use_columns: list[str] | tuple[str, ...] | None = None,
     kind: Literal["polars"],
     all_strings: bool = False,
     empty_as_nan: bool = True,
@@ -52,7 +39,7 @@ def load_dataframe_excel(
 def load_dataframe_excel(
     df_path: str | Path,
     *,
-    use_columns: list[str] | None = None,
+    use_columns: list[str] | tuple[str, ...] | None = None,
     kind: Kind = "pandas",
     all_strings: bool = False,
     empty_as_nan: bool = True,
@@ -70,7 +57,7 @@ def load_dataframe_excel(
         df_path: Path to the Excel file.
         use_columns: List of column names to read; None reads all columns.
         kind: "pandas" or "polars" for the returned frame type.
-        all_strings: If True, read all data as strings (object dtype).
+        all_strings: If True, convert non-null values to strings.
         empty_as_nan: If True, treat empty cells as NaN/None.
         verbose: If True, print progress messages.
         sheet_name: Sheet selection (zero-based index, name, list, or None for all).
@@ -83,6 +70,8 @@ def load_dataframe_excel(
     Returns:
         tuple[DataFrame, str]: A tuple containing the loaded DataFrame and the file stem.
     """
+    if read_options.get("schema_overrides", {}) is None:
+        read_options["schema_overrides"] = {}
     options = ExcelReadOptions(
         kind=kind,
         use_columns=use_columns,

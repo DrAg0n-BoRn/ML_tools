@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any, Literal
 import polars as pl
+import polars.selectors as cs
 
 from ..path_manager import make_fullpath
 
@@ -16,6 +17,7 @@ from ._common import (
     input_path,
     output_kind,
     select_sheets,
+    select_columns,
     stack_frames,
     to_polars,
     unique_names,
@@ -174,7 +176,7 @@ class ExcelProcessor:
             frames, labels, schema_mode=schema_mode, type_conflicts=type_conflicts
         )
         metadata = [c for c in (source_file_column, source_sheet_column) if c is not None]
-        result = result.select([c for c in result.columns if c not in metadata] + metadata)
+        result = select_columns(result, [c for c in result.columns if c not in metadata] + metadata)
         if rename_columns:
             result = result.rename(rename_columns, strict=True)
         return self._finish(result, output_path, overwrite)
@@ -213,7 +215,7 @@ class ExcelProcessor:
         
         drop = set(drop_columns)
         frames = [
-            frame.drop([c for c in drop if c in frame.columns])
+            frame.drop(cs.by_name([c for c in drop if c in frame.columns], require_all=True))
             for frame, _, _ in self._iter_frames(sheet_name)
         ]
         if not frames or any(not f.width for f in frames):
@@ -312,7 +314,7 @@ class ExcelProcessor:
             
             result = result.join(
                 right,
-                on=keys,
+                on=[cs.by_name(key, require_all=True) for key in keys],
                 how=how,
                 validate=validate,
                 nulls_equal=nulls_equal,

@@ -38,6 +38,11 @@ class ExcelReadOptions:
         empty_sheets: "raise" or "skip" for sheets with no data rows.
         include_hidden: If True, include hidden sheets in the read.
         data_only: If True, read cached formula results without recalculation.
+        cell_errors: "preserve" retains Excel error strings (default), "raise"
+            rejects error cells, and "coerce" explicitly converts them to null.
+            Calamine legacy formats (.xls/.xlsb/.ods) require "coerce" because
+            that engine does not expose their error values. OOXML is checked
+            with openpyxl when using Calamine with "preserve" or "raise".
         schema_overrides: Mapping of column names to Polars dtypes for strict casting.
     """
 
@@ -58,6 +63,7 @@ class ExcelReadOptions:
     include_hidden: bool = True
     data_only: bool = True
     schema_overrides: Mapping[str, Any] = field(default_factory=dict)
+    cell_errors: Literal["preserve", "raise", "coerce"] = "preserve"
 
     def __post_init__(self) -> None:
         for field_name, choices in {
@@ -66,6 +72,7 @@ class ExcelReadOptions:
             "duplicate_headers": ("raise", "suffix"),
             "missing_columns": ("raise", "ignore"),
             "empty_sheets": ("raise", "skip"),
+            "cell_errors": ("preserve", "raise", "coerce"),
         }.items():
             if getattr(self, field_name) not in choices:
                 _LOGGER.error(f"{field_name} must be one of {choices}.")

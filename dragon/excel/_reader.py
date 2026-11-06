@@ -1,4 +1,4 @@
-"""One workbook handle, shared parsing rules, either dataframe backend."""
+"""Reusable workbook handles, shared parsing rules, either dataframe backend."""
 
 from __future__ import annotations
 from contextlib import contextmanager
@@ -18,6 +18,7 @@ from ._common import (
     output_kind,
     require,
     select_sheets,
+    select_columns,
     stack_frames,
     unique_names,
     to_polars,
@@ -35,6 +36,9 @@ class ExcelReader:
     of the output kind, so pandas and Polars share sheet and cleaning semantics.
     
     Hidden filtering applies before numeric sheet selection.
+    Excel errors are preserved by default. Calamine reads of OOXML use an
+    additional reusable openpyxl handle to recover error cells. Legacy Calamine
+    formats require an explicit cell_errors='coerce' opt-in.
     """
 
     def __init__(self, 
@@ -58,6 +62,7 @@ class ExcelReader:
         if self.engine == "auto":
             self.engine = "openpyxl" if self.path.suffix.lower() in OOXML_EXTENSIONS else "calamine"
         self._book: Any = None
+        self._error_book: Any = None
         self._names: list[str] = []
         self._closed = False
         
@@ -96,8 +101,14 @@ class ExcelReader:
     def close(self) -> None:
         """Close the underlying workbook; safe to call repeatedly."""
         if not self._closed:
-            self._book.close()
-            self._closed = True
+            try:
+                self._book.close()
+            finally:
+                try:
+                    if self._error_book is not None:
+                        self._error_book.close()
+                finally:
+                    self._closed = True
 
     def _check_open(self) -> None:
         if self._closed:
@@ -110,30 +121,81 @@ class ExcelReader:
         self._check_open()
         return list(self._names)
 
+    def _error_value(self, value: Any, sheet: str, coordinate: str) -> Any:
+        if self.options.cell_errors == "raise":
+            LOGGER.error(f"Excel error in {self.path.name}:{sheet}!{coordinate}: {value}")
+            raise ValueError()
+        return None if self.options.cell_errors == "coerce" else value
+
+    def _calamine_error_cells(self, sheet: str) -> dict[tuple[int, int], Any]:
+        """Recover error cells that Calamine's Python conversion otherwise drops."""
+        if self.options.cell_errors == "coerce":
+            return {}
+        if self.path.suffix.lower() not in OOXML_EXTENSIONS:
+            LOGGER.error(
+    f"Calamine cannot preserve or inspect Excel error cells in {self.path.suffix}. Convert to .xlsx for error-preserving reads, or explicitly set cell_errors='coerce' to accept errors as blanks."
+            )
+            raise ValueError()
+        if self._error_book is None:
+            self._error_book = require("openpyxl").load_workbook(
+                self.path, read_only=True, data_only=True, keep_links=False
+            )
+        ws = self._error_book[sheet]
+        ws.reset_dimensions()
+        rows = ws.iter_rows(values_only=False)
+        errors: dict[tuple[int, int], Any] = {}
+        try:
+            for r, row in enumerate(rows):
+                for c, cell in enumerate(row):
+                    if cell.data_type == "e":
+                        errors[r, c] = cell.value
+        finally:
+            rows.close()
+        return errors
+
     def _rows(self, sheet: str) -> Generator[tuple[Any, ...], None, None]:
         self._check_open()
         if self.engine == "openpyxl":
             # Ignore stale producer dimensions and let the XML supply the extent.
             ws = self._book[sheet]
             ws.reset_dimensions()
-            yield from ws.iter_rows(values_only=True)
+            rows = ws.iter_rows(values_only=False)
+            try:
+                for row in rows:
+                    yield tuple(
+                        self._error_value(cell.value, sheet, cell.coordinate)
+                        if cell.data_type == "e" else cell.value
+                        for cell in row
+                    )
+            finally:
+                rows.close()
         else:
+            errors = self._calamine_error_cells(sheet)
             ws = self._book.get_sheet_by_name(sheet)
             # Keep leading blank rows/columns so coordinates match openpyxl.
-            for row in ws.to_python(skip_empty_area=False):
+            data = ws.to_python(skip_empty_area=False)
+            for (r, c), value in errors.items():
+                while len(data) <= r:
+                    data.append([])
+                if len(data[r]) <= c:
+                    data[r].extend([None] * (c + 1 - len(data[r])))
+                data[r][c] = value
+            for r, row in enumerate(data):
                 yield tuple(
-                    None
+                    self._error_value(value, sheet, f"R{r + 1}C{c + 1}")
+                    if (r, c) in errors
+                    else None
                     if value == ""
                     else int(value)
                     if isinstance(value, float) and value.is_integer()
                     else value
-                    for value in row
+                    for c, value in enumerate(row)
                 )
 
     @contextmanager
     def _header_and_rows(self,
-                    sheet: str,
-                    options: ExcelReadOptions) -> Generator[tuple[list[str], Iterator[tuple[Any, ...]]], None, None]:
+                         sheet: str,
+                         options: ExcelReadOptions) -> Generator[tuple[list[str], Iterator[tuple[Any, ...]]], None, None]:
         rows = self._rows(sheet)
         try:
             if options.header_row is None:
@@ -346,7 +408,7 @@ class ExcelReader:
             type_conflicts=type_conflicts,
         )
         if source_sheet_column is not None:
-            combined = combined.select(
+            combined = select_columns(combined,
                 [c for c in combined.columns if c != source_sheet_column] + [source_sheet_column]
             )
         return output_kind(combined, self.options.kind)

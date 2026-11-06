@@ -11,6 +11,7 @@ from tempfile import NamedTemporaryFile
 from typing import Generator, Literal
 import pandas as pd
 import polars as pl
+import polars.selectors as cs
 
 from .._core import get_logger
 from ..path_manager import make_fullpath
@@ -125,6 +126,11 @@ def add_source(frame: pl.DataFrame, name: str | None, value: str) -> pl.DataFram
     return frame.with_columns(pl.lit(value).alias(name))
 
 
+def select_columns(frame: pl.DataFrame, names: list[str]) -> pl.DataFrame:
+    """Select exact column names, preserving order without regex expansion."""
+    return frame.select(cs.by_name(names, require_all=True))
+
+
 def stack_frames(
     frames: list[pl.DataFrame],
     labels: list[str],
@@ -158,7 +164,7 @@ def stack_frames(
                 LOGGER.error(f"Incompatible types for {column!r}: {dtypes}. Use all_strings or type_conflicts='string'.")
                 raise TypeError()
             frames = [
-                f.with_columns(pl.col(column).cast(pl.String)) if column in f.columns else f
+                f.with_columns(f.get_column(column).cast(pl.String)) if column in f.columns else f
                 for f in frames
             ]
         elif numeric and (
@@ -176,7 +182,7 @@ def stack_frames(
     result = pl.concat(
         frames, how="diagonal_relaxed" if schema_mode == "union" else "vertical_relaxed"
     )
-    return result.select(columns)
+    return select_columns(result, columns)
 
 
 def safe_stem(value: str) -> str:
@@ -185,7 +191,7 @@ def safe_stem(value: str) -> str:
 
 
 @contextmanager
-def atomic_output(path: str | Path, *, overwrite: bool = False) -> Generator[Path]:
+def atomic_output(path: str | Path, *, overwrite: bool = False) -> Generator[Path, None, None]:
     """Write beside the destination; publish only after the writer succeeds."""
     target = Path(make_fullpath(path))
     if target.exists() and not overwrite:

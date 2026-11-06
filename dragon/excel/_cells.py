@@ -39,7 +39,8 @@ def _open_editable(filepath: str | Path):
 def _unmerge_sheet(ws: Any, *, fill: bool = True, copy_styles: bool = True) -> None:
     for region in list(ws.merged_cells.ranges):
         top = ws.cell(region.min_row, region.min_col)
-        value, style = top.value, copy(top._style)
+        value, data_type, style = top.value, top.data_type, copy(top._style)
+        comment, hyperlink = copy(top.comment), copy(top.hyperlink)
         ws.unmerge_cells(str(region))
         for row in ws.iter_rows(
             min_row=region.min_row,
@@ -50,8 +51,18 @@ def _unmerge_sheet(ws: Any, *, fill: bool = True, copy_styles: bool = True) -> N
             for cell in row:
                 if fill:
                     cell.value = value
+                    cell.data_type = data_type
                 if copy_styles:
                     cell._style = copy(style)
+                    cell.comment = copy(comment)
+                    if hyperlink is not None and cell is not top:
+                        link = copy(hyperlink)
+                        link.ref = cell.coordinate
+                        # The property setter may fill an empty cell with the URL.
+                        old_value, old_type = cell.value, cell.data_type
+                        cell.hyperlink = link
+                        cell.value = old_value
+                        cell.data_type = old_type
 
 
 def unmerge_excel_cells(
@@ -102,13 +113,22 @@ def unmerge_excel_cells(
     return target
 
 
+def _copy_style(source: Any, destination: Any) -> None:
+    """Register style components in the destination workbook, not source IDs."""
+    for attribute in ("font", "fill", "border", "alignment", "protection"):
+        setattr(destination, attribute, copy(getattr(source, attribute)))
+    destination.number_format = source.number_format
+    destination.quotePrefix = source.quotePrefix
+    destination.pivotButton = source.pivotButton
+
+
 def _copy_sheet(source: Any, destination: Any, *, copy_styles: bool) -> None:
     for row in source.iter_rows():
         for cell in row:
             target = destination.cell(cell.row, cell.column, cell.value)
             target.data_type = cell.data_type
             if copy_styles:
-                target._style = copy(cell._style)
+                _copy_style(cell, target)
                 target.comment = copy(cell.comment)
                 if cell.hyperlink:
                     target.hyperlink = copy(cell.hyperlink)
@@ -116,9 +136,17 @@ def _copy_sheet(source: Any, destination: Any, *, copy_styles: bool) -> None:
         destination.merge_cells(str(region))
     if copy_styles:
         for key, dim in source.row_dimensions.items():
-            destination.row_dimensions[key] = copy(dim)
+            copied = copy(dim)
+            copied.parent = destination
+            copied._style = None
+            _copy_style(dim, copied)
+            destination.row_dimensions[key] = copied
         for key, dim in source.column_dimensions.items():
-            destination.column_dimensions[key] = copy(dim)
+            copied = copy(dim)
+            copied.parent = destination
+            copied._style = None
+            _copy_style(dim, copied)
+            destination.column_dimensions[key] = copied
         destination.freeze_panes = source.freeze_panes
         destination.auto_filter = copy(source.auto_filter)
 
@@ -188,6 +216,9 @@ def split_excel_sheets(
         for name, target in zip(names, outputs, strict=True):
             new_book = ox.Workbook()
             try:
+                # Theme-based colors and indexed colors belong to the workbook.
+                new_book.loaded_theme = workbook.loaded_theme
+                new_book._colors = copy(workbook._colors)
                 ws = new_book.active
                 ws.title = name
                 _copy_sheet(workbook[name], ws, copy_styles=copy_styles)

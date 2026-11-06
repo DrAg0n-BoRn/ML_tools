@@ -3,9 +3,11 @@
 from __future__ import annotations
 import math
 import re
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping, Literal
+from itertools import chain
 import polars as pl
 
 from ..path_manager import make_fullpath
@@ -38,12 +40,15 @@ def _validate_names(names: list[str]) -> None:
 
 
 def _cell_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        # Excel stores numeric cells as floating point. Keep Decimal values exact.
+        value = str(value)
     if isinstance(value, float) and not math.isfinite(value):
         return None if math.isnan(value) else str(value)
     if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53:
         return str(value)  # Excel numbers cannot represent these IDs exactly.
-    if isinstance(value, datetime) and value.tzinfo is not None:
-        LOGGER.error("Excel cannot store timezone-aware datetimes; remove/convert the timezone first.")
+    if isinstance(value, (datetime, time)) and value.tzinfo is not None:
+        LOGGER.error("Excel cannot store timezone-aware date/time values; remove/convert the timezone first.")
         raise ValueError()
     if isinstance(value, (dict, list, tuple, bytes)):
         LOGGER.error("Nested/binary cells must be serialized explicitly before Excel export.")
@@ -69,7 +74,18 @@ def save_dataframe_excel(df: Frame,
         df: DataFrame to save.
         full_path: Path to save the Excel file.
         sheet_name: Name of the single worksheet to create.
-        **write_options: Additional options passed to `save_workbook_dataframes`.
+        write_options: Additional options passed to `save_workbook_dataframes`:
+            - overwrite: If True, allow overwriting the output file if it already exists.
+            - mode: 'w' to write a new workbook, 'a' to append/replace sheets in an existing workbook.
+            - if_sheet_exists: 'error' to raise an error if a sheet already exists, 'replace' to overwrite the existing sheet.
+            - freeze_panes: Optional (row, column) tuple to freeze panes at the specified position. If None, no panes are frozen.
+            - autofilter: If True, apply an autofilter to the header row.
+            - autofit: If True, automatically adjust column widths based on content.
+            - column_widths: Optional mapping of column names to explicit widths. Overrides autofit.
+            - start_row: Zero-based row index to start writing data.
+            - start_column: Zero-based column index to start writing data.
+            - include_header: If True, include the DataFrame's column names as the first row.
+            - formulas: If True, treat strings starting with '=' as formulas; otherwise, treat them as literal text.
     
     Returns:
         Path: Absolute path to the saved Excel file.
@@ -96,17 +112,26 @@ def save_workbook_dataframes(
     include_header: bool = True,
     formulas: bool = False,
 ) -> Path:
-    """Save named pandas/Polars frames to .xlsx and return its absolute path.
-
-    New files use XlsxWriter. mode='a' uses openpyxl to add/replace whole sheets
-    in an existing .xlsx, requires overwrite=True, and preserves other sheets
-    within openpyxl's capabilities. Unsupported workbook objects may not survive
-    an append; this is not a lossless editor for arbitrary Excel documents.
-
-    freeze_panes uses absolute zero-based (rows, columns) counts. start_row and
-    start_column are zero-based. Indexes are never exported. Strings beginning
-    '=' are literal unless formulas=True. Integers above 2**53 become text to
-    prevent Excel precision loss. Writes are atomic per workbook.
+    """
+    Save named pandas/Polars frames to .xlsx and return its absolute path.
+    
+    Args:
+        dataframes: Mapping of sheet names to DataFrames to save.
+        full_path: Path to save the Excel file.
+        overwrite: If True, allow overwriting the output file if it already exists.
+        mode: 'w' to write a new workbook, 'a' to append/replace sheets in an existing workbook.
+        if_sheet_exists: 'error' to raise an error if a sheet already exists, 'replace' to overwrite the existing sheet.
+        freeze_panes: Optional (row, column) tuple to freeze panes at the specified position. If None, no panes are frozen.
+        autofilter: If True, apply an autofilter to the header row.
+        autofit: If True, automatically adjust column widths based on content.
+        column_widths: Optional mapping of column names to explicit widths. Overrides autofit.
+        start_row: Zero-based row index to start writing data.
+        start_column: Zero-based column index to start writing data.
+        include_header: If True, include the DataFrame's column names as the first row.
+        formulas: If True, treat strings starting with '=' as formulas; otherwise, treat them as literal text.
+        
+    Returns:
+        Path: Absolute path to the saved Excel file.
     """
     path = make_fullpath(full_path)
     if path.suffix.lower() != ".xlsx":
@@ -128,6 +153,9 @@ def save_workbook_dataframes(
     _validate_names(list(dataframes))
     frames = {name: to_polars(frame) for name, frame in dataframes.items()}
     for name, frame in frames.items():
+        if include_header:
+            for column in frame.columns:
+                _cell_value(column)
         if not frame.width:
             LOGGER.error(f"Cannot export a zero-column DataFrame: {name}")
             raise ValueError()
@@ -141,7 +169,7 @@ def save_workbook_dataframes(
         LOGGER.error("mode='a' requires an existing workbook and overwrite=True.")
         raise ValueError()
     widths = dict(column_widths or {})
-    if any(not isinstance(w, (int, float)) or w <= 0 for w in widths.values()):
+    if any(isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0 for w in widths.values()):
         LOGGER.error("Column widths must be positive numbers.")
         raise ValueError()
     if mode == "a":
@@ -168,11 +196,14 @@ def save_workbook_dataframes(
             date_format = workbook.add_format({"num_format": "yyyy-mm-dd"})
             datetime_format = workbook.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"})
             time_format = workbook.add_format({"num_format": "hh:mm:ss"})
+            duration_format = workbook.add_format({"num_format": "[h]:mm:ss"})
             for name, frame in frames.items():
                 ws = workbook.add_worksheet(name)
                 if include_header:
                     for c, column in enumerate(frame.columns, start_column):
-                        ws.write_string(start_row, c, column, header_format)
+                        result = ws.write_string(start_row, c, column, header_format)
+                        if result != 0:
+                            raise ValueError(f"Excel writer rejected header {name}:{c + 1} (code {result}).")
                 sizes = [len(c) for c in frame.columns]
                 for r, row in enumerate(frame.iter_rows(), start_row + int(include_header)):
                     for j, raw in enumerate(row):
@@ -185,6 +216,8 @@ def save_workbook_dataframes(
                             if isinstance(value, date)
                             else time_format
                             if isinstance(value, time)
+                            else duration_format
+                            if isinstance(value, timedelta)
                             else None
                         )
                         result = ws.write(r, start_column + j, value, fmt)
@@ -225,17 +258,20 @@ def _append(frames: dict[str, pl.DataFrame], path: Path, **options: Any) -> None
             ws = workbook.create_sheet(name, position)
             r0, c0 = options["start_row"] + 1, options["start_column"] + 1
             rows = [tuple(frame.columns)] if options["include_header"] else []
-            from itertools import chain
 
             sizes = [len(c) for c in frame.columns]
             for r, row in enumerate(chain(rows, frame.iter_rows()), r0):
                 for j, raw in enumerate(row):
                     value = _cell_value(raw)
                     cell = ws.cell(r, c0 + j, value)
-                    if isinstance(value, str) and (
-                        not options["formulas"] or (options["include_header"] and r == r0)
-                    ):
-                        cell.data_type = "s"
+                    if isinstance(value, str):
+                        is_header = options["include_header"] and r == r0
+                        cell.data_type = (
+                            "f" if options["formulas"] and not is_header and value.startswith("=")
+                            else "s"
+                        )
+                    elif isinstance(value, timedelta):
+                        cell.number_format = "[h]:mm:ss"
                     sizes[j] = max(sizes[j], len(str(value)) if value is not None else 0)
             if options["freeze_panes"] is not None:
                 r, c = options["freeze_panes"]

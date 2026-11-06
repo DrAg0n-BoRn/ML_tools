@@ -31,6 +31,8 @@ This project depends on the following third-party packages. Each is governed by 
 - [FreeSimpleGUI](https://github.com/spyoungtech/FreeSimpleGUI/blob/main/license.txt)
 - [omegaconf](https://github.com/omry/omegaconf/blob/master/LICENSE)
 - [pytorch_tabular](https://github.com/manujosephv/pytorch_tabular/blob/main/LICENSE)
+- [python-calamine](https://github.com/dimastbk/python-calamine/blob/master/LICENSE)
+- [xlsxwriter](https://xlsxwriter.readthedocs.io/license.html)
 - [torchmetrics](https://github.com/Lightning-AI/torchmetrics/blob/master/LICENSE)
 - [captum](https://github.com/meta-pytorch/captum/blob/master/LICENSE)
 - [node](https://github.com/Qwicen/node/blob/master/LICENSE.md)

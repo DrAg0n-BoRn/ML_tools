@@ -7,7 +7,7 @@ import polars as pl
 
 from ..schema import FeatureSchema
 
-from ._common import output_kind, to_polars, LOGGER
+from ._common import output_kind, to_polars, select_columns, LOGGER
 from ._load import load_dataframe_excel
 from ._types import Frame, Kind
 
@@ -59,5 +59,5 @@ def load_excel_with_schema(
     if len(actual) != len(features) or set(actual) != set(features):
         LOGGER.error(f"First {len(features)} columns must contain {features}; got {actual}.")
         raise ValueError()
-    ordered: pl.DataFrame = frame.select(features + frame.columns[len(features) :])
+    ordered: pl.DataFrame = select_columns(frame, features + frame.columns[len(features) :])
     return output_kind(ordered, kind), name
