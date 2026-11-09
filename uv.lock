@@ -599,7 +599,7 @@ wheels = [
 
 [[package]]
 name = "dragon-ml-toolbox"
-version = "28.5.0"
+version = "28.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorlog" },

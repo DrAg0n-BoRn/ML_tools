@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [28.6.0] 2026-11-09
+
+### Added
+
+- data_exploration:
+    - `filter_subset_regex()`: New function to filter DataFrame rows based on regex patterns for specified columns, supporting case-insensitive matching and multiple patterns per column.
+
 
 ## [28.5.0] 2026-11-06
 

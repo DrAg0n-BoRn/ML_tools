@@ -41,8 +41,12 @@ from ._features import (
     reconstruct_one_hot,
     reconstruct_binary,
     reconstruct_multibinary,
+)
+
+from ._filter import (
     filter_subset_categorical,
-    filter_subset_continuous
+    filter_subset_continuous,
+    filter_subset_regex
 )
 
 from .._core import _imprimir_disponibles
@@ -72,6 +76,7 @@ __all__ = [
     "match_and_filter_columns_by_regex",
     "filter_subset_categorical",
     "filter_subset_continuous",
+    "filter_subset_regex",
     "show_null_columns",
     "check_class_balance",
     "standardize_percentages",
